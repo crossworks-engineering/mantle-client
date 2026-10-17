@@ -19,7 +19,7 @@ describe('BuildCard', () => {
     const html = renderToStaticMarkup(
       createElement(QueryClientProvider, { client, children: createElement(BuildCard) }),
     );
-    expect(html).toContain('src="/brand/mantle-badge.svg"');
+    expect(html).toContain('src="/brand/mantleos-icon.svg"');
     expect(html).toContain('src="/brand/jackdaw-badge-light.png"');
     expect(html).toContain('v9.8.7');
     expect(html).toContain(`v${APP_VERSION}`);

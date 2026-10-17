@@ -1,27 +1,28 @@
 import { cn } from '@mantle/web-ui/lib/utils';
 
 /**
- * The Mantle brand art: the brain this interface talks to. Jackdaw's own marks
+ * The mantleOS brand art: the brain this interface talks to. Jackdaw's own marks
  * live in `jackdaw-mark.tsx`; these sit beside them wherever both halves of an
  * install are named (the dashboard's Build card, the rail's version footer,
  * the sign-in credit).
  *
- * The files are copies of `brand/mantle-logo-icon.svg` and
- * `brand/mantle-logo-full.svg` from the mantle repo, the source of truth. When
- * the mark changes there, copy them into `public/brand/` again under these
- * names.
+ * The files come from the mantle repo's `brand/`, the source of truth:
+ * `mantleos-icon.svg` is `mantle-sun-icon.svg`, and `mantleos-logo.svg` is
+ * `mantle-logo-os.svg` with its live "OS" text outlined to paths (the export
+ * sets it in Impact, which a browser without that font would substitute).
+ * When the mark changes there, copy them into `public/brand/` again.
  *
- * ONE file per mark, not a light/dark pair like Jackdaw's: the Mantle art is
+ * ONE file per mark, not a light/dark pair like Jackdaw's: the mantleOS art is
  * drawn in its own warm colours, with no ink that has to flip for the theme,
  * so the same SVG reads on both grounds.
  */
 
-/** The badge alone, square. Decorative: always sits beside a text label. */
+/** The sun icon alone, square. Decorative: always sits beside a text label. */
 export function MantleBadge({ className }: { className?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/brand/mantle-badge.svg"
+      src="/brand/mantleos-icon.svg"
       alt=""
       aria-hidden
       width={32}
@@ -31,14 +32,14 @@ export function MantleBadge({ className }: { className?: string }) {
   );
 }
 
-/** Badge and name on one line. Supply the height (e.g. `h-10`). */
-export function MantleRow({ className }: { className?: string }) {
+/** The mantleOS wordmark, one line. Supply the height (e.g. `h-10`). */
+export function MantleLogo({ className }: { className?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/brand/mantle-row.svg"
-      alt="Mantle"
-      width={168}
+      src="/brand/mantleos-logo.svg"
+      alt="mantleOS"
+      width={166}
       height={40}
       className={cn('w-auto object-contain', className)}
     />

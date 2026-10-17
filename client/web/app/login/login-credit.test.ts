@@ -10,13 +10,13 @@ import { LoginCredit } from './login-credit';
 describe('LoginCredit', () => {
   it('unbranded brain: the Mantle mark alone', () => {
     const html = renderToStaticMarkup(createElement(LoginCredit, { showJackdaw: false }));
-    expect(html).toContain('src="/brand/mantle-row.svg"');
+    expect(html).toContain('src="/brand/mantleos-logo.svg"');
     expect(html).not.toContain('jackdaw-row');
   });
 
   it('branded brain: the Jackdaw mark alone', () => {
     const html = renderToStaticMarkup(createElement(LoginCredit, { showJackdaw: true }));
     expect(html).toContain('/brand/jackdaw-row-light.png');
-    expect(html).not.toContain('mantle-row');
+    expect(html).not.toContain('mantleos-logo');
   });
 });

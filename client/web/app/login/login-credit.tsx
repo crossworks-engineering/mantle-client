@@ -1,4 +1,4 @@
-import { MantleRow } from '@/components/layout/rail/mantle-mark';
+import { MantleLogo } from '@/components/layout/rail/mantle-mark';
 
 /**
  * The small product marks at the foot of the sign-in screen: what this brain
@@ -42,7 +42,7 @@ import { MantleRow } from '@/components/layout/rail/mantle-mark';
  * `width`/`height` are declared so the footer reserves its box and the form
  * above never shifts when the image decodes.
  *
- * The Mantle row is cut tight to its artwork while the Jackdaw PNG carries
+ * The mantleOS wordmark is cut tight to its artwork while the Jackdaw PNG carries
  * some air, so Mantle runs one step shorter (`h-10` against `h-12`) to read at
  * the same weight. On a phone each steps down a size, so the mark stays a
  * footnote under the card rather than a second hero.
@@ -74,7 +74,7 @@ export function LoginCredit({ showJackdaw }: { showJackdaw: boolean }) {
           />
         </span>
       ) : (
-        <MantleRow className="h-8 sm:h-10" />
+        <MantleLogo className="h-8 sm:h-10" />
       )}
     </footer>
   );

@@ -22,7 +22,7 @@ describe('ChangelogLink', () => {
     expect(html).toContain(`Jackdaw ${VERSION_LABEL}`);
     expect(html).toContain('Mantle v9.8.7');
     expect(html).toContain('src="/brand/jackdaw-badge-light.png"');
-    expect(html).toContain('src="/brand/mantle-badge.svg"');
+    expect(html).toContain('src="/brand/mantleos-icon.svg"');
   });
 
   it('keeps the Mantle line, with a placeholder, before the brain answers', () => {
