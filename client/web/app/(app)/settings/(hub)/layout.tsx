@@ -40,6 +40,7 @@ const DEFAULT_WIDTH = '672px';
  */
 const WIDE_SCREENS: Record<string, string> = {
   '/settings/appearance': '1344px',
+  '/settings/appearance/drift': '1344px',
 };
 
 export default function SettingsPaneLayout({ children }: { children: React.ReactNode }) {

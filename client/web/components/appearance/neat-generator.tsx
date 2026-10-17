@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dices, Loader2, Save, X } from 'lucide-react';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
@@ -115,7 +116,11 @@ export function NeatGenerator() {
           An animated gradient drawn from the current colour theme — it follows every theme and
           light/dark mode, and stays close to the page surface so text on it keeps reading. Roll
           until one lands, then save it for the whole brain: it paints the sign-in screen, the area
-          behind every screen&apos;s content, and public share pages.
+          behind every screen&apos;s content, and public share pages.{' '}
+          <Link href="/settings/appearance/drift" className="underline underline-offset-2">
+            Try Drift, its replacement
+          </Link>
+          .
         </p>
       </div>
 
