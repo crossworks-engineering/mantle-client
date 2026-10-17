@@ -30,7 +30,7 @@ export function DesktopBridge() {
       }
       if (event.direction !== 'outbound') return;
       desktop.notify({
-        title: 'Mantle',
+        title: 'MantleOS',
         body: event.agentSlug ? `${event.agentSlug} replied` : 'Assistant replied',
       });
     });

@@ -1,5 +1,7 @@
-# Jackdaw desktop packaging. Built by `pnpm dist` locally (no publish) and the
-# desktop.yml workflow on tag push (publishes to a DRAFT GitHub release —
+# MantleOS Desktop packaging (the Jackdaw desktop app until the 2026-10-17
+# one-brand rename; appId, productName, the update feed and the Linux binary
+# name still say jackdaw on purpose, see client/desktop/README.md). Built by
+# `pnpm dist` locally (no publish) and the desktop.yml workflow on tag push (publishes to a DRAFT GitHub release —
 # publishing stays a human act, same as the image pipeline's deploy step).
 appId: engineering.crossworks.jackdaw
 productName: Jackdaw
@@ -46,7 +48,7 @@ linux:
   target: [AppImage, deb]
   category: Office
   icon: build/icon.png
-  synopsis: Jackdaw — the desktop client for your Mantle brain
+  synopsis: MantleOS Desktop, the desktop client for your MantleOS brain
 mac:
   target: [dmg, zip]
   category: public.app-category.productivity

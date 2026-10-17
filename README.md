@@ -1,24 +1,30 @@
-# Jackdaw
+# MantleOS Desktop
 
-**The data-aware workspace**: the web + desktop interface for
-[Mantle](https://github.com/crossworks-engineering/mantle) brains.
+<img src="client/web/public/brand/mantleos-logo.svg" alt="MantleOS" height="48">
 
-> **Jackdaw and Mantle.** Jackdaw is the app: what you see and click, on the
-> web and the desktop. Mantle is the engine underneath it: the memory, the
-> agents, and the API. This repo is Jackdaw. It holds no data of its own; every
-> brain it shows you is a Mantle server. If you only use it, think "Jackdaw".
-> If you self-host it or build on it, you work with Mantle.
+**MantleOS. The operations system, from one person to a whole enterprise.**
+This repo is MantleOS Desktop: the web + desktop interface for MantleOS
+brains (the server lives in
+[crossworks-engineering/mantle](https://github.com/crossworks-engineering/mantle)).
 
-Jackdaw is a zero-secret client: it holds no database, no session secret, and
-no server code. Every byte of data comes from a Mantle brain's HTTP API
+> **One brand.** Until 2026-10-17 this app was called Jackdaw and the engine
+> Mantle. Both are now MantleOS: what you see and click, on the web and the
+> desktop, is MantleOS Desktop; the memory, the agents and the API underneath
+> are the MantleOS brain. Engine-level names keep the word `mantle`
+> (`MANTLE_*` variables, `@mantle/*` and `@crossworks/*` packages, `mantle_*`
+> containers). The repo itself is still `jackdaw` until it is renamed
+> `mantle-client`.
+
+MantleOS Desktop is a zero-secret client: it holds no database, no session secret, and
+no server code. Every byte of data comes from a MantleOS brain's HTTP API
 (bearer + CORS), configured by a single value, the server origin. One running
-Jackdaw can connect to any brain. The desktop shell already keeps a list of
+MantleOS Desktop can connect to any brain. The desktop shell already keeps a list of
 brains (a profile and session partition each, with a switcher in the tray);
 the web client is single-origin, and a brain switcher there is roadmap.
 
 ## Run the web client next to your brain
 
-You normally do not install this by hand. The Mantle installer brings the web
+You normally do not install this by hand. The MantleOS installer brings the web
 client up beside the server stack as a second compose project, `mantle-client`,
 from `docker-compose.client.yml` in the mantle deploy bundle (the same file is
 at the root of this repo). It is one container, the image

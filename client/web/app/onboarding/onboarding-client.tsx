@@ -494,7 +494,7 @@ function Wizard({
       <div className="min-h-[18rem]">
         {step === 'profile' && (
           <StepShell
-            title="Welcome to Mantle"
+            title="Welcome to MantleOS"
             blurb="This is your own AI brain — private, self-hosted, and it remembers. A few quick steps and it’s yours."
           >
             <div className="space-y-4">
@@ -1118,7 +1118,7 @@ function Wizard({
         {step === 'done' && (
           <StepShell
             title="You’re all set 🌿"
-            blurb="Mantle takes in whatever you give it and indexes it automatically — there’s nothing to tell it to learn or remember. Three things worth knowing:"
+            blurb="MantleOS takes in whatever you give it and indexes it automatically — there’s nothing to tell it to learn or remember. Three things worth knowing:"
           >
             <ul className="space-y-3">
               <NextStep icon={FolderTree} title="Feed it files">

@@ -2,6 +2,7 @@
 
 import { cn } from '@mantle/web-ui/lib/utils';
 import { BrandLogo } from '@/components/layout/rail/brand-logo';
+import { MantleLogo } from '@/components/layout/rail/mantle-mark';
 import type { LoginBrand } from '@/lib/brand';
 
 /**
@@ -11,18 +12,18 @@ import type { LoginBrand } from '@/lib/brand';
  *
  *   1. an uploaded logo,
  *   2. else the brain's site name, in the owner's chosen logo face,
- *   3. else the Jackdaw lockup — unchanged, and still the last word.
+ *   3. else the MantleOS wordmark — the product's own mark, and the last word.
  *
- * The lockup's own note called this "the only surface that gets the full mark;
- * everywhere in-app wears the row lockup or the wordmark alone, so the bird
- * stays an event rather than chrome." Overriding that is deliberate, and only
- * ever when the owner has said what belongs there instead. A brain that has
- * said nothing looks exactly as it did.
+ * This is the one surface that gets the product mark at full size. Overriding
+ * it is deliberate, and only ever when the owner has said what belongs there
+ * instead. (Until the one-brand rename of 2026-10-17 this rung was the
+ * stacked Jackdaw lockup. The MantleOS stacked logo is NOT used here: it does
+ * not work small, and the wordmark is the mark wherever there is room.)
  *
  * ── No flash ───────────────────────────────────────────────────────────────
  * The branding is DECIDED on the server — `page.tsx` resolves it and hands the
  * answer down as props — so it is already in the HTML that leaves the box. The
- * obvious alternative, fetching on mount, shows the Jackdaw bird for a beat and
+ * obvious alternative, fetching on mount, shows the product mark for a beat and
  * then swaps it for the owner's brand on every single load: it looks like a bug,
  * and it is worst on the slow connections that most need a stable screen.
  *
@@ -40,15 +41,14 @@ import type { LoginBrand } from '@/lib/brand';
  * variant on purpose and leaves the fallback to the client. `BrandLogo` already
  * encodes that (and the rail's copy of the same logic once got it wrong, which
  * is why it is shared). All this adds is what to fall back TO — the name when
- * there is one, the lockup when there is not.
+ * there is one, the product mark when there is not.
  */
 export function LoginMark({ brand, srcBase }: { brand: LoginBrand; srcBase?: string }) {
   return (
     <div className="space-y-2">
-      {/* Fixed slot. The lockup is 180px tall and the alternatives are not, so
-          without a floor here the form jumps up the screen the moment a brain
-          is branded — and a short wordmark would sit in a different place from
-          the bird it replaced. `max-h` on the img keeps a tall badge and a wide
+      {/* Fixed slot, 180px: an uploaded logo may be that tall and the product
+          mark is not, so without a floor here the form would jump the moment
+          a brain is branded, and each mark would sit in a different place. `max-h` on the img keeps a tall badge and a wide
           banner in the same box. */}
       <h1 className="flex min-h-[180px] items-center justify-center">
         <BrandLogo
@@ -74,7 +74,7 @@ export function LoginMark({ brand, srcBase }: { brand: LoginBrand; srcBase?: str
                 {brand.name}
               </span>
             ) : (
-              <JackdawLockup className={visibility} />
+              <MantleLogo className={cn('h-14 max-w-full sm:h-16', visibility)} />
             )
           }
         />
@@ -96,38 +96,5 @@ export function LoginMark({ brand, srcBase }: { brand: LoginBrand; srcBase?: str
         </p>
       )}
     </div>
-  );
-}
-
-/**
- * The product's own mark: the STACKED lockup, badge over wordmark. Two imgs
- * swapped by the `dark:` variant — a CSS swap, so flipping the theme never
- * waits on a fetch.
- *
- * `visibility` arrives set when the lockup is standing in for a MISSING light
- * logo (a dark-only upload), and it must be forwarded or both would show at
- * once in dark mode. It rides an outer `contents` span so it applies to the
- * pair rather than being written into each `dark:` class.
- */
-function JackdawLockup({ className }: { className?: string }) {
-  return (
-    <span className={cn('contents', className)}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/brand/jackdaw-lockup-light.png"
-        alt="Jackdaw"
-        width={145}
-        height={180}
-        className="h-[180px] w-auto dark:hidden"
-      />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/brand/jackdaw-lockup-dark.png"
-        alt="Jackdaw"
-        width={144}
-        height={180}
-        className="hidden h-[180px] w-auto dark:block"
-      />
-    </span>
   );
 }

@@ -25,8 +25,9 @@ import type { BrainAppearance } from '@mantle/web-ui/appearance';
 /** Longest site name the settings screen accepts (`SITE_NAME_MAX` in mantle). */
 export const SITE_NAME_MAX = 40;
 
-/** The product's own name — the last fallback, never a stored value. */
-export const FALLBACK_NAME = 'Jackdaw';
+/** The product's own name — the last fallback, never a stored value. MantleOS
+ *  since the one-brand rename (2026-10-17); it was "Jackdaw" before. */
+export const FALLBACK_NAME = 'MantleOS';
 
 export type BrandFields = {
   siteName: string | null;
@@ -65,15 +66,14 @@ export function readBrandFields(a: BrainAppearance | null | undefined): BrandFie
  *  - `logo`    — an upload exists; show it (either variant counts).
  *  - `name`    — no upload, but the brain is named; set the name in the chosen
  *                logo face at the chosen size.
- *  - `jackdaw` — neither; the stacked Jackdaw lockup, exactly as before.
+ *  - `product` — neither; the MantleOS wordmark, the product's own mark.
  *
- * The lockup stays the FINAL fallback rather than being replaced. Its own note
- * on the login page calls it "the only surface that gets the full mark", so
- * overriding it is deliberate and only ever when the owner has said what to
- * put there instead.
+ * The product mark stays the FINAL fallback rather than being replaced. It is
+ * the one surface that gets the mark at full size, so overriding it is
+ * deliberate and only ever when the owner has said what to put there instead.
  */
 export type LoginBrand = {
-  kind: 'logo' | 'name' | 'jackdaw';
+  kind: 'logo' | 'name' | 'product';
   /** What to call this brain: the site name, else the product name. Used for
    *  the wordmark, the logo's alt text and the tab. */
   name: string;
@@ -81,7 +81,8 @@ export type LoginBrand = {
    * Whether that name is the OWNER's or ours — which `kind` cannot answer on
    * its own. A brain with a logo AND a name is `kind: 'logo'`, and if only the
    * dark variant was uploaded the light theme still has to fall back to
-   * something: this says whether that something is the name or the lockup.
+   * something: this says whether that something is the name or the product
+   * mark.
    */
   named: boolean;
   logoVersion: string | null;
@@ -92,7 +93,7 @@ export type LoginBrand = {
 export function resolveLoginBrand(fields: BrandFields): LoginBrand {
   const { siteName, peerName, logoVersion, logoDarkVersion } = fields;
   return {
-    kind: logoVersion || logoDarkVersion ? 'logo' : siteName ? 'name' : 'jackdaw',
+    kind: logoVersion || logoDarkVersion ? 'logo' : siteName ? 'name' : 'product',
     name: siteName ?? FALLBACK_NAME,
     named: Boolean(siteName),
     logoVersion,
@@ -111,7 +112,7 @@ export function resolveLoginBrand(fields: BrandFields): LoginBrand {
  * The peer name is the middle rung because it is the one thing a brain almost
  * always has and a site name is not: naming the box is part of standing it up,
  * whereas a site name is branding somebody chooses to set. Falling straight
- * through to "Jackdaw" would leave a fleet of unbranded boxes looking exactly
+ * through to the product name would leave a fleet of unbranded boxes looking exactly
  * as identical as before — the whole complaint. It is also the name the login
  * screen already shows under the mark, so the tab and the screen agree.
  *

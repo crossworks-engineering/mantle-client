@@ -572,7 +572,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
               </FieldError>
               <FieldDescription>
                 Each line is a full address (<code>orders@modular.co.za</code>) or a whole-domain
-                wildcard (<code>@modular.co.za</code>, trusting all mail from that domain). Mantle
+                wildcard (<code>@modular.co.za</code>, trusting all mail from that domain). MantleOS
                 ingests mail from these into the brain; Saskia can email the plain addresses. Adding
                 one backfills the last 90 days.
               </FieldDescription>

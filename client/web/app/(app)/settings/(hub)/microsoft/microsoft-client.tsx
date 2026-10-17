@@ -70,8 +70,8 @@ export function MicrosoftClient() {
             Microsoft accounts
           </h2>
           <p className="text-sm text-muted-foreground">
-            Connect a Microsoft 365 account to bring SharePoint, OneDrive, and Outlook into Mantle.
-            Sign-in is delegated — Mantle only sees what you can.
+            Connect a Microsoft 365 account to bring SharePoint, OneDrive, and Outlook into
+            MantleOS. Sign-in is delegated — MantleOS only sees what you can.
           </p>
         </div>
         {status.configured && (

@@ -136,7 +136,7 @@ async function probeBrain(origin: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const body = (await res.json().catch(() => null)) as { version?: unknown } | null;
-  if (!body || typeof body.version !== 'string') throw new Error('not a Mantle server');
+  if (!body || typeof body.version !== 'string') throw new Error('not a MantleOS server');
   return body.version;
 }
 
@@ -508,7 +508,7 @@ async function openAppWindow(profile: Profile, path?: string): Promise<void> {
 
   win.webContents.on('did-fail-load', (_event, _code, description, _url, isMainFrame) => {
     if (!isMainFrame) return;
-    dialog.showErrorBox('Jackdaw', `Could not load the owner UI (${description}).`);
+    dialog.showErrorBox('MantleOS Desktop', `Could not load the owner UI (${description}).`);
     openConnectWindow();
     win.close();
   });
@@ -545,7 +545,7 @@ async function openAppWindow(profile: Profile, path?: string): Promise<void> {
 }
 
 function reportWindowError(error: unknown): void {
-  dialog.showErrorBox('Jackdaw', error instanceof Error ? error.message : String(error));
+  dialog.showErrorBox('MantleOS Desktop', error instanceof Error ? error.message : String(error));
   openConnectWindow();
 }
 
@@ -585,7 +585,7 @@ async function addBrain(rawUrl: string): Promise<AddResult> {
     refreshBrainMenus();
     return { ok: true, profile };
   } catch {
-    return { ok: false, error: `Couldn't reach a Mantle server at ${origin}.` };
+    return { ok: false, error: `Couldn't reach a MantleOS server at ${origin}.` };
   }
 }
 
@@ -598,7 +598,7 @@ function registerIpc(): void {
   ipcMain.on(
     'desktop:notify',
     (event, payload: { title?: unknown; body?: unknown; path?: unknown }) => {
-      const title = typeof payload?.title === 'string' ? payload.title.slice(0, 120) : 'Mantle';
+      const title = typeof payload?.title === 'string' ? payload.title.slice(0, 120) : 'MantleOS';
       const body = typeof payload?.body === 'string' ? payload.body.slice(0, 300) : undefined;
       const path = safeInAppPath(payload?.path);
       const sender = BrowserWindow.fromWebContents(event.sender);
@@ -813,7 +813,7 @@ let tray: Tray | null = null;
 
 function trayMenu(): Menu {
   return Menu.buildFromTemplate([
-    { label: 'Open Mantle', click: focusOrOpen },
+    { label: 'Open MantleOS Desktop', click: focusOrOpen },
     { type: 'separator' },
     ...brainMenuItems(),
     { label: 'Add or Remove a Brain…', click: () => openConnectWindow() },
@@ -825,7 +825,7 @@ function trayMenu(): Menu {
 function setupTray(): void {
   const icon = nativeImage.createFromPath(ICON_PATH).resize({ width: 22, height: 22 });
   tray = new Tray(icon);
-  tray.setToolTip('Jackdaw');
+  tray.setToolTip('MantleOS Desktop');
   tray.setContextMenu(trayMenu());
   tray.on('click', focusOrOpen);
 }
@@ -840,7 +840,7 @@ function setupAutoUpdate(): void {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-downloaded', (info) => {
     const notification = new Notification({
-      title: 'Jackdaw update ready',
+      title: 'MantleOS Desktop update ready',
       body: `v${info.version} installs when you quit the app.`,
       icon: ICON_PATH,
     });

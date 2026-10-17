@@ -74,10 +74,10 @@ export default async function LoginPage({
           />
         </div>
       </div>
-      {/* Mantle always; Jackdaw beside it only once the owner's branding has
-          taken the hero slot, or the Jackdaw mark would appear twice on one
-          screen. See `login-credit.tsx`. */}
-      <LoginCredit showJackdaw={brand.kind !== 'jackdaw'} />
+      {/* The MantleOS credit only once the owner's branding has taken the hero
+          slot, or the mark would appear twice on one screen. See
+          `login-credit.tsx`. */}
+      <LoginCredit show={brand.kind !== 'product'} />
     </main>
   );
 }

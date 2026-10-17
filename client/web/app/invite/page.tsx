@@ -47,7 +47,7 @@ export default async function InvitePage({
           <InviteClient mark={<LoginMark brand={brand} srcBase={origin} />} initialCode={code} />
         </div>
       </div>
-      <LoginCredit showJackdaw={brand.kind !== 'jackdaw'} />
+      <LoginCredit show={brand.kind !== 'product'} />
     </main>
   );
 }

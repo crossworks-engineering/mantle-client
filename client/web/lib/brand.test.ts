@@ -99,9 +99,9 @@ describe('resolveLoginBrand', () => {
     expect(brand.name).toBe('Northwind');
   });
 
-  it('falls back to the Jackdaw lockup when the brain has said nothing', () => {
+  it('falls back to the MantleOS wordmark when the brain has said nothing', () => {
     const brand = resolveLoginBrand(NONE);
-    expect(brand.kind).toBe('jackdaw');
+    expect(brand.kind).toBe('product');
     expect(brand.name).toBe(FALLBACK_NAME);
   });
 
@@ -145,7 +145,7 @@ describe('brandTitle', () => {
 });
 
 describe('the mark and the tab disagree on purpose', () => {
-  it('a peer-named brain shows its peer in the TAB and the lockup on the SCREEN', () => {
+  it('a peer-named brain shows its peer in the TAB and the product mark on the SCREEN', () => {
     // `brandTitle` takes the peer name; `resolveLoginBrand` does not. A peer
     // name identifies a box — it is not a thing to set in a display face where
     // a logo would go, and the login screen already shows it on its own line
@@ -153,7 +153,7 @@ describe('the mark and the tab disagree on purpose', () => {
     const fields = { ...NONE, peerName: 'westmill' };
     expect(brandTitle(fields)).toBe('westmill');
     const brand = resolveLoginBrand(fields);
-    expect(brand.kind).toBe('jackdaw');
+    expect(brand.kind).toBe('product');
     expect(brand.name).toBe(FALLBACK_NAME);
     expect(brand.peerName).toBe('westmill');
   });

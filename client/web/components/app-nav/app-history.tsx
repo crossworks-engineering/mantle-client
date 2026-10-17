@@ -73,7 +73,7 @@ const ACTOR_LABEL: Record<AppSnapshot['actor'], string> = {
   owner: 'you',
   agent: 'the assistant',
   mcp: 'an MCP client',
-  system: 'Mantle',
+  system: 'MantleOS',
   member: 'a team member',
 };
 

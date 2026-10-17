@@ -116,7 +116,7 @@ export function PairPhoneCard({ userId }: { userId: string }) {
           <QrCode className="size-4 text-muted-foreground" /> Sign in on your phone
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Open Jackdaw on the phone, tap{' '}
+          Open MantleOS on the phone, tap{' '}
           <span className="text-foreground">Scan a sign-in code</span>, and point it here. No server
           address, email or password to type. The code works once and expires in a minute and a
           half.
@@ -137,7 +137,7 @@ export function PairPhoneCard({ userId }: { userId: string }) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={png}
-            alt="Sign-in code for the Jackdaw app"
+            alt="Sign-in code for the MantleOS app"
             width={240}
             height={240}
             className="rounded-md"

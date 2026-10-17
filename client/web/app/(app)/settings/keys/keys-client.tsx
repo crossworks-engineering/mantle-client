@@ -508,7 +508,7 @@ export function KeysClient() {
                               {unwired.length > 0 && (
                                 <p className="text-xs text-warning-ink">
                                   <span className="font-medium">Also supports</span>{' '}
-                                  {unwired.join(', ')}, but Mantle doesn&apos;t dispatch through
+                                  {unwired.join(', ')}, but MantleOS doesn&apos;t dispatch through
                                   this provider for{' '}
                                   {unwired.length > 1 ? 'those capabilities' : 'that'} yet — a key
                                   still works for the wired capabilities above.

@@ -604,14 +604,14 @@ export const API_CATALOG: CatalogGroup[] = [
     },
   ]),
 
-  group('peers', 'Peers & federation', 'Mantle-to-Mantle sharing.', [
+  group('peers', 'Peers & federation', 'MantleOS-to-MantleOS sharing.', [
     { n: 'List peers', m: 'GET', p: '/api/peers' },
     {
       n: 'Create peer',
       m: 'POST',
       p: '/api/peers',
       d: 'Returns the inbound token plaintext exactly once.',
-      b: '{\n  "displayName": "Other Mantle",\n  "baseUrl": "https://peer.example.com",\n  "outboundToken": "their-inbound-token"\n}',
+      b: '{\n  "displayName": "Other MantleOS",\n  "baseUrl": "https://peer.example.com",\n  "outboundToken": "their-inbound-token"\n}',
     },
     { n: 'Update peer', m: 'PATCH', p: '/api/peers/{id}', b: '{\n  "enabled": true\n}' },
     { n: 'Delete peer', m: 'DELETE', p: '/api/peers/{id}' },

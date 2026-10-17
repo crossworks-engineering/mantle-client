@@ -9,28 +9,27 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 const { ChangelogLink } = await import('./changelog-link');
 
 /**
- * The rail's version footer names both halves: Jackdaw (this build, linking
- * to its changelog) and Mantle (the brain, as `/api/version` reports it).
+ * The rail's version footer names both halves: MantleOS Desktop (this build,
+ * linking to its changelog) and the brain (as `/api/version` reports it).
  */
 describe('ChangelogLink', () => {
-  it('shows the Jackdaw build and the Mantle version, each with its badge', () => {
+  it('shows the MantleOS Desktop build, with the icon, and the brain version', () => {
     const client = new QueryClient();
     client.setQueryData(['server-version'], { version: '9.8.7' });
     const html = renderToStaticMarkup(
       createElement(QueryClientProvider, { client, children: createElement(ChangelogLink) }),
     );
-    expect(html).toContain(`Jackdaw ${VERSION_LABEL}`);
-    expect(html).toContain('Mantle v9.8.7');
-    expect(html).toContain('src="/brand/jackdaw-badge-light.png"');
+    expect(html).toContain(`MantleOS Desktop ${VERSION_LABEL}`);
+    expect(html).toContain('Brain v9.8.7');
     expect(html).toContain('src="/brand/mantleos-icon.svg"');
   });
 
-  it('keeps the Mantle line, with a placeholder, before the brain answers', () => {
+  it('keeps the brain line, with a placeholder, before the brain answers', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const html = renderToStaticMarkup(
       createElement(QueryClientProvider, { client, children: createElement(ChangelogLink) }),
     );
-    expect(html).toMatch(/Mantle (…|unavailable)/);
+    expect(html).toMatch(/Brain (…|unavailable)/);
   });
 
   it('links the changelog for a login with the settings area', () => {
@@ -50,7 +49,7 @@ describe('ChangelogLink', () => {
     const html = renderToStaticMarkup(
       createElement(QueryClientProvider, { client, children: createElement(ChangelogLink) }),
     );
-    expect(html).toContain(`Jackdaw ${VERSION_LABEL}`);
+    expect(html).toContain(`MantleOS Desktop ${VERSION_LABEL}`);
     expect(html).not.toContain('href="/changelog"');
     expect(html).not.toContain('What&#x27;s new?');
     expect(html).not.toContain("What's new?");

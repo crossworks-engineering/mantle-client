@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { BrandLogo } from './brand-logo';
-import { JackdawBadge, JackdawRow } from './jackdaw-mark';
+import { FALLBACK_NAME } from '@/lib/brand';
+import { MantleBadge, MantleLogo } from './mantle-mark';
 
 /**
  * Identity block at the head of the rail: the wordmark (or the uploaded brand
@@ -81,13 +82,13 @@ export function BrandBlock({
   switcher?: React.ReactNode;
 }) {
   // A brain that has never been named wears the BRAND rather than the brand's
-  // name set in type: the row lockup expanded, the badge collapsed. The moment
+  // name set in type: the wordmark expanded, the icon collapsed. The moment
   // an owner sets a site name it is theirs, and the text wordmark returns.
   const named = Boolean(siteName?.trim());
-  const name = siteName?.trim() || 'Jackdaw';
+  const name = siteName?.trim() || FALLBACK_NAME;
   // Array.from, not charAt: a name starting with an emoji or any astral-plane
   // character would otherwise be cut mid-surrogate-pair and render as a tofu.
-  const mark = Array.from(name)[0] ?? 'J';
+  const mark = Array.from(name)[0] ?? 'M';
 
   return (
     <div
@@ -130,7 +131,7 @@ export function BrandBlock({
               named ? (
                 <Wordmark name={name} mark={mark} className={visibility} />
               ) : (
-                <JackdawMark className={visibility} />
+                <ProductMark className={visibility} />
               )
             }
           />
@@ -155,28 +156,26 @@ export function BrandBlock({
 }
 
 /**
- * The Jackdaw brand art, standing in for the text wordmark on a brain with no
+ * The MantleOS brand art, standing in for the text wordmark on a brain with no
  * site name of its own. Mirrors `Wordmark`'s structure exactly: BOTH the
  * expanded and collapsed forms render, and the shell's collapse state picks
  * one, so no width measurement or JS is involved in the swap.
  *
- * Expanded gets the ROW lockup (badge + name on one line, which is what fits a
- * rail); collapsed gets the badge alone, because a 3.5rem column has no room
- * for a lockup and shrinking one until it fits reads as a bug. Each is two imgs
- * swapped by the `dark:` variant — a CSS swap, so flipping the theme never
- * waits on a fetch.
+ * Expanded gets the wordmark (one line, which is what fits a rail); collapsed
+ * gets the icon alone, because a 3.5rem column has no room for a wordmark and
+ * shrinking one until it fits reads as a bug.
  */
-function JackdawMark({ className }: { className?: string }) {
+function ProductMark({ className }: { className?: string }) {
   return (
     // Both forms render and the shell's collapse state picks one, exactly as
     // `Wordmark` does below — no width measurement, no JS. The outer `contents`
     // carries the caller's visibility class once, above both swaps.
     <span className={cn('contents', className)}>
-      <JackdawRow
+      <MantleLogo
         className="h-9 max-w-full"
         visibility="group-data-[nav-collapsed=true]/shell:hidden"
       />
-      <JackdawBadge
+      <MantleBadge
         className="size-8 shrink-0"
         visibility="hidden group-data-[nav-collapsed=true]/shell:contents"
       />

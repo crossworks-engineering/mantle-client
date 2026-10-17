@@ -231,7 +231,7 @@ export function AccountsClient() {
                 <BackLink href={`/settings/accounts?selected=${selected.id}`}>Back</BackLink>
                 <h2 className="text-lg font-semibold">Folders to scan — {selected.address}</h2>
                 <p className="text-sm text-muted-foreground">
-                  Which IMAP folders Mantle scans. Mail is still only ingested from people in your{' '}
+                  Which IMAP folders MantleOS scans. Mail is still only ingested from people in your{' '}
                   <Link
                     href="/contacts"
                     className="text-primary-ink underline-offset-2 hover:underline"

@@ -81,7 +81,7 @@ export function CreateMapDialog({
               id="recall-map-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Mantle fleet"
+              placeholder="MantleOS fleet"
               maxLength={RECALL_TITLE_MAX}
               autoFocus
             />
@@ -92,7 +92,7 @@ export function CreateMapDialog({
               id="recall-map-enter"
               value={enterWhen}
               onChange={(e) => setEnterWhen(e.target.value)}
-              placeholder="working on any Mantle server or box"
+              placeholder="working on any MantleOS server or box"
               maxLength={RECALL_LINE_MAX}
             />
             <FieldDescription>

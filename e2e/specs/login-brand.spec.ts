@@ -2,7 +2,7 @@ import { expect, test } from '../lib/fixtures';
 
 /**
  * The sign-in screen wears the brain's own branding — an uploaded logo, else
- * the site name in the owner's chosen face, else the Jackdaw lockup (dev task
+ * the site name in the owner's chosen face, else the MantleOS wordmark (dev task
  * `db6b72e9`). The tab follows the same name (`b05a5f17`).
  *
  * ⚠ WHAT THIS FILE CAN AND CANNOT PROVE.
@@ -17,13 +17,13 @@ import { expect, test } from '../lib/fixtures';
  * and what is covered HERE is everything that has to keep working on a brain
  * that has said nothing about itself:
  *
- *  - the Jackdaw lockup is still the fallback, in both themes;
- *  - the tab still says Jackdaw rather than going blank;
+ *  - the MantleOS wordmark is the fallback, in both themes;
+ *  - the tab says MantleOS rather than going blank;
  *  - the title is in the SERVER's HTML, not painted in after hydration;
  *  - the form still renders and HYDRATES after the page was split into a
  *    server component plus a client child;
  *  - the small footer mark stays AWAY, so the unbranded screen does not show
- *    the Jackdaw mark twice.
+ *    the MantleOS mark twice.
  *
  * That last one is the real regression risk in this change and the reason this
  * file exists at all.
@@ -39,31 +39,29 @@ import { expect, test } from '../lib/fixtures';
 test.describe('login branding', () => {
   test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
 
-  test('an unbranded brain keeps the Jackdaw lockup, in both themes', async ({ visitorPage }) => {
+  test('an unbranded brain shows the MantleOS wordmark, in both themes', async ({
+    visitorPage,
+  }) => {
     await visitorPage.goto('/login');
 
-    // The stacked lockup, and exactly one of the pair visible at a time — the
-    // light/dark swap is CSS, so both are in the DOM by design.
-    const light = visitorPage.locator('img[src="/brand/jackdaw-lockup-light.png"]');
-    const dark = visitorPage.locator('img[src="/brand/jackdaw-lockup-dark.png"]');
-    await expect(light).toHaveCount(1);
-    await expect(dark).toHaveCount(1);
+    // ONE img: the MantleOS art reads on both grounds, so there is no
+    // light/dark pair to swap (the old Jackdaw lockup had one).
+    const mark = visitorPage.locator('h1 img[src="/brand/mantleos-logo.svg"]');
+    await expect(mark).toHaveCount(1);
 
     await visitorPage.emulateMedia({ colorScheme: 'light' });
-    await expect(light).toBeVisible();
-    await expect(dark).toBeHidden();
+    await expect(mark).toBeVisible();
 
     await visitorPage.emulateMedia({ colorScheme: 'dark' });
-    await expect(dark).toBeVisible();
-    await expect(light).toBeHidden();
+    await expect(mark).toBeVisible();
   });
 
   test('the mark sits in a fixed slot, so a branded brain cannot move the form', async ({
     visitorPage,
   }) => {
-    // The lockup is 180px tall and a wordmark is not. Without a floor on the
-    // slot the form would jump up the screen the moment a brain is branded,
-    // and a name would sit somewhere the bird never did.
+    // An uploaded logo may be 180px tall and the product wordmark is not.
+    // Without a floor on the slot the form would jump up the screen the moment
+    // a brain is branded, and each mark would sit somewhere different.
     await visitorPage.goto('/login');
     const slot = visitorPage.locator('h1').first();
     await expect(slot).toBeVisible();
@@ -85,21 +83,21 @@ test.describe('login branding', () => {
     // is worse than a generic one. (The site-name and peer-name rungs above it
     // need the mantle field, so they live in `lib/brand.test.ts`.)
     expect(title, 'no <title> in the server-rendered HTML').toBeTruthy();
-    expect(title).toBe('Jackdaw');
+    expect(title).toBe('MantleOS');
 
     await visitorPage.goto('/login');
-    await expect(visitorPage).toHaveTitle('Jackdaw');
+    await expect(visitorPage).toHaveTitle('MantleOS');
   });
 
-  test('an unbranded brain does not show the Jackdaw mark twice', async ({ visitorPage }) => {
+  test('an unbranded brain does not show the MantleOS mark twice', async ({ visitorPage }) => {
     // The footer credit exists for the case where the OWNER's branding has
-    // taken the hero slot. With nothing set, the hero is already the Jackdaw
-    // lockup, and repeating the same mark lower down reads as a bug rather
-    // than a credit — so on this brain the row lockup must be absent entirely.
+    // taken the hero slot. With nothing set, the hero is already the MantleOS
+    // wordmark, and repeating the same mark lower down reads as a bug rather
+    // than a credit — so on this brain the footer must be absent entirely.
     await visitorPage.goto('/login');
-    await expect(visitorPage.locator('img[src^="/brand/jackdaw-row-"]')).toHaveCount(0);
+    await expect(visitorPage.locator('main > footer')).toHaveCount(0);
     // ...while the hero it defers to is still there.
-    await expect(visitorPage.locator('img[src="/brand/jackdaw-lockup-light.png"]')).toHaveCount(1);
+    await expect(visitorPage.locator('img[src="/brand/mantleos-logo.svg"]')).toHaveCount(1);
   });
 
   test('an unnamed brain shows no peer line at all', async ({ visitorPage }) => {

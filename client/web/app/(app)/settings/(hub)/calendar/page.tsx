@@ -18,7 +18,7 @@ export default async function CalendarSettingsPage() {
             Calendar subscriptions
           </h2>
           <p className="text-sm text-muted-foreground">
-            Sync external calendars into Mantle. Subscribed events appear in your{' '}
+            Sync external calendars into MantleOS. Subscribed events appear in your{' '}
             <a href="/events" className="underline underline-offset-2">
               events
             </a>

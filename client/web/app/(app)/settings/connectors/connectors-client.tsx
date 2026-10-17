@@ -512,7 +512,7 @@ export function ConnectorsClient() {
                 </div>
               ) : connectors.length === 0 && availableCatalog.length === 0 ? (
                 <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                  No connectors yet. Click <strong>New</strong> to point Mantle at an external MCP
+                  No connectors yet. Click <strong>New</strong> to point MantleOS at an external MCP
                   server.
                 </p>
               ) : (
@@ -595,7 +595,7 @@ export function ConnectorsClient() {
                   </h2>
                   <p className="text-xs text-muted-foreground">
                     {sel.mode === 'create'
-                      ? 'Point Mantle at an external MCP server. Its tools become a tool group you grant to an agent.'
+                      ? 'Point MantleOS at an external MCP server. Its tools become a tool group you grant to an agent.'
                       : 'Tool results from this server arrive fenced as untrusted content. Grant its group to a no-write specialist, not the persona.'}
                   </p>
                 </div>
@@ -897,7 +897,7 @@ export function ConnectorsClient() {
                           ) : form.oauthApp === 'manual' ? (
                             'An app you registered with the server’s sign-in provider. Its secret is sealed in the vault.'
                           ) : (
-                            'Mantle registers itself with the server’s sign-in. Microsoft servers do not allow that: pick the Microsoft app for those.'
+                            'MantleOS registers itself with the server’s sign-in. Microsoft servers do not allow that: pick the Microsoft app for those.'
                           )}
                         </FieldDescription>
                       </Field>
@@ -969,7 +969,7 @@ export function ConnectorsClient() {
                           <FieldDescription>
                             Register this exact URL with the app.
                             {form.oauthApp === 'microsoft'
-                              ? ' In Azure: the app → Authentication → add it under the Web platform, not “Mobile and desktop”. Mantle sends the app’s secret, and Entra refuses a secret there.'
+                              ? ' In Azure: the app → Authentication → add it under the Web platform, not “Mobile and desktop”. MantleOS sends the app’s secret, and Entra refuses a secret there.'
                               : ''}
                           </FieldDescription>
                         </Field>

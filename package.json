@@ -2,7 +2,7 @@
   "name": "jackdaw",
   "version": "0.7.18",
   "private": true,
-  "description": "Jackdaw — the data-aware workspace. The web + desktop interface for Mantle brains.",
+  "description": "MantleOS Desktop: the web + desktop interface for MantleOS brains.",
   "license": "SEE LICENSE IN LICENSE.md",
   "packageManager": "pnpm@11.1.2",
   "engines": {

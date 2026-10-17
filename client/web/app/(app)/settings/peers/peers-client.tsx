@@ -89,8 +89,8 @@ function TokenReveal({
     <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
       <p className="text-sm font-medium">Your token for them — shown once</p>
       <p className="text-xs text-muted-foreground">
-        Send this to the peer: they paste it on their side so their Mantle can authenticate to
-        yours. We store only its hash — you can&apos;t see it again (rotate to mint a new one).
+        Send this to the peer: they paste it on their side so their brain can authenticate to yours.
+        We store only its hash — you can&apos;t see it again (rotate to mint a new one).
       </p>
       {replaced && (
         <p className="text-xs font-medium text-foreground">
@@ -185,7 +185,7 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
             <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
               {peers.length === 0 ? (
                 <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                  No peers yet. Click <strong>New</strong> to connect another Mantle.
+                  No peers yet. Click <strong>New</strong> to connect another MantleOS brain.
                 </p>
               ) : (
                 peers.map((p) => {
@@ -315,7 +315,7 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
     <div className="space-y-4 p-6">
       <div className="flex items-center gap-2">
         <Network className="size-5 text-primary-ink" aria-hidden />
-        <h2 className="text-lg font-semibold">Connect a Mantle</h2>
+        <h2 className="text-lg font-semibold">Connect another brain</h2>
       </div>
       <p className="text-xs text-muted-foreground">
         Pairing uses <strong>two tokens, one per direction</strong>. Step 1 — add the peer with just
@@ -334,7 +334,7 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
                 setName(e.target.value);
                 if (errors.name) setErrors((c) => ({ ...c, name: undefined }));
               }}
-              placeholder="e.g. Her Mantle"
+              placeholder="e.g. Her brain"
               autoFocus
               aria-invalid={!!errors.name || undefined}
               aria-describedby={errors.name ? 'peer-name-error peer-name-hint' : 'peer-name-hint'}

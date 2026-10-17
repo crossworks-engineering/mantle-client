@@ -19,7 +19,7 @@ export default async function AccountFoldersPage({ params }: { params: Promise<{
       </header>
 
       <p className="text-sm text-muted-foreground">
-        Choose which IMAP folders Mantle scans for this account. Mail is still only ingested from
+        Choose which IMAP folders MantleOS scans for this account. Mail is still only ingested from
         people in your{' '}
         <Link href="/contacts" className="text-primary-ink underline-offset-2 hover:underline">
           contacts

@@ -63,7 +63,7 @@ export function ConnectGuide() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Put a machine you own — a home GPU box, a LAN server running Ollama or LM Studio — on the
-          same private network as Mantle, so a chat or vision route can reach it by name even when
+          same private network as MantleOS, so a chat or vision route can reach it by name even when
           it&apos;s behind NAT. No port-forwarding, no public IPs.
         </p>
       </div>
@@ -82,7 +82,7 @@ export function ConnectGuide() {
           <div className="flex items-start gap-3 rounded-md border border-border p-3">
             <Server className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
             <div className="space-y-0.5 text-sm">
-              <p className="font-medium">The Mantle host</p>
+              <p className="font-medium">The MantleOS host</p>
               <p className="text-muted-foreground">
                 Joins through the bundled <code className="font-mono">tailscale</code> sidecar. You
                 activate it with an auth key on the Local network screen.
@@ -207,7 +207,7 @@ open -a Tailscale`}
             </p>
           </div>
           <div className="space-y-1.5">
-            <p className="font-medium">Generate an auth key for the Mantle host</p>
+            <p className="font-medium">Generate an auth key for the MantleOS host</p>
             <p className="text-muted-foreground">
               In the <Ext href={TS_KEYS_URL}>Tailscale admin console → Keys</Ext>, generate an{' '}
               <strong>auth key</strong>. Make it <strong>Reusable</strong> (survives redeploys) and
@@ -222,12 +222,12 @@ open -a Tailscale`}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base">3 · Activate Mantle on your tailnet</CardTitle>
-            <Badge variant="outline">in Mantle</Badge>
+            <CardTitle className="text-base">3 · Activate MantleOS on your tailnet</CardTitle>
+            <Badge variant="outline">in MantleOS</Badge>
           </div>
           <CardDescription>
-            The <code className="font-mono">tailscale</code> sidecar already runs with every Mantle
-            install. It waits, signed out, until you activate it here. No SSH and no{' '}
+            The <code className="font-mono">tailscale</code> sidecar already runs with every
+            MantleOS install. It waits, signed out, until you activate it here. No SSH and no{' '}
             <code className="font-mono">.env</code> edit.
           </CardDescription>
         </CardHeader>
@@ -258,7 +258,7 @@ open -a Tailscale`}
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base">4 · Point a route at it</CardTitle>
-            <Badge variant="outline">in Mantle</Badge>
+            <Badge variant="outline">in MantleOS</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
@@ -291,7 +291,7 @@ open -a Tailscale`}
             </Step>
             <Step n={3} title="Flip “Reach via Tailscale” on">
               <p>
-                This routes the request through the tailnet — required when the Mantle host
+                This routes the request through the tailnet — required when the MantleOS host
                 can&apos;t reach the box on the local LAN (e.g. a cloud VPS reaching your home box).
                 On the same LAN, you can leave it off and use the box&apos;s LAN IP directly. Save —
                 done.
@@ -303,7 +303,7 @@ open -a Tailscale`}
 
       <p className="px-1 text-xs text-muted-foreground">
         Device, key, and ACL management all live in the{' '}
-        <Ext href={TS_MACHINES_URL}>Tailscale console</Ext> — Mantle just reads the connection and
+        <Ext href={TS_MACHINES_URL}>Tailscale console</Ext> — MantleOS just reads the connection and
         never stores your auth key in its database.
       </p>
     </div>

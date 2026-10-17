@@ -269,7 +269,7 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
           <FieldDescription id="password-hint">
             {isEdit
               ? 'Only enter a password if you want to replace the stored one.'
-              : 'Use a provider-issued app password (Fastmail, iCloud, Gmail-as-IMAP). Mantle encrypts this at rest with your master key before storing it.'}
+              : 'Use a provider-issued app password (Fastmail, iCloud, Gmail-as-IMAP). MantleOS encrypts this at rest with your master key before storing it.'}
           </FieldDescription>
           <FieldError id="password-error">{errors.password}</FieldError>
         </Field>

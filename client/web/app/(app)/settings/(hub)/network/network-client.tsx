@@ -84,7 +84,7 @@ function NetworkView({
           </div>
           <CardDescription>
             {connected
-              ? 'Mantle is on your tailnet. The peers below are reachable by name.'
+              ? 'MantleOS is on your tailnet. The peers below are reachable by name.'
               : status.available
                 ? `Sidecar reachable but not connected (${status.backendState}). Save an auth key below and click Activate.`
                 : status.reason}

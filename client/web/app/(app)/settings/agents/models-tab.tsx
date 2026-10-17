@@ -263,7 +263,7 @@ export function ModelsTab({
                           {agent.manifestManaged && (
                             <span
                               className="rounded-sm bg-info/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-info-ink"
-                              title="Ships with Mantle (system manifest). Provider, model and prompt are yours and survive upgrades; only tuning params re-sync."
+                              title="Ships with MantleOS (system manifest). Provider, model and prompt are yours and survive upgrades; only tuning params re-sync."
                             >
                               system
                             </span>

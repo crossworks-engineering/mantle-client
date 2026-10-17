@@ -5,8 +5,9 @@ import { Menu, Search } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Button } from '@mantle/web-ui/ui/button';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
+import { FALLBACK_NAME } from '@/lib/brand';
 import { BrandLogo } from './brand-logo';
-import { JackdawRow } from './jackdaw-mark';
+import { MantleLogo } from './mantle-mark';
 import { ProfileMenu, type ProfileIdentity } from './profile-menu';
 
 /**
@@ -47,9 +48,9 @@ export function MobileBar({
 }) {
   // As in the rail: an unnamed brain wears the brand art rather than the
   // brand's name set in type. There is no collapsed state here — the bar is
-  // one line at every width it exists at — so the row lockup is the only form.
+  // one line at every width it exists at — so the wordmark is the only form.
   const named = Boolean(siteName?.trim());
-  const name = siteName?.trim() || 'Jackdaw';
+  const name = siteName?.trim() || FALLBACK_NAME;
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex h-[var(--top-bar-h)] items-center gap-1 border-b border-sidebar-border bg-sidebar px-2 md:hidden">
@@ -87,7 +88,7 @@ export function MobileBar({
                 {name}
               </span>
             ) : (
-              <JackdawRow className="h-7 max-w-[40vw]" visibility={visibility} />
+              <MantleLogo className="h-7 max-w-[40vw]" visibility={visibility} />
             )
           }
         />

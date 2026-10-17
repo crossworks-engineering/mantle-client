@@ -6,11 +6,10 @@ import { APP_VERSION, CONTRACT_VERSION } from '@mantle/web-ui/version';
 import { BuildCard } from './build-card';
 
 /**
- * Both halves of the install, each with its own mark: the Mantle row wears
- * the Mantle badge, as the Jackdaw row wears Jackdaw's.
+ * Both halves of the install, under the one MantleOS mark in the title.
  */
 describe('BuildCard', () => {
-  it('names Mantle with its badge and the version the brain reports', () => {
+  it('names both halves and the version the brain reports', () => {
     const client = new QueryClient();
     client.setQueryData(['server-version'], {
       version: '9.8.7',
@@ -20,7 +19,7 @@ describe('BuildCard', () => {
       createElement(QueryClientProvider, { client, children: createElement(BuildCard) }),
     );
     expect(html).toContain('src="/brand/mantleos-icon.svg"');
-    expect(html).toContain('src="/brand/jackdaw-badge-light.png"');
+    expect(html).toContain('MantleOS Desktop');
     expect(html).toContain('v9.8.7');
     expect(html).toContain(`v${APP_VERSION}`);
   });

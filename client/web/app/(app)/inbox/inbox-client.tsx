@@ -163,8 +163,8 @@ export function InboxClient() {
           Your inbox is empty because nothing&apos;s plugged in.
         </h2>
         <p className="text-sm text-muted-foreground">
-          Connect your first email account and Mantle will start pulling messages, attachments, and
-          metadata into your tree.
+          Connect your first email account and MantleOS will start pulling messages, attachments,
+          and metadata into your tree.
         </p>
         <Button asChild>
           <Link href="/settings/accounts">
@@ -187,7 +187,7 @@ export function InboxClient() {
           No contacts yet — so nothing&apos;s being ingested.
         </h2>
         <p className="text-sm text-muted-foreground">
-          Mantle only pulls mail from people in your contacts — an address like{' '}
+          MantleOS only pulls mail from people in your contacts — an address like{' '}
           <code className="rounded bg-muted px-1">you@example.com</code> or a whole domain like{' '}
           <code className="rounded bg-muted px-1">@example.com</code>. Add a contact to start, or
           discover who&apos;s recently emailed you.

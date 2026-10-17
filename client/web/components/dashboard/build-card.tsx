@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import { APP_VERSION, CONTRACT_VERSION, GIT_SHA } from '@mantle/web-ui/version';
-import { JackdawBadge } from '@/components/layout/rail/jackdaw-mark';
+import { Brain, Monitor } from 'lucide-react';
 import { MantleBadge } from '@/components/layout/rail/mantle-mark';
 import { useServerVersion } from '@/lib/server-version';
 
@@ -11,8 +11,8 @@ import { useServerVersion } from '@/lib/server-version';
  *
  * Since the repo split the interface and the brain ship from separate repos on
  * separate version streams, so ONE version number can no longer describe the
- * install. This card names each: Jackdaw is the build the browser is running
- * (compiled in, `APP_VERSION`), Mantle is whatever brain answers
+ * install. This card names each: MantleOS Desktop is the build the browser is
+ * running (compiled in, `APP_VERSION`), the brain is whatever answers
  * `GET /api/version` right now. Reading them side by side is the only place a
  * mismatched pair is visible today, which is why the pairing lives on the
  * dashboard rather than buried in /debug.
@@ -37,21 +37,21 @@ export function BuildCard() {
     <Card className="@container h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5 text-base">
-          <JackdawBadge className="size-4" /> Build
+          <MantleBadge className="size-4" /> Build
         </CardTitle>
         <CardDescription>The interface and the brain it is talking to</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Row
-            icon={<JackdawBadge className="size-5" />}
-            name="Jackdaw"
+            icon={<Monitor className="size-4 text-muted-foreground" aria-hidden />}
+            name="MantleOS Desktop"
             role="interface"
             version={`v${APP_VERSION}`}
           />
           <Row
-            icon={<MantleBadge className="size-5" />}
-            name="Mantle"
+            icon={<Brain className="size-4 text-muted-foreground" aria-hidden />}
+            name="MantleOS"
             role="brain"
             version={serverVersion}
           />

@@ -26,7 +26,7 @@ export default function PairPage() {
           <Smartphone className="size-4 text-muted-foreground" /> Sign in on your phone
         </div>
         <p className="text-sm text-muted-foreground">
-          This code is for the Jackdaw app. Open Jackdaw on your phone, tap{' '}
+          This code is for the MantleOS phone app. Open MantleOS on your phone, tap{' '}
           <span className="text-card-foreground">Scan a sign-in code</span> on the sign-in screen,
           and point it at the code shown on the web app.
         </p>
