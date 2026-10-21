@@ -160,9 +160,9 @@ describe('the restore (every login, W6b)', () => {
 
   it('reads the item and opens it where its own screen opens it', async () => {
     expect(await itemRestore('pages', ID, ok())).toEqual({ href: `/pages/${ID}` });
-    expect(await itemRestore('draw', ID, ok())).toEqual({ href: `/draw?id=${ID}` });
-    expect(await itemRestore('notes', ID, ok())).toEqual({ href: `/notes?selected=${ID}` });
-    expect(await itemRestore('tables', ID, ok())).toEqual({ href: `/tables?selected=${ID}` });
+    expect(await itemRestore('draw', ID, ok())).toEqual({ href: `/draw/${ID}` });
+    expect(await itemRestore('notes', ID, ok())).toEqual({ href: `/notes/${ID}` });
+    expect(await itemRestore('tables', ID, ok())).toEqual({ href: `/tables/${ID}` });
     expect(reads).toEqual([
       `/api/pages/${ID}`,
       `/api/draws/${ID}`,

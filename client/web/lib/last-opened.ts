@@ -143,15 +143,15 @@ export async function itemRestore(
         return { href: `/pages/${enc}` };
       case 'draw':
         await fetchJson(`/api/draws/${enc}`);
-        // The list with the drawing open, as picking it there opens it; the
-        // editor is one click on from there.
-        return { href: `/draw?id=${enc}` };
+        // The drawing's own address: open to look at, the folders beside it;
+        // the editor is one click on (`?edit=1`).
+        return { href: `/draw/${enc}` };
       case 'notes':
         await fetchJson(`/api/notes/${enc}`);
-        return { href: `/notes?selected=${enc}` };
+        return { href: `/notes/${enc}` };
       case 'tables':
         await fetchJson(`/api/tables/${enc}`);
-        return { href: `/tables?selected=${enc}` };
+        return { href: `/tables/${enc}` };
       case 'files': {
         const body = (await fetchJson(`/api/files/files/${enc}`)) as {
           file?: { parentPath?: unknown };

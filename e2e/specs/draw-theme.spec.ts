@@ -42,7 +42,7 @@ test.describe('draw editor theming', () => {
         // scheme before navigation drives the whole app (and the canvas's
         // theme prop) into that mode — same as a user's OS switch.
         await ownerPage.emulateMedia({ colorScheme: scheme });
-        await ownerPage.goto(`/draw/${draw.id}`);
+        await ownerPage.goto(`/draw/${draw.id}?edit=1`);
 
         // The editor chunk is lazy (~1.8 MB); wait for a real toolbar island.
         const island = ownerPage.locator('.excalidraw .Island').first();

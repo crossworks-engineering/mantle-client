@@ -47,3 +47,37 @@ export function AppSettingsButton({ app }: { app: AppDetail }) {
     </Dialog>
   );
 }
+
+/** The same switches as a dialog the item header's "App settings" tool
+ *  opens (item header contract, 2026-10-21). Show the tool only when
+ *  `useAppSettingsShown(app)`. */
+export function AppSettingsDialog({
+  app,
+  open,
+  onOpenChange,
+}: {
+  app: AppDetail;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>App settings</DialogTitle>
+          <DialogDescription>Who changes its data, and how far its tools go.</DialogDescription>
+        </DialogHeader>
+        <div className="divide-y divide-border">
+          <AppInformationalSwitch app={app} />
+          <AppTrustToolsSwitch app={app} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Whether this login has any app settings to show for the app. */
+export function useAppSettingsShown(app: AppDetail): boolean {
+  const admin = useIsAdminUser();
+  return hasAppSettings(app, admin);
+}

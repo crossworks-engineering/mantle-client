@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Map as MapIcon } from 'lucide-react';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
@@ -20,19 +21,19 @@ import { RecallV2Client, type RecallV2View } from './v2/recall-v2-client';
  * never answered reads as an older brain; a failed refetch keeps the answer it
  * had (see recallScreenOf).
  */
-export function RecallScreen({
-  selected,
-  view,
-  card,
-  q,
-  page,
-}: {
-  selected: string | null;
-  view: string | null;
-  card: string | null;
-  q: string;
-  page: number;
-}) {
+export function RecallScreen() {
+  // The open map is the address (`/recall/<id>`); an old `?selected=` link
+  // still opens it (and the pin moves it to the address). The rest are query
+  // params: `view`, `card`, `q`, `page`.
+  const routeId = useParams<{ id?: string }>().id;
+  const sp = useSearchParams();
+  const selected =
+    (typeof routeId === 'string' ? decodeURIComponent(routeId) : null) ??
+    (sp.get('selected')?.trim() || null);
+  const view = sp.get('view')?.trim() || null;
+  const card = sp.get('card')?.trim() || null;
+  const q = sp.get('q')?.trim() || '';
+  const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
   const shell = useQuery({
     queryKey: ['shell'],
     queryFn: () => apiFetch<unknown>('/api/shell'),

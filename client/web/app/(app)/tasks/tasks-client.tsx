@@ -1,5 +1,7 @@
 'use client';
 
+import { useItemAddress } from '@/components/layout/use-item-address';
+import { useZenMode } from '@/components/layout/zen-mode';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,7 +32,6 @@ import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { useUrlSearchBox } from '@/lib/url-search-box';
-import { syncSelectionParam } from '@/lib/url-sync';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -66,6 +67,8 @@ type Selection = { mode: 'create'; in?: TreeFolder } | { mode: 'view'; id: strin
 type TasksListResponse = { tasks: TaskRow[]; total: number; page: number; pageSize: number };
 
 export function TasksClient() {
+  // Maximise from the item header collapses the list (or the board).
+  const { zen } = useZenMode();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { pending: navPending, go } = useListNav();
@@ -83,7 +86,11 @@ export function TasksClient() {
   const showingArchive = statusParam === 'archived';
   const status = (showingArchive ? 'all' : statusParam) as Status | 'all' | 'active';
   const priority = (searchParams.get('priority')?.trim() || 'all') as Priority | 'all';
-  const urlSelected = searchParams.get('selected')?.trim() || null;
+  // The task in the address: `/tasks/<id>` reads it, `?edit=1` edits it,
+  // beside the list (item header contract, phase 5). An old `?selected=`
+  // link moves there.
+  const address = useItemAddress('tasks', 'selected');
+  const urlSelected = address.id;
   const view: 'list' | 'board' = searchParams.get('view') === 'board' ? 'board' : 'list';
   const isBoard = view === 'board';
 
@@ -211,24 +218,23 @@ export function TasksClient() {
     setSel(tasks[0] ? { mode: 'view', id: tasks[0].id } : { mode: 'create' });
   }, [tasks, sel, isBoard, showTree, activeQuery.isSuccess, activeQuery.data]);
 
-  // Reflect the selected task in the URL (?selected=) as the user clicks
-  // around — copy-/share-/bookmark-able, and aligned with the `/n/<id>`
-  // permalink. `replaceState` (no fetch, no back-stack entry); skip the first
-  // run so a fresh load / deep link isn't rewritten before any interaction.
-  const didSyncMount = useRef(false);
+  // The task in the address is the open one (a link, Back, a pick).
   useEffect(() => {
-    if (!didSyncMount.current) {
-      didSyncMount.current = true;
-      return;
-    }
-    syncSelectionParam('selected', sel?.mode === 'view' ? sel.id : null);
-  }, [sel]);
+    if (address.id) setSel({ mode: 'view', id: address.id });
+  }, [address.id]);
 
   const filtering = !!query || statusParam !== 'active' || priority !== 'all';
   // Stable so the board's memoised cards actually skip: an inline arrow here
   // is a new prop on every render of this client, which defeats the memo on
   // all 100+ cards in a column.
-  const selectTask = useCallback((id: string) => setSel({ mode: 'view', id }), []);
+  const { open: openAddress } = address;
+  const selectTask = useCallback(
+    (id: string) => {
+      setSel({ mode: 'view', id });
+      openAddress(id);
+    },
+    [openAddress],
+  );
 
   const selected = sel?.mode === 'view' ? (tasks.find((t) => t.id === sel.id) ?? null) : null;
 
@@ -256,6 +262,7 @@ export function TasksClient() {
     // Seed the by-id fetch so the tree's detail opens without a round trip.
     queryClient.setQueryData(['tasks', task.id], task);
     setSel({ mode: 'view', id: task.id });
+    address.open(task.id);
     if (fileIn) void fileNew(task.id, fileIn);
     toast.success(`Added “${task.title}”`);
     startTransition(async () => {
@@ -335,6 +342,7 @@ export function TasksClient() {
       return;
     }
     toast.success('Task deleted');
+    if (address.id === id) address.close();
     setTasks((prev) => {
       const nextList = prev.filter((t) => t.id !== id);
       if (isBoard || showTree) {
@@ -384,7 +392,10 @@ export function TasksClient() {
         // just arrived at. Both read as the board opening things by itself.
         // The list re-picks its first row on its own; the board waits for a click.
         setSel(null);
-        go({ view: v === 'board' ? 'board' : null, status: null, page: null, selected: null });
+        go(
+          { view: v === 'board' ? 'board' : null, status: null, page: null, selected: null },
+          '/tasks',
+        );
       }}
       aria-label="View"
     >
@@ -428,6 +439,8 @@ export function TasksClient() {
         onSave={(payload) => patchTask(selected.id, payload)}
         onPatch={(patch) => patchTask(selected.id, patch)}
         onDelete={() => removeTask(selected.id)}
+        editing={address.id === selected.id && address.editing}
+        onEditingChange={(on) => address.open(selected.id, on)}
       />
     ) : openTaskId && openTaskQuery.isPending ? (
       <div className="flex h-full items-center justify-center">
@@ -508,13 +521,21 @@ export function TasksClient() {
     // persistence id — a Kanban board wants far more room than a 340px task
     // list, so the two views must not share a width.
     return (
-      <MasterDetail id="tasks-board" listFills detailFirst list={boardPane} detail={detailPane} />
+      <MasterDetail
+        id="tasks-board"
+        listFills
+        detailFirst
+        listCollapsed={zen}
+        list={boardPane}
+        detail={detailPane}
+      />
     );
   }
 
   return (
     <MasterDetail
       id="tasks"
+      listCollapsed={zen}
       list={
         showTree ? (
           <aside className="flex h-full flex-col bg-muted/20">
@@ -678,7 +699,7 @@ export function TasksClient() {
                           {done && <Check className="size-3" />}
                         </RowButton>
                         <RowButton
-                          onClick={() => setSel({ mode: 'view', id: t.id })}
+                          onClick={() => selectTask(t.id)}
                           data-mark-id={t.id}
                           data-mark-kind="task"
                           data-mark-label={t.title}

@@ -22,13 +22,13 @@ function surfaceFor(type: string, id: string): string {
   const enc = encodeURIComponent(id);
   switch (type) {
     case 'note':
-      return `/notes?selected=${enc}`;
+      return `/notes/${enc}`;
     case 'page':
       return `/pages/${enc}`;
     case 'task':
-      return `/tasks?selected=${enc}`;
+      return `/tasks/${enc}`;
     case 'table':
-      return `/tables?selected=${enc}`;
+      return `/tables/${enc}`;
     case 'app':
       return `/apps/${enc}`;
     case 'event':
@@ -36,11 +36,11 @@ function surfaceFor(type: string, id: string): string {
     case 'file':
       return `/files?file=${enc}`;
     case 'contact':
-      return `/contacts?id=${enc}`;
+      return `/contacts/${enc}`;
     case 'journal':
-      return `/journal?selected=${enc}`;
+      return `/journal/${enc}`;
     case 'formula':
-      return `/formulas?id=${enc}`;
+      return `/formulas/${enc}`;
     case 'draw':
       return `/draw/${enc}`;
     case 'secret':

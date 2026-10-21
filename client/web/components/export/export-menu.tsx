@@ -19,6 +19,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@mantle/web-ui/ui/dropdown-menu';
+import type { HeaderTool } from '@/components/layout/item-header';
 
 type ExportItem = { format: string; label: string; Icon: LucideIcon };
 
@@ -47,6 +48,29 @@ const ITEMS: Record<'page' | 'table' | 'draw', ExportItem[]> = {
     { format: 'pdf', label: 'PDF', Icon: FileType2 },
   ],
 };
+
+/**
+ * The same choices as an item header tool (item header contract): a Download
+ * icon with its menu while it fits, a Download sub-menu in More once folded.
+ */
+export function useExportTool(
+  nodeId: string,
+  kind: 'page' | 'table' | 'draw' = 'page',
+): HeaderTool {
+  const toAsset = useAssetUrl();
+  return {
+    key: 'download',
+    label: 'Download',
+    icon: <Download />,
+    choices: ITEMS[kind].map(({ format, label, Icon }) => ({
+      key: format,
+      label,
+      icon: <Icon />,
+      href: toAsset(`/api/export/${nodeId}?format=${format}`),
+      download: true,
+    })),
+  };
+}
 
 /**
  * Download a content node in a chosen format. `kind` selects the menu: `page`

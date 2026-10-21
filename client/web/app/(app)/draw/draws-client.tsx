@@ -1,12 +1,13 @@
 'use client';
 
+import { itemHref, useItemAddress } from '@/components/layout/use-item-address';
+import { DrawDetailClient } from './[id]/draw-detail-client';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceChips } from '@/components/share/workspace-chips';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, PenTool, Plus, Trash2 } from 'lucide-react';
+import { PenTool, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Input } from '@mantle/web-ui/ui/input';
@@ -24,15 +25,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
-import { ExportMenu } from '@/components/export/export-menu';
+import { useExportTool } from '@/components/export/export-menu';
 import { useListNav } from '@/lib/use-list-nav';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { drawSnapshotClass } from '@/components/draw/snapshot-theme';
-import { GrantAccessControl } from '@/components/share/grant-access';
-import { FocusToggle } from '@/components/layout/focus-toggle';
+import { HeaderPill, ItemHeader, type HeaderTool } from '@/components/layout/item-header';
+import { shareMarksOf } from '@/components/share/access-stack';
+import { AccessSlot } from '@/components/share/access-slot';
 import { DrawViewer } from '@/components/draw/draw-viewer';
 import { Move } from 'lucide-react';
 import { useZenMode } from '@/components/layout/zen-mode';
@@ -115,7 +116,10 @@ export function DrawsClient() {
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const query = searchParams.get('q')?.trim() ?? '';
   const tag = searchParams.get('tag')?.trim() ?? '';
-  const urlId = searchParams.get('id')?.trim() || null;
+  // The drawing in the address (`/draw/<id>`, `?edit=1` to edit); an old
+  // `?id=` link moves there.
+  const address = useItemAddress('draw', 'id');
+  const urlId = address.id;
   const sortParam = searchParams.get('sort');
   const sort: DrawSort = isSort(sortParam) ? sortParam : 'edited';
   const [details, changeDetails] = useCardDetails('mantle_draws_card_details_v1');
@@ -130,6 +134,8 @@ export function DrawsClient() {
   // Selection lives in client state; `select` mirrors it to the URL with
   // replaceState (no navigation) — the param is an entry point, not truth.
   const [selectedId, setSelectedId] = useState<string | null>(urlId);
+  // The tree row a drawing was opened from: its share marks, for Access.
+  const [openedRow, setOpenedRow] = useState<unknown>(null);
   useEffect(() => {
     if (urlId) setSelectedId(urlId);
   }, [urlId]);
@@ -147,7 +153,7 @@ export function DrawsClient() {
       await apiSend(`/api/draws/${deleteTarget.id}`, 'DELETE');
       toast.success('Drawing deleted');
       setSelectedId(null);
-      syncSelectionParam('id', null);
+      if (address.id === deleteTarget.id) address.close();
       await queryClient.invalidateQueries({ queryKey: ['draws'] });
       void queryClient.invalidateQueries({ queryKey: treeKey('draw') });
       setDeleteTarget(null);
@@ -207,7 +213,7 @@ export function DrawsClient() {
 
   function select(id: string) {
     setSelectedId(id);
-    syncSelectionParam('id', id);
+    if (id !== address.id || address.editing) address.open(id);
   }
 
   async function createDraw() {
@@ -224,7 +230,7 @@ export function DrawsClient() {
       }
       await queryClient.invalidateQueries({ queryKey: ['draws'] });
       void queryClient.invalidateQueries({ queryKey: treeKey('draw') });
-      router.push(`/draw/${draw.id}`);
+      router.push(itemHref('draw', draw.id, true));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create the drawing');
       setCreating(false);
@@ -275,7 +281,10 @@ export function DrawsClient() {
                 searchPlaceholder="Search drawings and folders…"
                 newItemInFolder={{ label: 'drawing', onCreate: (f) => openCreate(f) }}
                 actions={<NewButton onClick={() => openCreate()} busy={creating} />}
-                onOpenItem={(item) => select(item.id)}
+                onOpenItem={(item) => {
+                  setOpenedRow(item);
+                  select(item.id);
+                }}
                 itemActions={(item) =>
                   itemAccess(item).manage ? (
                     <DropdownMenuItem
@@ -405,11 +414,17 @@ export function DrawsClient() {
         // No wrapper: the preview is a plain document with no pinned header of
         // its own, so `MasterDetail`'s pane is the only scroller.
         detail={
-          active ? (
+          address.editing && address.id ? (
+            // The editor, beside the folders; it owns its header.
+            <div className="h-full min-h-0">
+              <DrawDetailClient key={address.id} drawId={address.id} />
+            </div>
+          ) : active ? (
             <DrawPreview
               key={active.id}
               draw={active}
-              onOpen={() => router.push(`/draw/${active.id}`)}
+              shares={shareMarksOf(active, openedRow)}
+              onOpen={() => router.push(itemHref('draw', active.id, true))}
               onDelete={() => setDeleteTarget(active)}
             />
           ) : activeId && selectedDrawQuery.isLoading ? (
@@ -504,10 +519,13 @@ export function DrawsClient() {
  */
 function DrawPreview({
   draw,
+  shares,
   onOpen,
   onDelete,
 }: {
   draw: DrawRow;
+  /** The share marks for Access (`shareMarksOf`). */
+  shares: unknown;
   onOpen: () => void;
   onDelete: () => void;
 }) {
@@ -550,149 +568,125 @@ function DrawPreview({
     return () => URL.revokeObjectURL(url);
   }, [svg]);
 
+  const download = useExportTool(draw.id, 'draw');
+  // The snapshot can't be panned or zoomed, so a diagram bigger than the pane
+  // was unreadable without opening it for EDITING. This mounts the real
+  // canvas in upstream's view mode instead: pan and zoom, no editing. Off by
+  // default so browsing the list keeps costing one image rather than the
+  // editor bundle.
+  const panZoom: HeaderTool = {
+    key: 'pan-zoom',
+    label: interactive ? 'Back to the snapshot' : 'Pan and zoom (read-only)',
+    icon: <Move />,
+    pressed: interactive,
+    onSelect: () => setInteractive((v) => !v),
+  };
+  const description = draw.description ?? draw.summary;
+
   return (
-    // Full-width, start-aligned — the same clean preview shell as /pages
-    // (no centred max-w column, actions top-right and out of the way).
-    <div className="w-full space-y-4 p-6">
-      <div data-testid="item-header" className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold">
-            <span aria-hidden>{draw.icon ?? '✏️'}</span>
-            <span className="min-w-0 truncate">{draw.title}</span>
-            {/* Uncommitted edits exist but cannot be previewed: a draft is
-                never rendered (rendering happens at commit, and the sidecar
-                only ever draws the committed scene). Say so, rather than let
-                the last commit read as "my work was lost" — same badge Pages
-                uses for the same situation. */}
-            {draw.hasDraft && (
-              <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                Draft · uncommitted
-              </span>
-            )}
-            <WorkspaceChips item={draw} />
-          </h2>
-          {/* The user's own one-liner wins; the extractor's summary fills in
-              when none was written. */}
-          {(draw.description ?? draw.summary) ? (
-            <p className="mt-1 text-sm text-muted-foreground">{draw.description ?? draw.summary}</p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 gap-2">
-          {isAdminUser ? <ExportMenu nodeId={draw.id} kind="draw" /> : null}
-          {/* Share without opening the canvas. No `beforeEnable` here, unlike
-              the editor's: committing a drawing means capturing its snapshot in
-              the editor, which a list screen cannot do, so the link serves the
-              last COMMITTED scene. The "Draft · uncommitted" badge says when
-              that is behind. */}
-          {access.share ? <GrantAccessControl type="draw" nodeId={draw.id} /> : null}
-          {/* The snapshot can't be panned or zoomed, so a diagram bigger than
-              the pane was unreadable without opening it for EDITING. This
-              mounts the real canvas in upstream's view mode instead: pan and
-              zoom, no editing. Off by default so browsing the list keeps
-              costing one image rather than the editor bundle. */}
-          <Button
-            size="sm"
-            variant={interactive ? 'default' : 'outline'}
-            onClick={() => setInteractive((v) => !v)}
-            aria-pressed={interactive}
-            aria-label={interactive ? 'Show the snapshot' : 'Pan and zoom'}
-            title={
-              interactive
-                ? 'Back to the snapshot'
-                : 'Pan and zoom the drawing (read-only, no editing)'
-            }
-          >
-            <Move />
-          </Button>
-          {/* Survives focus mode (the shell's chrome doesn't), so this is the
-              whole control — enter and exit. */}
-          <FocusToggle />
-          {access.edit ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/draw/${draw.id}`}>
-                <Pencil /> Edit
-              </Link>
-            </Button>
-          ) : null}
-          {access.manage ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={onDelete}
-              aria-label="Delete drawing"
-            >
-              <Trash2 />
-            </Button>
-          ) : null}
-        </div>
-      </div>
+    <div className="w-full">
+      {/* The item header (contract 2026-10-21): one row; the description,
+          tags and the read-only note behind Info. Share without opening the
+          canvas: no `beforeEnable` here, unlike the editor's, because
+          committing means capturing the snapshot in the editor, so the link
+          serves the last COMMITTED scene. The "uncommitted" pill says when
+          that is behind. */}
+      <ItemHeader
+        sticky
+        section="Drawings"
+        visual={<span aria-hidden>{draw.icon ?? '✏️'}</span>}
+        title={draw.title}
+        badges={
+          draw.hasDraft ? (
+            <HeaderPill title="Showing the last commit: your newer edits are saved in the drawing">
+              uncommitted
+            </HeaderPill>
+          ) : null
+        }
+        access={<AccessSlot type="draw" nodeId={draw.id} canShare={access.share} shares={shares} />}
+        tools={isAdminUser ? [panZoom, download] : [panZoom]}
+        onDelete={access.manage ? onDelete : undefined}
+        deleteDisabled={!access.manage}
+        deleteLabel="Delete drawing"
+        move={access.move ? { kind: 'draw', item: { id: draw.id, title: draw.title } } : null}
+        edit={
+          access.edit
+            ? { href: itemHref('draw', draw.id, true), label: 'Edit drawing' }
+            : { disabled: true }
+        }
+        info={{
+          description: description ?? undefined,
+          tags: draw.tags,
+          rows: [
+            ...(note ? [{ label: 'Access', value: note }] : []),
+            ...(draw.hasDraft
+              ? [
+                  {
+                    label: 'Shown',
+                    value: 'The last commit. Newer edits are saved in the drawing.',
+                  },
+                ]
+              : []),
+          ],
+        }}
+        infoLabel="About this drawing"
+      />
 
-      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
-
-      {draw.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {draw.tags.map((t) => (
-            <TagPill key={t} tag={t} />
-          ))}
-        </div>
-      )}
-
-      {draw.hasDraft && (
-        <p className="text-xs text-muted-foreground">
-          Showing the last commit — your newer edits are saved in the drawing.
-        </p>
-      )}
-
-      {/* The viewer reads the SCENE, not the snapshot, so it is offered ahead
+      <div className="space-y-4 p-6">
+        {/* The viewer reads the SCENE, not the snapshot, so it is offered ahead
           of the snapshot checks below — a drawing whose render failed (or that
           an agent authored) can still be looked at properly. */}
-      {interactive ? (
-        // Given real height, because a canvas has no intrinsic one — and more
-        // of it in focus mode, where the shell's chrome is gone.
-        <div
-          className={cn(
-            'w-full overflow-hidden rounded-lg border border-border',
-            zen ? 'h-[calc(100vh-13rem)]' : 'h-[70vh]',
-          )}
-        >
-          {/* Same reasoning as the detail screen: a scene this viewer cannot
+        {interactive ? (
+          // Given real height, because a canvas has no intrinsic one — and more
+          // of it in focus mode, where the shell's chrome is gone.
+          <div
+            className={cn(
+              'w-full overflow-hidden rounded-lg border border-border',
+              zen ? 'h-[calc(100vh-13rem)]' : 'h-[70vh]',
+            )}
+          >
+            {/* Same reasoning as the detail screen: a scene this viewer cannot
               read is one row of a list, not the list. */}
-          <SurfaceErrorBoundary label="this drawing" resetKeys={[draw.id]}>
-            <DrawViewer drawId={draw.id} />
-          </SurfaceErrorBoundary>
-        </div>
-      ) : !isAdminUser && draw.hasSvg ? (
-        // eslint-disable-next-line @next/next/no-img-element -- the raw SVG bytes of a committed snapshot; next/image can't take a signed asset path
-        <img
-          src={toAsset(`/api/draws/${draw.id}/svg?raw=1`)}
-          alt={draw.title}
-          className="h-auto w-full"
-        />
-      ) : isAdminUser && svgQuery.isPending ? (
-        <div className="flex h-64 items-center justify-center">
-          <Spinner />
-        </div>
-      ) : src ? (
-        <>
-          {/* The snapshot fills its pane plainly — no border, mat or box; the
+            <SurfaceErrorBoundary label="this drawing" resetKeys={[draw.id]}>
+              <DrawViewer drawId={draw.id} />
+            </SurfaceErrorBoundary>
+          </div>
+        ) : !isAdminUser && draw.hasSvg ? (
+          // eslint-disable-next-line @next/next/no-img-element -- the raw SVG bytes of a committed snapshot; next/image can't take a signed asset path
+          <img
+            src={toAsset(`/api/draws/${draw.id}/svg?raw=1`)}
+            alt={draw.title}
+            className="h-auto w-full"
+          />
+        ) : isAdminUser && svgQuery.isPending ? (
+          <div className="flex h-64 items-center justify-center">
+            <Spinner />
+          </div>
+        ) : src ? (
+          <>
+            {/* The snapshot fills its pane plainly — no border, mat or box; the
               SVG carries its own background. Still an IMAGE, never inline
               markup (see the loader note above). Under the dark theme it takes
               the canvas's own inversion so the preview matches the editor the
               drawing was made in — view-time only, nothing stored changes. */}
-          {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL of an owner-generated SVG; next/image can't take it */}
-          <img src={src} alt={draw.title} className={cn('h-auto w-full', drawSnapshotClass(svg))} />
-        </>
-      ) : (
-        <PreviewEmpty
-          label={
-            draw.hasDraft
-              ? 'Your uncommitted edits are saved — open the drawing to carry on. The preview appears once you commit.'
-              : 'Nothing to preview yet. Open the drawing and commit to create one.'
-          }
-          onOpen={onOpen}
-        />
-      )}
+            {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL of an owner-generated SVG; next/image can't take it */}
+            <img
+              src={src}
+              alt={draw.title}
+              className={cn('h-auto w-full', drawSnapshotClass(svg))}
+            />
+          </>
+        ) : (
+          <PreviewEmpty
+            label={
+              draw.hasDraft
+                ? 'Your uncommitted edits are saved — open the drawing to carry on. The preview appears once you commit.'
+                : 'Nothing to preview yet. Open the drawing and commit to create one.'
+            }
+            onOpen={onOpen}
+          />
+        )}
+      </div>
     </div>
   );
 }

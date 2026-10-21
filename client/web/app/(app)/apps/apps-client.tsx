@@ -1,5 +1,11 @@
 'use client';
 
+import { itemHref, useItemAddress } from '@/components/layout/use-item-address';
+import { useShellRole } from '@/components/layout/shell-role';
+import { AppDetailClient } from './[id]/app-detail-client';
+import { HeaderPill } from '@/components/layout/item-header';
+import { shareMarksOf } from '@/components/share/access-stack';
+import { AccessSlot } from '@/components/share/access-slot';
 import { itemAccess } from '@/lib/item-access';
 import { noteListAnswer } from '@/lib/workspace-filter';
 import { useListWorkspace } from '@/components/workspaces/use-list-workspace';
@@ -42,9 +48,7 @@ import { ownerAppSandboxProps } from '@/lib/owner-app-sandbox';
 import { useAppToolConfirm } from '@/components/app-nav/use-app-tool-confirm';
 import { AppLoader } from '@/components/app-nav/app-loader';
 import { SurfaceErrorBoundary } from '@mantle/web-ui/ui/error-boundary';
-import { GrantAccessControl } from '@/components/share/grant-access';
 import { WorkspaceChips } from '@/components/share/workspace-chips';
-import { FocusToggle } from '@/components/layout/focus-toggle';
 import { useZenMode } from '@/components/layout/zen-mode';
 import type { AppDetail, AppRow } from '@mantle/client-types';
 import { RecentlyDeletedApps } from '@/components/app-nav/recently-deleted-apps';
@@ -72,7 +76,7 @@ import {
   wasInTrash,
 } from '@/lib/apps-screen';
 import { useIsAdminUser, useIsBrainOwner } from '@/components/workspaces/use-shell-workspaces';
-import { AppItemHeader, HeaderIconButton } from '@/components/app-nav/app-item-header';
+import { AppItemHeader } from '@/components/app-nav/app-item-header';
 
 type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };
 
@@ -98,6 +102,8 @@ export function AppsClient() {
   const queryClient = useQueryClient();
   const { pending, go } = useListNav();
   const { zen } = useZenMode();
+  // The tree row an app was opened from: its share marks, for Access.
+  const [openedRow, setOpenedRow] = useState<unknown>(null);
   const toolConfirm = useAppToolConfirm();
   // Every login has this screen (W6b). The app editor, the app nav, the
   // trash list and the owner runner are an Admin user's; anyone else runs
@@ -108,7 +114,12 @@ export function AppsClient() {
 
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const query = searchParams.get('q')?.trim() ?? '';
-  const urlId = appsUrlId(searchParams);
+  // The owner's screen gives the open app its own address (`/apps/<id>`,
+  // `?edit=1` to edit); a member's keeps `?id=` beside the tree, as
+  // `/apps/<id>` is a member's runner.
+  const member = useShellRole() === 'member';
+  const address = useItemAddress('apps', member ? undefined : 'id');
+  const urlId = member ? appsUrlId(searchParams) : (address.id ?? appsUrlId(searchParams));
 
   // The item tree when this brain serves it for apps (docs/folder-tree.md);
   // the paged list for a brain before it, or if a tree call 404s.
@@ -132,9 +143,29 @@ export function AppsClient() {
   useEffect(() => {
     if (urlId) setSelectedId(urlId);
   }, [urlId]);
+  // Duplicate (the More menu): the brain copies the app with its code,
+  // builds and data; the copy opens beside the folders.
+  async function duplicate(id: string) {
+    try {
+      const { app: copy } = await apiSend<{ app: { id: string } }>(
+        `/api/apps/${id}/duplicate`,
+        'POST',
+        {},
+      );
+      toast.success('App duplicated');
+      void queryClient.invalidateQueries({ queryKey: ['apps'] });
+      void queryClient.invalidateQueries({ queryKey: treeKey('apps') });
+      select(copy.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not duplicate the app');
+    }
+  }
+
   function select(id: string | null) {
     setSelectedId(id);
-    syncSelectionParam('id', id);
+    if (member) syncSelectionParam('id', id);
+    else if (!id) address.close();
+    else if (id !== address.id || address.editing) address.open(id);
   }
 
   // The paged list's search box; the tree's lives in the tree.
@@ -236,7 +267,10 @@ export function AppsClient() {
                     searchPlaceholder="Search apps and folders…"
                     actions={newButton}
                     newItemInFolder={{ label: 'app', icon: AppWindow, onCreate: openCreate }}
-                    onOpenItem={(item) => select(item.id)}
+                    onOpenItem={(item) => {
+                      setOpenedRow(item);
+                      select(item.id);
+                    }}
                     itemActions={(item) =>
                       itemAccess(item).manage ? (
                         <DropdownMenuItem
@@ -342,13 +376,20 @@ export function AppsClient() {
           </div>
         }
         detail={
-          active ? (
+          !member && address.editing && address.id ? (
+            // The editor, beside the folders; it owns its header.
+            <div className="h-full min-h-0">
+              <AppDetailClient key={address.id} id={address.id} />
+            </div>
+          ) : active ? (
             <AppPreview
               key={active.id}
               app={active}
+              shares={shareMarksOf(active, openedRow)}
               admin={admin}
               confirmTool={toolConfirm.confirmTool}
               onDelete={() => setDeleteTarget({ id: active.id, title: active.title })}
+              onDuplicate={() => void duplicate(active.id)}
             />
           ) : activeId && activeQuery.isPending ? (
             <div className="flex h-full items-center justify-center">
@@ -377,7 +418,7 @@ export function AppsClient() {
               void queryClient.invalidateQueries({ queryKey: ['apps'] });
               void queryClient.invalidateQueries({ queryKey: treeKey('apps') });
               // The editor is an Admin user's; anyone else sees it here.
-              if (admin) router.push(`/apps/${id}`);
+              if (admin) router.push(itemHref('apps', id, true));
               else select(id);
             }}
           />
@@ -414,15 +455,21 @@ export function AppsClient() {
  */
 function AppPreview({
   app,
+  shares,
   admin,
   confirmTool,
   onDelete,
+  onDuplicate,
 }: {
   app: AppDetail;
+  /** The share marks for Access (`shareMarksOf`). */
+  shares: unknown;
   /** An Admin user: the owner runner, the app nav and the editor link. */
   admin: boolean;
   confirmTool: ReturnType<typeof useAppToolConfirm>['confirmTool'];
   onDelete: () => void;
+  /** Copy the app (its code, builds and data) and open the copy. */
+  onDuplicate: () => void;
 }) {
   // The face the app-nav read holds: a look changed in the editor shows here
   // before this app's own query is read again.
@@ -440,61 +487,45 @@ function AppPreview({
     // flex-1 here sizes to its content and the sandbox's `h-full` collapses to
     // the iframe's intrinsic 150px.
     <div className="flex h-full min-h-0 flex-col">
+      {/* The item header (contract 2026-10-21): one row; the description,
+          the data pills, the home-app tag and a trash note behind Info. Access
+          is the level control once there is a published build to share; the
+          pencil opens the app (build, code, history). */}
       <AppItemHeader
+        section="Apps"
         icon={icon}
         color={color}
         title={app.title}
-        badges={
-          <>
-            {app.hasDraft && (
-              <Badge variant="secondary" className="shrink-0">
-                unpublished draft
-              </Badge>
-            )}
-            <AppTreePills id={app.id} />
-            <WorkspaceChips item={app} hub={app.isHub} />
-          </>
+        badges={app.hasDraft ? <HeaderPill>unpublished draft</HeaderPill> : null}
+        access={
+          <AccessSlot
+            type="app"
+            nodeId={app.id}
+            canShare={hasBuild && access.share}
+            shares={shares}
+            hint={APP_SHARE_HINT}
+          />
         }
-        subtitle={app.description ?? app.summary}
-        iconActions={
-          <>
-            {/* The level control, once there is a published build to share. */}
-            {hasBuild && access.share && (
-              <GrantAccessControl type="app" nodeId={app.id} hint={APP_SHARE_HINT} iconOnly />
-            )}
-            {/* Survives focus mode (the shell's chrome does not), so it is the
-                whole control: enter and exit. */}
-            <FocusToggle />
-            {admin && access.edit ? (
-              <HeaderIconButton
-                label="Open app"
-                tooltip="Open the app: build, code, history"
-                asChild
-              >
-                <Link href={`/apps/${app.id}`}>
-                  <Pencil />
-                </Link>
-              </HeaderIconButton>
-            ) : null}
-            {access.manage ? (
-              <HeaderIconButton
-                label="Delete app"
-                className="text-muted-foreground hover:text-destructive-ink"
-                onClick={onDelete}
-              >
-                <Trash2 />
-              </HeaderIconButton>
-            ) : null}
-          </>
+        onDelete={access.manage ? onDelete : undefined}
+        deleteDisabled={!access.manage}
+        deleteLabel="Delete app"
+        move={access.move ? { kind: 'apps', item: { id: app.id, title: app.title } } : null}
+        onDuplicate={admin ? onDuplicate : undefined}
+        edit={
+          admin && access.edit
+            ? { href: itemHref('apps', app.id, true), label: 'Open app' }
+            : { disabled: true, label: 'Open app' }
         }
+        info={{
+          description: app.description ?? app.summary ?? undefined,
+          rows: [
+            ...(admin ? [{ label: 'Data', value: <AppTreePills id={app.id} /> }] : []),
+            ...(app.isHub ? [{ label: 'Home app', value: 'Members see it as their home.' }] : []),
+            ...(wasInTrash(app) ? [{ label: 'Note', value: APP_WAS_IN_TRASH }] : []),
+          ],
+        }}
+        infoLabel="About this app"
       />
-      {wasInTrash(app) ? (
-        // W6b contract item 4: an app that was in its author's own trash.
-        // Delete is the header's Delete.
-        <p className="shrink-0 border-b border-border px-4 py-2 text-sm text-muted-foreground">
-          {APP_WAS_IN_TRASH}
-        </p>
-      ) : null}
       {/* Below `md` the panes stack and the detail has no height of its own,
           so the app is given most of the screen there. */}
       <div data-testid="app-preview-run" className="h-[75dvh] min-h-0 md:h-auto md:flex-1">
@@ -520,7 +551,7 @@ function AppPreview({
                 This app has no published build yet. Open it to build and commit it, or ask the
                 assistant to build it.
                 <Button asChild size="sm" variant="outline">
-                  <Link href={`/apps/${app.id}`}>
+                  <Link href={itemHref('apps', app.id, true)}>
                     <Pencil />
                     Open
                   </Link>

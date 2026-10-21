@@ -25,6 +25,7 @@
  * dropped term and always worth stopping for.
  */
 
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { useCallback, useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { AlertTriangle, Check, Plus, Sigma, Trash2 } from 'lucide-react';
@@ -320,46 +321,49 @@ export function FormulaEditor({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
-        <div className="min-w-0 flex-1">
-          {/* §8 anatomy, at the entity-title scale: the glyph sits inside the
-              h2 and the title truncates. This pane replaces the whole screen
-              rather than sitting in the detail column, so it is a detail
-              header, not §6c's boxed composer card. */}
-          <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold text-foreground">
-            <Sigma className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="min-w-0 truncate">{formulaId ? 'Edit formula' : 'New formula'}</span>
-          </h2>
-          {/* `findings` is computed from the last draft that PARSED, so while
-              the YAML is broken it reports zero problems — and the header read
-              "0 problem(s) to fix." beside a red box. Name the real blocker. */}
-          <p className="text-xs text-muted-foreground">
+      {/* The item header (contract 2026-10-21): the same one row as the
+          formula's read view, in edit mode. Whether the spec validates is the
+          pill; Save the one word button; the pressed pencil leaves editing
+          (Cancel). Form / YAML is the editor's own switch, so it opens the
+          content, not the header. */}
+      <ItemHeader
+        section="Formulas"
+        visual={<Sigma className="size-4" aria-hidden />}
+        title={title || (formulaId ? 'Untitled formula' : 'New formula')}
+        badges={
+          // `findings` is computed from the last draft that PARSED, so while
+          // the YAML is broken it reports zero problems. Name the real blocker.
+          <HeaderPill>
             {valid
-              ? 'The spec validates.'
+              ? 'valid'
               : yamlError
-                ? 'The YAML does not parse.'
-                : `${findings.errors.length} problem(s) to fix.`}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+                ? 'YAML does not parse'
+                : `${findings.errors.length} to fix`}
+          </HeaderPill>
+        }
+        textActions={
+          <SubmitButton pending={saving} onClick={save} disabled={!valid} size="sm">
+            <Check />
+            {formulaId ? 'Save formula' : 'Create formula'}
+          </SubmitButton>
+        }
+        edit={{
+          onSelect: onCancel,
+          pressed: true,
+          label: formulaId ? 'Done editing: discard unsaved' : 'Cancel the new formula',
+        }}
+        infoLabel="About this formula"
+      />
+
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_320px]">
+        {/* ── editing surface ─────────────────────────────────────────── */}
+        <div className="min-h-0 space-y-6 overflow-y-auto scrollbar-thin px-6 py-5">
           <Tabs value={mode} onValueChange={(v) => switchMode(v as 'form' | 'source')}>
             <TabsList>
               <TabsTrigger value="form">Form</TabsTrigger>
               <TabsTrigger value="source">YAML</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <SubmitButton pending={saving} onClick={save} disabled={!valid}>
-            {formulaId ? 'Save formula' : 'Create formula'}
-          </SubmitButton>
-        </div>
-      </header>
-
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_320px]">
-        {/* ── editing surface ─────────────────────────────────────────── */}
-        <div className="min-h-0 space-y-6 overflow-y-auto scrollbar-thin px-6 py-5">
           {mode === 'source' ? (
             // §6b: the parse failure was a loose red `<p>` — visible, but never
             // announced, and it left the box itself looking fine. All three

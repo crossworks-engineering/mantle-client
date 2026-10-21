@@ -245,18 +245,24 @@ test('the item caps: a Team page moves and deletes; a read page and a snapshot c
   await expect(menu.getByRole('menuitem', { name: 'Delete…' })).toBeVisible();
   await page.keyboard.press('Escape');
 
-  // The read page: no Edit, no Grant Access, no Delete, and the note.
+  // The read page: the pencil and the bin greyed in their slots (item header
+  // contract: nothing beside them moves), and the note behind Info.
   await main.getByText(PAGES.survey.title, { exact: true }).click();
   const header = page.getByTestId('item-header');
   await expect(header.getByText(PAGES.survey.title)).toBeVisible();
+  await header.getByRole('button', { name: 'About this page' }).click();
   await expect(page.getByText('You can read this item. You cannot change it.')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(header.getByRole('link', { name: 'Edit' })).toHaveCount(0);
-  await expect(header.getByRole('button', { name: 'Delete page' })).toHaveCount(0);
+  await expect(header.getByRole('button', { name: 'Edit' })).toBeDisabled();
+  await expect(header.getByRole('button', { name: 'Delete page' })).toBeDisabled();
 
-  // The copy: the copy note and Delete, no Edit.
+  // The copy: the copy note (behind Info) and Delete, no Edit.
   await main.getByText(COPY.title, { exact: true }).click();
   await expect(header.getByText(COPY.title)).toBeVisible();
+  await header.getByRole('button', { name: 'About this page' }).click();
   await expect(page.getByText(/This is your copy of an item that was accepted/)).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(header.getByRole('link', { name: 'Edit' })).toHaveCount(0);
   await expect(header.getByRole('button', { name: 'Delete page' })).toBeVisible();
 

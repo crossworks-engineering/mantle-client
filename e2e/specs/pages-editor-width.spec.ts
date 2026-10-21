@@ -58,7 +58,7 @@ test.describe('pages editor width', () => {
 
       // Wide enough that a 920px opening measure leaves real slack to eat.
       await ownerPage.setViewportSize({ width: 1920, height: 1080 });
-      await ownerPage.goto(`/pages/${row.id}`);
+      await ownerPage.goto(`/pages/${row.id}?edit=1`);
 
       const prose = ownerPage.locator('.ProseMirror').first();
       await expect(prose).toBeVisible({ timeout: 20_000 });

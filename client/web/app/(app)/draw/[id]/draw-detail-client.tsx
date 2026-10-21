@@ -1,10 +1,11 @@
 'use client';
 
+import { itemHref } from '@/components/layout/use-item-address';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, GitCommitHorizontal, Loader2, Trash2, Undo2 } from 'lucide-react';
+import { GitCommitHorizontal, Undo2 } from 'lucide-react';
 import type {
   AppState,
   BinaryFiles,
@@ -15,10 +16,10 @@ import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/ty
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
-import { EmojiPicker } from '@/components/emoji-picker';
-import { FocusToggle } from '@/components/layout/focus-toggle';
-import { GrantAccessControl } from '@/components/share/grant-access';
-import { ExportMenu } from '@/components/export/export-menu';
+import { ItemHeader } from '@/components/layout/item-header';
+import { DraftPill, HeaderIconPicker, HeaderTitleField } from '@/components/layout/header-fields';
+import { AccessSlot } from '@/components/share/access-slot';
+import { useExportTool } from '@/components/export/export-menu';
 import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { DrawViewer } from '@/components/draw/draw-viewer';
@@ -512,6 +513,8 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
     }
   }, [reverting, initial.id, queryClient, toast]);
 
+  const download = useExportTool(initial.id, 'draw');
+
   const confirmDelete = async () => {
     deletedRef.current = true; // suppress the unmount flush
     try {
@@ -531,117 +534,120 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
     <div className="flex h-full min-h-0 flex-col">
       <SetPageTitle title={title || 'Untitled drawing'} />
 
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 gap-y-1.5 border-b border-border bg-background/60 px-4 py-2 backdrop-blur">
-        <BackLink href="/draw">All drawings</BackLink>
-        <div className="flex flex-wrap items-center gap-2 gap-y-1.5">
-          {readOnly ? null : (
-            <>
-              <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
-              <Button size="sm" onClick={() => void commit()} disabled={!dirty || committing}>
-                <GitCommitHorizontal /> Commit
-              </Button>
-            </>
-          )}
-          {/* Share publishes first (beforeEnable=commit, the pages pattern) so
-              the minted link never points at a stale or absent snapshot. */}
-          {access.share ? (
-            <GrantAccessControl type="draw" nodeId={initial.id} beforeEnable={commit} />
-          ) : null}
-          {isAdminUser ? <ExportMenu nodeId={initial.id} kind="draw" /> : null}
-          {/* Focus mode: the shell hides its chrome and this toolbar stays, so
-              this button is the whole control — enter AND exit. Leaving the
-              drawing exits too (the shell drops focus on navigation). */}
-          <FocusToggle />
-          {dirty && !readOnly && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={() => void revertDraft()}
-              disabled={reverting}
-              title="Revert the drawing to the last commit"
-            >
-              <Undo2 /> {reverting ? 'Reverting…' : 'Revert'}
-            </Button>
-          )}
-          {access.manage ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={() => setDeleteOpen(true)}
-              aria-label="Delete drawing"
-              title="Delete this drawing"
-            >
-              <Trash2 />
-            </Button>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Header row — icon + name left, tags right. One compact full-width
-          row, start-aligned, no band box (the toolbar above draws the
-          separating border) — the same layout as the pages header, so the
-          two workspaces read identically. */}
-      {readOnly ? (
-        <header className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-1.5">
-          <span className="flex size-8 shrink-0 items-center justify-center text-xl" aria-hidden>
-            {icon ?? '✏️'}
-          </span>
-          <h1 className="min-w-48 flex-1 truncate text-lg font-semibold">{title}</h1>
-          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-          {tags.length > 0 ? (
-            <div className="ml-auto flex flex-wrap gap-1">
-              {tags.map((t) => (
-                <TagPill key={t} tag={t} />
-              ))}
-            </div>
-          ) : null}
-          <p className="w-full text-xs text-muted-foreground">{readOnlyNote(access)}</p>
-        </header>
-      ) : (
-        <header className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-1.5">
-          <EmojiPicker
-            value={icon}
+      {/* The item header (contract 2026-10-21): the same one row as the
+          read view, in edit mode. Title and icon edited in place; the
+          description and tags behind Info; Commit the one word button; the
+          pressed pencil leaves editing. Access publishes first
+          (beforeEnable=commit) so a link never points at a stale or absent
+          snapshot. */}
+      <ItemHeader
+        sticky
+        section="Drawings"
+        visual={
+          <HeaderIconPicker
+            icon={icon}
+            fallback="✏️"
             onSelect={setIcon}
             onClear={() => setIcon(null)}
-            align="start"
-            trigger={
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Change drawing icon"
-                title="Change icon"
-                className="size-8 shrink-0 rounded-lg p-0 text-xl leading-none hover:bg-accent"
-              >
-                {icon ?? '✏️'}
-              </Button>
-            }
+            label="Change drawing icon"
+            readOnly={readOnly}
           />
-          <Input
+        }
+        title={
+          <HeaderTitleField
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={setTitle}
             placeholder="New drawing"
-            aria-label="Drawing title"
-            className="h-auto min-w-48 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-lg font-semibold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-lg"
+            label="Drawing title"
+            readOnly={readOnly}
           />
-          {/* Middle column: the user-authored one-liner (data.description),
-            not the extractor's summary; it saves with the metadata. */}
-          <Input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add a description…"
-            aria-label="Drawing description"
-            className="h-auto min-w-40 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-sm text-muted-foreground shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-sm"
+        }
+        badges={
+          readOnly ? null : <DraftPill committing={committing} saving={draftSaving} dirty={dirty} />
+        }
+        textActions={
+          readOnly ? null : (
+            <Button size="sm" onClick={() => void commit()} disabled={!dirty || committing}>
+              <GitCommitHorizontal /> Commit
+            </Button>
+          )
+        }
+        access={
+          <AccessSlot
+            type="draw"
+            nodeId={initial.id}
+            canShare={access.share}
+            shares={initial}
+            beforeEnable={commit}
           />
-          <TagInput
-            value={tags}
-            onChange={setTags}
-            placeholder="Add tags…"
-            className="ml-auto min-h-8 w-auto max-w-full basis-auto justify-end border-transparent bg-transparent px-0 py-0 sm:max-w-[45%]"
-          />
-        </header>
-      )}
+        }
+        tools={[
+          ...(dirty && !readOnly
+            ? [
+                {
+                  key: 'revert',
+                  label: reverting ? 'Reverting…' : 'Revert the drawing to the last commit',
+                  icon: <Undo2 />,
+                  onSelect: () => void revertDraft(),
+                },
+              ]
+            : []),
+          ...(isAdminUser ? [download] : []),
+        ]}
+        onDelete={access.manage ? () => setDeleteOpen(true) : undefined}
+        deleteDisabled={!access.manage}
+        deleteLabel="Delete drawing"
+        edit={
+          readOnly
+            ? { disabled: true }
+            : {
+                href: itemHref('draw', initial.id),
+                pressed: true,
+                label: 'Done editing: back to the drawing',
+              }
+        }
+        info={{
+          rows: readOnly
+            ? [
+                ...(description ? [{ label: 'About', value: description }] : []),
+                {
+                  label: 'Tags',
+                  value:
+                    tags.length > 0 ? (
+                      <span className="flex flex-wrap gap-1">
+                        {tags.map((t) => (
+                          <TagPill key={t} tag={t} />
+                        ))}
+                      </span>
+                    ) : (
+                      'none'
+                    ),
+                },
+                { label: 'Access', value: readOnlyNote(access) },
+              ]
+            : [
+                {
+                  label: 'About',
+                  // The user-authored one-liner (data.description), not the
+                  // extractor's summary; it saves with the metadata.
+                  value: (
+                    <Input
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Add a description…"
+                      aria-label="Drawing description"
+                      className="h-8"
+                    />
+                  ),
+                },
+                {
+                  label: 'Tags',
+                  value: <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />,
+                },
+              ],
+        }}
+        infoLabel="About this drawing"
+      />
 
       <div className="min-h-0 flex-1">
         {readOnly ? (
@@ -692,38 +698,5 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function StatusIndicator({
-  committing,
-  draftSaving,
-  dirty,
-}: {
-  committing: boolean;
-  draftSaving: boolean;
-  dirty: boolean;
-}) {
-  if (committing) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Committing…
-      </span>
-    );
-  }
-  if (draftSaving) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Saving…
-      </span>
-    );
-  }
-  if (dirty) {
-    return <span className="text-xs text-muted-foreground">Draft · uncommitted</span>;
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Check className="size-3.5" aria-hidden /> Committed
-    </span>
   );
 }

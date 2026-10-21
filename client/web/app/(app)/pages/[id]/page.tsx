@@ -1,11 +1,10 @@
-import { PageDetailClient } from './page-detail-client';
-
 /**
- * /pages/[id] — the page editor (auth gate only). The page row + backlinks are
- * client-fetched via `GET /api/pages/[id]` and `…/backlinks` (Phase 2 · Task 4).
- * No wrapper: the client owns its chromeless canvas and its own measure.
+ * /pages/[id] — one page, read (`/pages/<id>`) or edited (`?edit=1`), INSIDE
+ * the Pages screen: `../layout.tsx` renders `PagesClient`, which reads the id
+ * from the route and puts the page or its editor in the detail pane, so the
+ * folders stay. Nothing renders here. Every `/pages/<id>` link (search,
+ * mentions, last opened, a copied address) opens the page to read.
  */
-export default async function PageEditorRoute({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  return <PageDetailClient pageId={id} />;
+export default function PageEditorRoute() {
+  return null;
 }

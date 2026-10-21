@@ -1,5 +1,6 @@
 'use client';
 
+import { onTreeMoveRequest } from './tree-move-request';
 import { GrantAccessDialog } from '@/components/share/grant-access';
 import {
   MoveGrantsDialog,
@@ -368,6 +369,14 @@ export function ItemTree({
   const [deleteTarget, setDeleteTarget] = useState<TreeFolder | null>(null);
   const [lookFor, setLookFor] = useState<{ key: string; folder: TreeFolder } | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
+  // "Move to folder…" asked from the item header's More menu.
+  useEffect(
+    () =>
+      onTreeMoveRequest(kind, (item) =>
+        setMoveTarget({ type: 'items', items: [item], from: undefined }),
+      ),
+    [kind],
+  );
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   // W5b: a folder's Access panel, and a move that changes who sees items.
   const [accessFolder, setAccessFolder] = useState<TreeFolder | null>(null);

@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Editor, JSONContent } from '@tiptap/react';
 import {
-  Check,
   ChevronDown,
   ChevronUp,
   FileCode2,
@@ -15,19 +14,17 @@ import {
   GitCompareArrows,
   Highlighter,
   Loader2,
-  Trash2,
   Undo2,
 } from 'lucide-react';
 import { computeDiffOverlay, type DiffOverlay } from '@mantle/content-core/page-diff';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
-import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
-import { FocusToggle } from '@/components/layout/focus-toggle';
-import { EmojiPicker } from '@/components/emoji-picker';
+import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
+import { DraftPill, HeaderIconPicker, HeaderTitleField } from '@/components/layout/header-fields';
+import { AccessSlot } from '@/components/share/access-slot';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
-import { GrantAccessControl } from '@/components/share/grant-access';
-import { ExportMenu } from '@/components/export/export-menu';
+import { useExportTool } from '@/components/export/export-menu';
 import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { TagPill } from '@mantle/web-ui/tag-pill';
@@ -128,7 +125,7 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
   // the cached entry — a brief spinner beats losing the first typed characters.
   if (pageQuery.isPending || (!pageQuery.isFetchedAfterMount && !pageQuery.isError)) {
     return (
-      <div className="flex h-dvh items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <Spinner />
       </div>
     );
@@ -832,67 +829,186 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     router.push('/pages');
   };
 
-  // Header row — page chrome (icon + name left, tags right). One compact
-  // full-width row, start-aligned, no band box: the toolbar above already
-  // draws the separating border, so this stays flat and cheap on height.
-  // Wraps on narrow panes (tags drop under the title). Rendered identically
-  // by both pane layouts (rich-editor scroller and the flat markdown pane).
-  const headerBand = readOnly ? (
-    <header className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-1.5">
-      <span className="flex size-8 shrink-0 items-center justify-center text-xl" aria-hidden>
-        {icon ?? '📄'}
-      </span>
-      <h1 className="min-w-48 flex-1 truncate text-lg font-semibold">{title}</h1>
-      {tags.length > 0 ? (
-        <div className="ml-auto flex flex-wrap gap-1">
-          {tags.map((t) => (
-            <TagPill key={t} tag={t} />
-          ))}
-        </div>
-      ) : null}
-      <p className="w-full text-xs text-muted-foreground">{readOnlyNote(access)}</p>
-    </header>
-  ) : (
-    <header className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-1.5">
-      {/* The icon is still the picker trigger (click to pick or remove);
-          saves with the title/tags metadata and reflects to the
-          tree/list/share via rowOf. */}
-      <EmojiPicker
-        value={icon}
-        onSelect={setIcon}
-        onClear={() => setIcon(null)}
-        align="start"
-        trigger={
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label="Change page icon"
-            title="Change icon"
-            className="size-8 shrink-0 rounded-lg p-0 text-xl leading-none hover:bg-accent"
-          >
-            {icon ?? '📄'}
-          </Button>
-        }
-      />
-      <Input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={onTitleKeyDown}
-        placeholder="New page"
-        aria-label="Page title"
-        // No box — only a bottom underline that appears (primary) while
-        // editing. A 2px transparent bottom border is always reserved so
-        // focusing doesn't shift the layout.
-        className="h-auto min-w-48 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-lg font-semibold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-lg"
-      />
-      <TagInput
-        value={tags}
-        onChange={setTags}
-        placeholder="Add tags…"
-        className="ml-auto min-h-8 w-auto max-w-full basis-auto justify-end border-transparent bg-transparent px-0 py-0 sm:max-w-[45%]"
-      />
-    </header>
+  // The item header (contract 2026-10-21): the SAME one row as the read
+  // view, in edit mode. The title is edited in place here (no title band);
+  // the icon is the picker; tags and the read-only note sit behind Info.
+  // Commit is the one word button. The pressed pencil leaves editing (back to
+  // the page in the list, which reopens it). The editor's own toggles
+  // (Review, Mark, Revert, Markdown) are the page's tools and fold into More
+  // as the pane narrows; marker navigation sits in the content.
+  const iconPicker = (
+    <HeaderIconPicker
+      icon={icon}
+      fallback="📄"
+      onSelect={setIcon}
+      onClear={() => setIcon(null)}
+      label="Change page icon"
+      readOnly={readOnly}
+    />
   );
+  const titleField = (
+    <HeaderTitleField
+      value={title}
+      onChange={setTitle}
+      onKeyDown={onTitleKeyDown}
+      placeholder="New page"
+      label="Page title"
+      readOnly={readOnly}
+    />
+  );
+  const status = readOnly ? null : (
+    <DraftPill committing={committing} saving={draftSaving} dirty={docDirty} />
+  );
+  const download = useExportTool(initial.id);
+  const tools: HeaderTool[] = [
+    ...(docDirty && !readOnly
+      ? [
+          {
+            key: 'review',
+            label:
+              reviewChangeCount > 0
+                ? `Review changes (${reviewChangeCount})`
+                : 'Review changes: what Commit will publish',
+            icon: <GitCompareArrows />,
+            pressed: reviewMode,
+            onSelect: () => setReviewMode((v) => !v),
+          },
+        ]
+      : []),
+    {
+      key: 'mark',
+      label:
+        marks.length > 0
+          ? `Marker (${marks.length} marked)`
+          : 'Marker: mark sections for Pages to focus on',
+      icon: <Highlighter />,
+      pressed: markerMode,
+      onSelect: () => setMarkerMode((v) => !v),
+    },
+    ...(readOnly
+      ? []
+      : [
+          {
+            key: 'markdown',
+            label: 'Edit as markdown',
+            icon: <FileCode2 />,
+            pressed: mdMode,
+            onSelect: toggleMarkdown,
+          },
+        ]),
+    ...(docDirty && !readOnly
+      ? [
+          {
+            key: 'revert',
+            label: reverting ? 'Reverting…' : 'Revert the draft to the last commit',
+            icon: <Undo2 />,
+            onSelect: () => void revertDraft(),
+          },
+        ]
+      : []),
+    ...(isAdminUser ? [download] : []),
+  ];
+  const header = (
+    <ItemHeader
+      sticky
+      section="Pages"
+      visual={iconPicker}
+      title={titleField}
+      badges={status}
+      textActions={
+        readOnly ? null : (
+          <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
+            <GitCommitHorizontal /> Commit
+          </Button>
+        )
+      }
+      access={
+        <AccessSlot
+          type="page"
+          nodeId={initial.id}
+          canShare={access.share}
+          shares={initial}
+          beforeEnable={commit}
+        />
+      }
+      tools={tools}
+      onDelete={access.manage ? () => setDeleteOpen(true) : undefined}
+      deleteDisabled={!access.manage}
+      deleteLabel="Delete page"
+      edit={
+        readOnly
+          ? { disabled: true }
+          : { href: `/pages/${initial.id}`, pressed: true, label: 'Done editing: back to the page' }
+      }
+      info={{
+        rows: [
+          {
+            label: 'Tags',
+            value: readOnly ? (
+              tags.length > 0 ? (
+                <span className="flex flex-wrap gap-1">
+                  {tags.map((t) => (
+                    <TagPill key={t} tag={t} />
+                  ))}
+                </span>
+              ) : (
+                'none'
+              )
+            ) : (
+              <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
+            ),
+          },
+          ...(readOnly ? [{ label: 'Access', value: readOnlyNote(access) }] : []),
+        ],
+      }}
+      infoLabel="About this page"
+    />
+  );
+
+  // Marker navigation belongs to the content: shown while there are marked
+  // or edited sections to step through.
+  const markerBar =
+    marks.length > 0 || highlightCount > 0 ? (
+      <div className="flex items-center gap-2 px-6 pt-4 text-xs text-muted-foreground">
+        {highlightCount > 0 && (
+          <div className="flex items-center rounded-md border border-border">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="rounded-r-none"
+              onClick={() => gotoHighlight(-1)}
+              aria-label="Previous highlight"
+              title="Jump to previous highlight (marked + edited)"
+            >
+              <ChevronUp />
+            </Button>
+            <span className="px-1 tabular-nums" aria-hidden>
+              {highlightCount}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="rounded-l-none"
+              onClick={() => gotoHighlight(1)}
+              aria-label="Next highlight"
+              title="Jump to next highlight (marked + edited)"
+            >
+              <ChevronDown />
+            </Button>
+          </div>
+        )}
+        {marks.length > 0 && (
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => setMarks([])}
+            title="Clear all marked sections"
+          >
+            Clear {marks.length} marked
+          </Button>
+        )}
+      </div>
+    ) : null;
 
   return (
     // `h-full` (not min-h-full) is required so the side-by-side flex
@@ -906,123 +1022,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     <div className="flex h-full min-h-0 flex-col">
       <SetPageTitle title={title || 'Untitled page'} />
 
-      {/* flex-wrap: the toolbar must stay fully reachable when the docked
-          assistant column narrows this pane — buttons flow to a second row
-          instead of clipping (Mark/Revert/Share used to fall off the edge). */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 gap-y-1.5 border-b border-border bg-background/60 px-4 py-2 backdrop-blur">
-        <BackLink href="/pages">All pages</BackLink>
-        <div className="flex flex-wrap items-center gap-2 gap-y-1.5">
-          {readOnly ? null : (
-            <>
-              <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={docDirty} />
-              <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
-                <GitCommitHorizontal /> Commit
-              </Button>
-            </>
-          )}
-          {docDirty && !readOnly && (
-            <Button
-              size="sm"
-              variant={reviewMode ? 'default' : 'outline'}
-              onClick={() => setReviewMode((v) => !v)}
-              aria-pressed={reviewMode}
-              title="Review changes — show what Commit will publish vs the live page"
-            >
-              <GitCompareArrows /> Review{reviewChangeCount > 0 ? ` · ${reviewChangeCount}` : ''}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant={markerMode ? 'default' : 'outline'}
-            onClick={() => setMarkerMode((v) => !v)}
-            aria-pressed={markerMode}
-            aria-label="Toggle focus marker"
-            title="Marker — drag the left gutter to mark sections for Pages to focus on"
-          >
-            <Highlighter /> Mark{marks.length > 0 ? ` · ${marks.length}` : ''}
-          </Button>
-          {marks.length > 0 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setMarks([])}
-              title="Clear all marked sections"
-            >
-              Clear
-            </Button>
-          )}
-          {highlightCount > 0 && (
-            <div className="flex items-center rounded-md border border-border">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-9 rounded-r-none"
-                onClick={() => gotoHighlight(-1)}
-                aria-label="Previous highlight"
-                title="Jump to previous highlight (marked + edited)"
-              >
-                <ChevronUp />
-              </Button>
-              <span className="px-1 text-xs tabular-nums text-muted-foreground" aria-hidden>
-                {highlightCount}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-9 rounded-l-none"
-                onClick={() => gotoHighlight(1)}
-                aria-label="Next highlight"
-                title="Jump to next highlight (marked + edited)"
-              >
-                <ChevronDown />
-              </Button>
-            </div>
-          )}
-          {docDirty && !readOnly && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={() => void revertDraft()}
-              disabled={reverting}
-              title="Revert the entire draft to the last commit (Pages' edits and any unsaved typing)"
-            >
-              <Undo2 /> {reverting ? 'Reverting…' : 'Revert'}
-            </Button>
-          )}
-          {readOnly ? null : (
-            <Button
-              size="sm"
-              variant={mdMode ? 'default' : 'outline'}
-              onClick={toggleMarkdown}
-              aria-pressed={mdMode}
-              disabled={aiPending}
-              title="Edit the page as raw markdown"
-            >
-              <FileCode2 /> Markdown
-            </Button>
-          )}
-          {isAdminUser ? <ExportMenu nodeId={initial.id} /> : null}
-          {access.share ? (
-            <GrantAccessControl type="page" nodeId={initial.id} beforeEnable={commit} />
-          ) : null}
-          {/* Focus mode: the shell hides its chrome and this toolbar stays, so
-              this button is the whole control — enter AND exit. Leaving the
-              page exits too (the shell drops focus on navigation). */}
-          <FocusToggle />
-          {access.manage ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={() => setDeleteOpen(true)}
-              title="Delete page"
-            >
-              <Trash2 /> Delete
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      {header}
 
       {/* The editor scrolls in its own pane. Min-h-0 on the wrapper is required
           per ui-style-guide.md so it doesn't hijack the page scroll. Pages-assist
@@ -1035,7 +1035,6 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
              here — markdown source is not prose and wants the pane — and
              backlinks stay hidden until the user toggles back. */
           <>
-            {headerBand}
             {aiPending && (
               <div className="flex items-center gap-2 border-b border-border bg-primary/10 px-6 py-2 text-sm">
                 <Loader2 className="size-4 shrink-0 animate-spin text-primary-ink" aria-hidden />
@@ -1066,7 +1065,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
              224px outline aside. */
           <MeasurePane id="page-editor" defaultSize="920px" minSize="520px">
             <div className="h-full min-h-0 overflow-y-auto scrollbar-thin">
-              {headerBand}
+              {markerBar}
 
               {/* Document body — outline rail (left, wide screens) + content
                   that fills the rest of the measure. */}
@@ -1151,39 +1150,6 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function StatusIndicator({
-  committing,
-  draftSaving,
-  dirty,
-}: {
-  committing: boolean;
-  draftSaving: boolean;
-  dirty: boolean;
-}) {
-  if (committing) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Committing…
-      </span>
-    );
-  }
-  if (draftSaving) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Saving…
-      </span>
-    );
-  }
-  if (dirty) {
-    return <span className="text-xs text-muted-foreground">Draft · uncommitted</span>;
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Check className="size-3.5" aria-hidden /> Committed
-    </span>
   );
 }
 

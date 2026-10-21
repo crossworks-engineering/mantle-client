@@ -1,12 +1,9 @@
-import { RedirectTo } from '@/components/layout/shell-role';
-
 /**
- * The table editor now lives in the master-detail shell at /tables (resizable,
- * collapsible list on the left, grid on the right). Keep this route as a
- * permanent deep-link → it just selects the table in the shell. The same
- * for every login (phase W6b).
+ * /tables/[id] — one table, at its own address, INSIDE the Tables screen:
+ * `../layout.tsx` renders `TablesShell`, which reads the id from the route,
+ * so the folders stay. Nothing renders here. Old `?selected=` links move
+ * here.
  */
-export default async function TableByIdRedirect({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  return <RedirectTo href={`/tables?selected=${encodeURIComponent(id)}`} />;
+export default function TableItemRoute() {
+  return null;
 }

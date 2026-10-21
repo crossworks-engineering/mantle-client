@@ -1,11 +1,11 @@
 'use client';
 
+import { ItemHeader } from '@/components/layout/item-header';
+import { HeaderTitleField } from '@/components/layout/header-fields';
+import { Check, NotebookPen } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
 import { KINDS } from '@mantle/content-core/journal-options';
-import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
-import { Input } from '@mantle/web-ui/ui/input';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
@@ -154,21 +154,34 @@ export function JournalEditor({
       {/* Sticky against the PANE's scroller now (MasterDetail owns it), not an
           inner one of its own — two nested scrollers put two bars side by side
           and made the sticky header stick to the wrong one. */}
-      <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background/60 px-4 py-2 backdrop-blur">
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Title (optional)"
-          aria-label="Journal entry title"
-          className="h-9 flex-1 border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
-        />
-        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
-          <X /> Cancel
-        </Button>
-        <SubmitButton pending={saving} size="sm">
-          Save journal entry
-        </SubmitButton>
-      </header>
+      {/* The item header (contract 2026-10-21): the same one row as the
+          entry's read view, in edit mode. The title is edited in place; Save
+          the one word button; the pressed pencil leaves editing (Cancel). */}
+      <ItemHeader
+        sticky
+        section="Journal"
+        visual={<NotebookPen className="size-4" aria-hidden />}
+        title={
+          <HeaderTitleField
+            value={title}
+            onChange={setTitle}
+            placeholder="Title (optional)"
+            label="Journal entry title"
+          />
+        }
+        textActions={
+          <SubmitButton pending={saving} size="sm">
+            <Check />
+            Save journal entry
+          </SubmitButton>
+        }
+        edit={{
+          onSelect: onCancel,
+          pressed: true,
+          label: creating ? 'Cancel the new entry (Esc)' : 'Done editing: discard unsaved (Esc)',
+        }}
+        infoLabel="About this entry"
+      />
 
       <div className="px-4 py-4">
         <FieldGroup>

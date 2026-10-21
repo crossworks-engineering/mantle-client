@@ -1,5 +1,6 @@
 'use client';
 
+import { useItemAddress } from '@/components/layout/use-item-address';
 import { noteListAnswer } from '@/lib/workspace-filter';
 import { useListWorkspace } from '@/components/workspaces/use-list-workspace';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
@@ -7,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { WorkspaceChips } from '@/components/share/workspace-chips';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, Pencil, Sparkles, Trash2 } from 'lucide-react';
+import { FileText, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
@@ -19,13 +20,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
-import { GrantAccessControl } from '@/components/share/grant-access';
-import { ExportButton } from '@/components/export/export-button';
+import { shareMarksOf } from '@/components/share/access-stack';
+import { AccessSlot } from '@/components/share/access-slot';
+import { useExportTool } from '@/components/export/export-menu';
+import { ItemHeader } from '@/components/layout/item-header';
+import { useZenMode } from '@/components/layout/zen-mode';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { TagPill } from '@mantle/web-ui/tag-pill';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
-import { syncSelectionParam } from '@/lib/url-sync';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
@@ -119,12 +122,14 @@ export function NotesClient() {
   const pageSize = listQuery.data?.pageSize ?? 50;
   const tags = useMemo(() => listQuery.data?.tags ?? [], [listQuery.data?.tags]);
 
-  // Selection + edit mode seed from the URL (a `/notes/[id]` deep-link redirects
-  // to `?selected=&edit=1`), then live as local state.
-  const [selectedId, setSelectedId] = useState<string | null>(
-    searchParams.get('selected')?.trim() || null,
-  );
-  const [editing, setEditing] = useState<boolean>(searchParams.get('edit') === '1');
+  // The note in the address: `/notes/<id>` reads it, `/notes/<id>?edit=1`
+  // edits it, beside the folders (item header contract, phase 5). An old
+  // `?selected=` link moves there. A NEW note has no address until it saves.
+  const address = useItemAddress('notes', 'selected');
+  const [selectedId, setSelectedId] = useState<string | null>(address.id);
+  useEffect(() => {
+    if (address.id) setSelectedId(address.id);
+  }, [address.id]);
 
   // A deep-linked note may sit outside the current list slice — fetch it so the
   // right pane can open it even when it's not in `notes`.
@@ -134,10 +139,16 @@ export function NotesClient() {
     enabled: !!selectedId && !notes.some((n) => n.id === selectedId),
   });
   const [creating, setCreating] = useState(false);
+  // Editing: a new note, or the open one at its edit address.
+  const editing = creating || address.editing;
   // "New note inside" a tree folder: where the note goes once it is saved.
   const [createIn, setCreateIn] = useState<TreeFolder | null>(null);
   const { fileNew, confirm: fileConfirm } = useFileNewItem('notes', 'note');
-  const [focus, setFocus] = useState(false);
+  // Maximise from the item header (the shell's focus mode) collapses the
+  // folders, in the read view and the editor alike.
+  const { zen } = useZenMode();
+  // The tree row a note was opened from: its share marks, for Access.
+  const [openedRow, setOpenedRow] = useState<unknown>(null);
   const [dirty, setDirty] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Pick<NoteRow, 'id' | 'title'> | null>(null);
   /** Pending action held back by the unsaved-changes guard. */
@@ -183,41 +194,37 @@ export function NotesClient() {
   );
 
   const exitEdit = useCallback(() => {
-    setEditing(false);
     setCreating(false);
-    setFocus(false);
     setDirty(false);
-  }, []);
+    if (address.id && address.editing) address.open(address.id);
+  }, [address]);
 
   const selectNote = (id: string) =>
     guard(() => {
       setSelectedId(id);
-      syncSelectionParam('selected', id);
-      exitEdit();
+      setCreating(false);
+      setDirty(false);
+      if (id !== address.id || address.editing) address.open(id);
     });
 
   const startCreate = (folder: TreeFolder | null = null) =>
     guard(() => {
       setCreateIn(folder);
       setCreating(true);
-      setEditing(true);
-      setFocus(false);
     });
 
   const startEdit = () => {
     setCreating(false);
-    setEditing(true);
+    if (selected) address.open(selected.id, true);
   };
 
   const onSaved = (saved: NoteRow) => {
     const fileIn = creating ? createIn : null;
     setCreateIn(null);
-    setEditing(false);
     setCreating(false);
-    setFocus(false);
     setDirty(false);
     setSelectedId(saved.id);
-    syncSelectionParam('selected', saved.id);
+    address.open(saved.id);
     void queryClient.invalidateQueries({ queryKey: ['notes'] });
     void queryClient.invalidateQueries({ queryKey: treeKey('notes') });
     if (fileIn) void fileNew(saved.id, fileIn);
@@ -266,7 +273,7 @@ export function NotesClient() {
     if (selected?.id === deleteTarget.id) exitEdit();
     if (selectedId === deleteTarget.id) {
       setSelectedId(null);
-      syncSelectionParam('selected', null);
+      if (address.id === deleteTarget.id) address.close();
     }
     setDeleteTarget(null);
     void queryClient.invalidateQueries({ queryKey: ['notes'] });
@@ -324,7 +331,7 @@ export function NotesClient() {
         // Focus mode. The list COLLAPSES rather than unmounting, so the search
         // box, scroll position and page survive the round trip — see the prop's
         // note in master-detail.tsx.
-        listCollapsed={focus}
+        listCollapsed={zen}
         list={
           showTree ? (
             <aside className="flex h-full flex-col bg-muted/20">
@@ -337,7 +344,10 @@ export function NotesClient() {
                 searchPlaceholder="Search notes and folders…"
                 newItemInFolder={{ label: 'note', onCreate: (f) => startCreate(f) }}
                 actions={<NewButton onClick={() => startCreate()} />}
-                onOpenItem={(item) => selectNote(item.id)}
+                onOpenItem={(item) => {
+                  setOpenedRow(item);
+                  selectNote(item.id);
+                }}
                 itemActions={(item) =>
                   itemAccess(item).manage ? (
                     <DropdownMenuItem
@@ -463,8 +473,12 @@ export function NotesClient() {
             {editing && (creating || itemAccess(selected).edit) ? (
               <NoteEditor
                 note={creating ? null : selected}
-                focus={focus}
-                onToggleFocus={() => setFocus((f) => !f)}
+                shares={selected ? shareMarksOf(selected, openedRow) : undefined}
+                onDelete={
+                  !creating && selected && itemAccess(selected).manage
+                    ? () => setDeleteTarget(selected)
+                    : undefined
+                }
                 onSaved={onSaved}
                 onCancel={() => guard(exitEdit)}
                 onDirtyChange={setDirty}
@@ -472,6 +486,7 @@ export function NotesClient() {
             ) : selected ? (
               <NotePreview
                 note={selected}
+                shares={shareMarksOf(selected, openedRow)}
                 onEdit={startEdit}
                 onDelete={() => setDeleteTarget(selected)}
               />
@@ -537,10 +552,13 @@ export function NotesClient() {
 /** Right-pane read view — de-boxed: full-width prose, sticky header, own scroll. */
 function NotePreview({
   note,
+  shares,
   onEdit,
   onDelete,
 }: {
   note: NoteRow;
+  /** The share marks for Access (`shareMarksOf`). */
+  shares: unknown;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -550,47 +568,32 @@ function NotePreview({
   // (never on a snapshot copy), no Grant Access or Delete without mayManage.
   const access = itemAccess(note);
   const readNote = readOnlyNote(access);
+  const download = useExportTool(note.id);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header
-        data-testid="item-header"
-        className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-background/60 px-6 py-3 backdrop-blur"
-      >
-        <div className="min-w-0 flex-1">
-          <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold">
-            <span className="min-w-0 truncate">{note.title}</span>
-            <WorkspaceChips item={note} />
-          </h2>
-          {note.tags.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {note.tags.map((t) => (
-                <TagPill key={t} tag={t} />
-              ))}
-            </div>
-          )}
-          {readNote ? <p className="mt-1.5 text-xs text-muted-foreground">{readNote}</p> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {isAdminUser ? <ExportButton nodeId={note.id} label="Word" /> : null}
-          {access.share ? <GrantAccessControl type="note" nodeId={note.id} /> : null}
-          {access.edit ? (
-            <Button variant="outline" size="sm" onClick={onEdit}>
-              <Pencil /> Edit
-            </Button>
-          ) : null}
-          {access.manage ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={onDelete}
-              aria-label="Delete note"
-            >
-              <Trash2 />
-            </Button>
-          ) : null}
-        </div>
-      </header>
+      {/* The item header (contract 2026-10-21): one row; tags, dates and the
+          read-only note behind Info. */}
+      <ItemHeader
+        section="Notes"
+        visual={<FileText className="size-4" aria-hidden />}
+        title={note.title || 'Untitled note'}
+        access={<AccessSlot type="note" nodeId={note.id} canShare={access.share} shares={shares} />}
+        tools={isAdminUser ? [download] : []}
+        onDelete={access.manage ? onDelete : undefined}
+        deleteDisabled={!access.manage}
+        deleteLabel="Delete note"
+        move={access.move ? { kind: 'notes', item: { id: note.id, title: note.title } } : null}
+        edit={access.edit ? { onSelect: onEdit, label: 'Edit note' } : { disabled: true }}
+        info={{
+          tags: note.tags,
+          rows: [
+            ...(readNote ? [{ label: 'Access', value: readNote }] : []),
+            { label: 'Updated', value: formatDateTime(note.updatedAt) },
+            { label: 'Created', value: formatDateTime(note.createdAt) },
+          ],
+        }}
+        infoLabel="About this note"
+      />
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scrollbar-thin px-6 py-5">
         <article className="prose prose-sm dark:prose-invert max-w-none prose-accent prose-document">
@@ -602,8 +605,10 @@ function NotePreview({
               {access.edit ? (
                 <>
                   {' '}
-                  Click <span className="font-medium not-italic text-foreground">Edit</span> to add
-                  some.
+                  Click the <span className="font-medium not-italic text-foreground">
+                    pencil
+                  </span>{' '}
+                  to add some.
                 </>
               ) : null}
             </p>
@@ -620,10 +625,6 @@ function NotePreview({
             <p className="text-sm text-muted-foreground">{note.summary}</p>
           </aside>
         )}
-
-        <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-          Updated {formatDateTime(note.updatedAt)} · created {formatDateTime(note.createdAt)}
-        </div>
       </div>
     </div>
   );

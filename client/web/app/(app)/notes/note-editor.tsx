@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Maximize2, Minimize2, X } from 'lucide-react';
-import { Button } from '@mantle/web-ui/ui/button';
+import { Check, FileText } from 'lucide-react';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
-import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
+import { HeaderTitleField } from '@/components/layout/header-fields';
+import { AccessSlot } from '@/components/share/access-slot';
+import { itemAccess } from '@/lib/item-access';
 import { MarkdownEditor } from '@/components/markdown-editor';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ApiError, apiSend } from '@mantle/web-ui/api-fetch';
@@ -30,17 +32,19 @@ export type NoteRow = {
  */
 export function NoteEditor({
   note,
-  focus,
-  onToggleFocus,
+  shares,
   onSaved,
   onCancel,
+  onDelete,
   onDirtyChange,
 }: {
   note: NoteRow | null;
-  focus: boolean;
-  onToggleFocus: () => void;
+  /** The share marks for Access (`shareMarksOf`). */
+  shares?: unknown;
   onSaved: (saved: NoteRow) => void;
   onCancel: () => void;
+  /** The header's Delete (an existing note the login may delete). */
+  onDelete?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const toast = useToast();
@@ -119,36 +123,61 @@ export function NoteEditor({
       }}
       className="flex h-full min-h-0 flex-col"
     >
-      <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background/60 px-4 py-2 backdrop-blur">
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Untitled note"
-          autoFocus
-          aria-label="Note title"
-          className="h-9 flex-1 border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-9"
-          onClick={onToggleFocus}
-          aria-label={focus ? 'Exit focus mode' : 'Focus mode'}
-          title={focus ? 'Exit focus mode' : 'Focus mode (full width)'}
-        >
-          {focus ? <Minimize2 /> : <Maximize2 />}
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
-          <X /> Cancel
-        </Button>
-        <SubmitButton pending={saving} size="sm">
-          {creating ? 'Create note' : 'Save note'}
-        </SubmitButton>
-      </header>
+      {/* The item header (contract 2026-10-21): the same one row as the
+          read view, in edit mode. The title is edited in place; tags behind
+          Info; Save the one word button; the pressed pencil leaves editing
+          (Cancel); Focus is the shell's maximise, the same slot as anywhere. */}
+      <ItemHeader
+        section="Notes"
+        visual={<FileText className="size-4" aria-hidden />}
+        title={
+          <HeaderTitleField
+            value={title}
+            onChange={setTitle}
+            placeholder="Untitled note"
+            label="Note title"
+            // A new note starts in its title. An existing one does not: a
+            // focused long title scrolls to its end and reads cut from the left.
+            autoFocus={creating}
+          />
+        }
+        badges={dirty ? <HeaderPill>unsaved</HeaderPill> : null}
+        textActions={
+          <SubmitButton pending={saving} size="sm">
+            <Check />
+            {creating ? 'Create note' : 'Save note'}
+          </SubmitButton>
+        }
+        access={
+          note ? (
+            <AccessSlot
+              type="note"
+              nodeId={note.id}
+              canShare={itemAccess(note).share}
+              shares={shares ?? note}
+            />
+          ) : undefined
+        }
+        onDelete={onDelete}
+        deleteDisabled={!creating && !onDelete}
+        deleteLabel="Delete note"
+        edit={{
+          onSelect: onCancel,
+          pressed: true,
+          label: creating ? 'Cancel the new note (Esc)' : 'Done editing: discard unsaved (Esc)',
+        }}
+        info={{
+          rows: [
+            {
+              label: 'Tags',
+              value: <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />,
+            },
+          ],
+        }}
+        infoLabel="About this note"
+      />
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
-        <TagInput value={tags} onChange={setTags} placeholder="Add tags — comma or Enter…" />
         <MarkdownEditor
           value={content}
           onChange={setContent}

@@ -58,7 +58,7 @@ test.describe('draw editor fonts', () => {
     try {
       for (const [i, scheme] of (['light', 'dark'] as const).entries()) {
         await ownerPage.emulateMedia({ colorScheme: scheme });
-        await ownerPage.goto(`/draw/${draw.id}`);
+        await ownerPage.goto(`/draw/${draw.id}?edit=1`);
         await expect(ownerPage.locator('.excalidraw .Island').first()).toBeVisible({
           timeout: 30_000,
         });

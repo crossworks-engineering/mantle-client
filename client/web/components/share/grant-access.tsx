@@ -56,6 +56,7 @@ import { useShellWorkspaces, useIsAdminUser } from '@/components/workspaces/use-
 import { useWorkspaces } from '@/components/workspaces/workspace-queries';
 import { looksById } from '@/lib/workspace-look';
 import { AccessLinkBox } from './access-link-box';
+import { AccessStack, accessStackLabel } from './access-stack';
 import { LinkServedList } from './link-served-list';
 import { ContactShareSection, OpenLinkDataWarning } from './contact-share-section';
 import { GrantAccessView } from './grant-access-view';
@@ -143,6 +144,7 @@ export function GrantAccessControl({
   nodeId,
   type,
   iconOnly = false,
+  stackOf,
   beforeEnable,
   hint,
 }: {
@@ -150,6 +152,9 @@ export function GrantAccessControl({
   /** The item's kind ('app' words the Write switch for its data). */
   type?: string;
   iconOnly?: boolean;
+  /** The item header's Access slot: the list row whose workspaces and open
+   *  link the button shows beside its icon (`AccessStack`). */
+  stackOf?: unknown;
   /** Run before the item first reaches another workspace or a link: a page
    *  or drawing commits its draft so what others read is what is on screen. */
   beforeEnable?: () => Promise<void> | void;
@@ -162,17 +167,29 @@ export function GrantAccessControl({
     <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          {/* `icon-sm`, not `icon`: this sits in detail headers next to
-            `size="sm"` buttons. */}
-          <Button
-            variant="outline"
-            size={iconOnly ? 'icon-sm' : 'sm'}
-            aria-label="Access"
-            title={iconOnly ? 'Access: who can see this' : undefined}
-          >
-            <Share2 />
-            {!iconOnly && 'Access'}
-          </Button>
+          {stackOf !== undefined ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2"
+              aria-label={accessStackLabel(stackOf)}
+              title={accessStackLabel(stackOf)}
+            >
+              <AccessStack item={stackOf} />
+            </Button>
+          ) : (
+            /* `icon-sm`, not `icon`: this sits in detail headers next to
+            `size="sm"` buttons. */
+            <Button
+              variant="outline"
+              size={iconOnly ? 'icon-sm' : 'sm'}
+              aria-label="Access"
+              title={iconOnly ? 'Access: who can see this' : undefined}
+            >
+              <Share2 />
+              {!iconOnly && 'Access'}
+            </Button>
+          )}
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))]">
           {open && (

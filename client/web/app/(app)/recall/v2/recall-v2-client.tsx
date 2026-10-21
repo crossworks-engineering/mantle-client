@@ -1,8 +1,10 @@
 'use client';
 
+import { itemHref } from '@/components/layout/use-item-address';
+import { useZenMode } from '@/components/layout/zen-mode';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Map as MapIcon, Plus, Search } from 'lucide-react';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
@@ -119,7 +121,20 @@ function RecallV2View({
   q: string;
   page: number;
 }) {
-  const { pending: navPending, go } = useListNav();
+  // Maximise from the item header collapses the list.
+  const { zen } = useZenMode();
+  const { pending: navPending, go: goList } = useListNav();
+  // The open map is the address (`/recall/<id>`, item header contract phase
+  // 5): a change of `selected` moves the path; every other param stays a
+  // query param.
+  const go = useCallback(
+    (patch: Record<string, string | number | null | undefined>) => {
+      if (!('selected' in patch)) return goList(patch);
+      const { selected: to, ...rest } = patch;
+      goList(rest, to ? itemHref('recall', String(to)) : '/recall');
+    },
+    [goList],
+  );
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   // "New map inside" a tree folder: where the new map goes.
@@ -190,7 +205,6 @@ function RecallV2View({
   // and an unsaved card with it. In the tree it waits for every map, since
   // it picks the first native one of all of them.
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const pin = mapToPin(
     selected,
@@ -200,9 +214,10 @@ function RecallV2View({
   useEffect(() => {
     if (!pin) return;
     const params = new URLSearchParams(searchParams.toString());
-    params.set('selected', pin);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [pin, pathname, router, searchParams]);
+    params.delete('selected');
+    const rest = params.toString();
+    router.replace(`${itemHref('recall', pin)}${rest ? `?${rest}` : ''}`, { scroll: false });
+  }, [pin, router, searchParams]);
 
   /** Open another map, asking first when the open card has unsaved edits. */
   const openMap = (id: string) => {
@@ -371,7 +386,13 @@ function RecallV2View({
   return (
     <>
       <div className="relative h-full min-h-0">
-        <MasterDetail id="recall-v2" list={showTree ? tree : list} detail={detail} detailFills />
+        <MasterDetail
+          id="recall-v2"
+          listCollapsed={zen}
+          list={showTree ? tree : list}
+          detail={detail}
+          detailFills
+        />
       </div>
       {createDialog}
       <AlertDialog

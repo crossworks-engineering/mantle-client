@@ -1,5 +1,7 @@
 'use client';
 
+import { useItemAddress } from '@/components/layout/use-item-address';
+import { useZenMode } from '@/components/layout/zen-mode';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -74,6 +76,8 @@ type EventsListResponse = {
 };
 
 export function EventsClient() {
+  // Maximise from the item header collapses the list.
+  const { zen } = useZenMode();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { pending: navPending, go } = useListNav();
@@ -116,6 +120,16 @@ export function EventsClient() {
   // null = "not yet defaulted"; the effect below selects the first event (or
   // create mode) once the list loads.
   const [sel, setSel] = useState<Selection>(null);
+  // The event in the address (`/events/<id>`, `?edit=1` to edit): copy it to
+  // share it. Picking an event opens its address.
+  const address = useItemAddress('events');
+  useEffect(() => {
+    if (address.id) setSel({ mode: 'view', id: address.id });
+  }, [address.id]);
+  const view = (id: string) => {
+    setSel({ mode: 'view', id });
+    if (id !== address.id || address.editing) address.open(id);
+  };
   const { fileNew, confirm: fileConfirm } = useFileNewItem('events', 'event');
 
   // The tree's rows are not events, so the open one is fetched on its own
@@ -208,7 +222,7 @@ export function EventsClient() {
     setEvents((p) => [event, ...p]);
     // Seed the by-id fetch so the tree's detail opens without a round trip.
     queryClient.setQueryData(['events', event.id], event);
-    setSel({ mode: 'view', id: event.id });
+    view(event.id);
     if (fileIn) void fileNew(event.id, fileIn);
     toast.success(`Saved “${event.title}”`);
     startTransition(async () => {
@@ -228,6 +242,7 @@ export function EventsClient() {
   const onDeleted = (id: string) => {
     const next = all.filter((e) => e.id !== id);
     setEvents((p) => p.filter((e) => e.id !== id));
+    if (address.id === id) address.close();
     if (showTree) setSel(null);
     else setSel(next[0] ? { mode: 'view', id: next[0].id } : { mode: 'create' });
     startTransition(async () => {
@@ -244,7 +259,7 @@ export function EventsClient() {
     return (
       <ListCard
         key={e.id}
-        onClick={() => setSel({ mode: 'view', id: e.id })}
+        onClick={() => view(e.id)}
         data-mark-id={e.id}
         data-mark-kind="event"
         data-mark-label={e.title}
@@ -339,6 +354,8 @@ export function EventsClient() {
         event={selected}
         onUpdated={onUpdated}
         onDeleted={() => onDeleted(selected.id)}
+        editing={address.id === selected.id && address.editing}
+        onEditingChange={(on) => address.open(selected.id, on)}
       />
     ) : openEventId && openEventQuery.isPending ? (
       <div className="flex h-full items-center justify-center">
@@ -353,6 +370,7 @@ export function EventsClient() {
   return (
     <MasterDetail
       id="events"
+      listCollapsed={zen}
       list={
         showTree ? (
           <aside className="flex h-full flex-col bg-muted/20">
@@ -373,7 +391,7 @@ export function EventsClient() {
                   <Plus /> New
                 </Button>
               }
-              onOpenItem={(item) => setSel({ mode: 'view', id: item.id })}
+              onOpenItem={(item) => view(item.id)}
               onUnsupported={() => setTreeGone(true)}
             />
           </aside>

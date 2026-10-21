@@ -1,8 +1,9 @@
 'use client';
 
+import { ItemHeader } from '@/components/layout/item-header';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Settings2, Sparkles, Trash2, X } from 'lucide-react';
+import { AlertTriangle, EyeOff, Map as MapIcon, Send, Settings2, Sparkles, X } from 'lucide-react';
 import type {
   RecallCardDetailDTO,
   RecallMapDetailDTO,
@@ -180,7 +181,7 @@ function Workbench({
       await qc.invalidateQueries({ queryKey: recallKeys.maps });
       void qc.invalidateQueries({ queryKey: treeKey('recall') });
       toast.success('Map deleted.');
-      go({ selected: null, card: null, view: null });
+      go({ selected: null, card: null, view: null }, '/recall');
     } catch (err) {
       toast.error(writeErrorText(err, 'Could not delete the map.'));
     }
@@ -250,53 +251,68 @@ function Workbench({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold">
-            <span className="min-w-0 truncate">{map.title}</span>
-            {!map.published && <StatePill state="draft" />}
-          </h2>
-          <p className="truncate text-xs text-muted-foreground">
-            <span className="font-mono">{map.slug}</span>
-            {map.folder && <> in {map.folder}</>}
-            {' · '}
-            {map.enterWhen}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {map.published ? (
+      {/* The item header (contract 2026-10-21): one row; the slug, folder
+          and when to enter it behind Info. A draft says why in its pill and
+          in Info, not in a banner. Publish is the word button; the map's
+          settings are its own tool. */}
+      <ItemHeader
+        section="Recall"
+        visual={<MapIcon className="size-4" aria-hidden />}
+        title={map.title}
+        badges={
+          map.published ? null : (
+            <span title="Draft: no agent can see this map until it is published">
+              <StatePill state="draft" />
+            </span>
+          )
+        }
+        textActions={
+          map.published ? (
             <Button
               variant="outline"
               size="sm"
               onClick={() => publish(false)}
               disabled={write.pending}
             >
+              <EyeOff />
               Unpublish
             </Button>
           ) : (
             <Button size="sm" onClick={() => publish(true)} disabled={write.pending}>
+              <Send />
               Publish
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Map settings"
-            onClick={() => setSettings(true)}
-          >
-            <Settings2 />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Delete map"
-            className="text-muted-foreground hover:text-destructive-ink"
-            onClick={() => setDeleting(true)}
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </header>
+          )
+        }
+        tools={[
+          {
+            key: 'settings',
+            label: 'Map settings',
+            icon: <Settings2 />,
+            onSelect: () => setSettings(true),
+          },
+        ]}
+        onDelete={() => setDeleting(true)}
+        deleteLabel="Delete map"
+        move={{ kind: 'recall', item: { id: map.id, title: map.title } }}
+        info={{
+          description: map.enterWhen,
+          path: map.folder ? [map.folder] : [],
+          rows: [
+            { label: 'Slug', value: <span className="font-mono">{map.slug}</span> },
+            ...(map.published
+              ? []
+              : [
+                  {
+                    label: 'Draft',
+                    value:
+                      'No agent can see this map until it is published. An agent created it, or it was unpublished.',
+                  },
+                ]),
+          ],
+        }}
+        infoLabel="About this map"
+      />
 
       {refreshFailed && (
         <p className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-xs text-muted-foreground">
@@ -304,13 +320,6 @@ function Workbench({
           <Button size="xs" variant="ghost" onClick={onRetry}>
             Retry
           </Button>
-        </p>
-      )}
-
-      {!map.published && (
-        <p className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-          Draft: no agent can see this map until it is published. An agent created it, or it was
-          unpublished.
         </p>
       )}
 

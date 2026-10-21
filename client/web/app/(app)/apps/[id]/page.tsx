@@ -1,18 +1,13 @@
 import { RoleSwitch } from '@/components/layout/shell-role';
 import { MemberAppRun } from '@/components/member/member-app-run';
-import { AppDetailClient } from './app-detail-client';
 
 /**
- * App editor: data-free. AppDetailClient fetches the app (source + draft +
- * build state) from GET /api/apps/[id] and drives build/publish/discard/assist
- * via the /api/apps/[id]/** routes, setting the page title once loaded.
+ * /apps/[id] — for the owner, one app run (`/apps/<id>`) or edited
+ * (`?edit=1`) INSIDE the Apps screen: `../layout.tsx` renders `AppsClient`,
+ * which reads the id from the route, so the folders stay. A member only runs
+ * the published build here; the editor never mounts for one.
  */
-export default async function AppDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AppItemRoute({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  // A member only runs the published build; the editor never mounts for one.
-  return (
-    <RoleSwitch member={<MemberAppRun id={id} />}>
-      <AppDetailClient id={id} />
-    </RoleSwitch>
-  );
+  return <RoleSwitch member={<MemberAppRun id={id} />}>{null}</RoleSwitch>;
 }

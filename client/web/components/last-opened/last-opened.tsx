@@ -135,6 +135,13 @@ export function RestoreLastOpened({
       });
   }, [phase, role, login, section, router]);
 
+  // The restore landed (the URL left the bare index): done. A section whose
+  // index and item routes share one layout keeps this mounted, so a later
+  // return to the bare index must not find it still waiting to go.
+  useEffect(() => {
+    if (phase === 'go' && !bare) setPhase('done');
+  }, [phase, bare]);
+
   if (phase === 'done' || !bare) return <>{children}</>;
   // Role not known yet: the shell renders no screen before it answers, so
   // there is nothing to hold back.

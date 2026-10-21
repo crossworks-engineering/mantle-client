@@ -1,5 +1,8 @@
 'use client';
 
+import { useZenMode } from '@/components/layout/zen-mode';
+import { ItemHeader } from '@/components/layout/item-header';
+import { AccessSlot } from '@/components/share/access-slot';
 import { itemAccess } from '@/lib/item-access';
 import { guardedNavigate } from '@/lib/nav-guard';
 import { grantsKey, grantsUrl, uploadLine, uploadVisibleTo, type GrantsView } from '@/lib/grants';
@@ -13,6 +16,7 @@ import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import {
   ArrowDown,
+  Folder,
   ArrowUp,
   ChevronDown,
   ChevronRight,
@@ -78,7 +82,6 @@ import type {
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { useUploads } from '@/components/uploads/upload-provider';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { GrantAccessControl } from '@/components/share/grant-access';
 import { Button } from '@mantle/web-ui/ui/button';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Input } from '@mantle/web-ui/ui/input';
@@ -209,6 +212,10 @@ function FilesView({
     );
   // The left pane's search — see use-file-search.ts for the two behaviours
   // one input drives, and for the stale-response guard.
+  // The open folder below the top level: what Access, rename and delete act on.
+  const folder = currentFolder && currentFolder.path !== FILES_ROOT ? currentFolder : null;
+  // Maximise from the item header collapses the folders.
+  const { zen } = useZenMode();
   const { query, setQuery, hits, searching, active: searchActive } = useFileSearch();
   const jump = useWorkspaceJump();
 
@@ -550,6 +557,7 @@ function FilesView({
     <>
       <MasterDetail
         id="files"
+        listCollapsed={zen}
         // 260px, the width this screen has always had — a starting point now
         // rather than a decree.
         defaultListSize="260px"
@@ -867,10 +875,20 @@ function FilesView({
             ) : (
               <>
                 <SetPageTitle title={currentFolder?.slug ?? 'files'} />
-                {/* Header */}
-                <header className="border-b border-border px-6 py-3">
-                  <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-                    {pathJump !== null ? (
+                {/* The item header (contract 2026-10-21): one row for the open
+                    folder. New and Upload are the word buttons; Upload folder,
+                    the view and the indexing switch are its tools; the pencil
+                    renames it; the path, the description and Go to path sit
+                    behind Info and More. The top level has no Access, rename or
+                    delete. */}
+                <ItemHeader
+                  sticky
+                  section="Files"
+                  visual={<Folder className="size-4" aria-hidden />}
+                  title={
+                    pathJump !== null ? (
+                      // Click-to-type path entry: the file-manager address bar,
+                      // for pasting a path from chat or a doc.
                       <Input
                         autoFocus
                         value={pathJump}
@@ -881,131 +899,177 @@ function FilesView({
                         }}
                         onBlur={() => setPathJump(null)}
                         placeholder="files.work.reports — Enter to jump"
-                        className="h-7 max-w-md font-mono text-xs"
+                        aria-label="Go to path"
+                        className="h-7 w-80 max-w-full font-mono text-xs"
                       />
                     ) : (
-                      <>
-                        {breadcrumbs.map((c, i) => (
-                          <span key={c.path} className="flex items-center gap-1">
-                            {i > 0 && <ChevronRight className="size-3" aria-hidden />}
-                            <RowButton
-                              onClick={() => navigateFolder(c.path)}
-                              className={
-                                i === breadcrumbs.length - 1
-                                  ? 'font-medium text-foreground'
-                                  : 'hover:text-foreground'
-                              }
-                            >
-                              {c.label}
-                            </RowButton>
-                          </span>
-                        ))}
-                        {/* Click-to-type path entry — the file-manager address
-                            bar. The breadcrumb stays the primary affordance;
-                            this is for pasting a path from chat or a doc. */}
-                        <Button
-                          variant="ghost"
-                          size="icon-2xs"
-                          aria-label="Go to path"
-                          title="Go to path (type or paste, Enter to jump)"
-                          onClick={() => setPathJump(currentPath)}
-                          className="ml-1 text-muted-foreground opacity-60 hover:opacity-100"
-                        >
-                          <Pencil aria-hidden />
-                        </Button>
-                      </>
-                    )}
-                  </nav>
-
-                  {currentFolder && currentFolder.path !== FILES_ROOT && (
-                    <div className="mt-1 flex items-center justify-end gap-1">
-                      <GrantAccessControl type="branch" nodeId={currentFolder.id} />
-                      {/* Brain-indexing toggle. The trigger shows the
-                          EFFECTIVE mode (own flag or inherited) because that
-                          is what happens to files here; the menu edits the
-                          OWN flag. */}
+                      (breadcrumbs[breadcrumbs.length - 1]?.label ?? 'Files')
+                    )
+                  }
+                  textActions={
+                    <>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7"
-                            disabled={busy}
-                            title={
-                              folderIndexing.mode === 'metadata'
-                                ? `File content here is not indexed into the brain${folderIndexing.from ? ` (inherited from ${folderIndexing.from})` : ''}`
-                                : 'File content here is indexed into the brain'
-                            }
-                          >
-                            {folderIndexing.mode === 'metadata' ? <EyeOff /> : <Eye />}
-                            {folderIndexing.mode === 'metadata' ? 'Name-only' : 'Indexed'}
-                            {folderIndexing.mode === 'metadata' && folderIndexing.from && (
-                              <span className="text-[10px] text-muted-foreground">(inherited)</span>
-                            )}
+                          <Button size="sm">
+                            <Plus /> New <ChevronDown className="opacity-70" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => setFolderIndexing('full')}>
-                            <Eye /> Index content (search can read inside files)
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onSelect={() => setDialog({ kind: 'createFolder' })}>
+                            <FolderPlus /> Folder
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setFolderIndexing('metadata')}>
-                            <EyeOff /> Name only (store &amp; share, don&apos;t index content)
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: 'createFile', ext: 'md' })}
+                          >
+                            <FileText /> Markdown file
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            disabled={!currentFolder.indexing}
-                            onSelect={() => setFolderIndexing('inherit')}
+                            onSelect={() => setDialog({ kind: 'createFile', ext: 'txt' })}
                           >
-                            Inherit from parent
+                            <FileText /> Text file
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: 'createFile', ext: 'json' })}
+                          >
+                            <FileJson /> JSON file
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7"
-                        onClick={() =>
-                          setDialog({
-                            kind: 'rename',
-                            target: {
-                              kind: 'folder',
-                              id: currentFolder.id,
-                              slug: currentFolder.slug,
-                            },
-                          })
+                      <Button size="sm" variant="outline" onClick={triggerUpload}>
+                        <Upload /> Upload
+                      </Button>
+                    </>
+                  }
+                  access={
+                    folder ? (
+                      <AccessSlot type="branch" nodeId={folder.id} canShare shares={folder} />
+                    ) : undefined
+                  }
+                  tools={[
+                    {
+                      key: 'upload-folder',
+                      label: 'Upload a folder with its sub-folders',
+                      icon: <FolderUp />,
+                      onSelect: () => folderInputRef.current?.click(),
+                    },
+                    {
+                      key: 'view',
+                      label: `View: ${view === 'grid' ? 'Thumbnails' : view === 'dual' ? 'Two panes' : 'Details'}`,
+                      icon:
+                        view === 'grid' ? (
+                          <LayoutGrid />
+                        ) : view === 'dual' ? (
+                          <Columns2 />
+                        ) : (
+                          <List />
+                        ),
+                      choices: [
+                        {
+                          key: 'list',
+                          label: view === 'list' ? 'Details ✓' : 'Details',
+                          icon: <List />,
+                          onSelect: () => switchView('list'),
+                        },
+                        {
+                          key: 'grid',
+                          label: view === 'grid' ? 'Thumbnails ✓' : 'Thumbnails',
+                          icon: <LayoutGrid />,
+                          onSelect: () => switchView('grid'),
+                        },
+                        {
+                          key: 'dual',
+                          label:
+                            view === 'dual'
+                              ? 'Two panes ✓ (F5 copy, F6 move, Tab switches)'
+                              : 'Two panes (F5 copy, F6 move, Tab switches)',
+                          icon: <Columns2 />,
+                          onSelect: () => switchView('dual'),
+                        },
+                      ],
+                    },
+                    ...(folder
+                      ? [
+                          {
+                            // The trigger names the EFFECTIVE mode (own flag
+                            // or inherited); the choices edit the OWN flag.
+                            key: 'indexing',
+                            label:
+                              folderIndexing.mode === 'metadata'
+                                ? `Name only: content here is not indexed${folderIndexing.from ? ` (inherited from ${folderIndexing.from})` : ''}`
+                                : 'Indexed: search can read inside files here',
+                            icon: folderIndexing.mode === 'metadata' ? <EyeOff /> : <Eye />,
+                            choices: [
+                              {
+                                key: 'full',
+                                label: 'Index content (search can read inside files)',
+                                icon: <Eye />,
+                                onSelect: () => setFolderIndexing('full'),
+                              },
+                              {
+                                key: 'metadata',
+                                label: "Name only (store and share, don't index content)",
+                                icon: <EyeOff />,
+                                onSelect: () => setFolderIndexing('metadata'),
+                              },
+                              ...(folder.indexing
+                                ? [
+                                    {
+                                      key: 'inherit',
+                                      label: 'Inherit from parent',
+                                      onSelect: () => setFolderIndexing('inherit'),
+                                    },
+                                  ]
+                                : []),
+                            ],
+                          },
+                        ]
+                      : []),
+                  ]}
+                  onDelete={folder ? () => setDialog({ kind: 'deleteFolder' }) : undefined}
+                  deleteDisabled={busy && !!folder}
+                  deleteLabel="Delete folder"
+                  edit={
+                    folder
+                      ? {
+                          label: 'Rename folder',
+                          onSelect: () =>
+                            setDialog({
+                              kind: 'rename',
+                              target: {
+                                kind: 'folder',
+                                id: folder.id,
+                                slug: folder.slug,
+                              },
+                            }),
                         }
-                        disabled={busy}
-                      >
-                        <Pencil /> Rename
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-muted-foreground hover:text-destructive-ink"
-                        onClick={() => setDialog({ kind: 'deleteFolder' })}
-                        disabled={busy}
-                      >
-                        <Trash2 /> Delete folder
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Description */}
-                  <div className="mt-2 text-sm">
-                    {editingDesc ? (
+                      : undefined
+                  }
+                  more={[
+                    {
+                      key: 'path',
+                      label: 'Go to path…',
+                      icon: <Pencil />,
+                      onSelect: () => setTimeout(() => setPathJump(currentPath), 50),
+                    },
+                  ]}
+                  info={{
+                    description: editingDesc ? (
                       <div className="flex flex-col gap-2">
                         <Textarea
                           value={draftDesc}
                           onChange={(e) => setDraftDesc(e.target.value)}
-                          rows={2}
+                          rows={3}
                           placeholder="Describe what lives in this folder…"
+                          aria-label="Folder description"
                           autoFocus
                         />
                         <div className="flex gap-2">
-                          <Button size="sm" onClick={saveDescription}>
+                          <Button size="xs" onClick={saveDescription}>
                             Save
                           </Button>
                           <Button
-                            size="sm"
+                            size="xs"
                             variant="outline"
                             onClick={() => {
                               setEditingDesc(false);
@@ -1022,116 +1086,68 @@ function FilesView({
                           setDraftDesc(currentFolder?.description ?? '');
                           setEditingDesc(true);
                         }}
-                        className="group flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+                        className="group flex items-center gap-1.5 text-left text-muted-foreground hover:text-foreground"
                       >
                         <span>
                           {currentFolder?.description ? (
                             currentFolder.description
                           ) : (
-                            <span className="italic">no description — click to add</span>
+                            <span className="italic">No description: click to add</span>
                           )}
                         </span>
                         <Pencil className="size-3 opacity-0 group-hover:opacity-100" aria-hidden />
                       </RowButton>
-                    )}
-                  </div>
-                </header>
+                    ),
+                    rows: [
+                      {
+                        label: 'Location',
+                        value: (
+                          <span className="flex flex-wrap items-center gap-1">
+                            {breadcrumbs.map((c, i) => (
+                              <span key={c.path} className="flex items-center gap-1">
+                                {i > 0 && <ChevronRight className="size-3" aria-hidden />}
+                                <RowButton
+                                  onClick={() => navigateFolder(c.path)}
+                                  className="hover:text-primary-ink"
+                                >
+                                  {c.label}
+                                </RowButton>
+                              </span>
+                            ))}
+                          </span>
+                        ),
+                      },
+                    ],
+                  }}
+                  infoLabel="About this folder"
+                />
+                <input ref={fileInputRef} type="file" multiple hidden onChange={onFileInput} />
+                <input
+                  ref={(el) => {
+                    // Not a React prop: the folder picker is a DOM attribute.
+                    el?.setAttribute('webkitdirectory', '');
+                    folderInputRef.current = el;
+                  }}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={onFolderInput}
+                />
 
-                {/* Toolbar */}
-                <div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm">
-                        <Plus /> New <ChevronDown className="opacity-70" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-44">
-                      <DropdownMenuItem onSelect={() => setDialog({ kind: 'createFolder' })}>
-                        <FolderPlus /> Folder
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onSelect={() => setDialog({ kind: 'createFile', ext: 'md' })}
-                      >
-                        <FileText /> Markdown file
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => setDialog({ kind: 'createFile', ext: 'txt' })}
-                      >
-                        <FileText /> Text file
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => setDialog({ kind: 'createFile', ext: 'json' })}
-                      >
-                        <FileJson /> JSON file
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  <Button size="sm" variant="outline" onClick={triggerUpload}>
-                    <Upload /> Upload
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => folderInputRef.current?.click()}
-                    title="Upload a folder with its sub-folders"
-                  >
-                    <FolderUp /> Upload folder
-                  </Button>
-                  <input ref={fileInputRef} type="file" multiple hidden onChange={onFileInput} />
-                  <input
-                    ref={(el) => {
-                      // Not a React prop: the folder picker is a DOM attribute.
-                      el?.setAttribute('webkitdirectory', '');
-                      folderInputRef.current = el;
-                    }}
-                    type="file"
-                    multiple
-                    hidden
-                    onChange={onFolderInput}
-                  />
-
-                  <div className="ml-auto flex items-center gap-1">
-                    <Button
-                      size="sm"
-                      variant={view === 'list' ? 'secondary' : 'ghost'}
-                      className="h-7 w-7 p-0"
-                      aria-label="Details view"
-                      title="Details view"
-                      onClick={() => switchView('list')}
-                    >
-                      <List className="size-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={view === 'grid' ? 'secondary' : 'ghost'}
-                      className="h-7 w-7 p-0"
-                      aria-label="Thumbnail view"
-                      title="Thumbnail view"
-                      onClick={() => switchView('grid')}
-                    >
-                      <LayoutGrid className="size-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={view === 'dual' ? 'secondary' : 'ghost'}
-                      className="h-7 w-7 p-0"
-                      aria-label="Two-pane view"
-                      title="Two-pane view (copy/move between folders — F5 copy, F6 move, Tab switches panes)"
-                      onClick={() => switchView('dual')}
-                    >
-                      <Columns2 className="size-4" />
-                    </Button>
-                  </div>
-
+                {/* A pick of files has its own bar, in the content. */}
+                <div
+                  className={cn(
+                    'flex items-center gap-2 border-b border-border px-6 py-2',
+                    selectedFileIds.size === 0 && 'hidden',
+                  )}
+                >
                   {selectedFileIds.size > 0 &&
                     // Delete is a Moderator's of each file's home (its caps).
                     files.every((f) => !selectedFileIds.has(f.id) || itemAccess(f).manage) && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="ml-auto text-muted-foreground hover:text-destructive-ink"
+                        className="text-muted-foreground hover:text-destructive-ink"
                         onClick={() => setDialog({ kind: 'bulkDelete' })}
                       >
                         <Trash2 /> Delete {selectedFileIds.size}

@@ -15,14 +15,17 @@ export function useListNav() {
   const searchParams = useSearchParams();
   const [pending, start] = useTransition();
 
-  const go = (patch: Record<string, string | number | null | undefined>) => {
+  /** `path`: another path to land on (a change that leaves the open item:
+   *  `/journal` from `/journal/<id>`). */
+  const go = (patch: Record<string, string | number | null | undefined>, path?: string) => {
     const params = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(patch)) {
       if (v === null || v === undefined || v === '') params.delete(k);
       else params.set(k, String(v));
     }
     const s = params.toString();
-    start(() => router.push(s ? `${pathname}?${s}` : pathname));
+    const to = path ?? pathname;
+    start(() => router.push(s ? `${to}?${s}` : to));
   };
 
   return { pending, go };

@@ -1,5 +1,6 @@
 'use client';
 
+import { AccessSlot } from '@/components/share/access-slot';
 import { useState, useTransition } from 'react';
 import {
   Bell,
@@ -8,13 +9,9 @@ import {
   CalendarPlus,
   Clock,
   MapPin,
-  Pencil,
   Repeat,
-  Trash2,
 } from 'lucide-react';
 import { FormShell } from '@mantle/web-ui/ui/form-shell';
-import { Button } from '@mantle/web-ui/ui/button';
-import { cn } from '@mantle/web-ui/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,8 +24,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
-import { GrantAccessControl } from '@/components/share/grant-access';
-import { TagPill } from '@mantle/web-ui/tag-pill';
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { useNow } from '@/components/use-now';
 import {
@@ -179,9 +175,14 @@ export function EventDetail({
   event,
   onUpdated,
   onDeleted,
+  editing: editingProp,
+  onEditingChange,
   className,
 }: {
   event: EventRow;
+  /** Edit mode from the item's address (`?edit=1`); internal when absent. */
+  editing?: boolean;
+  onEditingChange?: (editing: boolean) => void;
   onUpdated?: (e: EventRow) => void;
   onDeleted?: () => void;
   /**
@@ -195,7 +196,12 @@ export function EventDetail({
   const toast = useToast();
   const now = useNow(1000);
   const [meta, setMeta] = useState(event);
-  const [editing, setEditing] = useState(false);
+  const [editingState, setEditingState] = useState(false);
+  const editing = editingProp ?? editingState;
+  const setEditing = (on: boolean) => {
+    if (onEditingChange) onEditingChange(on);
+    else setEditingState(on);
+  };
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -230,24 +236,64 @@ export function EventDetail({
     startTransition(() => onDeleted?.());
   };
 
+  const deleteDialog = (
+    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete “{meta.title}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Any pending reminder won&apos;t fire. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={confirmDelete}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   if (editing) {
     return (
       // Same boxed composer as the "New event" pane (§6c) — create and edit are
       // the same form, so they get the same surface.
-      <div className={cn('p-6', className)}>
-        <FormShell>
-          <div className="flex items-center gap-2">
-            <Pencil className="size-5 text-primary-ink" aria-hidden />
-            <h2 className="text-lg font-semibold">Edit event</h2>
-          </div>
-          <EventForm
-            initial={eventToForm(meta)}
-            submitLabel="Save event"
-            submitting={pending}
-            onSubmit={saveEdit}
-            onCancel={() => setEditing(false)}
-          />
-        </FormShell>
+      // The item header (contract 2026-10-21) in edit mode: the same row as
+      // the read view; the pressed pencil leaves editing. The form keeps its
+      // Save and Cancel at its foot.
+      <div className={className}>
+        <ItemHeader
+          section="Events"
+          visual={<CalendarClock className="size-4 text-primary-ink" aria-hidden />}
+          title={meta.title}
+          badges={<HeaderPill>editing</HeaderPill>}
+          access={<AccessSlot type="event" nodeId={meta.id} canShare shares={meta} />}
+          onDelete={() => setDeleteOpen(true)}
+          deleteLabel="Delete event"
+          edit={{
+            onSelect: () => setEditing(false),
+            pressed: true,
+            label: 'Done editing: discard unsaved',
+          }}
+          info={{ tags: meta.tags }}
+          infoLabel="About this event"
+        />
+        <div className="p-6">
+          <FormShell>
+            <EventForm
+              initial={eventToForm(meta)}
+              submitLabel="Save event"
+              submitting={pending}
+              onSubmit={saveEdit}
+              onCancel={() => setEditing(false)}
+            />
+          </FormShell>
+        </div>
+        {deleteDialog}
       </div>
     );
   }
@@ -255,123 +301,85 @@ export function EventDetail({
   const ics = buildIcsHref(meta);
 
   return (
-    <div className={cn('space-y-5 p-6', className)}>
-      {/* Title first, countdown second: the heading owns the LEFT edge (§8 —
-          it lines up with every other detail header), and the ring reads as
-          the at-a-glance flourish beside it rather than displacing the name. */}
-      <div className="flex flex-col-reverse gap-5 sm:flex-row sm:items-center">
-        <div className="min-w-0 flex-1 space-y-2">
-          {/* §8 "Detail header anatomy": the glyph lives INSIDE the h2 so it
-              shares the title's baseline, the title is `min-w-0 truncate`, the
-              actions are `shrink-0` and ordered least destructive to most.
-              Delete is icon-only and last. */}
-          <div className="flex items-start justify-between gap-3">
-            <h2 className="flex min-w-0 flex-1 items-center gap-2 text-xl font-semibold">
-              <CalendarClock className="size-5 shrink-0 text-primary-ink" aria-hidden />
-              <span className="min-w-0 truncate">{meta.title}</span>
-            </h2>
-            <div className="flex shrink-0 items-center gap-2">
-              <GrantAccessControl type="event" nodeId={meta.id} iconOnly />
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                <Pencil /> Edit
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground hover:text-destructive-ink"
-                onClick={() => setDeleteOpen(true)}
-                aria-label="Delete event"
-              >
-                <Trash2 />
-              </Button>
-            </div>
+    <div className={className}>
+      {/* The item header (contract 2026-10-21): one row; tags behind Info,
+          "Add to calendar" the event's own tool. When and where are the
+          event itself, so they open the content, beside the countdown. */}
+      <ItemHeader
+        section="Events"
+        visual={<CalendarClock className="size-4 text-primary-ink" aria-hidden />}
+        title={meta.title}
+        access={<AccessSlot type="event" nodeId={meta.id} canShare shares={meta} />}
+        tools={
+          ics
+            ? [
+                {
+                  key: 'ics',
+                  label: 'Add to calendar',
+                  icon: <CalendarPlus />,
+                  href: ics,
+                  download: `${meta.title || 'event'}.ics`,
+                },
+              ]
+            : []
+        }
+        onDelete={() => setDeleteOpen(true)}
+        deleteLabel="Delete event"
+        move={{ kind: 'events', item: { id: meta.id, title: meta.title } }}
+        edit={{ onSelect: () => setEditing(true), label: 'Edit event' }}
+        info={{ tags: meta.tags }}
+        infoLabel="About this event"
+      />
+      <div className="space-y-5 p-6">
+        <div className="flex flex-col-reverse gap-5 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1 space-y-2">
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="size-4 shrink-0" aria-hidden />
+              <span>
+                {formatDateTime(meta.startsAt)}
+                {meta.endsAt && ` → ${formatDateTime(meta.endsAt)}`}
+              </span>
+            </p>
+            {meta.location && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MapPin className="size-4 shrink-0" aria-hidden /> {meta.location}
+              </p>
+            )}
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Bell className="size-3.5 shrink-0" aria-hidden />
+              {meta.reminderSentAt
+                ? `Reminder sent ${formatDateTime(meta.reminderSentAt)}`
+                : `Reminder ${
+                    meta.remindMinutesBefore === 0
+                      ? 'at start'
+                      : `${meta.remindMinutesBefore}m before`
+                  } · fires ${formatDateTime(meta.remindAt)}`}
+            </p>
+            {meta.recur !== 'none' && (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Repeat className="size-3.5 shrink-0" aria-hidden />
+                <span className="capitalize">{meta.recur}</span>
+                {meta.recurUntil && (
+                  <span className="lowercase">until {formatDateTime(meta.recurUntil)}</span>
+                )}
+              </p>
+            )}
           </div>
 
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="size-4 shrink-0" aria-hidden />
-            <span>
-              {formatDateTime(meta.startsAt)}
-              {meta.endsAt && ` → ${formatDateTime(meta.endsAt)}`}
-            </span>
-          </p>
-          {meta.location && (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <MapPin className="size-4 shrink-0" aria-hidden /> {meta.location}
-            </p>
-          )}
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Bell className="size-3.5 shrink-0" aria-hidden />
-            {meta.reminderSentAt
-              ? `Reminder sent ${formatDateTime(meta.reminderSentAt)}`
-              : `Reminder ${
-                  meta.remindMinutesBefore === 0
-                    ? 'at start'
-                    : `${meta.remindMinutesBefore}m before`
-                } · fires ${formatDateTime(meta.remindAt)}`}
-          </p>
-          {meta.recur !== 'none' && (
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Repeat className="size-3.5 shrink-0" aria-hidden />
-              <span className="capitalize">{meta.recur}</span>
-              {meta.recurUntil && (
-                <span className="lowercase">until {formatDateTime(meta.recurUntil)}</span>
-              )}
-            </p>
-          )}
-          {meta.tags.length > 0 && (
-            // §9: `<TagPill>`, not a hand-rolled muted pill. The list card next
-            // to this one already used it, so the same tag rendered two colours
-            // depending on which side of the divider you looked at.
-            <div className="flex flex-wrap gap-1 pt-0.5">
-              {meta.tags.map((t) => (
-                <TagPill key={t} tag={t} />
-              ))}
-            </div>
-          )}
-          {ics && (
-            <div className="pt-1">
-              <a
-                href={ics}
-                download={`${meta.title || 'event'}.ics`}
-                className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent/40"
-              >
-                <CalendarPlus className="size-4" aria-hidden /> Add to calendar
-              </a>
-            </div>
-          )}
+          <Countdown event={meta} now={now} />
         </div>
 
-        <Countdown event={meta} now={now} />
+        {meta.body && (
+          <pre className="whitespace-pre-wrap rounded-md border border-border bg-card p-4 font-sans text-sm">
+            {meta.body}
+          </pre>
+        )}
+        {meta.summary && (
+          <p className="text-xs italic text-muted-foreground">Indexed: {meta.summary}</p>
+        )}
+
+        {deleteDialog}
       </div>
-
-      {meta.body && (
-        <pre className="whitespace-pre-wrap rounded-md border border-border bg-card p-4 font-sans text-sm">
-          {meta.body}
-        </pre>
-      )}
-      {meta.summary && (
-        <p className="text-xs italic text-muted-foreground">Indexed: {meta.summary}</p>
-      )}
-
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete “{meta.title}”?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Any pending reminder won&apos;t fire. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={confirmDelete}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

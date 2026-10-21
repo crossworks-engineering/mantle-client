@@ -1,14 +1,8 @@
-import { EventDetailClient } from './event-detail-client';
-
 /**
- * /events/[id] — deep link to one event (auth gate only). The event is
- * client-fetched via `GET /api/events/[id]` (Phase 2 · Task 4).
+ * /events/[id] — one event, read (`/events/<id>`) or edited (`?edit=1`),
+ * INSIDE the Events screen: `../layout.tsx` renders `EventsClient`, which
+ * reads the id from the route, so the folders stay. Nothing renders here.
  */
-export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  return (
-    <div className="mx-auto max-w-3xl py-2">
-      <EventDetailClient eventId={id} />
-    </div>
-  );
+export default function EventItemRoute() {
+  return null;
 }

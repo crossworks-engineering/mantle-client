@@ -1003,8 +1003,8 @@ scaffold renders it:
   dragging the divider wider does nothing. The measure is the panel's job now
   (§8's three-panel model), declared once, not re-declared per screen. §6c is
   the same rule for the composer card.
-- **The detail opens with the §8 header row** — icon inside the `h2`, title
-  truncating, actions `shrink-0`, delete last. See "Detail header anatomy".
+- **The detail opens with `ItemHeader`**: one 44px row, fixed slots on the
+  right. See "Detail header anatomy".
 
 Everything below applies to BOTH scaffolds. The rules about _behaviour_ —
 selection, the card, pagination — are the durable part; the grid vs
@@ -1165,29 +1165,80 @@ links land in the folders.
 
 ### Detail header anatomy (right pane)
 
-**The reference is `/pages`** (`pages-client.tsx`, the `PagePreview` header).
-Every detail pane opens with the same four-part row:
+**The item header contract (2026-10-21).** Every workspace item's detail
+pane (pages, notes, tables, drawings, files and folders, apps, formulas,
+journal, tasks, events, contacts, agents, Recall maps) opens with THE same
+header, in read and edit mode alike: `ItemHeader`
+(`components/layout/item-header.tsx`). Never hand-roll a header row, a title
+band, a tags row or a banner under it. **The reference is `/pages`**
+(`pages-client.tsx`, the `PagePreview` header).
 
 ```tsx
-<div className="space-y-4 p-6">
-  <div className="flex items-start justify-between gap-3">
-    <h2 className="flex min-w-0 flex-1 items-center gap-2 text-xl font-semibold">
-      <span aria-hidden>{icon}</span>              {/* glyph INSIDE the h2 */}
-      <span className="min-w-0 truncate">{title}</span>
-      {badge}                                       {/* inline, shrink-0 */}
-    </h2>
-    <div className="flex shrink-0 gap-2">{/* actions */}</div>
-  </div>
+<ItemHeader
+  sticky
+  section="Pages"                        // the back link's word while maximised
+  visual={<span aria-hidden>{icon}</span>}
+  title={title}
+  badges={isDraft ? <HeaderPill>uncommitted</HeaderPill> : null}
+  edit={{ href: `/pages/${id}` }}       // the pencil; { disabled: true } when read-only
+  access={<AccessSlot type="page" nodeId={id} canShare={access.share} shares={row} />}
+  tools={[useExportTool(id)]}            // the kind's own tools
+  onDelete={confirmDelete}               // the bin; deleteDisabled when not allowed
+  info={{ tags, path, description, rows: [{ label: 'Updated', value: … }] }}
+/>
 ```
 
-- **`text-xl font-semibold`** is the entity-title scale. Distinct from the
-  `text-base`/`text-lg` section-heading scale in §3, and from the composer
-  heading in §6c, which is a section heading.
-- **The icon lives inside the `h2`**, so it shares the title's baseline. A
-  glyph parked outside the heading drifts as soon as the title wraps.
-- **`min-w-0 truncate` on the title, `shrink-0` on the actions.** Without it a
-  long title shoves the buttons off the pane.
-- **Action order is least destructive to most, delete last.**
+- **One row, 44px at the default text size** (`h-11 px-4`, rem: it grows
+  with the reader's text size), sticky with the chrome-bar surface
+  (`bg-background/60 backdrop-blur`, `border-b`). Nothing under it: a thin
+  meta line was tried and dropped. Pinned by tests.
+- **The title is 15px at the default text size** (`text-[0.9375rem]
+font-semibold`) on every kind, the glyph inside the `h2`, the title cut to
+  fit, then at most ONE state pill (`HeaderPill`, the list's `StatePill`
+  shape). In edit mode the title stays in this row.
+- **Fixed slots, counted from the right, the same on every kind and mode:**
+  More (⋯) first, Edit (the pencil) second, Delete (the bin) third, Focus
+  fourth, Info fifth, Access sixth. The component draws them; a screen never
+  reorders them. A login that may not edit or delete sees that pencil or bin
+  greyed in its slot (`edit={{ disabled: true }}`, `deleteDisabled`), so
+  nothing beside it moves. To their left: the kind's `tools`, then the word
+  buttons (`textActions`, at most two: the mode's primary verbs).
+- **Edit is the pencil, never a word button.** Commit, Done, Save, Publish,
+  New ▾ and Upload are word buttons with their icon.
+- **Tools fold into More** as the pane narrows (priority+, measured by
+  `useHeaderOverflow`, never per-screen breakpoints), from the end of the
+  list. A tool with `choices` (Download) is a menu inline and a sub-menu once
+  folded. The word buttons and the fixed slots never fold.
+- **Access shows who it is shared with:** `AccessSlot` draws the share
+  icon and the item's workspaces as overlapping tiles (three, then "+N"), a
+  globe for an open link, the icon alone when shared with no one. A login
+  that may not share sees the same stack, not clickable. It reads the list
+  row's marks; a row without them (an item opened by its detail route, a deep
+  link) falls back to the item's grants.
+- **A kind with nothing to share or edit leaves that slot out** (a journal
+  entry has no Access; a contact's form is always open, so no pencil). That is
+  the only way a fixed slot goes missing.
+- **More (⋯) always lists every action the item has** (2026-10-21), the ones
+  shown as icons too, so it is never empty: edit and the kind's tools; Copy
+  link (the item's address, without `?edit=1`), Duplicate (apps: the only kind
+  with a copy route) and Move to folder… (`move`: the tree of that kind opens
+  its own Move dialog); Access…, About…, Maximise; Delete last, in red.
+- **Info holds everything that is not the title:** description, folder path,
+  tags, dates, level, a read-only note. No tags row or description line under
+  the title.
+- **Editor toolbars belong to the content**, not this row.
+- **Focus is the only way the folders go away.** `FocusToggle` (fourth from the
+  right) hides the shell chrome and the list. While maximised the header shows
+  ONE back link at its far left, "‹ Pages" (`section`), which brings the
+  folders back and keeps the item open; Esc does the same (the shell's key,
+  not while a dialog, menu or field has it).
+- **Every open item has its own address, read and edited** (2026-10-21), so
+  it can be copied and shared without opening the editor: `/pages/<id>` reads
+  the page, `/pages/<id>?edit=1` edits it, both inside the list screen with
+  the folders beside them (a section layout renders the list client for the
+  index and the item route). Picking an item pushes its address.
+- A screen not yet moved to the slots passes `iconActions` (its own icon
+  group) and keeps it; move it over when you touch the screen.
 - **Delete is a ghost icon button that is grey until hover:**
   `variant="ghost" size="sm" className="text-muted-foreground
 hover:text-destructive-ink"` plus an `aria-label`. It carries **no text

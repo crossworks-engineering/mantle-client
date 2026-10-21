@@ -335,7 +335,7 @@ test.describe('the /drawing slash item', () => {
         data: { scene: sceneWith('picker canary'), svg: GOOD_SVG, if_rev: 0 },
       });
 
-      await ownerPage.goto(`/pages/${hostPage.id}`);
+      await ownerPage.goto(`/pages/${hostPage.id}?edit=1`);
       const editor = ownerPage.locator('.ProseMirror');
       await editor.click();
       await ownerPage.keyboard.type('/drawing');

@@ -143,7 +143,7 @@ test.describe('formulas', () => {
     await openFromTree(ownerPage, 'Ideal gas density', edit);
     await edit.click();
 
-    await expect(ownerPage.getByRole('heading', { name: 'Edit formula' })).toBeVisible();
+    await expect(ownerPage.getByRole('button', { name: /^Done editing/ })).toBeVisible();
     await ownerPage.getByRole('tab', { name: 'YAML' }).click();
 
     const source = ownerPage.getByLabel('Spec source');

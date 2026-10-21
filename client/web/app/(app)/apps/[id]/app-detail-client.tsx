@@ -1,5 +1,10 @@
 'use client';
 
+import { itemHref } from '@/components/layout/use-item-address';
+import { HeaderPill } from '@/components/layout/item-header';
+import { AccessSlot } from '@/components/share/access-slot';
+import { AppSettingsDialog, useAppSettingsShown } from '@/components/app-nav/app-settings-button';
+import { PanelsTopLeft, Settings2 } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -10,19 +15,11 @@ import {
   type ReactNode,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Eye, GitCommitHorizontal, Undo2, Save, WandSparkles } from 'lucide-react';
+import { Eye, GitCommitHorizontal, Undo2, Save, WandSparkles } from 'lucide-react';
 import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
-import { Badge } from '@mantle/web-ui/ui/badge';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { Tabs, TabsContent } from '@mantle/web-ui/ui/tabs';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@mantle/web-ui/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,13 +36,9 @@ import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { AppLookPicker } from '@/components/app-nav/app-look-picker';
 import { AppTile } from '@/components/app-nav/app-tile';
-import { AppSettingsButton } from '@/components/app-nav/app-settings-button';
-import { AppItemHeader, HeaderInfoButton } from '@/components/app-nav/app-item-header';
+import { AppItemHeader } from '@/components/app-nav/app-item-header';
 import { AppTreePills } from '@/components/app-nav/app-tree-pills';
-import { FocusToggle } from '@/components/layout/focus-toggle';
 import { useAppNav } from '@/components/app-nav/use-app-nav';
-import { GrantAccessControl } from '@/components/share/grant-access';
-import { WorkspaceChips } from '@/components/share/workspace-chips';
 import { AppSandbox } from '@mantle/share-ui/app-sandbox';
 import { ownerAppSandboxProps } from '@/lib/owner-app-sandbox';
 import { useAppToolConfirm } from '@/components/app-nav/use-app-tool-confirm';
@@ -167,6 +160,8 @@ function AppDetailView({ app }: { app: AppDetail }) {
   // does NOT invalidate this app's query: reloading it re-syncs the source
   // tree and would drop unsaved editor changes for a cosmetic write.
   const { data: nav, setAppLook } = useAppNav();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsShown = useAppSettingsShown(app);
   const face = nav?.apps.find((a) => a.id === app.id);
   const icon = face ? face.icon : app.icon;
   const color = face ? face.color : app.color;
@@ -387,12 +382,13 @@ function AppDetailView({ app }: { app: AppDetail }) {
     <div className="flex h-full min-h-0 flex-col">
       <SetPageTitle title={app.title} />
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
-        {/* The one app header (AppItemHeader), as in the Apps pane: one row.
-            Buttons with words (Preview, Discard, Commit, the View menu) on the
-            left, the icon-only group on the right (About, App settings,
-            Access, Focus). */}
+        {/* The item header (contract 2026-10-21): the same one row as the Apps
+            pane, in edit mode. Commit is the one word button; Preview,
+            Discard, the view switch and App settings are the app's tools
+            (they fold into More); the description and its state behind Info;
+            the pressed pencil leaves editing (back to the app in Apps). */}
         <AppItemHeader
-          lead={<BackLink href="/apps">Apps</BackLink>}
+          section="Apps"
           icon={icon}
           color={color}
           tile={
@@ -416,116 +412,97 @@ function AppDetailView({ app }: { app: AppDetail }) {
             />
           }
           title={app.title}
-          badges={
-            <>
-              {app.hasDraft && (
-                <Badge variant="secondary" className="shrink-0">
-                  unpublished draft
-                </Badge>
-              )}
-              <AppTreePills id={app.id} />
-              <WorkspaceChips item={app} hub={app.isHub} />
-            </>
-          }
-          subtitle={app.description ?? app.summary}
+          badges={app.hasDraft ? <HeaderPill>unpublished draft</HeaderPill> : null}
           textActions={
-            <>
-              <Why why={codeWhy}>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={preview}
-                  disabled={busy !== null || !codeAccess}
-                  title={
-                    codeWhy
-                      ? undefined
-                      : 'Compile the draft and refresh the preview. It does not go live.'
-                  }
-                >
-                  <Eye />
-                  Preview
-                </Button>
-              </Why>
-              {app.hasDraft && (
-                <Why why={codeWhy}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setConfirmDiscard(true)}
-                    disabled={busy !== null || !codeAccess}
-                  >
-                    <Undo2 />
-                    {busy === 'discard' ? 'Discarding…' : 'Discard'}
-                  </Button>
-                </Why>
-              )}
-              {/* Commit compiles the draft itself, so it gates on there being
-                  something staged, not on a build having been run by hand. */}
-              <Why why={codeWhy}>
-                <Button
-                  size="sm"
-                  onClick={commit}
-                  disabled={busy !== null || !codeAccess || (!app.hasDraft && !dirty)}
-                  title={codeWhy ? undefined : 'Compile the draft and make it live'}
-                >
-                  <GitCommitHorizontal />
-                  Commit
-                </Button>
-              </Why>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={`View: ${viewLabel(tab)}`}
-                    title="Switch view"
-                  >
-                    {viewLabel(tab)}
-                    <ChevronDown className="opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuRadioGroup value={tab} onValueChange={setTab}>
-                    {VIEWS.map((v) => (
-                      <DropdownMenuRadioItem key={v.value} value={v.value}>
-                        {v.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
+            // Commit compiles the draft itself, so it gates on there being
+            // something staged, not on a build having been run by hand.
+            <Why why={codeWhy}>
+              <Button
+                size="sm"
+                onClick={commit}
+                disabled={busy !== null || !codeAccess || (!app.hasDraft && !dirty)}
+                title={codeWhy ? undefined : 'Compile the draft and make it live'}
+              >
+                <GitCommitHorizontal />
+                Commit
+              </Button>
+            </Why>
           }
-          iconActions={
-            <>
-              <HeaderInfoButton label="About this app">
-                <p className="font-medium">{app.title || 'Untitled'}</p>
-                {(app.description ?? app.summary) ? (
-                  <p className="text-muted-foreground">{app.description ?? app.summary}</p>
-                ) : null}
-                <p className="text-muted-foreground">
-                  {app.hasDraft
-                    ? 'It has an unpublished draft: Commit makes it live.'
-                    : app.publishedBuild?.ok
-                      ? 'The live app is the last commit.'
-                      : 'It has no published build yet: Commit builds and publishes it.'}
-                </p>
-                <p className="text-muted-foreground">
-                  {toolSlugs.length
-                    ? `Its tools: ${toolSlugs.join(', ')}.`
-                    : 'It declares no tools.'}
-                </p>
-              </HeaderInfoButton>
-              {/* Trust its tools. Informational and MCP access are in Access. */}
-              <AppSettingsButton app={app} />
-              {/* The level, once there is a published build to share. */}
-              {app.publishedBuild?.ok && (
-                <GrantAccessControl type="app" nodeId={app.id} hint={APP_SHARE_HINT} iconOnly />
-              )}
-              <FocusToggle />
-            </>
+          access={
+            <AccessSlot
+              type="app"
+              nodeId={app.id}
+              canShare={!!app.publishedBuild?.ok}
+              shares={app}
+              hint={APP_SHARE_HINT}
+            />
           }
+          tools={[
+            {
+              key: 'preview',
+              label: codeWhy ?? 'Preview: compile the draft and refresh it (does not go live)',
+              icon: <Eye />,
+              disabled: busy !== null || !codeAccess,
+              onSelect: preview,
+            },
+            {
+              key: 'view',
+              label: `View: ${viewLabel(tab)}`,
+              icon: <PanelsTopLeft />,
+              choices: VIEWS.map((v) => ({
+                key: v.value,
+                label: v.value === tab ? `${v.label} ✓` : v.label,
+                onSelect: () => setTab(v.value),
+              })),
+            },
+            ...(app.hasDraft
+              ? [
+                  {
+                    key: 'discard',
+                    label: codeWhy ?? (busy === 'discard' ? 'Discarding…' : 'Discard the draft'),
+                    icon: <Undo2 />,
+                    disabled: busy !== null || !codeAccess,
+                    onSelect: () => setConfirmDiscard(true),
+                  },
+                ]
+              : []),
+            ...(settingsShown
+              ? [
+                  {
+                    key: 'settings',
+                    label: 'App settings: its data and tools',
+                    icon: <Settings2 />,
+                    onSelect: () => setSettingsOpen(true),
+                  },
+                ]
+              : []),
+          ]}
+          edit={{
+            href: itemHref('apps', app.id),
+            pressed: true,
+            label: 'Done editing: back to the app',
+          }}
+          info={{
+            description: app.description ?? app.summary ?? undefined,
+            rows: [
+              {
+                label: 'State',
+                value: app.hasDraft
+                  ? 'It has an unpublished draft: Commit makes it live.'
+                  : app.publishedBuild?.ok
+                    ? 'The live app is the last commit.'
+                    : 'It has no published build yet: Commit builds and publishes it.',
+              },
+              {
+                label: 'Tools',
+                value: toolSlugs.length ? toolSlugs.join(', ') : 'It declares no tools.',
+              },
+              { label: 'Data', value: <AppTreePills id={app.id} /> },
+            ],
+          }}
+          infoLabel="About this app"
         />
+        <AppSettingsDialog app={app} open={settingsOpen} onOpenChange={setSettingsOpen} />
 
         {/* Builder — the live preview. Ask Appsmith to edit the app via the
             global assistant (⌘I), auto-armed for this app. */}

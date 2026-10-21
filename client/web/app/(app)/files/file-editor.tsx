@@ -1,11 +1,14 @@
 'use client';
 
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
+import { AccessSlot } from '@/components/share/access-slot';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
 import { useEffect, useState } from 'react';
 import {
   Download,
   Eye,
   EyeOff,
+  History,
   Loader2,
   PencilLine,
   Save,
@@ -14,7 +17,6 @@ import {
 } from 'lucide-react';
 import { describeFile, fileTypeLabel, KIND_TINT } from '@mantle/web-ui/lib/mime-label';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
-import { RowButton } from '@mantle/web-ui/ui/row-button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
@@ -22,9 +24,7 @@ import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
-import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { GrantAccessControl } from '@/components/share/grant-access';
 import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 
@@ -159,6 +159,24 @@ export function FileEditor({
   }
 
   const { file } = state;
+  const toggleIndexing = async () => {
+    const next =
+      file.indexing === 'metadata' || file.indexingApplied === 'metadata' ? 'full' : 'metadata';
+    try {
+      const { file: updated } = await apiSend<{ file: FileRow }>(
+        `/api/files/files/${fileId}`,
+        'PATCH',
+        { indexing: next },
+      );
+      setState((prev) => (prev.kind === 'loaded' ? { ...prev, file: updated } : prev));
+      toast.success(
+        next === 'metadata' ? 'Name only: its content leaves the index' : 'Content indexing queued',
+      );
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not change indexing');
+    }
+  };
   const isMarkdown = file.extension === 'md' || file.extension === 'markdown';
   // The login's caps on the file (W6b fix round): no edit, rename or
   // indexing switch without mayEdit (never on a snapshot copy), no Grant
@@ -172,154 +190,143 @@ export function FileEditor({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <header
-        data-testid="item-header"
-        className="flex items-center gap-3 border-b border-border px-6 py-2"
-      >
-        {(() => {
+      {/* The item header (contract 2026-10-21): one row. Save is the word
+          button; the view, indexing, history, download and close are the
+          file's tools; the pencil renames it (the name is edited in place);
+          where it lives, its type and a read-only note sit behind Info.
+          Delete is in the list. */}
+      <ItemHeader
+        section="Files"
+        visual={(() => {
           const d = describeFile(file.mimeType, file.filename);
           const Icon = d.icon;
           return <Icon aria-hidden className={`size-4 shrink-0 ${KIND_TINT[d.kind]}`} />;
         })()}
-        {readOnly ? (
-          <span className="text-sm font-medium">{file.filename}</span>
-        ) : renaming ? (
-          <form onSubmit={submitRename} className="flex items-center gap-1.5">
-            <Input
-              autoFocus
-              value={renameDraft}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              className="h-8 w-56"
-              placeholder="new-name"
-            />
-            <span className="text-xs text-muted-foreground">.{file.extension}</span>
-            <SubmitButton pending={saving} disabled={!renameDraft.trim()} size="sm">
-              Rename
-            </SubmitButton>
-            <Button type="button" size="sm" variant="outline" onClick={() => setRenaming(false)}>
-              Cancel
-            </Button>
-          </form>
-        ) : (
-          <RowButton
-            onClick={() => {
-              const stem =
-                file.filename.lastIndexOf('.') > 0
-                  ? file.filename.slice(0, file.filename.lastIndexOf('.'))
-                  : file.filename;
-              setRenameDraft(stem);
-              setRenaming(true);
-            }}
-            className="text-sm font-medium hover:underline"
-            title="Click to rename (basename only)"
-          >
-            {file.filename}
-          </RowButton>
-        )}
-        <span className="hidden text-xs text-muted-foreground sm:inline">
-          {file.parentPath} · {fileTypeLabel(file.mimeType, file.filename)}
-        </span>
-
-        <div className="ml-auto flex items-center gap-2">
-          {/* Per-file brain-indexing override. One click flips between
-              content-indexed and name-only; the folder chain's mode is
-              restored via the files screen ('inherit' lives there — this
-              button is the quick per-file escape hatch). */}
-          {canEdit ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              title={
-                file.indexing === 'metadata' || file.indexingApplied === 'metadata'
-                  ? 'Name-only: content not indexed into the brain. Click to index content.'
-                  : 'Content is indexed into the brain. Click for name-only (store & share without indexing content).'
-              }
-              onClick={async () => {
-                const next =
-                  file.indexing === 'metadata' || file.indexingApplied === 'metadata'
-                    ? 'full'
-                    : 'metadata';
-                try {
-                  const { file: updated } = await apiSend<{ file: FileRow }>(
-                    `/api/files/files/${fileId}`,
-                    'PATCH',
-                    { indexing: next },
-                  );
-                  setState((prev) => (prev.kind === 'loaded' ? { ...prev, file: updated } : prev));
-                  toast.success(
-                    next === 'metadata'
-                      ? 'Name only: its content leaves the index'
-                      : 'Content indexing queued',
-                  );
-                  onSaved();
-                } catch (err) {
-                  toast.error(err instanceof ApiError ? err.message : 'Could not change indexing');
-                }
-              }}
-            >
-              {file.indexing === 'metadata' || file.indexingApplied === 'metadata' ? (
-                <>
-                  <EyeOff /> Name-only
-                </>
-              ) : (
-                <>
-                  <Eye /> Indexed
-                </>
-              )}
-            </Button>
-          ) : null}
-          {isMarkdown && canEdit && (
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="default"
-              value={mode}
-              onValueChange={(v) => v && setMode(v as Mode)}
-            >
-              <ToggleGroupItem value="edit" aria-label="Edit">
-                <PencilLine /> Edit
-              </ToggleGroupItem>
-              <ToggleGroupItem value="split" aria-label="Split">
-                <SplitSquareHorizontal /> Split
-              </ToggleGroupItem>
-              <ToggleGroupItem value="preview" aria-label="Preview">
-                <Eye /> Preview
-              </ToggleGroupItem>
-            </ToggleGroup>
-          )}
-          {access.share ? <GrantAccessControl type="file" nodeId={file.id} /> : null}
-          {/* History link → /nodes/[id]/history: every trace that touched
-              this file (ingest, extractor, summarizer, …). */}
-          {isAdminUser ? (
-            <Button asChild variant="outline" size="sm">
-              <a href={`/nodes/${file.id}/history`} title="See what the system did with this file">
-                History
-              </a>
-            </Button>
-          ) : null}
-          <Button asChild variant="outline" size="icon" className="size-9">
-            <a
-              href={toAsset(`/api/files/files/${file.id}?raw=1`)}
-              download={file.filename}
-              title="Download"
-            >
-              <Download aria-hidden />
-            </a>
-          </Button>
-          {file.isText && canEdit && (
+        title={
+          renaming && !readOnly ? (
+            <form onSubmit={submitRename} className="flex items-center gap-1.5">
+              <Input
+                autoFocus
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Escape' && setRenaming(false)}
+                aria-label="File name"
+                className="h-7 w-56"
+                placeholder="new-name"
+              />
+              <span className="text-xs font-normal text-muted-foreground">.{file.extension}</span>
+              <SubmitButton pending={saving} disabled={!renameDraft.trim()} size="xs">
+                Rename
+              </SubmitButton>
+            </form>
+          ) : (
+            file.filename
+          )
+        }
+        badges={dirty ? <HeaderPill title="Save keeps your changes">unsaved</HeaderPill> : null}
+        textActions={
+          file.isText && canEdit ? (
             <Button size="sm" onClick={save} disabled={!dirty || saving}>
               {saving ? <Loader2 className="animate-spin" /> : <Save />}
-              {saving ? 'Saving…' : dirty ? 'Save •' : 'Save'}
+              Save
             </Button>
-          )}
-          <Button variant="ghost" size="icon" className="size-9" onClick={onClose} title="Close">
-            <X aria-hidden />
-          </Button>
-        </div>
-      </header>
-      {note ? (
-        <p className="border-b border-border px-6 py-1.5 text-xs text-muted-foreground">{note}</p>
-      ) : null}
+          ) : null
+        }
+        access={<AccessSlot type="file" nodeId={file.id} canShare={access.share} shares={file} />}
+        tools={[
+          ...(isMarkdown && canEdit
+            ? [
+                {
+                  key: 'view',
+                  label: `View: ${mode === 'edit' ? 'Edit' : mode === 'split' ? 'Split' : 'Preview'}`,
+                  icon:
+                    mode === 'edit' ? (
+                      <PencilLine />
+                    ) : mode === 'split' ? (
+                      <SplitSquareHorizontal />
+                    ) : (
+                      <Eye />
+                    ),
+                  choices: (['edit', 'split', 'preview'] as const).map((m) => ({
+                    key: m,
+                    label: `${m === 'edit' ? 'Edit' : m === 'split' ? 'Split' : 'Preview'}${mode === m ? ' ✓' : ''}`,
+                    onSelect: () => setMode(m as Mode),
+                  })),
+                },
+              ]
+            : []),
+          ...(canEdit
+            ? [
+                {
+                  // Per-file brain-indexing override: one click flips between
+                  // content-indexed and name-only; the folder's mode is
+                  // restored from the files screen ('inherit' lives there).
+                  key: 'indexing',
+                  label:
+                    file.indexing === 'metadata' || file.indexingApplied === 'metadata'
+                      ? 'Name only: content not indexed. Click to index content.'
+                      : 'Indexed: click for name only (store and share without indexing)',
+                  icon:
+                    file.indexing === 'metadata' || file.indexingApplied === 'metadata' ? (
+                      <EyeOff />
+                    ) : (
+                      <Eye />
+                    ),
+                  onSelect: () => void toggleIndexing(),
+                },
+              ]
+            : []),
+          ...(isAdminUser
+            ? [
+                {
+                  // Every trace that touched this file (ingest, extractor, …).
+                  key: 'history',
+                  label: 'History: what the system did with this file',
+                  icon: <History />,
+                  href: `/nodes/${file.id}/history`,
+                },
+              ]
+            : []),
+          {
+            key: 'download',
+            label: 'Download',
+            icon: <Download />,
+            href: toAsset(`/api/files/files/${file.id}?raw=1`),
+            download: file.filename,
+          },
+          {
+            key: 'close',
+            label: 'Close the file',
+            icon: <X />,
+            onSelect: onClose,
+          },
+        ]}
+        edit={
+          readOnly
+            ? { disabled: true, label: 'Rename file' }
+            : {
+                label: 'Rename file',
+                pressed: renaming,
+                onSelect: () => {
+                  if (renaming) return setRenaming(false);
+                  const stem =
+                    file.filename.lastIndexOf('.') > 0
+                      ? file.filename.slice(0, file.filename.lastIndexOf('.'))
+                      : file.filename;
+                  setRenameDraft(stem);
+                  setRenaming(true);
+                },
+              }
+        }
+        info={{
+          path: file.parentPath.split('.').filter(Boolean),
+          rows: [
+            { label: 'Type', value: fileTypeLabel(file.mimeType, file.filename) },
+            ...(note ? [{ label: 'Access', value: note }] : []),
+          ],
+        }}
+        infoLabel="About this file"
+      />
 
       {/* Body */}
       {file.isText && !canEdit && !isMarkdown ? (

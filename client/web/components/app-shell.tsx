@@ -401,15 +401,34 @@ function ShellFrame({
   const [zen, setZen] = useState(false);
   const zenCtx = useMemo(() => ({ zen, toggle: () => setZen((v) => !v) }), [zen]);
 
-  // Leaving the screen leaves focus mode. Four screens offer the toggle (the
-  // Pages and Draw editors and their list previews); everywhere else has no way
-  // OUT, so arriving there with the chrome hidden would be a trap. Note this
-  // watches the PATHNAME: picking another row in a list writes a query param,
-  // so reading one page after another in focus mode does not drop you out of
-  // it, while navigating to a different screen does.
+  // Leaving the SECTION leaves focus mode: a screen without the item header
+  // has no way OUT, so arriving there with the chrome hidden would be a trap.
+  // Within a section it stays (item header contract, 2026-10-21): reading one
+  // page after another, or opening one in the editor (`/pages` to
+  // `/pages/<id>`), keeps the folders hidden until Focus, the back link or
+  // Esc brings them back.
+  const section = pathname.split('/')[1] ?? '';
   useEffect(() => {
     setZen(false);
-  }, [pathname]);
+  }, [section]);
+
+  // Esc leaves focus mode (item header contract, 2026-10-21), as the header's
+  // back link does. Not while something else owns Esc: an open dialog, menu
+  // or popover closes first, and typing in a field or the editor keeps it.
+  useEffect(() => {
+    if (!zen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"], [role="menu"], [role="alertdialog"]')) return;
+      setZen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zen]);
 
   const toggleNav = () =>
     setNavCollapsed((v) => {

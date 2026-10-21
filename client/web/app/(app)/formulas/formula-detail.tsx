@@ -1,15 +1,14 @@
 'use client';
 
+import { AccessSlot } from '@/components/share/access-slot';
 import { Fragment, useMemo, useState } from 'react';
-import { WorkspaceChips } from '@/components/share/workspace-chips';
 import katex from 'katex';
-import { AlertTriangle, Pencil, Sigma, Trash2 } from 'lucide-react';
+import { AlertTriangle, Sigma } from 'lucide-react';
 import type { CoverageGap, FormulaSpec, FormulaValue } from '@mantle/content-core/formula-spec';
 import type { DimensionIssue } from '@mantle/content-core/formula-dimensions';
 import type { SignatureInput, TargetSignature } from '@mantle/content-core/formula-signature';
 import type { TraceStep } from '@mantle/content-core/formula-eval';
 import { Badge } from '@mantle/web-ui/ui/badge';
-import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import {
   Field,
@@ -44,13 +43,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { parseInputText } from '@mantle/content-core/formula-eval';
-import { GrantAccessControl } from '@/components/share/grant-access';
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { JsonView } from '@mantle/web-ui/ui/json-view';
 
 export type FormulaRow = {
@@ -184,6 +182,7 @@ function UnverifiedBadge({ reason }: { reason: string }) {
 
 export function FormulaDetail({
   formula,
+  shares,
   coverageGaps,
   dimensionIssues,
   signature,
@@ -192,6 +191,8 @@ export function FormulaDetail({
   onDeleted,
 }: {
   formula: FormulaRow;
+  /** The share marks for Access (`shareMarksOf`). */
+  shares: unknown;
   coverageGaps: CoverageGap[];
   dimensionIssues: DimensionIssue[];
   signature: TargetSignature[];
@@ -203,6 +204,7 @@ export function FormulaDetail({
   const spec = formula.spec;
   const cite = citation(spec);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function remove() {
     setDeleting(true);
@@ -281,79 +283,55 @@ export function FormulaDetail({
   }
 
   const header = (
-    <header className="border-b border-border px-6 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          {/* §8 anatomy: the glyph lives INSIDE the h2 so it keeps the title's
-              baseline when the title wraps, and the unit system rides along as
-              an inline shrink-0 badge rather than on a line of its own. */}
-          <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold text-foreground">
-            <Sigma className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="min-w-0 truncate">{formula.title}</span>
-            {spec?.unitSystem ? (
-              <Badge variant="secondary" className="shrink-0">
-                {spec.unitSystem}
-              </Badge>
-            ) : null}
-            <WorkspaceChips item={formula} />
-          </h2>
-          {cite ? <p className="mt-1 text-xs text-muted-foreground">{cite}</p> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {/* The shared page is a live calculator: at Public, anyone with
-              the link can put their own numbers in without an account
-              (Client takes no link since client logins C1). There is no
-              team link (member logins Phase 6 stage 6), and a formula is
-              not a member kind (MEMBER_KIND), so no member screen lists one
-              at Team. Until one does, the link must be passed along
-              directly. */}
-          <GrantAccessControl
+    <>
+      {/* The item header (contract 2026-10-21): one row; the citation behind
+          Info. The shared page is a live calculator: at Public, anyone with
+          the link can put their own numbers in without an account. A formula
+          is not a member kind, so no member screen lists one; until one does,
+          the link must be passed along directly (the panel's hint). */}
+      <ItemHeader
+        section="Formulas"
+        visual={<Sigma className="size-4" aria-hidden />}
+        title={formula.title}
+        badges={spec?.unitSystem ? <HeaderPill>{spec.unitSystem}</HeaderPill> : null}
+        access={
+          <AccessSlot
             type="formula"
             nodeId={formula.id}
-            iconOnly
+            canShare
+            shares={shares}
             hint="Formulas do not show in the lists of other users yet. Send the open link directly."
           />
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            <Pencil />
-            Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              {/* §8: grey until hover, no text label, and `icon-sm` — the
-                  square twin of the `sm` Edit button beside it, not `sm`
-                  itself (which is a 40x36 rectangle for a lone glyph). */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground hover:text-destructive-ink"
-                aria-label="Delete formula"
-                disabled={deleting}
-              >
-                <Trash2 />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete “{formula.title}”?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This removes the formula and its brain index permanently. Anything that cited it
-                  keeps only the text of the citation, not the calculation.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={remove}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete formula
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
-    </header>
+        }
+        onDelete={() => setConfirmDelete(true)}
+        deleteDisabled={deleting}
+        deleteLabel="Delete formula"
+        move={{ kind: 'formulas', item: { id: formula.id, title: formula.title } }}
+        edit={{ onSelect: onEdit, label: 'Edit formula' }}
+        info={{ rows: cite ? [{ label: 'Source', value: cite }] : [] }}
+        infoLabel="About this formula"
+      />
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{formula.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the formula and its brain index permanently. Anything that cited it keeps
+              only the text of the citation, not the calculation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={remove}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete formula
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 
   // A stored spec that no longer re-parses. Every section below indexes into

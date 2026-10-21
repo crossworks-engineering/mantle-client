@@ -1,12 +1,14 @@
 'use client';
 
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
+import { DraftPill, HeaderIconPicker, HeaderTitleField } from '@/components/layout/header-fields';
+import { AccessSlot } from '@/components/share/access-slot';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AppWindow,
-  Check,
   GitCommitHorizontal,
   Loader2,
   MoreHorizontal,
@@ -16,7 +18,6 @@ import {
   Undo2,
   Upload,
 } from 'lucide-react';
-import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -38,12 +39,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@mantle/web-ui/ui/dropdown-menu';
-import { Badge } from '@mantle/web-ui/ui/badge';
-import { ExportMenu } from '@/components/export/export-menu';
+import { useExportTool } from '@/components/export/export-menu';
 import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
-import { EmojiPicker } from '@/components/emoji-picker';
-import { GrantAccessControl } from '@/components/share/grant-access';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { SurfaceErrorBoundary } from '@mantle/web-ui/ui/error-boundary';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
@@ -59,13 +57,7 @@ const META_DEBOUNCE_MS = 800;
 
 type TabInfo = NonNullable<TableDetail['tabs']>[number];
 
-export function TableDetailClient({
-  initial,
-  embedded = false,
-}: {
-  initial: TableDetail;
-  embedded?: boolean;
-}) {
+export function TableDetailClient({ initial }: { initial: TableDetail }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -488,6 +480,8 @@ export function TableDetailClient({
     [initial.id, reloadTab, toast],
   );
 
+  const download = useExportTool(initial.id, 'table');
+
   const doDelete = useCallback(async () => {
     try {
       await apiSend(`/api/tables/${initial.id}`, 'DELETE');
@@ -515,98 +509,52 @@ export function TableDetailClient({
           e.target.value = '';
         }}
       />
-      <div
-        data-testid="item-header"
-        className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background/60 px-4 py-2 backdrop-blur"
-      >
-        {!embedded && (
-          <div className="shrink-0 whitespace-nowrap">
-            <BackLink href="/tables">All tables</BackLink>
-          </div>
-        )}
-        {/* Icon + name, left-aligned and readable: the group keeps a sensible
-            min-width and grows to fill. The action cluster is wide, so on a
-            narrow master-detail pane it WRAPS to a second row (flex-wrap) rather
-            than squeezing the name to a couple of characters. */}
-        <div className="flex min-w-[12rem] flex-1 items-center gap-1">
-          {readOnly ? (
-            <span className="flex h-8 w-9 shrink-0 items-center justify-center text-lg" aria-hidden>
-              {icon || '📊'}
-            </span>
-          ) : (
-            <EmojiPicker
-              value={icon || null}
-              onSelect={setIcon}
-              onClear={() => setIcon('')}
-              align="start"
-              trigger={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label="Change table icon"
-                  title="Change icon"
-                  className="h-8 w-9 shrink-0 rounded-md p-0 text-lg leading-none hover:bg-accent"
-                >
-                  {icon || '📊'}
-                </Button>
-              }
-            />
-          )}
-          <Input
+      {/* The item header (contract 2026-10-21): one row. A table is always
+          open for editing, so it has no pencil. Commit is the one word
+          button; Import, Discard and Download are its tools; the read-only
+          note sits behind Info. An app's table names its app as the pill. */}
+      <ItemHeader
+        sticky
+        section="Tables"
+        visual={
+          <HeaderIconPicker
+            icon={icon || null}
+            fallback="📊"
+            onSelect={setIcon}
+            onClear={() => setIcon('')}
+            label="Change table icon"
             readOnly={readOnly}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="h-8 min-w-0 flex-1 border-0 bg-transparent px-1 text-left text-base font-semibold shadow-none focus-visible:ring-0"
-            aria-label="Table title"
           />
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          {/* App-bound: no draft cycle, so the badge takes the status slot and
-              Import/Commit/Discard don't render at all. */}
-          {appLink ? (
+        }
+        title={
+          <HeaderTitleField
+            value={title}
+            onChange={setTitle}
+            placeholder="Table"
+            label="Table title"
+            readOnly={readOnly}
+          />
+        }
+        badges={
+          appLink ? (
+            // App-bound: no draft cycle, so the app takes the pill and
+            // Import/Commit/Discard don't render at all.
             <Link
               href={`/apps/${appLink.appId}`}
               title={`Open ${appLink.appName ?? 'the app'}`}
-              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Badge variant="secondary" className="gap-1.5 font-normal">
-                <AppWindow className="size-3.5" aria-hidden />
-                App table{appLink.appName ? ` · ${appLink.appName}` : ''}
-              </Badge>
+              <HeaderPill>
+                <AppWindow className="mr-1 size-3" aria-hidden />
+                app table{appLink.appName ? ` · ${appLink.appName}` : ''}
+              </HeaderPill>
             </Link>
           ) : readOnly ? null : (
-            <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
-          )}
-          {!appLink && !readOnly && isAdminUser && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => fileRef.current?.click()}
-              disabled={importing}
-            >
-              {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
-            </Button>
-          )}
-          {isAdminUser ? <ExportMenu nodeId={initial.id} kind="table" /> : null}
-          {access.share ? (
-            <GrantAccessControl
-              type="table"
-              nodeId={initial.id}
-              iconOnly
-              hint="Others and link holders always see the last committed version, never your draft."
-            />
-          ) : null}
-          {dirty && !readOnly && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground"
-              onClick={() => void discard()}
-            >
-              <Undo2 /> Discard
-            </Button>
-          )}
-          {!appLink && !readOnly && (
+            <DraftPill committing={committing} saving={draftSaving} dirty={dirty} />
+          )
+        }
+        textActions={
+          !appLink && !readOnly ? (
             <Button
               size="sm"
               onClick={() => void commit()}
@@ -614,26 +562,47 @@ export function TableDetailClient({
             >
               <GitCommitHorizontal /> Commit
             </Button>
-          )}
-          {access.manage ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-8 text-muted-foreground hover:text-destructive-ink"
-              onClick={() => setConfirmDelete(true)}
-              aria-label="Delete table"
-            >
-              <Trash2 />
-            </Button>
-          ) : null}
-        </div>
-      </div>
-
-      {readNote ? (
-        <p className="border-b border-border px-4 py-1.5 text-xs text-muted-foreground">
-          {readNote}
-        </p>
-      ) : null}
+          ) : null
+        }
+        access={
+          <AccessSlot
+            type="table"
+            nodeId={initial.id}
+            canShare={access.share}
+            shares={initial}
+            hint="Others and link holders always see the last committed version, never your draft."
+          />
+        }
+        tools={[
+          ...(!appLink && !readOnly && isAdminUser
+            ? [
+                {
+                  key: 'import',
+                  label: importing ? 'Importing…' : 'Import a spreadsheet (xlsx, xls, csv)',
+                  icon: importing ? <Loader2 className="animate-spin" /> : <Upload />,
+                  onSelect: () => fileRef.current?.click(),
+                },
+              ]
+            : []),
+          ...(dirty && !readOnly
+            ? [
+                {
+                  key: 'discard',
+                  label: 'Discard the draft',
+                  icon: <Undo2 />,
+                  onSelect: () => void discard(),
+                },
+              ]
+            : []),
+          ...(isAdminUser ? [download] : []),
+        ]}
+        onDelete={access.manage ? () => setConfirmDelete(true) : undefined}
+        deleteDisabled={!access.manage}
+        deleteLabel="Delete table"
+        move={access.move ? { kind: 'tables', item: { id: initial.id, title } } : null}
+        info={{ rows: readNote ? [{ label: 'Access', value: readNote }] : [] }}
+        infoLabel="About this table"
+      />
 
       {fileBacked && (
         <TabBar
@@ -893,36 +862,5 @@ function TabBar({
         </Button>
       )}
     </div>
-  );
-}
-
-function StatusIndicator({
-  committing,
-  draftSaving,
-  dirty,
-}: {
-  committing: boolean;
-  draftSaving: boolean;
-  dirty: boolean;
-}) {
-  if (committing) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Committing…
-      </span>
-    );
-  }
-  if (draftSaving) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Saving…
-      </span>
-    );
-  }
-  if (dirty) return <span className="text-xs text-muted-foreground">Draft · uncommitted</span>;
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Check className="size-3.5" aria-hidden /> Committed
-    </span>
   );
 }

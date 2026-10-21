@@ -1,5 +1,7 @@
 'use client';
 
+import { useItemAddress } from '@/components/layout/use-item-address';
+import { useZenMode } from '@/components/layout/zen-mode';
 import { itemAccess } from '@/lib/item-access';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
 import { useCallback, useEffect, useState } from 'react';
@@ -85,6 +87,8 @@ type TablesListResponse = {
 };
 
 export function TablesShell() {
+  // Maximise from the item header collapses the list too.
+  const { zen } = useZenMode();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -130,7 +134,10 @@ export function TablesShell() {
 
   // The full selected table (grid + draft) — a separate fetch since list rows
   // are summaries. Defaults to the first row (master-detail convention).
-  const urlSelected = searchParams.get('selected')?.trim() || null;
+  // The table in the address (`/tables/<id>`); an old `?selected=` link
+  // moves there.
+  const address = useItemAddress('tables', 'selected');
+  const urlSelected = address.id;
   const selectedId = urlSelected ?? rows[0]?.id ?? null;
   const selectedTableQuery = useQuery({
     queryKey: ['tables', selectedId],
@@ -191,7 +198,7 @@ export function TablesShell() {
   const selectTable = (id: string) => {
     if (id === selectedId) return;
     setPendingId(id);
-    go({ selected: id });
+    address.open(id);
   };
 
   // The WIDTH is `MasterDetail`'s now, under `master-detail:tables`.
@@ -225,7 +232,7 @@ export function TablesShell() {
       if (createIn) await fileNew(table.id, createIn);
       await queryClient.invalidateQueries({ queryKey: ['tables'] });
       void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
-      go({ selected: table.id });
+      address.open(table.id);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return;
       toast.error('Could not create table');
@@ -249,8 +256,8 @@ export function TablesShell() {
     setDeleteTarget(null);
     void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
     await queryClient.invalidateQueries({ queryKey: ['tables'] });
-    if (wasSelected) go({ selected: null });
-  }, [deleteTarget, selectedId, go, queryClient, toast]);
+    if (wasSelected) address.close();
+  }, [deleteTarget, selectedId, address, queryClient, toast]);
 
   if (!showTree && listQuery.isPending) {
     return (
@@ -334,7 +341,7 @@ export function TablesShell() {
         // The existing collapse toggle. The list COLLAPSES rather than
         // unmounting, so the search box, scroll position and page survive the
         // round trip — see the prop's note in master-detail.tsx.
-        listCollapsed={collapsed}
+        listCollapsed={collapsed || zen}
         list={
           showTree ? (
             <aside className="flex h-full flex-col bg-muted/20">
@@ -485,7 +492,7 @@ export function TablesShell() {
         detail={
           <div className="relative h-full overflow-hidden">
             {selectedTable && selectedTableQuery.isFetchedAfterMount ? (
-              <TableDetailClient key={selectedTable.id} initial={selectedTable} embedded />
+              <TableDetailClient key={selectedTable.id} initial={selectedTable} />
             ) : selectedId && selectedTableQuery.isError ? (
               <>
                 <SetPageTitle title="Tables" />

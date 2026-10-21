@@ -3,45 +3,41 @@ import { ARTIFACTS_DIR } from '../lib/env';
 import { openFromTree, treeRow } from '../lib/tree';
 
 /**
- * The pages/draw editor header is ONE compact row: icon + title left, tags
- * right, no band box. It used to be two stacked rows in a bordered strip that
- * ate ~15% of the viewport; this pins the fix with a hard height budget and a
- * same-row check, in both editors, so a future padding/wrap regression fails
- * loudly. Also covers the draw icon end to end (PATCH → header trigger →
+ * The pages/draw editors wear THE item header (contract 2026-10-21): one row,
+ * the title edited in place in it, tags and the description behind Info, the
+ * pressed pencil to leave editing. It used to be a toolbar row plus a title
+ * band; this pins the one row with a height budget and checks nothing sits
+ * under it. Also covers the draw icon end to end (PATCH → header trigger →
  * list row), since draws only just learned icons.
  */
 
-/** Generous ceiling for the whole header row — the old design measured ~110px. */
-const HEADER_MAX_PX = 64;
+/** The one row is 44px at the default text size; a second row would double it. */
+const HEADER_MAX_PX = 56;
 
 test.describe('editor header layout', () => {
   test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
 
-  test('pages: one compact row, title left / tags right', async ({ ownerApi, ownerPage }) => {
+  test('pages: one row, the title in it, tags behind Info', async ({ ownerApi, ownerPage }) => {
     const created = await ownerApi.post('/api/pages', {
       data: { title: `E2E header page ${Date.now()}`, tags: ['alpha', 'beta'] },
     });
     const { page: row } = (await created.json()) as { page: { id: string } };
 
     try {
-      await ownerPage.goto(`/pages/${row.id}`);
+      await ownerPage.goto(`/pages/${row.id}?edit=1`);
       const title = ownerPage.locator('input[aria-label="Page title"]');
       await expect(title).toBeVisible();
 
-      const header = ownerPage.locator('header:has(input[aria-label="Page title"])');
+      const header = ownerPage.getByTestId('item-header');
+      await expect(header.locator('input[aria-label="Page title"]')).toBeVisible();
       const box = await header.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.height).toBeLessThan(HEADER_MAX_PX);
 
-      // Title and tags share the row (two columns, not stacked).
-      const titleBox = await title.boundingBox();
-      const tagsBox = await ownerPage.getByRole('textbox', { name: 'Tags' }).boundingBox();
-      const centerDelta = Math.abs(
-        titleBox!.y + titleBox!.height / 2 - (tagsBox!.y + tagsBox!.height / 2),
-      );
-      expect(centerDelta).toBeLessThan(8);
-      // Tags sit to the RIGHT of the title, start-aligned layout.
-      expect(tagsBox!.x).toBeGreaterThan(titleBox!.x);
+      // Tags are edited behind Info, not in a row under the title.
+      await header.getByRole('button', { name: 'About this page' }).click();
+      await expect(ownerPage.getByRole('dialog').getByText('alpha')).toBeVisible();
+      await ownerPage.keyboard.press('Escape');
 
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-header-page.png` });
 
@@ -60,15 +56,12 @@ test.describe('editor header layout', () => {
       await ownerPage.getByRole('button', { name: 'Exit focus mode' }).click();
       await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeVisible();
 
-      // Leaving the editor drops focus mode by itself, so the list is never
-      // reached with the chrome hidden and no way to bring it back.
-      await ownerPage.getByRole('button', { name: 'Focus mode' }).click();
-      await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeHidden();
-      await ownerPage.getByRole('link', { name: 'All pages' }).click();
+      // The pressed pencil leaves editing: back to the page in the list.
+      await header.getByRole('link', { name: /^Done editing/ }).click();
       // The e2e client is `next dev`, and nothing before this spec has opened
       // the /pages list, so the first visit compiles the route. On a CI runner
       // that alone can outlast the default 5s.
-      await expect(ownerPage).toHaveURL(/\/pages(\?|$)/, { timeout: 30_000 });
+      await expect(ownerPage).toHaveURL(new RegExp(`/pages/${row.id}$`), { timeout: 30_000 });
       await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeVisible();
     } finally {
       await ownerApi.delete(`/api/pages/${row.id}`);
@@ -97,28 +90,22 @@ test.describe('editor header layout', () => {
       expect(patchedRow.icon).toBe('🎨');
       expect(patchedRow.description).toBe('A canary description');
 
-      await ownerPage.goto(`/draw/${draw.id}`);
+      await ownerPage.goto(`/draw/${draw.id}?edit=1`);
       const titleInput = ownerPage.locator('input[aria-label="Drawing title"]');
       await expect(titleInput).toBeVisible();
 
-      const header = ownerPage.locator('header:has(input[aria-label="Drawing title"])');
+      const header = ownerPage.getByTestId('item-header');
+      await expect(header.locator('input[aria-label="Drawing title"]')).toBeVisible();
       const box = await header.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.height).toBeLessThan(HEADER_MAX_PX);
 
-      // Three columns on one row: title, description, tags.
-      const titleBox = await titleInput.boundingBox();
-      const desc = ownerPage.locator('input[aria-label="Drawing description"]');
-      await expect(desc).toHaveValue('A canary description');
-      const descBox = await desc.boundingBox();
-      const tagsBox = await ownerPage.getByRole('textbox', { name: 'Tags' }).boundingBox();
-      for (const other of [descBox, tagsBox]) {
-        expect(
-          Math.abs(titleBox!.y + titleBox!.height / 2 - (other!.y + other!.height / 2)),
-        ).toBeLessThan(8);
-      }
-      expect(descBox!.x).toBeGreaterThan(titleBox!.x);
-      expect(tagsBox!.x).toBeGreaterThan(descBox!.x);
+      // The description and tags are edited behind Info.
+      await header.getByRole('button', { name: 'About this drawing' }).click();
+      await expect(ownerPage.locator('input[aria-label="Drawing description"]')).toHaveValue(
+        'A canary description',
+      );
+      await ownerPage.keyboard.press('Escape');
 
       // The picker trigger shows the chosen emoji…
       await expect(ownerPage.getByRole('button', { name: 'Change drawing icon' })).toHaveText('🎨');
@@ -129,9 +116,9 @@ test.describe('editor header layout', () => {
       // description line + Edit/export/delete actions, the snapshot unboxed.
       await ownerPage.goto('/draw');
       const detail = ownerPage.locator('[data-testid="detail"]');
-      await openFromTree(ownerPage, title, detail.getByText('A canary description'));
+      await openFromTree(ownerPage, title, detail.getByRole('heading', { name: title }));
       await expect(treeRow(ownerPage, title).getByText('🎨')).toBeVisible();
-      await expect(ownerPage.getByRole('link', { name: 'Edit' })).toBeVisible();
+      await expect(ownerPage.getByRole('link', { name: 'Edit drawing' })).toBeVisible();
       await expect(ownerPage.getByRole('button', { name: 'Delete drawing' })).toBeVisible();
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}draw-list-preview.png` });
     } finally {
@@ -166,11 +153,15 @@ test.describe('editor header layout', () => {
       const { draws } = (await list.json()) as { draws: { id: string; hasDraft: boolean }[] };
       expect(draws.find((d) => d.id === draw.id)?.hasDraft).toBe(true);
 
-      // Announced where the drawing is opened: the preview's title row, and
+      // Announced where the drawing is opened: the header's state pill, and
       // the note in place of the snapshot that is not there yet.
       await ownerPage.goto('/draw');
       const detail = ownerPage.locator('[data-testid="detail"]');
-      await openFromTree(ownerPage, title, detail.getByText('Draft · uncommitted'));
+      await openFromTree(
+        ownerPage,
+        title,
+        detail.getByTestId('item-header').getByText('uncommitted', { exact: true }),
+      );
       await expect(detail.getByText(/uncommitted edits are saved/i)).toBeVisible();
 
       // Committing clears it — the badge tracks state, it isn't sticky.

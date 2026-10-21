@@ -1,11 +1,8 @@
-import { DrawDetailClient } from './draw-detail-client';
-
 /**
- * /draw/[id] — the whiteboard editor (auth gate only). The draw row is
- * client-fetched via `GET /api/draws/[id]`; the canvas, its scene restore and
- * the draft machinery all live in the client component.
+ * /draw/[id] — one drawing, looked at (`/draw/<id>`) or edited (`?edit=1`),
+ * INSIDE the Draw screen: `../layout.tsx` renders `DrawsClient`, which reads
+ * the id from the route, so the folders stay. Nothing renders here.
  */
-export default async function DrawEditorRoute({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  return <DrawDetailClient drawId={id} />;
+export default function DrawItemRoute() {
+  return null;
 }

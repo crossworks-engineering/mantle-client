@@ -1,28 +1,28 @@
 import { Suspense } from 'react';
-import { SetPageTitle } from '@/components/layout/page-title';
+import { RoleSwitch } from '@/components/layout/shell-role';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { AppsClient } from './apps-client';
 
 /**
- * /apps: the folder view every workspace has (auth gate only), the same for
- * every login since workspaces W6b (the screen hides what only an Admin user
- * may do). The tree, the search (`?q=`) and the picked app (`?id=`) are
- * client-fetched and read with useSearchParams, hence the Suspense boundary.
- * An app's own screen is /apps/<id>.
+ * /apps — the owner's screen is the layout (`layout.tsx`). A member's folder
+ * view renders here, with the picked app as `?id=` beside the tree.
  */
 export default function AppsPage() {
   return (
-    <>
-      <SetPageTitle title="Apps" />
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center">
-            <Spinner />
-          </div>
-        }
-      >
-        <AppsClient />
-      </Suspense>
-    </>
+    <RoleSwitch
+      member={
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <Spinner />
+            </div>
+          }
+        >
+          <AppsClient />
+        </Suspense>
+      }
+    >
+      {null}
+    </RoleSwitch>
   );
 }

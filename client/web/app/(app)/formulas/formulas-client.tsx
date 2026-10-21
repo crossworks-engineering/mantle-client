@@ -1,5 +1,8 @@
 'use client';
 
+import { useItemAddress } from '@/components/layout/use-item-address';
+import { useZenMode } from '@/components/layout/zen-mode';
+import { shareMarksOf } from '@/components/share/access-stack';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceChips } from '@/components/share/workspace-chips';
 import { useSearchParams } from 'next/navigation';
@@ -32,7 +35,6 @@ import { TagPill } from '@mantle/web-ui/tag-pill';
 import { useListNav } from '@/lib/use-list-nav';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { ListCard, ListCardMeta, ListCardTitle } from '@mantle/web-ui/ui/list-card';
 import type { CoverageGap } from '@mantle/content-core/formula-spec';
@@ -69,7 +71,8 @@ const ANY = '__any__';
 
 /** Which editor is open, if any. `new` carries the chosen template's spec,
  *  and `in` the tree folder it goes in ("New formula inside"). */
-type EditorState = { mode: 'new'; spec: Draft; in: TreeFolder | null } | { mode: 'edit' } | null;
+/** A new formula's editor; an existing one edits at its address (`?edit=1`). */
+type EditorState = { mode: 'new'; spec: Draft; in: TreeFolder | null } | null;
 
 export function FormulasClient() {
   const searchParams = useSearchParams();
@@ -90,7 +93,10 @@ export function FormulasClient() {
   const query = searchParams.get('q')?.trim() ?? '';
   const standard = searchParams.get('standard')?.trim() ?? '';
   const tag = searchParams.get('tag')?.trim() ?? '';
-  const urlId = searchParams.get('id')?.trim() || null;
+  // The formula in the address (`/formulas/<id>`, `?edit=1` to edit); an old
+  // `?id=` link moves there.
+  const address = useItemAddress('formulas', 'id');
+  const urlId = address.id;
 
   // The item tree when this brain serves it for formulas (docs/folder-tree.md);
   // the paged list for a brain before it, or if a tree call 404s.
@@ -105,6 +111,9 @@ export function FormulasClient() {
   // list would not respond to a click. The URL param is therefore an entry point
   // (deep link, back/forward) rather than the source of truth.
   const [selectedId, setSelectedId] = useState<string | null>(urlId);
+  // The tree row a formula was opened from: its share marks, for Access.
+  const [openedRow, setOpenedRow] = useState<unknown>(null);
+  const { zen } = useZenMode();
   useEffect(() => {
     if (urlId) setSelectedId(urlId);
   }, [urlId]);
@@ -171,7 +180,7 @@ export function FormulasClient() {
 
   function select(id: string) {
     setSelectedId(id);
-    syncSelectionParam('id', id);
+    if (id !== address.id || address.editing) address.open(id);
   }
 
   function openTemplate(yaml: string) {
@@ -231,33 +240,6 @@ export function FormulasClient() {
           Retry
         </Button>
       </div>
-    );
-  }
-
-  // The editor takes the whole pane rather than sitting in the detail column:
-  // it has its own validation rail, and a two-column form inside a 1fr column
-  // is unusable at any realistic width.
-  if (editor?.mode === 'new') {
-    return (
-      <FormulaEditor
-        initialSpec={editor.spec}
-        initialTitle=""
-        initialTags={[]}
-        onSaved={(id) => afterSave(id, editor.in)}
-        onCancel={() => setEditor(null)}
-      />
-    );
-  }
-  if (editor?.mode === 'edit' && detailQuery.data) {
-    return (
-      <FormulaEditor
-        formulaId={detailQuery.data.formula.id}
-        initialSpec={detailQuery.data.formula.spec as unknown as Draft}
-        initialTitle={detailQuery.data.formula.title}
-        initialTags={detailQuery.data.formula.tags}
-        onSaved={(id) => afterSave(id)}
-        onCancel={() => setEditor(null)}
-      />
     );
   }
 
@@ -327,6 +309,7 @@ export function FormulasClient() {
       <MasterDetail
         id="formulas"
         defaultListSize="360px"
+        listCollapsed={zen}
         list={
           showTree ? (
             // No private formulas, and delete lives in the detail pane: the
@@ -341,7 +324,10 @@ export function FormulasClient() {
                 searchPlaceholder="Search formulas and folders…"
                 actions={newButton}
                 newItemInFolder={{ label: 'formula', onCreate: (f) => startNew(f) }}
-                onOpenItem={(item) => select(item.id)}
+                onOpenItem={(item) => {
+                  setOpenedRow(item);
+                  select(item.id);
+                }}
                 onUnsupported={() => setTreeGone(true)}
               />
             </aside>
@@ -493,7 +479,28 @@ export function FormulasClient() {
         }
         detail={
           /* ── Right: detail ────────────────────────────────────── */
-          detailQuery.isLoading ? (
+          // The editor sits in the detail pane too, the folders beside it
+          // (phase 5): a new formula from its template, or the open one at
+          // its edit address.
+          editor?.mode === 'new' ? (
+            <FormulaEditor
+              initialSpec={editor.spec}
+              initialTitle=""
+              initialTags={[]}
+              onSaved={(id) => afterSave(id, editor.in)}
+              onCancel={() => setEditor(null)}
+            />
+          ) : address.editing && detailQuery.data ? (
+            <FormulaEditor
+              key={detailQuery.data.formula.id}
+              formulaId={detailQuery.data.formula.id}
+              initialSpec={detailQuery.data.formula.spec as unknown as Draft}
+              initialTitle={detailQuery.data.formula.title}
+              initialTags={detailQuery.data.formula.tags}
+              onSaved={(id) => afterSave(id)}
+              onCancel={() => address.open(detailQuery.data!.formula.id)}
+            />
+          ) : detailQuery.isLoading ? (
             <div className="flex h-full items-center justify-center">
               <Spinner />
             </div>
@@ -506,14 +513,15 @@ export function FormulasClient() {
               // new spec may not even have.
               key={detailQuery.data.formula.id}
               formula={detailQuery.data.formula}
+              shares={shareMarksOf(detailQuery.data.formula, openedRow)}
               coverageGaps={detailQuery.data.coverageGaps}
               dimensionIssues={detailQuery.data.dimensionIssues ?? []}
               signature={detailQuery.data.signature ?? []}
               specErrors={detailQuery.data.specErrors}
-              onEdit={() => setEditor({ mode: 'edit' })}
+              onEdit={() => address.open(detailQuery.data!.formula.id, true)}
               onDeleted={async () => {
                 setSelectedId(null);
-                syncSelectionParam('id', null);
+                address.close();
                 void queryClient.invalidateQueries({ queryKey: treeKey('formulas') });
                 await queryClient.invalidateQueries({ queryKey: ['formulas'] });
               }}

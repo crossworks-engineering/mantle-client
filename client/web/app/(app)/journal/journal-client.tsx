@@ -1,5 +1,8 @@
 'use client';
 
+import { useItemAddress } from '@/components/layout/use-item-address';
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
+import { useZenMode } from '@/components/layout/zen-mode';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -8,12 +11,10 @@ import {
   GraduationCap,
   HelpCircle,
   NotebookPen,
-  Pencil,
   Plus,
   Search,
   Sparkles,
   Target,
-  Trash2,
   X,
 } from 'lucide-react';
 import { KINDS, kindLabel } from '@mantle/content-core/journal-options';
@@ -46,7 +47,6 @@ import { TagPill } from '@mantle/web-ui/tag-pill';
 import { ListCard, ListCardSnippet, ListCardTitle } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
-import { syncSelectionParam } from '@/lib/url-sync';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { GapAnswerForm } from '@/components/journal/gap-answer';
 import { JournalEditor, type JournalRow } from './journal-editor';
@@ -81,6 +81,8 @@ function KindIcon({ kind, className }: { kind: string | null; className?: string
 }
 
 export function JournalClient() {
+  // Maximise from the item header collapses the list.
+  const { zen } = useZenMode();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -134,11 +136,17 @@ export function JournalClient() {
   const pageSize = listQuery.data?.pageSize ?? 50;
   const tags = listQuery.data?.tags ?? [];
 
-  const [selectedId, setSelectedId] = useState<string | null>(
-    searchParams.get('selected')?.trim() || null,
-  );
-  const [editing, setEditing] = useState<boolean>(searchParams.get('edit') === '1');
+  // The entry in the address: `/journal/<id>` reads it, `?edit=1` edits it,
+  // beside the list (item header contract, phase 5). An old `?selected=` link
+  // moves there. A NEW entry has no address until it saves.
+  const address = useItemAddress('journal', 'selected');
+  const [selectedId, setSelectedId] = useState<string | null>(address.id);
+  useEffect(() => {
+    if (address.id) setSelectedId(address.id);
+  }, [address.id]);
   const [creating, setCreating] = useState(false);
+  // Editing: a new entry, or the open one at its edit address.
+  const editing = creating || address.editing;
   const [dirty, setDirty] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<JournalRow | null>(null);
   const [discard, setDiscard] = useState<{ run: () => void } | null>(null);
@@ -179,42 +187,43 @@ export function JournalClient() {
   );
 
   const exitEdit = useCallback(() => {
-    setEditing(false);
     setCreating(false);
     setDirty(false);
-  }, []);
+    if (address.id && address.editing) address.open(address.id);
+  }, [address]);
 
   const selectEntry = (id: string) =>
     guard(() => {
       setSelectedId(id);
-      syncSelectionParam('selected', id);
-      exitEdit();
+      setCreating(false);
+      setDirty(false);
+      if (id !== address.id || address.editing) address.open(id);
     });
 
   const switchView = (v: ViewKey) =>
     guard(() => {
       // Kind filters don't carry across lanes; selection rarely survives either.
-      go({ view: v === 'you' ? null : v, kind: null, learned_by: null, page: null });
+      go({ view: v === 'you' ? null : v, kind: null, learned_by: null, page: null }, '/journal');
       setSelectedId(null);
-      syncSelectionParam('selected', null);
-      exitEdit();
+      setCreating(false);
+      setDirty(false);
     });
 
   const startCreate = () =>
     guard(() => {
       setCreating(true);
-      setEditing(true);
     });
 
   const startEdit = () => {
     setCreating(false);
-    setEditing(true);
+    if (selected) address.open(selected.id, true);
   };
 
   const onSaved = (saved: JournalRow) => {
-    exitEdit();
+    setCreating(false);
+    setDirty(false);
     setSelectedId(saved.id);
-    syncSelectionParam('selected', saved.id);
+    address.open(saved.id);
     void queryClient.invalidateQueries({ queryKey: ['journal'] });
   };
 
@@ -245,7 +254,7 @@ export function JournalClient() {
     if (selected?.id === deleteTarget.id) exitEdit();
     if (selectedId === deleteTarget.id) {
       setSelectedId(null);
-      syncSelectionParam('selected', null);
+      if (address.id === deleteTarget.id) address.close();
     }
     setDeleteTarget(null);
     void queryClient.invalidateQueries({ queryKey: ['journal'] });
@@ -487,7 +496,7 @@ export function JournalClient() {
 
   return (
     <>
-      <MasterDetail id="journal" list={listPane} detail={detailPane} />
+      <MasterDetail id="journal" listCollapsed={zen} list={listPane} detail={detailPane} />
 
       {/* Discard-unsaved-changes guard */}
       <AlertDialog open={discard !== null} onOpenChange={(o) => !o && setDiscard(null)}>
@@ -555,60 +564,48 @@ function JournalPreview({
     // No inner scroller: the pane owns it (MasterDetail), so the sticky header
     // sticks to the pane's scroller instead of a second one nested inside it.
     <div>
-      <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-background/60 px-6 py-3 backdrop-blur">
-        <div className="min-w-0 flex-1">
-          {/* §8: the glyph lives INSIDE the h2 so it shares the title's
-              baseline. The kind is the entry's identity now. */}
-          <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold">
-            <span className="shrink-0" aria-hidden>
-              <KindIcon kind={entry.kind} className="size-5 text-primary-ink" />
-            </span>
-            <span className="min-w-0 truncate">{entry.title}</span>
-          </h2>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {kind && (
-              <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                {kind}
-              </span>
-            )}
-            {entry.kind === 'gap' && (
-              <span
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-xs font-medium',
-                  openGap ? 'bg-warning text-warning-foreground' : 'bg-muted text-muted-foreground',
-                )}
-              >
-                {openGap ? 'Open question' : 'Resolved'}
-              </span>
-            )}
-            {(entry.author === 'agent' || entry.agentSlug) && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                <Bot className="size-3.5" aria-hidden />
-                {entry.author === 'agent'
-                  ? `logged by ${entry.agentSlug ?? 'an agent'}`
-                  : `written by you for ${entry.agentSlug}`}
-              </span>
-            )}
-            {entry.tags.map((t) => (
-              <TagPill key={t} tag={t} />
-            ))}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            <Pencil /> Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-destructive-ink"
-            onClick={onDelete}
-            aria-label="Delete journal entry"
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </header>
+      {/* The item header (contract 2026-10-21): one row; the kind, who
+          logged it, tags and dates behind Info. An open question is the one
+          state pill. A journal entry has no Access: it is not shared. */}
+      <ItemHeader
+        sticky
+        section="Journal"
+        visual={<KindIcon kind={entry.kind} className="size-4 text-primary-ink" />}
+        title={entry.title}
+        badges={
+          entry.kind === 'gap' ? (
+            <HeaderPill>{openGap ? 'open question' : 'resolved'}</HeaderPill>
+          ) : null
+        }
+        onDelete={onDelete}
+        deleteLabel="Delete journal entry"
+        edit={{ onSelect: onEdit, label: 'Edit journal entry' }}
+        info={{
+          tags: entry.tags,
+          rows: [
+            ...(kind ? [{ label: 'Kind', value: kind }] : []),
+            ...(entry.author === 'agent' || entry.agentSlug
+              ? [
+                  {
+                    label: 'Author',
+                    value: (
+                      <span className="inline-flex items-center gap-1">
+                        <Bot className="size-3.5" aria-hidden />
+                        {entry.author === 'agent'
+                          ? `logged by ${entry.agentSlug ?? 'an agent'}`
+                          : `written by you for ${entry.agentSlug}`}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
+            ...(entry.entryDate ? [{ label: 'For', value: formatDateTime(entry.entryDate) }] : []),
+            { label: 'Updated', value: formatDateTime(entry.updatedAt) },
+            { label: 'Created', value: formatDateTime(entry.createdAt) },
+          ],
+        }}
+        infoLabel="About this entry"
+      />
 
       <div className="space-y-5 px-6 py-5">
         {entry.body ? (
@@ -635,11 +632,6 @@ function JournalPreview({
             <p className="text-sm text-muted-foreground">{entry.summary}</p>
           </aside>
         )}
-
-        <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-          {entry.entryDate ? <>For {formatDateTime(entry.entryDate)} · </> : null}
-          Updated {formatDateTime(entry.updatedAt)} · created {formatDateTime(entry.createdAt)}
-        </div>
       </div>
     </div>
   );

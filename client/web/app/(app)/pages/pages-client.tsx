@@ -1,5 +1,7 @@
 'use client';
 
+import { useRememberLastOpened } from '@/components/last-opened/last-opened';
+import { PageDetailClient } from './[id]/page-detail-client';
 import { noteListAnswer } from '@/lib/workspace-filter';
 import { useListWorkspace } from '@/components/workspaces/use-list-workspace';
 import {
@@ -11,10 +13,9 @@ import {
   useTransition,
   type ReactNode,
 } from 'react';
-import Link from 'next/link';
 import { revealInFolds } from '@mantle/share-ui/heading-fold-dom';
 import { WorkspaceChips } from '@/components/share/workspace-chips';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JSONContent } from '@tiptap/react';
 import {
@@ -23,7 +24,6 @@ import {
   CornerLeftUp,
   FolderInput,
   GripVertical,
-  Pencil,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -101,14 +101,15 @@ import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import { visibilityRefusal } from '@/components/item-tree/sharing';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
 import { PageView } from '@/components/page-editor/page-view';
-import { GrantAccessControl } from '@/components/share/grant-access';
+import { shareMarksOf } from '@/components/share/access-stack';
+import { AccessSlot } from '@/components/share/access-slot';
 import { PageOutline } from '@mantle/web-ui/page-outline';
 import { buildPageToc } from '@mantle/content-core/page-toc';
-import { FocusToggle } from '@/components/layout/focus-toggle';
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { useZenMode } from '@/components/layout/zen-mode';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { MeasurePane } from '@mantle/web-ui/ui/measure-pane';
-import { ExportMenu } from '@/components/export/export-menu';
+import { useExportTool } from '@/components/export/export-menu';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime, updatedAgo } from '@mantle/web-ui/lib/format-datetime';
 import {
@@ -174,6 +175,16 @@ export function PagesClient() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Every open page has its own address, read or edited, so it can be copied
+  // and shared as it is: `/pages/<id>` reads the page, `/pages/<id>?edit=1`
+  // edits it, both in the detail pane with the tree still beside them
+  // (phase 5). `/pages` alone opens on the first page.
+  const routeParam = useParams<{ id?: string }>().id;
+  const routeId = typeof routeParam === 'string' ? routeParam : null;
+  const editId = routeId && searchParams.get('edit') === '1' ? routeId : null;
+  // Pages opens on the page read last (lib/last-opened.ts); the editor
+  // remembers the one edited.
+  useRememberLastOpened('pages', routeId && !editId ? routeId : null);
   const queryClient = useQueryClient();
   const toast = useToast();
   const [navPending, startNav] = useTransition();
@@ -248,6 +259,13 @@ export function PagesClient() {
   // doesn't hold the whole tree). null = not yet loaded.
   const [deleteDescendants, setDeleteDescendants] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The page in the address is the selected one, read or edited.
+  useEffect(() => {
+    if (routeId) setSelectedId(routeId);
+  }, [routeId]);
+  // The tree row a page was opened from: its share marks (workspaces, open
+  // link), which the detail route does not answer, for the header's Access.
+  const [openedRow, setOpenedRow] = useState<unknown>(null);
 
   const [searchInput, setSearchInput] = useState(query);
   // The `q` a navigation already in flight is heading for. Leaving a search by
@@ -499,7 +517,7 @@ export function PagesClient() {
       void queryClient.invalidateQueries({ queryKey: ['pages'] });
       void queryClient.invalidateQueries({ queryKey: treeKey('pages') });
       // New pages open straight into the editor.
-      router.push(`/pages/${created.id}`);
+      router.push(`/pages/${created.id}?edit=1`);
     } finally {
       setSaving(false);
     }
@@ -519,7 +537,7 @@ export function PagesClient() {
       return;
     }
     void queryClient.invalidateQueries({ queryKey: ['pages'] }); // keep the list fresh
-    router.push(`/pages/${created.id}`);
+    router.push(`/pages/${created.id}?edit=1`);
   };
 
   const confirmDelete = async () => {
@@ -539,6 +557,7 @@ export function PagesClient() {
           : 'Page deleted',
     );
     if (selectedId === deleteTarget.id) setSelectedId(null);
+    if (routeId === deleteTarget.id) router.push('/pages');
     void queryClient.invalidateQueries({ queryKey: ['pages'] });
     void queryClient.invalidateQueries({ queryKey: treeKey('pages') });
   };
@@ -684,7 +703,14 @@ export function PagesClient() {
                     setOpen(true);
                   },
                 }}
-                onOpenItem={(item) => setSelectedId(item.id)}
+                onOpenItem={(item) => {
+                  setOpenedRow(item);
+                  setSelectedId(item.id);
+                  // The page's own address (copy it to share it). A page
+                  // picked while editing leaves the editor, which saves its
+                  // draft on the way out.
+                  if (item.id !== routeId || editId) router.push(`/pages/${item.id}`);
+                }}
                 itemActions={(item) =>
                   itemAccess(item).manage ? (
                     <DropdownMenuItem
@@ -802,12 +828,18 @@ export function PagesClient() {
         // would scroll away with the page. 900px, not the 672px default: the
         // preview also holds the `xl:` outline rail (a 224px aside).
         detail={
-          selected ? (
+          editId ? (
+            // The editor owns its header and its own measure.
+            <div className="h-full min-h-0">
+              <PageDetailClient key={editId} pageId={editId} />
+            </div>
+          ) : selected ? (
             <MeasurePane id="pages-preview" defaultSize="900px" minSize="480px">
               <div className="h-full min-h-0 overflow-y-auto scrollbar-thin">
                 <PagePreview
                   key={selected.id}
                   row={selected}
+                  shares={shareMarksOf(selected, openedRow)}
                   onDelete={() => setDeleteTarget(selected)}
                 />
               </div>
@@ -1190,7 +1222,16 @@ function TopLevelDropZone() {
  *  empty — shows its content here instead of looking blank. This is render-only
  *  (no indexing); the committed doc stays the canonical version everywhere else
  *  (public share, MCP). A badge flags that the preview is showing a draft. */
-function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) {
+function PagePreview({
+  row,
+  shares,
+  onDelete,
+}: {
+  row: PageRow;
+  /** The share marks for Access (`shareMarksOf`). */
+  shares: unknown;
+  onDelete: () => void;
+}) {
   const [doc, setDoc] = useState<JSONContent | null>(null);
   const [isDraft, setIsDraft] = useState(false);
   // The folder the page sits in (folder phase 7): what a Folder index block
@@ -1205,6 +1246,8 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
   // mayManage.
   const access = itemAccess(row);
   const note = readOnlyNote(access);
+  const download = useExportTool(row.id);
+  const exportTool = isAdminUser ? download : null;
 
   // The outline reads the SAME doc the preview renders — the draft when there
   // is one, so the headings match what is on screen rather than what was last
@@ -1244,88 +1287,69 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
   }, [row.id]);
 
   return (
-    <div className="space-y-4 p-6">
-      <div data-testid="item-header" className="flex items-start justify-between gap-3">
-        <h2 className="flex min-w-0 flex-1 items-center gap-2 text-xl font-semibold">
-          <span aria-hidden>{row.icon ?? '📄'}</span>
-          <span className="min-w-0 truncate">{row.title}</span>
-          {isDraft && (
-            <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-              Draft · uncommitted
-            </span>
-          )}
-          <WorkspaceChips item={row} />
-        </h2>
-        <div className="flex shrink-0 gap-2">
-          {isAdminUser ? <ExportMenu nodeId={row.id} /> : null}
-          {/* Share without opening the editor. No `beforeEnable` here, unlike
-              the editor's: a list screen holds no draft to commit, so the link
-              serves the last COMMITTED page — which is what /s renders in any
-              case. The "Draft · uncommitted" badge beside the title is what
-              says so. */}
-          {access.share ? <GrantAccessControl type="page" nodeId={row.id} /> : null}
-          {/* This header survives focus mode (the shell's chrome doesn't), so
-              the toggle here is the whole control, enter and exit. */}
-          <FocusToggle />
-          {access.edit ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/pages/${row.id}`}>
-                <Pencil /> Edit
-              </Link>
-            </Button>
-          ) : null}
-          {access.manage ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={onDelete}
-              aria-label="Delete page"
-            >
-              <Trash2 />
-            </Button>
-          ) : null}
-        </div>
-      </div>
+    <div>
+      {/* The item header (contract 2026-10-21): one row; tags, dates and the
+          read-only note behind Info. */}
+      <ItemHeader
+        sticky
+        section="Pages"
+        visual={<span aria-hidden>{row.icon ?? '📄'}</span>}
+        title={row.title}
+        badges={
+          isDraft ? (
+            <HeaderPill title="Showing the draft: edits not committed yet">uncommitted</HeaderPill>
+          ) : null
+        }
+        edit={
+          access.edit ? { href: `/pages/${row.id}?edit=1`, label: 'Edit page' } : { disabled: true }
+        }
+        // Share without opening the editor. No `beforeEnable` here, unlike
+        // the editor's: a list screen holds no draft to commit, so the link
+        // serves the last COMMITTED page, which is what /s renders in any
+        // case. The "uncommitted" pill beside the title is what says so.
+        access={<AccessSlot type="page" nodeId={row.id} canShare={access.share} shares={shares} />}
+        tools={exportTool ? [exportTool] : []}
+        onDelete={access.manage ? onDelete : undefined}
+        deleteDisabled={!access.manage}
+        deleteLabel="Delete page"
+        move={access.move ? { kind: 'pages', item: { id: row.id, title: row.title } } : null}
+        info={{
+          tags: row.tags,
+          rows: [
+            ...(note ? [{ label: 'Access', value: note }] : []),
+            { label: 'Updated', value: formatDateTime(row.updatedAt) },
+            { label: 'Created', value: formatDateTime(row.createdAt) },
+          ],
+        }}
+        infoLabel="About this page"
+      />
 
-      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
-
-      {row.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {row.tags.map((t) => (
-            <TagPill key={t} tag={t} />
-          ))}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-        </div>
-      ) : doc ? (
-        // Outline rail (left, wide screens) + content that fills the rest.
-        // The measure is the divider, so nothing is centred and nothing is
-        // capped — drag the column and the prose follows.
-        <div className="flex w-full gap-6" ref={bodyRef}>
-          {toc.length > 0 && (
-            <aside className="hidden w-56 shrink-0 xl:block">
-              <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
-                <PageOutline entries={toc} onJump={jumpToBlock} />
-              </div>
-            </aside>
-          )}
-          <div className="min-w-0 flex-1">
-            <PageView content={doc} folderId={folderId} />
+      <div className="space-y-4 p-6">
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
           </div>
-        </div>
-      ) : (
-        <p className="text-sm italic text-muted-foreground">Couldn’t load this page.</p>
-      )}
-
-      <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-        Updated {formatDateTime(row.updatedAt)} · created {formatDateTime(row.createdAt)}
+        ) : doc ? (
+          // Outline rail (left, wide screens) + content that fills the rest.
+          // The measure is the divider, so nothing is centred and nothing is
+          // capped — drag the column and the prose follows.
+          <div className="flex w-full gap-6" ref={bodyRef}>
+            {toc.length > 0 && (
+              <aside className="hidden w-56 shrink-0 xl:block">
+                <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
+                  <PageOutline entries={toc} onJump={jumpToBlock} />
+                </div>
+              </aside>
+            )}
+            <div className="min-w-0 flex-1">
+              <PageView content={doc} folderId={folderId} />
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm italic text-muted-foreground">Couldn’t load this page.</p>
+        )}
       </div>
     </div>
   );

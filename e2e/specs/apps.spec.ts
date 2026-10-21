@@ -7,7 +7,7 @@ import { openFromTree, treeRow } from '../lib/tree';
 /**
  * `/apps`, on the folder view every workspace has since 2026-10-09: the item
  * tree in the list column (its folder menus, "New app inside", the search in
- * `?q=`), the picked app in `?id=` under the standard item header, and the
+ * `?q=`), the picked app at its address (`/apps/<id>`) under the standard item header, and the
  * app's own screen at /apps/<id>.
  *
  * `/apps`, the last phase-2a screen — and the one that was blocked, because it
@@ -44,7 +44,8 @@ async function withApp(
  *  from the header's View menu, not a tab bar, since v0.6.217. */
 async function openView(page: Page, view: string) {
   await page.getByRole('button', { name: /^View:/ }).click();
-  await page.getByRole('menuitemradio', { name: view }).click();
+  // The view switch is a header tool with a menu (item header contract).
+  await page.getByRole('menuitem', { name: new RegExp(`^${view}`) }).click();
 }
 
 test.describe('apps', () => {
@@ -144,10 +145,12 @@ test.describe('apps', () => {
     // to ask for more.
     await withApp(ownerApi, async (app) => {
       await ownerPage.setViewportSize({ width: 1600, height: 900 });
-      await ownerPage.goto(`/apps/${app.id}`);
+      await ownerPage.goto(`/apps/${app.id}?edit=1`);
       await openView(ownerPage, 'Code');
 
-      const list = ownerPage.locator('[data-testid="list"]');
+      // The code view's own file list, inside the detail pane (the apps tree
+      // is the screen's list beside it).
+      const list = ownerPage.locator('[data-testid="detail"] [data-testid="list"]');
       await expect(list, 'no list panel — still a hand-written grid?').toBeVisible();
       const widthOf = () => list.evaluate((el) => (el as HTMLElement).offsetWidth);
       // The 200px column it has always opened at, not MasterDetail's 340 default.
@@ -204,7 +207,7 @@ test.describe('apps', () => {
     await name.fill('Weather');
     await expect(name).not.toHaveAttribute('aria-invalid', 'true');
   });
-  test('picking an app in the tree opens it under the item header, in ?id=', async ({
+  test('picking an app in the tree opens it under the item header, at its address', async ({
     ownerApi,
     ownerPage,
   }) => {
@@ -216,11 +219,11 @@ test.describe('apps', () => {
       await openFromTree(ownerPage, app.title, heading);
 
       // The URL names it, so a reload or a shared link opens the same app.
-      await expect.poll(() => new URL(ownerPage.url()).searchParams.get('id')).toBe(app.id);
-      // The header's actions: Open goes to the app's own screen.
+      await expect.poll(() => new URL(ownerPage.url()).pathname).toBe(`/apps/${app.id}`);
+      // The header's actions: the pencil edits it at its edit address.
       await expect(detail.getByRole('link', { name: 'Open app' })).toHaveAttribute(
         'href',
-        `/apps/${app.id}`,
+        `/apps/${app.id}?edit=1`,
       );
       await expect(detail.getByRole('button', { name: 'Delete app' })).toBeVisible();
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}apps-folder-view.png` });
@@ -243,14 +246,15 @@ test.describe('apps', () => {
   test('old links land on the folder view', async ({ ownerApi, ownerPage }) => {
     await withApp(ownerApi, async (app) => {
       await ownerPage.setViewportSize({ width: 1600, height: 900 });
-      // The paged list's params are dropped; `?selected=` reads as `?id=`.
+      // The paged list's params are dropped; `?selected=` opens the app at its
+      // own address.
       await ownerPage.goto(`/apps?page=2&sort=title&selected=${app.id}`);
       await expect
         .poll(() => {
           const u = new URL(ownerPage.url());
           return `${u.pathname}${u.search}`;
         })
-        .toBe(`/apps?id=${app.id}`);
+        .toBe(`/apps/${app.id}`);
       await expect(
         ownerPage.locator('[data-testid="detail"]').getByRole('heading', { name: app.title }),
       ).toBeVisible();
@@ -393,21 +397,23 @@ test.describe('apps', () => {
       await expect(paneHeader.getByRole('heading', { name: app.title })).toBeVisible();
       const paneHeight = (await paneHeader.boundingBox())!.height;
 
-      await ownerPage.goto(`/apps/${app.id}`);
+      await ownerPage.goto(`/apps/${app.id}?edit=1`);
       const header = ownerPage.getByTestId('app-item-header');
       await expect(header).toHaveCount(1);
       await expect(header.getByRole('heading', { name: app.title })).toBeVisible();
       const words = header.getByTestId('app-header-text-actions');
       const icons = header.getByTestId('app-header-icon-actions');
-      await expect(words.getByRole('button', { name: 'Preview' })).toBeVisible();
+      // Commit is the one word button; Preview and the view switch are the
+      // app's tools, icons left of the fixed slots (item header contract).
       await expect(words.getByRole('button', { name: 'Commit' })).toBeVisible();
-      await expect(words.getByRole('button', { name: /^View:/ })).toBeVisible();
+      await expect(icons.getByRole('button', { name: /^Preview/ })).toBeVisible();
+      await expect(icons.getByRole('button', { name: /^View:/ })).toBeVisible();
       const w = (await words.boundingBox())!;
       const i = (await icons.boundingBox())!;
       expect(w.x + w.width, 'the worded buttons must sit left of the icons').toBeLessThanOrEqual(
         i.x,
       );
-      for (const el of await icons.locator(':scope > button, :scope > a').all()) {
+      for (const el of await icons.locator('button, a').all()) {
         expect(
           await el.getAttribute('aria-label'),
           'an icon-only button with no name',
