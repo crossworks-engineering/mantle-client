@@ -26,7 +26,7 @@ overrides:
   "@mantle/client-types": "npm:@crossworks/client-types@0.300.63"
   "@mantle/content-core": "npm:@crossworks/content-core@0.300.0"
   "@mantle/voice-client": "npm:@crossworks/voice-client@0.239.4"
-  "@mantle/share-ui": "npm:@crossworks/share-ui@0.239.36"
+  "@mantle/share-ui": "npm:@crossworks/share-ui@0.300.123"
   # Mermaid is not supported (stubs/mermaid-to-excalidraw/README.md). Excalidraw
   # reaches its Mermaid feature through a dynamic import(), so the UI prop alone
   # would leave the real package installed and its ~640 KB chunk emitted; this
