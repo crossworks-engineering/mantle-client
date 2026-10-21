@@ -19,7 +19,7 @@
     "@excalidraw/excalidraw": "0.18.1",
     "@mantle/client-types": "npm:@crossworks/client-types@0.300.63",
     "@mantle/content-core": "npm:@crossworks/content-core@0.300.0",
-    "@mantle/share-ui": "npm:@crossworks/share-ui@0.300.123",
+    "@mantle/share-ui": "npm:@crossworks/share-ui@0.300.127",
     "@mantle/voice-client": "npm:@crossworks/voice-client@0.239.4",
     "@mantle/web-ui": "workspace:*",
     "@tanstack/react-query": "^5.104.1",

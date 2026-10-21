@@ -155,7 +155,7 @@
   "dependencies": {
     "@dicebear/core": "^10.7.0",
     "@mantle/client-types": "npm:@crossworks/client-types@0.300.63",
-    "@mantle/share-ui": "npm:@crossworks/share-ui@0.300.123",
+    "@mantle/share-ui": "npm:@crossworks/share-ui@0.300.127",
     "@radix-ui/react-alert-dialog": "^1.1.24",
     "@radix-ui/react-avatar": "^1.2.7",
     "@radix-ui/react-checkbox": "^1.3.12",
