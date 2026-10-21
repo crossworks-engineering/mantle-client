@@ -126,7 +126,7 @@ jobs:
   # `E2E_SERVER_URL` still wins if it is set, so pointing a run at a real brain
   # stays one variable away — but nothing has to be set for this to run.
   #
-  # jackdaw is the CLIENT: no server workspace, no database, so it cannot boot a
+  # mantle-client is the CLIENT: no server workspace, no database, so it cannot boot a
   # brain from its own source. It boots the PUBLISHED server image instead, the
   # same one the fleet runs, which is also why this job needs no mantle checkout.
   #

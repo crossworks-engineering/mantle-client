@@ -12,8 +12,8 @@ brains (the server lives in
 > desktop, is MantleOS Desktop; the memory, the agents and the API underneath
 > are the MantleOS brain. Engine-level names keep the word `mantle`
 > (`MANTLE_*` variables, `@mantle/*` and `@crossworks/*` packages, `mantle_*`
-> containers). The repo itself is still `jackdaw` until it is renamed
-> `mantle-client`.
+> containers). The repo was renamed from `jackdaw` to `mantle-client` on
+> 2026-10-21; the old GitHub address redirects here.
 
 MantleOS Desktop is a zero-secret client: it holds no database, no session secret, and
 no server code. Every byte of data comes from a MantleOS brain's HTTP API
@@ -42,7 +42,7 @@ docker compose -f docker-compose.client.yml --profile standalone up -d
 ```
 
 Which tag runs is decided by the server. Each mantle release records the
-jackdaw tag it was tested with in `client-pair.tag` at the root of the mantle
+mantle-client tag it was tested with in `client-pair.tag` at the root of the mantle
 repo, and the updater rolls the client to that tag when it rolls the server,
 recording what it set in `data/update-signal/client-tag.auto`. To pin a tag by
 hand, set `MANTLE_CLIENT_IMAGE_TAG` in the stack `.env`; a value the updater
@@ -53,7 +53,7 @@ client does not move with it.
 ## Get the desktop app
 
 Installers are on the
-[Releases page](https://github.com/crossworks-engineering/jackdaw/releases).
+[Releases page](https://github.com/crossworks-engineering/mantle-client/releases).
 Each release carries one asset per platform:
 
 - Linux: `.deb` (amd64) and `.AppImage` (x86_64)
@@ -69,10 +69,10 @@ On first launch the connect screen asks for your brain's URL and probes
 `GET /api/version` before saving it. Then log in as usual; each brain keeps its
 own login. Details in `client/desktop/README.md`.
 
-**Version pairing.** Client and server release on separate streams (jackdaw
-v0.6.x, mantle v0.232.x). Which client goes with which server is recorded on
-the mantle side: `client-pair.tag` names the jackdaw tag that mantle release
-was tested with (mantle v0.232.188 pairs with jackdaw v0.6.110). Run the web
+**Version pairing.** Client and server release on separate streams (mantle-client
+v0.7.x, mantle v0.232.x). Which client goes with which server is recorded on
+the mantle side: `client-pair.tag` names the mantle-client tag that mantle release
+was tested with (for example mantle v0.232.188 pairs with v0.6.110). Run the web
 image at that tag; the desktop build of the same version pairs the same way.
 
 ## Develop it

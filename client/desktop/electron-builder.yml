@@ -24,12 +24,15 @@ asarUnpack:
 
 # electron-updater reads GitHub releases; the repo is public so no token is
 # needed at runtime. This must name the repo the desktop app is RELEASED from —
-# jackdaw since the 2026-08-13 split. While it still said `mantle`, a packaged
-# build checked a repo that no longer tags desktop builds.
+# jackdaw since the 2026-08-13 split, mantle-client since the 2026-10-21 rename.
+# While it still said `mantle`, a packaged build checked a repo that no longer
+# tags desktop builds. Apps installed before the rename still ask for
+# crossworks-engineering/jackdaw and reach this repo through GitHub's redirect,
+# so never create a new repo called jackdaw.
 publish:
   provider: github
   owner: crossworks-engineering
-  repo: jackdaw
+  repo: mantle-client
 
 # Deliberately still `mantle://`, not `jackdaw://`. The scheme addresses MANTLE
 # content (mantle://n/<id> is the permalink responders embed), not this app —

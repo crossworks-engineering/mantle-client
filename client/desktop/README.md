@@ -159,9 +159,11 @@ auto-update has been tested on an installed app:
   folder and cannot decrypt the old vault: every saved brain and login would
   be lost. Renaming needs `app.setPath('userData', …)` pinned to the old
   folder plus a keychain plan, tested on a real install.
-- `publish.repo: jackdaw`: the electron-updater feed. Installed apps look
-  there; GitHub redirects a renamed repo, but test one update after the
-  `jackdaw` → `mantle-client` rename before trusting it.
+- The update feed: `publish.repo` now says `mantle-client` (the repo was
+  renamed from `jackdaw` on 2026-10-21). Apps installed before that still
+  check `crossworks-engineering/jackdaw`, which GitHub redirects here, so a
+  new repo called `jackdaw` must never be created. Test one update on an
+  installed pre-rename app before trusting it.
 - `linux.executableName` / `artifactName` (`jackdaw-…`): file names the
   update metadata and existing installs refer to.
 - The `X-Jackdaw-Brain` request headers, which the web build reads too.

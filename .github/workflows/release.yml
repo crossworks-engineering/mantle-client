@@ -1,6 +1,6 @@
 # Builds + pushes the owner-UI image on every release tag. The image keeps the
 # `mantle-client` name so the fleet's compose files don't change at the split;
-# tags: the jackdaw version + `latest`.
+# tags: the mantle-client version + `latest`.
 #
 # Each arch builds NATIVELY in parallel (GitHub's free arm64 runners for
 # public repos) and pushes by digest; the merge job stitches both digests into
