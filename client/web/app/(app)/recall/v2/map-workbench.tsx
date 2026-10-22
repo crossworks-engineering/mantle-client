@@ -42,6 +42,7 @@ import {
 import { RecallGraph } from '../recall-graph';
 import { CardEditor } from './card-editor';
 import { CardList } from './card-list';
+import { CardsView } from './cards-view';
 import { AddCardDialog, MapSettingsDialog } from './map-dialogs';
 import { RevisionsPanel } from './revisions-panel';
 import { cardQuery, mapQuery, useMapWrite } from './use-map-write';
@@ -376,18 +377,21 @@ function Workbench({
         ) : view === 'revisions' ? (
           <RevisionsPanel map={map} write={write} />
         ) : (
-          <div className="flex h-full min-h-0 flex-col md:flex-row">
-            <CardList
-              nodes={map.nodes}
-              openSlug={open?.slug ?? null}
-              onOpen={openCardGuarded}
-              onReorder={reorder}
-              onAdd={() => setAdding(true)}
-              busy={write.pending}
-              full={map.nodes.length >= RECALL_MAX_MAP_NODES}
-            />
-            <div className="min-h-0 min-w-0 flex-1">
-              {open ? (
+          <CardsView
+            list={
+              <CardList
+                nodes={map.nodes}
+                openSlug={open?.slug ?? null}
+                onOpen={openCardGuarded}
+                onReorder={reorder}
+                onAdd={() => setAdding(true)}
+                busy={write.pending}
+                full={map.nodes.length >= RECALL_MAX_MAP_NODES}
+              />
+            }
+          >
+            {(inspectorSlot) =>
+              open ? (
                 <CardEditor
                   key={open.slug}
                   map={map}
@@ -401,12 +405,15 @@ function Workbench({
                     setHeld(null);
                     openCard(RECALL_ENTRY_SLUG);
                   }}
+                  inspectorSlot={inspectorSlot}
+                  onOpenCard={openCardGuarded}
+                  onShowRevisions={() => guarded(() => go({ view: 'revisions' }))}
                 />
               ) : (
                 <p className="p-6 text-sm text-muted-foreground">This map has no cards.</p>
-              )}
-            </div>
-          </div>
+              )
+            }
+          </CardsView>
         )}
       </div>
 

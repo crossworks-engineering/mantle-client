@@ -8,7 +8,7 @@ import type {
   RecallRevisionDTO,
   RecallWriteResultDTO,
 } from '@mantle/web-ui/types/recall-v2';
-import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import { formatDateTime, updatedAgo } from '@mantle/web-ui/lib/format-datetime';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
@@ -23,14 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
-import {
-  actorLabel,
-  droppedText,
-  recallKeys,
-  restoreBlockedReason,
-  restoreCopy,
-} from '@/lib/recall-v2';
-import type { MapWrite } from './use-map-write';
+import { actorLabel, droppedText, restoreBlockedReason, restoreCopy } from '@/lib/recall-v2';
+import { revisionsQuery, type MapWrite } from './use-map-write';
 
 /**
  * The map's write log, newest first: the last 50 writes, the owner's and
@@ -46,13 +40,7 @@ import type { MapWrite } from './use-map-write';
 export function RevisionsPanel({ map, write }: { map: RecallMapDetailDTO; write: MapWrite }) {
   const toast = useToast();
   const [confirming, setConfirming] = useState<RecallRevisionDTO | null>(null);
-  const revQuery = useQuery({
-    queryKey: recallKeys.revisions(map.id),
-    queryFn: () =>
-      apiFetch<{ revisions: RecallRevisionDTO[] }>(`/api/recall/maps/${map.id}/revisions`).then(
-        (r) => r.revisions,
-      ),
-  });
+  const revQuery = useQuery(revisionsQuery(map.id));
 
   async function restore(rev: RecallRevisionDTO) {
     setConfirming(null);

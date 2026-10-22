@@ -5,6 +5,11 @@ import {
   RECALL_OPTIONS_MAX,
   actorLabel,
   budgetState,
+  cardAttention,
+  cardKindOf,
+  cardTrail,
+  incomingOptions,
+  unreachableSlugs,
   cardProblems,
   cardWriteBody,
   droppedText,
@@ -483,5 +488,63 @@ describe('the N8 revisions and the owner over MCP (brain v0.232.359)', () => {
   it('names the owner acting through an MCP client', () => {
     expect(actorLabel({ actorKind: 'owner', actorName: 'mcp' })).toBe('Owner, via MCP');
     expect(actorLabel({ actorKind: 'agent', actorName: 'mcp' })).toBe('An MCP client');
+  });
+});
+
+describe('the trail (cardTrail, unreachableSlugs, incomingOptions)', () => {
+  const opt = (targetSlug: string, label = targetSlug, targetMap?: string) => ({
+    label,
+    useWhen: '',
+    targetSlug,
+    ...(targetMap ? { targetMap } : {}),
+  });
+  const node = (slug: string, options: ReturnType<typeof opt>[] = [], kind = 'knowledge') => ({
+    slug,
+    title: slug.toUpperCase(),
+    kind: kind as 'knowledge' | 'prompt' | 'index',
+    promptPending: false,
+    options,
+  });
+  const nodes = [
+    node('start', [opt('a'), opt('b'), opt('other', 'x', 'fleet')]),
+    node('a', [opt('c')]),
+    node('b', [opt('c', 'via b')]),
+    node('c', [opt('start')]),
+    node('lost', [opt('a')]),
+    node('matched', [], 'prompt'),
+  ];
+
+  it('walks the shortest route from the entry card, entry first', () => {
+    expect(cardTrail(nodes, 'c')?.map((n) => n.slug)).toEqual(['start', 'a', 'c']);
+    expect(cardTrail(nodes, 'start')?.map((n) => n.slug)).toEqual(['start']);
+  });
+
+  it('has no trail to a card nothing leads to, and ignores cross-map options', () => {
+    expect(cardTrail(nodes, 'lost')).toBeNull();
+    expect(cardTrail(nodes, 'other')).toBeNull();
+    expect(unreachableSlugs(nodes)).toEqual(new Set(['lost', 'matched']));
+  });
+
+  it('lists the options on other cards that lead to a card', () => {
+    expect(incomingOptions(nodes, 'c').map((i) => [i.from.slug, i.option.label])).toEqual([
+      ['a', 'c'],
+      ['b', 'via b'],
+    ]);
+    expect(incomingOptions(nodes, 'a').map((i) => i.from.slug)).toEqual(['start', 'lost']);
+  });
+
+  it('flags a knowledge card no walk reaches, never a prompt', () => {
+    const away = unreachableSlugs(nodes);
+    expect(cardAttention(nodes[4]!, away)).toMatch(/no agent will reach it/);
+    expect(cardAttention(nodes[5]!, away)).toBeNull();
+    expect(cardAttention(node('start'), new Set())).toMatch(/entry card has no options/);
+    expect(cardAttention({ ...nodes[1]!, promptPending: true }, away)).toMatch(/asked/);
+  });
+
+  it('names the kind: entry first, then a pending request over the stored kind', () => {
+    expect(cardKindOf({ slug: 'start', kind: 'index', promptPending: false })).toBe('entry');
+    expect(cardKindOf({ slug: 'a', kind: 'knowledge', promptPending: true })).toBe('requested');
+    expect(cardKindOf({ slug: 'a', kind: 'prompt', promptPending: false })).toBe('prompt');
+    expect(cardKindOf({ slug: 'a', kind: 'knowledge', promptPending: false })).toBe('knowledge');
   });
 });

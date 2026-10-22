@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronRight, CircleAlert, Sparkles, Trash2 } from 'lucide-react';
 import type {
   RecallCardDetailDTO,
   RecallMapDetailDTO,
@@ -15,11 +16,10 @@ import { apiSend } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import { Switch } from '@mantle/web-ui/ui/switch';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
-import { Field, FieldDescription, FieldError, FieldLabel } from '@mantle/web-ui/ui/field';
+import { Field, FieldDescription, FieldError } from '@mantle/web-ui/ui/field';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,12 +33,12 @@ import {
 import { MarkdownEditor } from '@/components/markdown-editor';
 import {
   RECALL_ENTRY_SLUG,
-  RECALL_LINE_MAX,
   RECALL_TITLE_MAX,
   budgetState,
   cardPane,
   cardProblems,
   cardSync,
+  cardTrail,
   cardWriteBody,
   droppedText,
   editorSync,
@@ -54,12 +54,15 @@ import {
   type CardEdits,
   type CardSync,
 } from '@/lib/recall-v2';
-import { OptionsEditor } from './options-editor';
+import { CardInspector } from './card-inspector';
 import { cardQuery, mapQuery, type MapWrite } from './use-map-write';
 
 /**
- * One card: title, use-when, the Prompt switch, the markdown body with its
- * character budget, and its options.
+ * One card. The middle column is the text of it: the trail to it, its title
+ * and its markdown body, with Save always in view. Everything about it (the
+ * Prompt switch and its use-when line, its options, what leads to it, its
+ * history) is the inspector, portaled into the right-hand column, or below
+ * the text when the screen has no room for a third column.
  *
  * The body is fetched per card: the map's list shape carries only its size,
  * so a 100-card map does not ship every body to draw a sidebar. That makes
@@ -76,6 +79,9 @@ export function CardEditor({
   onDirtyChange,
   onHoldChange,
   onLeave,
+  inspectorSlot,
+  onOpenCard,
+  onShowRevisions,
 }: {
   map: RecallMapDetailDTO;
   /** The card's row in the map's list. When `gone`, the last row seen
@@ -90,6 +96,12 @@ export function CardEditor({
   onHoldChange: (node: RecallNodeDTO | null) => void;
   /** Close this card (after a delete, or discarding a deleted card). */
   onLeave: () => void;
+  /** The inspector column to portal into; null renders it under the text. */
+  inspectorSlot: HTMLElement | null;
+  /** Open another card of this map (the screen asks first if edits would go). */
+  onOpenCard: (slug: string) => void;
+  /** Switch to the Revisions view. */
+  onShowRevisions: () => void;
 }) {
   const qc = useQueryClient();
   const q = useQuery(cardQuery(map.id, node.slug));
@@ -174,6 +186,9 @@ export function CardEditor({
       onDirtyChange={onDirtyChange}
       onHoldChange={onHoldChange}
       onLeave={onLeave}
+      inspectorSlot={inspectorSlot}
+      onOpenCard={onOpenCard}
+      onShowRevisions={onShowRevisions}
     />
   );
 }
@@ -202,6 +217,9 @@ function Editor({
   onDirtyChange,
   onHoldChange,
   onLeave,
+  inspectorSlot,
+  onOpenCard,
+  onShowRevisions,
 }: {
   map: RecallMapDetailDTO;
   node: RecallNodeDTO;
@@ -216,6 +234,9 @@ function Editor({
   onDirtyChange: (dirty: boolean) => void;
   onHoldChange: (node: RecallNodeDTO | null) => void;
   onLeave: () => void;
+  inspectorSlot: HTMLElement | null;
+  onOpenCard: (slug: string) => void;
+  onShowRevisions: () => void;
 }) {
   const toast = useToast();
   const qc = useQueryClient();
@@ -280,6 +301,7 @@ function Editor({
   const chars = edits.bodyMd.length;
   const budget = budgetState(chars, RECALL_BODY_CHAR_BUDGET);
   const targets = useMemo(() => optionTargets(map, card.slug, catalog), [map, card.slug, catalog]);
+  const trail = useMemo(() => cardTrail(map.nodes, card.slug), [map.nodes, card.slug]);
 
   function set<K extends keyof CardEdits>(key: K, value: CardEdits[K]) {
     setEdits((e) => ({ ...e, [key]: value }));
@@ -412,244 +434,255 @@ function Editor({
     onLeave();
   }
 
+  const inspector = (
+    <CardInspector
+      map={map}
+      card={card}
+      edits={edits}
+      problems={problems}
+      targets={targets}
+      onEdit={set}
+      onOpen={onOpenCard}
+      onShowRevisions={onShowRevisions}
+    />
+  );
+
   return (
-    <div className="h-full overflow-y-auto scrollbar-thin">
-      <div className="max-w-3xl space-y-5 p-4">
-        <div className="flex items-center gap-2">
-          <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-            {card.slug}
-            {entry && ' · entry card'}
-          </p>
-          {!entry && !gone && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Delete card"
-              className="text-muted-foreground hover:text-destructive-ink"
-              onClick={() => setDeleting(true)}
-              disabled={write.pending}
-            >
-              <Trash2 />
-            </Button>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* The card's bar: the trail an agent walks to reach it, then the save.
+          Chrome over scrolling text, so /60 and the blur (style guide §2a). */}
+      <div className="flex min-h-11 items-center gap-2 border-b border-border bg-background/60 px-4 py-1.5 backdrop-blur">
+        <nav aria-label="Trail to this card" className="min-w-0 flex-1">
+          {trail ? (
+            <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-muted-foreground">
+              {trail.map((n, i) => (
+                <Fragment key={n.slug}>
+                  {i > 0 && <ChevronRight className="size-3 shrink-0" aria-hidden />}
+                  <li className="min-w-0">
+                    {i === trail.length - 1 ? (
+                      <span aria-current="page" className="font-medium text-foreground">
+                        {i === 0 ? 'Entry card' : n.title}
+                      </span>
+                    ) : (
+                      <Button
+                        variant="link"
+                        onClick={() => onOpenCard(n.slug)}
+                        className="h-auto max-w-[16rem] truncate p-0 align-bottom text-xs font-normal text-muted-foreground hover:text-foreground"
+                        title={n.title}
+                      >
+                        {n.title}
+                      </Button>
+                    )}
+                  </li>
+                </Fragment>
+              ))}
+            </ol>
+          ) : (
+            <p className="flex items-center gap-1.5 text-xs text-warning-ink">
+              <CircleAlert className="size-3.5 shrink-0" aria-hidden />
+              {card.kind === 'prompt'
+                ? 'No option leads here: found by meaning only.'
+                : 'No option leads here from the entry card.'}
+            </p>
           )}
-        </div>
-
-        {refreshFailed && (
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="min-w-0 flex-1">Could not refresh; showing the last copy.</span>
-            <Button size="xs" variant="ghost" onClick={onRetry}>
-              Retry
-            </Button>
-          </p>
+        </nav>
+        {dirty && !saving && <span className="text-xs text-muted-foreground">Unsaved</span>}
+        {!entry && !gone && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Delete card"
+            title="Delete card"
+            className="text-muted-foreground hover:text-destructive-ink"
+            onClick={() => setDeleting(true)}
+            disabled={write.pending}
+          >
+            <Trash2 />
+          </Button>
         )}
+        {dirty && (
+          <Button variant="ghost" size="sm" onClick={discard} disabled={saving || gone}>
+            Discard
+          </Button>
+        )}
+        <SubmitButton
+          size="sm"
+          pending={saving}
+          disabled={!dirty || !valid || gone || (write.pending && !saving)}
+          onClick={save}
+          type="button"
+          title={!valid && dirty ? Object.values(problems)[0] : undefined}
+        >
+          Save card
+        </SubmitButton>
+      </div>
 
-        {gone ? (
-          <div
-            role="alert"
-            className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
-          >
-            <p className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive-ink" aria-hidden />
-              <span>This card was deleted. Copy your text, it is not saved anywhere.</span>
-            </p>
-            <div className="flex justify-end">
-              <Button size="xs" variant="outline" onClick={onLeave}>
-                Discard and close
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        <div className="flex min-h-full flex-col gap-4 p-4">
+          {refreshFailed && (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1">Could not refresh; showing the last copy.</span>
+              <Button size="xs" variant="ghost" onClick={onRetry}>
+                Retry
               </Button>
-            </div>
-          </div>
-        ) : refused ? (
-          <div
-            role="alert"
-            className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
-          >
-            <p className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive-ink" aria-hidden />
-              <span>
-                {refused === 'card' &&
-                  'Your save did not happen: this card changed since you started editing. The new copy is loaded: the fields you had not touched show it, and your own edits are still here. Save again to write them over it, or show the new copy and lose your edits.'}
-                {refused === 'map' &&
-                  'Your save did not happen: the map changed since you started editing (another card or its settings). This card is as you last saw it, and your edits are still here. Save again to write them.'}
-                {refused === 'gone' &&
-                  'Your save did not happen, and this card could not be reloaded. It may have been deleted. Copy your text somewhere safe before you leave it.'}
-              </span>
             </p>
-            {refused === 'card' && (
-              <div className="flex justify-end">
-                <Button size="xs" variant="outline" onClick={showNewCopy} disabled={!current}>
-                  Show the new copy
-                </Button>
-              </div>
-            )}
-          </div>
-        ) : (
-          conflict &&
-          dismissed !== conflictKey && (
+          )}
+
+          {gone ? (
             <div
-              role="status"
-              className="space-y-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-sm"
+              role="alert"
+              className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
             >
               <p className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-ink" aria-hidden />
-                <span>
-                  {conflict === 'card'
-                    ? 'This card changed since you started editing, maybe by an agent.'
-                    : 'This map changed since you started editing (another card or its settings, maybe by an agent).'}{' '}
-                  A save now is refused rather than overwrite it; the next save after that writes
-                  your version.
-                </span>
+                <AlertTriangle
+                  className="mt-0.5 size-4 shrink-0 text-destructive-ink"
+                  aria-hidden
+                />
+                <span>This card was deleted. Copy your text, it is not saved anywhere.</span>
               </p>
-              <div className="flex justify-end gap-2">
-                <Button size="xs" variant="outline" onClick={() => setDismissed(conflictKey)}>
-                  Keep editing
-                </Button>
-                <Button size="xs" variant="outline" onClick={showNewCopy} disabled={!current}>
-                  Show the new copy (discard mine)
+              <div className="flex justify-end">
+                <Button size="xs" variant="outline" onClick={onLeave}>
+                  Discard and close
                 </Button>
               </div>
             </div>
-          )
-        )}
-
-        {card.promptPending && (
-          <div className="flex flex-wrap items-center gap-3 rounded-md border border-info/40 bg-info/5 px-3 py-2 text-sm">
-            <Sparkles className="size-4 shrink-0 text-info-ink" aria-hidden />
-            <span className="min-w-0 flex-1">
-              An agent asked for this card to be a prompt, or changed the text of a prompt you had
-              confirmed. Until you confirm it again, it is never matched.
-            </span>
-            <div className="flex shrink-0 gap-2">
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => answerPrompt(false)}
-                disabled={write.pending || dirty || !current || gone}
-              >
-                Drop request
-              </Button>
-              <Button
-                size="xs"
-                onClick={() => answerPrompt(true)}
-                disabled={write.pending || dirty || !current || gone}
-                title={
-                  dirty
-                    ? 'Save or discard your edits first.'
-                    : !current
-                      ? 'Loading the latest copy of this card.'
-                      : undefined
-                }
-              >
-                Make it a prompt
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <Field data-invalid={problems.title ? true : undefined}>
-          <FieldLabel htmlFor="recall-card-title">Title</FieldLabel>
-          <Input
-            id="recall-card-title"
-            value={edits.title}
-            onChange={(e) => set('title', e.target.value)}
-            maxLength={RECALL_TITLE_MAX}
-            aria-invalid={problems.title ? true : undefined}
-          />
-          {entry && (
-            <FieldDescription>
-              Renaming the map in its settings renames this card too; this field does not rename the
-              map.
-            </FieldDescription>
-          )}
-          <FieldError>{problems.title}</FieldError>
-        </Field>
-
-        {/* Not on the entry card: it is where every walk of the map starts, and
-            the brain refuses to make it a prompt. */}
-        {!entry && (
-          <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card p-3">
-            <div className="min-w-0">
-              <FieldLabel htmlFor="recall-card-prompt">Prompt</FieldLabel>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                A prompt is also found by meaning (recall_match), not only by walking the map.
+          ) : refused ? (
+            <div
+              role="alert"
+              className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+            >
+              <p className="flex items-start gap-2">
+                <AlertTriangle
+                  className="mt-0.5 size-4 shrink-0 text-destructive-ink"
+                  aria-hidden
+                />
+                <span>
+                  {refused === 'card' &&
+                    'Your save did not happen: this card changed since you started editing. The new copy is loaded: the fields you had not touched show it, and your own edits are still here. Save again to write them over it, or show the new copy and lose your edits.'}
+                  {refused === 'map' &&
+                    'Your save did not happen: the map changed since you started editing (another card or its settings). This card is as you last saw it, and your edits are still here. Save again to write them.'}
+                  {refused === 'gone' &&
+                    'Your save did not happen, and this card could not be reloaded. It may have been deleted. Copy your text somewhere safe before you leave it.'}
+                </span>
               </p>
+              {refused === 'card' && (
+                <div className="flex justify-end">
+                  <Button size="xs" variant="outline" onClick={showNewCopy} disabled={!current}>
+                    Show the new copy
+                  </Button>
+                </div>
+              )}
             </div>
-            <Switch
-              id="recall-card-prompt"
-              checked={edits.prompt}
-              onCheckedChange={(v) => set('prompt', v)}
-            />
-          </div>
-        )}
-
-        <Field data-invalid={problems.useWhen ? true : undefined}>
-          <FieldLabel htmlFor="recall-card-use-when">Use when</FieldLabel>
-          <Input
-            id="recall-card-use-when"
-            value={edits.useWhen}
-            onChange={(e) => set('useWhen', e.target.value)}
-            maxLength={RECALL_LINE_MAX}
-            placeholder={edits.prompt ? 'deploying a release to the fleet' : 'Optional'}
-            aria-invalid={problems.useWhen ? true : undefined}
-          />
-          <FieldDescription>
-            {edits.prompt
-              ? 'What a prompt is matched on. Required for a prompt.'
-              : 'Only prompts use this line.'}
-          </FieldDescription>
-          <FieldError>{problems.useWhen}</FieldError>
-        </Field>
-
-        <Field data-invalid={problems.bodyMd ? true : undefined}>
-          <FieldLabel htmlFor="recall-card-body">Body</FieldLabel>
-          <MarkdownEditor
-            id="recall-card-body"
-            value={edits.bodyMd}
-            onChange={(v) => set('bodyMd', v)}
-            placeholder="What an agent should know when it opens this card."
-            height="h-[22rem]"
-            defaultMode="edit"
-          />
-          <p
-            className={cn(
-              'text-xs tabular-nums',
-              budget === 'ok' && 'text-muted-foreground',
-              budget === 'near' && 'text-warning-ink',
-              budget === 'over' && 'text-destructive-ink',
-            )}
-          >
-            {chars.toLocaleString()} / {RECALL_BODY_CHAR_BUDGET.toLocaleString()} characters
-          </p>
-          <FieldError>{problems.bodyMd}</FieldError>
-        </Field>
-
-        <Field data-invalid={problems.options ? true : undefined}>
-          <FieldLabel asChild>
-            <span>Options</span>
-          </FieldLabel>
-          <OptionsEditor
-            options={edits.options}
-            targets={targets}
-            onChange={(o) => set('options', o)}
-          />
-          <FieldError>{problems.options}</FieldError>
-        </Field>
-
-        <div className="flex items-center justify-end gap-2">
-          {dirty && (
-            <Button variant="outline" onClick={discard} disabled={saving || gone}>
-              Discard changes
-            </Button>
+          ) : (
+            conflict &&
+            dismissed !== conflictKey && (
+              <div
+                role="status"
+                className="space-y-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-sm"
+              >
+                <p className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-ink" aria-hidden />
+                  <span>
+                    {conflict === 'card'
+                      ? 'This card changed since you started editing, maybe by an agent.'
+                      : 'This map changed since you started editing (another card or its settings, maybe by an agent).'}{' '}
+                    A save now is refused rather than overwrite it; the next save after that writes
+                    your version.
+                  </span>
+                </p>
+                <div className="flex justify-end gap-2">
+                  <Button size="xs" variant="outline" onClick={() => setDismissed(conflictKey)}>
+                    Keep editing
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={showNewCopy} disabled={!current}>
+                    Show the new copy (discard mine)
+                  </Button>
+                </div>
+              </div>
+            )
           )}
-          <SubmitButton
-            pending={saving}
-            disabled={!dirty || !valid || gone || (write.pending && !saving)}
-            onClick={save}
-            type="button"
-          >
-            Save card
-          </SubmitButton>
+
+          {card.promptPending && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md border border-info/40 bg-info/5 px-3 py-2 text-sm">
+              <Sparkles className="size-4 shrink-0 text-info-ink" aria-hidden />
+              <span className="min-w-0 flex-1">
+                An agent asked for this card to be a prompt, or changed the text of a prompt you had
+                confirmed. Until you confirm it again, it is never matched.
+              </span>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => answerPrompt(false)}
+                  disabled={write.pending || dirty || !current || gone}
+                >
+                  Drop request
+                </Button>
+                <Button
+                  size="xs"
+                  onClick={() => answerPrompt(true)}
+                  disabled={write.pending || dirty || !current || gone}
+                  title={
+                    dirty
+                      ? 'Save or discard your edits first.'
+                      : !current
+                        ? 'Loading the latest copy of this card.'
+                        : undefined
+                  }
+                >
+                  Make it a prompt
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <Field data-invalid={problems.title ? true : undefined}>
+            <Input
+              id="recall-card-title"
+              aria-label="Title"
+              value={edits.title}
+              onChange={(e) => set('title', e.target.value)}
+              maxLength={RECALL_TITLE_MAX}
+              placeholder="Card title"
+              aria-invalid={problems.title ? true : undefined}
+              className="h-auto border-x-0 border-t-0 border-b-2 border-transparent rounded-none px-0 py-1 text-lg font-semibold shadow-none focus-visible:border-primary focus-visible:ring-0 md:text-lg"
+            />
+            {entry && (
+              <FieldDescription>
+                The entry card. Renaming the map in its settings renames this card too; this field
+                does not rename the map.
+              </FieldDescription>
+            )}
+            <FieldError>{problems.title}</FieldError>
+          </Field>
+
+          <Field data-invalid={problems.bodyMd ? true : undefined} className="min-h-[20rem] flex-1">
+            <MarkdownEditor
+              id="recall-card-body"
+              value={edits.bodyMd}
+              onChange={(v) => set('bodyMd', v)}
+              placeholder="What an agent should know when it opens this card."
+              className="min-h-0 flex-1"
+              height="min-h-[16rem] flex-1"
+              defaultMode="edit"
+            />
+            <p
+              className={cn(
+                'text-xs tabular-nums',
+                budget === 'ok' && 'text-muted-foreground',
+                budget === 'near' && 'text-warning-ink',
+                budget === 'over' && 'text-destructive-ink',
+              )}
+            >
+              {chars.toLocaleString()} / {RECALL_BODY_CHAR_BUDGET.toLocaleString()} characters
+            </p>
+            <FieldError>{problems.bodyMd}</FieldError>
+          </Field>
+
+          {!inspectorSlot && <div className="-mx-4 border-t border-border">{inspector}</div>}
         </div>
       </div>
+      {inspectorSlot && createPortal(inspector, inspectorSlot)}
 
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent>

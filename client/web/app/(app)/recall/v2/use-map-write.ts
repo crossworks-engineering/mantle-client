@@ -5,6 +5,7 @@ import { queryOptions, useQueryClient } from '@tanstack/react-query';
 import type {
   RecallCardDetailDTO,
   RecallMapDetailDTO,
+  RecallRevisionDTO,
   RecallWarningDTO,
   RecallWriteResultDTO,
 } from '@mantle/web-ui/types/recall-v2';
@@ -19,6 +20,18 @@ export function mapQuery(mapId: string) {
     queryKey: recallKeys.map(mapId),
     queryFn: () =>
       apiFetch<{ map: RecallMapDetailDTO }>(`/api/recall/maps/${mapId}`).then((r) => r.map),
+  });
+}
+
+/** The map's write log, newest first: the Revisions view, and each card's
+ *  history in the inspector (the same query, so they never disagree). */
+export function revisionsQuery(mapId: string) {
+  return queryOptions({
+    queryKey: recallKeys.revisions(mapId),
+    queryFn: () =>
+      apiFetch<{ revisions: RecallRevisionDTO[] }>(`/api/recall/maps/${mapId}/revisions`).then(
+        (r) => r.revisions,
+      ),
   });
 }
 

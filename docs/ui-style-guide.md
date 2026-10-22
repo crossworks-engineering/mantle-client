@@ -166,6 +166,7 @@ rectangle. One alpha per role; do not invent new numbers per screen:
 | Composer / form shell (§6c)                                                                                         | `bg-card/70`                                                    | `formShellClass` (`ui/form-shell`)                                                                             |
 | Sticky chrome bar (pane headers, the rail's filter block)                                                           | surface token at `/60` + `backdrop-blur`                        | per screen, e.g. the notes/journal/pages/draw/tables headers                                                   |
 | Field-look controls (`Input`, `Textarea`, `SelectTrigger`, `TagInput`, the outline `Button`, bordered filter chips) | `bg-transparent` — the `border-input` outline IS the affordance | the kit components; never re-add a fill at a call site (`border-input bg-background` is the smell to grep for) |
+| Tabs (`TabsList` track / active tab)                                                                                | `bg-muted/60` track, `bg-background/70` active                  | the kit's `ui/tabs`                                                                                            |
 | Reader / detail panes                                                                                               | no fill at all                                                  | the pane inherits the shell's ground                                                                           |
 
 - **Floating layers stay opaque**: `popover`, dialogs, dropdown/select menus,
@@ -1254,6 +1255,35 @@ hover:text-destructive-ink`) **has been retired** — every delete
     own, so grey at rest costs nothing; a word does not, and greying those two
     would leave a destructive action looking like any other ghost button.
     Don't "finish the sweep" by changing them.
+
+### A detail pane with an inspector: the Recall Cards view (2026-10-22)
+
+When one item is built from MANY parts (a Recall map is a set of cards), its
+detail pane is a workbench of three columns, every edge a `ResizableHandle`
+and every width remembered (`app/(app)/recall/v2/cards-view.tsx`):
+
+| Column    | Holds                                                                                                                                  | Never holds                          |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Parts     | each part's title, wrapped, behind a glyph for its kind; a mark when it wants attention                                                | slugs, ids, sizes: noise at a glance |
+| Text      | a bar (the trail to the part, the unsaved state, Delete, Save), then the title and the body, which fills the column                    | settings, switches, relations        |
+| Inspector | everything ABOUT the part: kind, link name, when it last changed and by whom, size; its switches; its relations both ways; its history | the body                             |
+
+- **Save is always in view**, in the text column's bar. A form whose button
+  sits under 6,000 characters of body is a form nobody finishes.
+- **Relations read before they edit.** An option is one line (where it goes,
+  what it is called, when to take it) and its target is a link; the pencil
+  opens its fields, and an incomplete one opens by itself. Show the reverse
+  too ("Reached from"): the trail is followed in both directions.
+- **The trail is the breadcrumb**: the shortest walk from the entry part to
+  this one, each step a link. A part no walk reaches says so there.
+- **Attention is counted**: the parts column marks a part that needs the
+  owner (unreachable, a pending request) and its header counts them; the
+  count is a toggle that shows only those.
+- **The frame measures itself**, not the window: the folders, the rails and
+  Maximise change its width. Three columns from 880px, two from 560px, stacked
+  below. The text column is the same element in every layout, so a width
+  change never remounts the editor and never loses unsaved text; the
+  inspector is a portal slot that falls back under the text.
 
 ### Detail (deep-link) pages
 

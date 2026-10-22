@@ -623,3 +623,92 @@ export function optionTargets(
 export function optionTargetValue(o: Pick<RecallOptionDTO, 'targetSlug' | 'targetMap'>): string {
   return o.targetMap ? `map:${o.targetMap}` : `card:${o.targetSlug}`;
 }
+
+// ── The trail: how a map reads, for the editor's oversight ──────────────────
+
+type TrailNode = Pick<RecallNodeDTO, 'slug' | 'title' | 'kind' | 'options' | 'promptPending'>;
+
+/** Breadth-first from the entry card along same-map options: each card
+ *  reached, mapped to the card it was first reached from (null for the
+ *  entry). A cross-map option, or one to a card no longer in the map, leads
+ *  nowhere here. */
+function walkFromEntry(nodes: readonly TrailNode[]): Map<string, string | null> {
+  const bySlug = new Map(nodes.map((n) => [n.slug, n]));
+  const prev = new Map<string, string | null>();
+  if (!bySlug.has(RECALL_ENTRY_SLUG)) return prev;
+  prev.set(RECALL_ENTRY_SLUG, null);
+  const queue = [RECALL_ENTRY_SLUG];
+  for (let i = 0; i < queue.length; i++) {
+    const cur = queue[i]!;
+    for (const o of bySlug.get(cur)?.options ?? []) {
+      if (o.targetMap || prev.has(o.targetSlug) || !bySlug.has(o.targetSlug)) continue;
+      prev.set(o.targetSlug, cur);
+      queue.push(o.targetSlug);
+    }
+  }
+  return prev;
+}
+
+/** The shortest walk an agent can take from the entry card to `slug`: entry
+ *  first, the card itself last. Null when no walk reaches it. */
+export function cardTrail<N extends TrailNode>(nodes: readonly N[], slug: string): N[] | null {
+  const prev = walkFromEntry(nodes);
+  if (!prev.has(slug)) return null;
+  const bySlug = new Map(nodes.map((n) => [n.slug, n]));
+  const path: N[] = [];
+  for (let s: string | null = slug; s !== null; s = prev.get(s) ?? null) {
+    path.unshift(bySlug.get(s)!);
+  }
+  return path;
+}
+
+/** Every card no walk from the entry card reaches. */
+export function unreachableSlugs(nodes: readonly TrailNode[]): Set<string> {
+  const reached = walkFromEntry(nodes);
+  return new Set(nodes.filter((n) => !reached.has(n.slug)).map((n) => n.slug));
+}
+
+/** The options on OTHER cards of this map that lead to `slug`, in card order. */
+export function incomingOptions<N extends TrailNode>(
+  nodes: readonly N[],
+  slug: string,
+): { from: N; option: RecallOptionDTO }[] {
+  return nodes.flatMap((from) =>
+    from.slug === slug
+      ? []
+      : from.options
+          .filter((o) => !o.targetMap && o.targetSlug === slug)
+          .map((option) => ({ from, option })),
+  );
+}
+
+/** What a card is, as the editor names it: the entry card, a prompt, a
+ *  prompt an agent asked for (not matched until confirmed), or knowledge. */
+export type CardKind = 'entry' | 'prompt' | 'requested' | 'knowledge';
+
+export function cardKindOf(node: Pick<RecallNodeDTO, 'slug' | 'kind' | 'promptPending'>): CardKind {
+  if (node.slug === RECALL_ENTRY_SLUG) return 'entry';
+  if (node.promptPending) return 'requested';
+  return node.kind === 'prompt' ? 'prompt' : 'knowledge';
+}
+
+export const CARD_KIND_LABEL: Record<CardKind, string> = {
+  entry: 'Entry card',
+  prompt: 'Prompt',
+  requested: 'Prompt requested',
+  knowledge: 'Knowledge',
+};
+
+/** Why a card wants the owner's eye, or null. A prompt no walk reaches is
+ *  fine: it is found by meaning. A knowledge card no walk reaches is not:
+ *  no agent will ever read it. */
+export function cardAttention(node: TrailNode, unreachable: ReadonlySet<string>): string | null {
+  if (node.promptPending) return 'An agent asked for this card to be a prompt.';
+  if (node.slug === RECALL_ENTRY_SLUG && node.options.length === 0) {
+    return 'The entry card has no options, so an agent cannot go further.';
+  }
+  if (unreachable.has(node.slug) && node.kind !== 'prompt') {
+    return 'No option leads here from the entry card, so no agent will reach it.';
+  }
+  return null;
+}
