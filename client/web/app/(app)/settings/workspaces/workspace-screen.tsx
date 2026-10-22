@@ -62,6 +62,7 @@ import {
   canPickAssistant,
   addedText,
   canSetConnectors,
+  connectorKindLabel,
   BUILT_IN_NAME_HINT,
   removeBlockedReason,
   canSetLook,
@@ -91,6 +92,7 @@ import {
 } from '@/lib/workspaces';
 import {
   fetchArchivePreview,
+  useConnectorOptions,
   useUserSearch,
   useWorkspaceActions,
   useWorkspaceDetail,
@@ -961,19 +963,6 @@ function AssistantSection({ detail, manage }: { detail: WorkspaceDetail; manage:
 
 // ── Resources (one section per type: connectors in W5a) ─────────────────────
 
-type ConnectorOption = { slug: string; name: string };
-
-function useConnectorOptions(enabled: boolean) {
-  return useQuery({
-    queryKey: ['workspaces', 'connector-options'],
-    queryFn: () =>
-      apiFetch<{ connectors: ConnectorOption[] }>('/api/mcp-connectors').then((r) =>
-        r.connectors.map((c) => ({ slug: c.slug, name: c.name })),
-      ),
-    enabled,
-  });
-}
-
 function ResourceSection({
   spec,
   detail,
@@ -1084,7 +1073,8 @@ function ResourceRow({
 function AddConnector({ detail, spec }: { detail: WorkspaceDetail; spec: ResourceKind }) {
   const toast = useToast();
   const actions = useWorkspaceActions();
-  const options = useConnectorOptions(true);
+  // The brain's list: every connector the attach takes, MCP and API alike.
+  const options = useConnectorOptions(detail.workspace.id, true);
   const [pending, setPending] = useState(false);
   const addable = addableResources(options.data ?? [], detail.resources, spec.kind);
   if (!options.data || addable.length === 0) return null;
@@ -1111,7 +1101,10 @@ function AddConnector({ detail, spec }: { detail: WorkspaceDetail; spec: Resourc
         <SelectContent>
           {addable.map((c) => (
             <SelectItem key={c.slug} value={c.slug}>
-              {c.name}
+              <span>{c.name}</span>
+              <span data-connector-kind className="ml-2 text-xs text-muted-foreground">
+                {connectorKindLabel(c.kind)}
+              </span>
             </SelectItem>
           ))}
         </SelectContent>

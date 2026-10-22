@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import type { TeamSettings } from '@/components/workspaces/team-settings-query';
+import { connectorOptionsKey } from '@/components/workspaces/workspace-queries';
 import { ToastProvider } from '@mantle/web-ui/ui/toast';
 import {
   ADMIN_ADD_TEXT,
@@ -114,14 +115,15 @@ const options = (c: QueryClient) => {
     ['workspaces', 'assistant-options'],
     [{ id: 'ag1', name: 'Team assistant', role: 'responder' }],
   );
-  c.setQueryData(
-    ['workspaces', 'connector-options'],
-    [
-      { slug: 'drive', name: 'Drive' },
-      { slug: 'mail', name: 'Mail' },
-      { slug: 'crm', name: 'CRM' },
-    ],
-  );
+  // The brain's list (GET /api/workspaces/:id/connector-options), for each
+  // workspace the cells render: MCP and API connectors alike.
+  for (const id of ['w-team', 'w-admin']) {
+    c.setQueryData(connectorOptionsKey(id), [
+      { slug: 'drive', name: 'Drive', kind: 'mcp', held: true },
+      { slug: 'mail', name: 'Mail', kind: 'mcp', held: true },
+      { slug: 'crm', name: 'CRM', kind: 'api', held: false },
+    ]);
+  }
 };
 
 describe('WorkspaceSections, Admin user view', () => {
@@ -132,13 +134,10 @@ describe('WorkspaceSections, Admin user view', () => {
         ['workspaces', 'assistant-options'],
         [{ id: 'ag1', name: 'Team assistant', role: 'responder' }],
       );
-      c.setQueryData(
-        ['workspaces', 'connector-options'],
-        [
-          { slug: 'drive', name: 'Drive' },
-          { slug: 'crm', name: 'CRM' },
-        ],
-      );
+      c.setQueryData(connectorOptionsKey('w-team'), [
+        { slug: 'drive', name: 'Drive', kind: 'mcp', held: true },
+        { slug: 'crm', name: 'CRM', kind: 'api', held: false },
+      ]);
     },
   );
 
@@ -819,5 +818,44 @@ describe('landingChoices', () => {
       { value: 'a', label: 'A' },
       { value: 'b', label: 'B' },
     ]);
+  });
+});
+
+describe("Add a connector: the brain's list, MCP and API alike", () => {
+  const view = (opts: { slug: string; name: string; kind: 'mcp' | 'api'; held: boolean }[]) =>
+    render(
+      createElement(WorkspaceSections, { detail: detail(), manage: true, areas: ADMIN_AREAS }),
+      (c) => {
+        c.setQueryData(
+          ['workspaces', 'assistant-options'],
+          [{ id: 'ag1', name: 'Team assistant', role: 'responder' }],
+        );
+        c.setQueryData(connectorOptionsKey('w-team'), opts);
+      },
+    );
+
+  it('offers an API connector the workspace does not hold', () => {
+    expect(view([{ slug: 'crm', name: 'CRM', kind: 'api', held: false }])).toContain(
+      'Add a connector',
+    );
+  });
+
+  it("hides the ones held: by the brain's flag, and by the workspace's own rows", () => {
+    // Every option held per the brain: no picker.
+    expect(view([{ slug: 'crm', name: 'CRM', kind: 'api', held: true }])).not.toContain(
+      'Add a connector',
+    );
+    // On the workspace already (its resources hold drive and mail), whatever
+    // the flag says: no picker.
+    expect(
+      view([
+        { slug: 'drive', name: 'Drive', kind: 'mcp', held: false },
+        { slug: 'mail', name: 'Mail', kind: 'api', held: false },
+      ]),
+    ).not.toContain('Add a connector');
+  });
+
+  it("reads the list under the workspace's own key, so every workspace call asks it again", () => {
+    expect(connectorOptionsKey('w-team').slice(0, 2)).toEqual([...workspaceKey('w-team')]);
   });
 });

@@ -120,7 +120,11 @@ describe('WorkspacesClient for a login with no areas (a Moderator)', () => {
     });
     // One shell for every login (W5c): the areas are the shell's.
     client.setQueryData(['shell'], { areas: [] });
-    client.setQueryData(['workspaces', 'connector-options'], [{ slug: 'crm', name: 'CRM' }]);
+    const { connectorOptionsKey } = await import('@/components/workspaces/workspace-queries');
+    // A list in the cache all the same: a Moderator is offered none of it.
+    client.setQueryData(connectorOptionsKey(team.id), [
+      { slug: 'crm', name: 'CRM', kind: 'api', held: false },
+    ]);
     const html = renderToStaticMarkup(
       createElement(QueryClientProvider, {
         client,
