@@ -510,8 +510,6 @@ function ShellFrame({
         logoDarkVersion={brand.logoDarkVersion ?? null}
         inDrawer={inDrawer}
         onNavigate={onNavigate}
-        // The switcher renders nothing for a brain that sends no workspaces.
-        switcher={<WorkspaceSwitcher onNavigate={onNavigate} />}
       />
       <RailControls
         identity={identity}
@@ -524,6 +522,8 @@ function ShellFrame({
             : undefined
         }
         onNavigate={onNavigate}
+        // The switcher renders nothing for a brain that sends no workspaces.
+        switcher={<WorkspaceSwitcher onNavigate={onNavigate} />}
       />
 
       {/* `relative` is load-bearing: the menu backdrop is absolutely positioned

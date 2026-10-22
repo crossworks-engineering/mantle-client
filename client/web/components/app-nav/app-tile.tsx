@@ -34,6 +34,9 @@ const SIZES = {
   sm: { tile: 'size-5 rounded-[5px] text-[11px]', icon: 'size-3' },
   md: { tile: 'size-6 rounded-md text-sm', icon: 'size-3.5' },
   lg: { tile: 'size-9 rounded-lg text-lg', icon: 'size-5' },
+  // A circle the size of the rail's profile avatar (28px), so the workspace
+  // switcher's face lines up with the login's face above it.
+  avatar: { tile: 'size-7 rounded-full text-sm', icon: 'size-4' },
 } as const;
 
 /**

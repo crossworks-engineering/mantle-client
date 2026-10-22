@@ -58,7 +58,6 @@ export function BrandBlock({
   href = '/',
   inDrawer = false,
   onNavigate,
-  switcher,
 }: {
   /** Custom wordmark from prefs; null ⇒ the "mantle" default. */
   siteName?: string | null;
@@ -77,9 +76,6 @@ export function BrandBlock({
    *  aside there is nothing to dodge and the full column width is usable. */
   inDrawer?: boolean;
   onNavigate?: () => void;
-  /** The workspace switcher (plan 7.1), under the identity line: where you
-   *  are, beside who this brain is. */
-  switcher?: React.ReactNode;
 }) {
   // A brain that has never been named wears the BRAND rather than the brand's
   // name set in type: the wordmark expanded, the icon collapsed. The moment
@@ -150,7 +146,6 @@ export function BrandBlock({
           </p>
         )}
       </div>
-      {switcher ? <div className="mt-2">{switcher}</div> : null}
     </div>
   );
 }

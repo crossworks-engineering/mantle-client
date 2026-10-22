@@ -49,7 +49,7 @@ export function switcherOptions(workspaces: readonly ShellWorkspace[]): Switcher
 }
 
 /**
- * The workspace switcher (plan 7.1): in the rail head under the brand, and in
+ * The workspace switcher (plan 7.1): in the rail under the profile row, and in
  * the phone bar. It lists the login's workspaces and keeps the choice per
  * login. The lists follow it (useListWorkspace, W5b).
  *
@@ -116,15 +116,29 @@ export function WorkspaceSwitcherView({
             aria-label={`Workspace: ${label}`}
             title={label}
             className={cn(
-              'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+              // `px-[7px]`, one under the profile row's `px-2`: the 1px border
+              // makes up the difference, so both circles share one column.
+              'flex w-full items-center gap-2.5 rounded-lg px-[7px] py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+              // Boxed: a bordered card, so the switcher reads as a control of
+              // its own and not as a second account row under the profile.
+              'border border-sidebar-border bg-background/50 shadow-xs',
               'hover:bg-foreground/[0.06] data-[state=open]:bg-foreground/[0.06]',
-              'group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:gap-0 group-data-[nav-collapsed=true]/shell:px-0',
+              // The collapsed rail drops the box: the circle alone sits under
+              // the avatar, the same size, centred like it.
+              'group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:gap-0 group-data-[nav-collapsed=true]/shell:border-transparent group-data-[nav-collapsed=true]/shell:bg-transparent group-data-[nav-collapsed=true]/shell:px-0 group-data-[nav-collapsed=true]/shell:shadow-none',
             )}
           >
+            {/* A circle the profile avatar's size (28px), so the two faces
+                stack evenly in the band. */}
             {picked ? (
-              <WorkspaceTile workspace={picked} size="sm" />
+              <WorkspaceTile workspace={picked} size="avatar" />
             ) : (
-              <Layers className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span
+                aria-hidden
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+              >
+                <Layers className="size-4" />
+              </span>
             )}
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground group-data-[nav-collapsed=true]/shell:hidden">
               {label}

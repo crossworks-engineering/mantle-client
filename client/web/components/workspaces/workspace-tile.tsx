@@ -14,7 +14,7 @@ export function WorkspaceTile({
   className,
 }: {
   workspace: LookSource | null | undefined;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'avatar';
   className?: string;
 }) {
   const look = resolveWorkspaceLook(workspace);
