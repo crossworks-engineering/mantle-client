@@ -1,6 +1,6 @@
 {
   "name": "@mantle/client-desktop",
-  "version": "0.7.21",
+  "version": "0.7.22",
   "private": true,
   "productName": "Jackdaw",
   "homepage": "https://github.com/crossworks-engineering/mantle-client",
