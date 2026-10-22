@@ -9,6 +9,9 @@ import {
   ALL_WORKSPACES_LABEL,
   addableHits,
   addableResources,
+  connectorKindLabel,
+  isMissingConnectorOptionsRoute,
+  olderBrainConnectorOptions,
   archiveConfirmText,
   areaForPath,
   canArchiveWorkspace,
@@ -65,6 +68,7 @@ import {
   workspaceMeta,
   workspacesOfLogin,
   type Workspace,
+  type WorkspaceConnectorOption,
   type WorkspaceDetail,
 } from './workspaces';
 
@@ -561,6 +565,35 @@ describe('lists', () => {
     const all = [{ slug: 'drive' }, { slug: 'crm' }];
     const held = [{ kind: 'connector' as const, id: 'drive', name: 'Drive', write: false }];
     expect(addableResources(all, held, 'connector').map((c) => c.slug)).toEqual(['crm']);
+  });
+
+  it('offers API connectors as MCP ones, and none the brain says the workspace holds', () => {
+    const all: WorkspaceConnectorOption[] = [
+      { slug: 'drive', name: 'Drive', kind: 'mcp', held: false },
+      { slug: 'crm', name: 'CRM', kind: 'api', held: false },
+      { slug: 'mail', name: 'Mail', kind: 'mcp', held: true },
+    ];
+    expect(addableResources(all, [], 'connector').map((c) => c.slug)).toEqual(['drive', 'crm']);
+  });
+
+  it('labels a connector by its kind: MCP or API', () => {
+    expect(connectorKindLabel('mcp')).toBe('MCP');
+    expect(connectorKindLabel('api')).toBe('API');
+  });
+
+  it('an older brain (no connector-options route): its MCP connectors, none held', () => {
+    expect(isMissingConnectorOptionsRoute(new ApiError('Not found', 404))).toBe(true);
+    // A workspace the caller may not see is a 404 with its code: no fallback.
+    expect(
+      isMissingConnectorOptionsRoute(
+        new ApiError('Workspace not found.', 404, { error: 'x', code: 'not_found' }),
+      ),
+    ).toBe(false);
+    expect(isMissingConnectorOptionsRoute(new ApiError('Forbidden', 403))).toBe(false);
+    expect(isMissingConnectorOptionsRoute(new Error('offline'))).toBe(false);
+    expect(olderBrainConnectorOptions([{ slug: 'drive', name: 'Drive' }])).toEqual([
+      { slug: 'drive', name: 'Drive', kind: 'mcp', held: false },
+    ]);
   });
 
   it('finds the workspaces a login is in, Admin first, archived left out', () => {
