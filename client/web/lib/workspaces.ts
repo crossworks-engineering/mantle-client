@@ -15,6 +15,8 @@ import type {
   ShellWorkspace,
   Workspace,
   WorkspaceArchivePreview,
+  WorkspaceConnectorKind,
+  WorkspaceConnectorOption,
   WorkspaceDetailResponse as WorkspaceDetail,
   WorkspaceResource,
   WorkspaceUser,
@@ -25,6 +27,8 @@ import type { ShellRole } from './contract/shell';
 export type {
   ShellWorkspace,
   Workspace,
+  WorkspaceConnectorKind,
+  WorkspaceConnectorOption,
   WorkspaceDetailResponse as WorkspaceDetail,
   WorkspaceResource,
   WorkspaceUser,
@@ -573,14 +577,35 @@ export const RESOURCE_KINDS: readonly ResourceKind[] = [
   },
 ];
 
-/** The connectors not on the workspace yet, by slug. */
-export function addableResources<T extends { slug: string }>(
+/** The connectors not on the workspace yet: by slug against the
+ *  workspace's resources, and none the brain says it holds. */
+export function addableResources<T extends { slug: string; held?: boolean }>(
   all: readonly T[],
   resources: readonly WorkspaceResource[],
   kind: string,
 ): T[] {
   const held = new Set(resources.filter((r) => r.kind === kind).map((r) => r.id));
-  return all.filter((c) => !held.has(c.slug));
+  return all.filter((c) => !held.has(c.slug) && c.held !== true);
+}
+
+/** A connector's kind as its small label in the add picker. */
+export function connectorKindLabel(kind: WorkspaceConnectorKind): string {
+  return kind === 'mcp' ? 'MCP' : 'API';
+}
+
+/** The brain has no GET /api/workspaces/:id/connector-options (an older
+ *  brain): a 404 without a workspace refusal's code. A workspace the caller
+ *  may not see is a 404 too, with `code: 'not_found'`. */
+export function isMissingConnectorOptionsRoute(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404 && typeof err.body?.code !== 'string';
+}
+
+/** An older brain's add list: its MCP connectors (/api/mcp-connectors), all
+ *  it offered before the brain answered the list itself. */
+export function olderBrainConnectorOptions(
+  connectors: readonly { slug: string; name: string }[],
+): WorkspaceConnectorOption[] {
+  return connectors.map((c) => ({ slug: c.slug, name: c.name, kind: 'mcp', held: false }));
 }
 
 // ── The switcher's choice (a per-login preference) ─────────────────────────

@@ -6,15 +6,21 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import {
   USER_SEARCH_DEBOUNCE_MS,
   WORKSPACES_KEY,
+  isMissingConnectorOptionsRoute,
   nextUserSearchOffset,
+  olderBrainConnectorOptions,
   userSearchReady,
   workspaceKey,
   type ArchivePreview,
   type UserSearchHit,
   type Workspace,
+  type WorkspaceConnectorOption,
   type WorkspaceDetail,
 } from '@/lib/workspaces';
-import type { WorkspacePatchBody } from '@/lib/contract/workspaces';
+import type {
+  WorkspaceConnectorOptionsResponse,
+  WorkspacePatchBody,
+} from '@/lib/contract/workspaces';
 
 const base = '/api/workspaces';
 const one = (id: string) => `${base}/${encodeURIComponent(id)}`;
@@ -79,6 +85,34 @@ export function useUserSearch(q: string, enabled: boolean, min: number, paged: b
 
 export function fetchArchivePreview(id: string): Promise<ArchivePreview> {
   return apiFetch<ArchivePreview>(`${one(id)}/archive-preview`);
+}
+
+/** The add connector list's key: under the workspace's, so every workspace
+ *  call (useWorkspaceActions' refresh) asks it again. */
+export const connectorOptionsKey = (id: string) => [...workspaceKey(id), 'connector-options'];
+
+/** GET /api/workspaces/:id/connector-options: every connector the
+ *  workspace may hold, MCP and HTTP API alike, by the brain's own rule (the
+ *  attach's). An older brain has no such route: its MCP connectors then. */
+export async function fetchConnectorOptions(id: string): Promise<WorkspaceConnectorOption[]> {
+  try {
+    const r = await apiFetch<WorkspaceConnectorOptionsResponse>(`${one(id)}/connector-options`);
+    return r.connectors;
+  } catch (err) {
+    if (!isMissingConnectorOptionsRoute(err)) throw err;
+    const r = await apiFetch<{ connectors: { slug: string; name: string }[] }>(
+      '/api/mcp-connectors',
+    );
+    return olderBrainConnectorOptions(r.connectors);
+  }
+}
+
+export function useConnectorOptions(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: connectorOptionsKey(id),
+    queryFn: () => fetchConnectorOptions(id),
+    enabled,
+  });
 }
 
 /** Every workspace call. Each one refreshes the list, the workspace, and the
