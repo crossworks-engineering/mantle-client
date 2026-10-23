@@ -37,8 +37,8 @@ function sizeLabel(size: PresentDetail['meta']['size']): string {
 /**
  * One canvas, live: the standard item header (fixed slots: Maximise is the
  * fourth from the right, drawn by ItemHeader), then the canvas running in its
- * sandbox, or its source, read only. No Edit slot: Present v1 is agent
- * driven, a canvas changes when Presenter changes it.
+ * sandbox, or its source, read only. The pencil is greyed: Present v1 is
+ * agent driven, a canvas changes when Presenter changes it.
  *
  * Kind tools: Full screen (the browser's Fullscreen API on the frame alone,
  * for presenting; a deck's arrow keys reach it there), Replay (a new frame
@@ -108,6 +108,9 @@ export function PresentView({
           <AccessSlot type="present" nodeId={present.id} canShare={access.share} shares={shares} />
         }
         tools={[fullScreen, replayTool, sourceTool]}
+        // Present v1 is agent driven: the pencil keeps its slot, greyed, so
+        // Maximise stays the fourth from the right as on every kind.
+        edit={{ disabled: true, label: 'Ask Presenter in chat to change this canvas' }}
         onDelete={access.manage ? onDelete : undefined}
         deleteDisabled={!access.manage}
         deleteLabel="Delete canvas"
