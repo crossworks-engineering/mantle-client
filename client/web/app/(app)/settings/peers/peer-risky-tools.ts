@@ -2,9 +2,14 @@
  * The risky tools a peer bound to the owner may be allowed by name, as flags.
  * The brain keeps no list of them to fetch: a tool is risky when its policy
  * says `peerRisky` (the owner MCP surface, A5 step 6a), and the PATCH takes
- * any name of the right shape. So this is a mirror of the brain's list
- * (mcp-core's surface-lists snapshot, PEER_RISKY_TOOL_SLUGS plus the
- * telegram_, sandbox_, web_ and peer_ families), grouped for the screen.
+ * any name of the right shape. So this is a HARD-CODED copy of the brain's
+ * list (mantle v0.300.135, mcp-core's surface-decisions snapshot: every tool
+ * with `peerRisky` and a gate), grouped for the screen. A stopgap: the
+ * proper fix is a brain endpoint that lists them, so the screen reads them
+ * live. Until then a new risky tool on the brain shows here only once added.
+ *
+ * The brain keeps at most 64 names per peer (MAX_RISKY_TOOLS) while it has
+ * more risky tools than that, so the screen counts down and stops at 64.
  *
  * A saved name the catalog does not hold (a connector's tool, a tool a later
  * brain adds) is never hidden: it shows as a flag under "Other", and a name
@@ -79,19 +84,58 @@ export const RISKY_TOOL_GROUPS: readonly RiskyGroup[] = [
       'agent_grant_tool_group',
       'model_pool_set',
       'model_pool_remove',
+      'update_persona',
+      'search_chunks',
+      'summarize_text',
+      'generate_image',
+      'extract_from_image',
+      'recall_eval',
     ],
   },
   {
     id: 'sharing',
     label: 'Sharing and access',
     hint: 'Shares content, changes who may see it, or publishes.',
+    tools: ['access_set', 'node_share', 'page_share', 'contact_create', 'contact_update'],
+  },
+  {
+    id: 'deletes',
+    label: 'Deletes and restores',
+    hint: 'Deletes content, or rolls a table back to a snapshot.',
     tools: [
-      'access_set',
-      'node_share',
-      'page_share',
-      'contact_create',
-      'contact_update',
+      'page_delete',
+      'table_delete',
+      'table_snapshot_delete',
+      'table_snapshot_restore',
+      'journal_delete',
+      'contact_delete',
+    ],
+  },
+  {
+    id: 'apps',
+    label: 'Mini apps',
+    hint: 'Builds, changes, publishes, imports or deletes mini apps.',
+    tools: [
+      'app_create',
+      'app_update',
+      'app_source_set',
+      'app_file_write',
+      'app_file_delete',
+      'app_build',
       'app_publish',
+      'app_tools_set',
+      'app_db_schema_set',
+      'app_db_seed',
+      'app_table_export_set',
+      'app_table_export_remove',
+      'app_duplicate',
+      'app_export',
+      'app_import',
+      'app_snapshot_create',
+      'app_snapshot_delete',
+      'app_snapshot_restore',
+      'app_delete',
+      'app_undelete',
     ],
   },
   {
@@ -136,8 +180,14 @@ export const RISKY_TOOL_GROUPS: readonly RiskyGroup[] = [
 /** The id of the group that holds saved names the catalog does not know. */
 export const OTHER_GROUP_ID = 'other';
 
-/** The most names a peer may be allowed (the PATCH's own limit). */
+/** The most names a peer may be allowed (the PATCH's own limit,
+ *  peer-access.ts `.max(64)`): fewer than the catalog holds. */
 export const MAX_RISKY_TOOLS = 64;
+
+/** How many more names this peer may be allowed. */
+export function riskyLeft(saved: readonly string[]): number {
+  return Math.max(0, MAX_RISKY_TOOLS - new Set(saved).size);
+}
 
 /** A name the brain accepts (peer-access.ts RiskyName). */
 export function isRiskyToolName(name: string): boolean {

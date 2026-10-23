@@ -5,12 +5,14 @@ import {
   OTHER_GROUP_ID,
   RISKY_TOOL_GROUPS,
   riskyGroupsFor,
+  riskyLeft,
   withRisky,
 } from './peer-risky-tools';
 
-/** The brain's list when this catalog was written (mantle v0.300.130,
- *  mcp-core surface-lists snapshot: PEER_RISKY_TOOL_SLUGS and the families
- *  of PEER_RISKY_TOOL_PREFIXES as the tools list names them). */
+/** The brain's list this catalog copies (mantle v0.300.135, mcp-core's
+ *  surface-decisions snapshot: every tool whose policy says `peerRisky`,
+ *  with a gate). A copy, so this pins the catalog to what was copied; a
+ *  brain endpoint that lists them is the proper fix. */
 const BRAIN_RISKY = [
   'access_set',
   'agent_grant_tool_group',
@@ -21,30 +23,42 @@ const BRAIN_RISKY = [
   'api_tool_delete',
   'api_tool_test',
   'api_tool_update',
+  'app_build',
+  'app_create',
+  'app_db_schema_set',
+  'app_db_seed',
+  'app_delete',
+  'app_duplicate',
+  'app_export',
+  'app_file_delete',
+  'app_file_write',
+  'app_import',
   'app_publish',
+  'app_snapshot_create',
+  'app_snapshot_delete',
+  'app_snapshot_restore',
+  'app_source_set',
+  'app_table_export_remove',
+  'app_table_export_set',
+  'app_tools_set',
+  'app_undelete',
+  'app_update',
   'ask_as_responder',
   'ask_responder',
   'contact_create',
+  'contact_delete',
   'contact_update',
   'email_page',
   'email_send',
+  'extract_from_image',
+  'generate_image',
   'invoke_agent',
+  'journal_delete',
   'model_pool_remove',
   'model_pool_set',
   'node_share',
+  'page_delete',
   'page_share',
-  'pending_approve',
-  'pending_reject',
-  'recipe_tool_create',
-  'recipe_tool_test',
-  'responder_turn_input',
-  'responder_turn_record',
-  'run_append',
-  'run_plan',
-  'run_terminal',
-  'secret_create',
-  'tool_group_ensure',
-  'video_ingest',
   'peer_call',
   'peer_file_copy',
   'peer_list',
@@ -52,6 +66,16 @@ const BRAIN_RISKY = [
   'peer_query',
   'peer_search_chunks',
   'peer_tools',
+  'pending_approve',
+  'pending_reject',
+  'recall_eval',
+  'recipe_tool_create',
+  'recipe_tool_test',
+  'responder_turn_input',
+  'responder_turn_record',
+  'run_append',
+  'run_plan',
+  'run_terminal',
   'sandbox_autostart',
   'sandbox_create',
   'sandbox_exec',
@@ -64,12 +88,21 @@ const BRAIN_RISKY = [
   'sandbox_publish',
   'sandbox_rm',
   'sandbox_stop',
+  'search_chunks',
+  'secret_create',
+  'summarize_text',
+  'table_delete',
+  'table_snapshot_delete',
+  'table_snapshot_restore',
   'telegram_edit',
   'telegram_mark_processed',
   'telegram_pair',
   'telegram_pending',
   'telegram_react',
   'telegram_send',
+  'tool_group_ensure',
+  'update_persona',
+  'video_ingest',
   'web_crawl',
   'web_fetch',
   'web_map',
@@ -85,9 +118,11 @@ describe('the risky tool catalog', () => {
     expect(new Set(catalog).size).toBe(catalog.length);
   });
 
-  it('fits the PATCH: valid names, within its limit', () => {
+  it('holds valid names, more than one peer may be allowed', () => {
     expect(catalog.every(isRiskyToolName)).toBe(true);
-    expect(catalog.length).toBeLessThanOrEqual(MAX_RISKY_TOOLS);
+    // The brain has more risky tools than its per-peer limit: the screen
+    // counts down instead of offering them all at once.
+    expect(catalog.length).toBeGreaterThan(MAX_RISKY_TOOLS);
   });
 });
 
@@ -126,5 +161,13 @@ describe('withRisky', () => {
   it('turns a whole group off', () => {
     const web = RISKY_TOOL_GROUPS.find((g) => g.id === 'web')!.tools;
     expect(withRisky([...web, 'email_send'], web, false)).toEqual(['email_send']);
+  });
+});
+
+describe('riskyLeft', () => {
+  it('counts down from the limit, a name once, never below zero', () => {
+    expect(riskyLeft([])).toBe(MAX_RISKY_TOOLS);
+    expect(riskyLeft(['web_search', 'web_search', 'email_send'])).toBe(MAX_RISKY_TOOLS - 2);
+    expect(riskyLeft(catalog)).toBe(0);
   });
 });

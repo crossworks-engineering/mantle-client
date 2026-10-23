@@ -58,6 +58,7 @@ import {
   MAX_RISKY_TOOLS,
   RISKY_TOOL_GROUPS,
   riskyGroupsFor,
+  riskyLeft,
   withRisky,
 } from './peer-risky-tools';
 import { FlagRow, PeerColumnHeading } from './peer-section';
@@ -293,6 +294,10 @@ function RiskyTools({
   const disabled = saving;
   const on = new Set(allowed);
   const groups = riskyGroupsFor(allowed);
+  // The brain keeps at most MAX_RISKY_TOOLS names per peer, fewer than it has
+  // risky tools: count down, and stop new names at zero.
+  const left = riskyLeft(allowed);
+  const full = left === 0;
   // The toast's Undo runs after later renders: read the list and the save as
   // they are then, not as they were when the toast was made.
   const latest = useRef({ allowed, onSave });
@@ -325,6 +330,7 @@ function RiskyTools({
 
   const addExtra = (e: React.FormEvent) => {
     e.preventDefault();
+    if (full) return;
     const name = extra.trim();
     if (!isRiskyToolName(name)) {
       toast.error(
@@ -340,13 +346,28 @@ function RiskyTools({
     <div>
       <PeerColumnHeading
         title="Risky tools allowed"
-        aside={<span className="text-xs text-muted-foreground">{allowed.length} allowed</span>}
+        aside={
+          enabled ? (
+            <span
+              className={`text-xs tabular-nums ${full ? 'text-warning-ink' : 'text-muted-foreground'}`}
+            >
+              {left} of {MAX_RISKY_TOOLS} left
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">{allowed.length} allowed</span>
+          )
+        }
         description={
           enabled
-            ? 'Blocked unless switched on here, even with Write on.'
-            : `Only for a peer that acts as the owner: set Acts as to Owner to choose from the ${RISKY_COUNT} risky tools.`
+            ? `Usually not needed: most links need none of these. Each stays blocked unless switched on here, even with Write on. A peer can have at most ${MAX_RISKY_TOOLS} of the ${RISKY_COUNT}.`
+            : `Only for a peer that acts as the owner: set Acts as to Owner to choose from the ${RISKY_COUNT} risky tools. Usually not needed.`
         }
       />
+      {enabled && full ? (
+        <p className="mb-3 rounded-md border border-warning/50 px-3 py-2 text-xs text-warning-ink">
+          Limit reached: {MAX_RISKY_TOOLS} allowed. Turn one off to allow another.
+        </p>
+      ) : null}
       {/* Only a peer bound to the owner can have them: otherwise the
           flags would all be greyed, so the note above stands alone. */}
       {enabled ? (
@@ -354,6 +375,9 @@ function RiskyTools({
           {groups.map((g) => {
             const count = g.tools.filter((t) => on.has(t)).length;
             const all = count === g.tools.length;
+            // "All" adds only what is off; past the limit it would be refused.
+            const needed = g.tools.length - count;
+            const allBlocked = !all && needed > left;
             return (
               <div key={g.id} className="rounded-md border border-border">
                 <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5">
@@ -368,9 +392,10 @@ function RiskyTools({
                     type="button"
                     size="2xs"
                     variant="ghost"
-                    disabled={disabled}
+                    disabled={disabled || allBlocked}
                     onClick={() => set(g.tools, !all)}
                     aria-label={`${all ? 'Clear' : 'Allow all'}: ${g.label}`}
+                    title={allBlocked ? `Needs ${needed}, ${left} left` : undefined}
                   >
                     {all ? 'Clear' : 'All'}
                   </Button>
@@ -383,7 +408,8 @@ function RiskyTools({
                       label={t}
                       mono
                       checked={on.has(t)}
-                      disabled={disabled}
+                      // At the limit only a switch that is on can move (off).
+                      disabled={disabled || (full && !on.has(t))}
                       onCheckedChange={(v) => set([t], v)}
                     />
                   ))}
@@ -398,10 +424,15 @@ function RiskyTools({
               placeholder="Another tool by name, e.g. mcp_github_create_issue"
               aria-label="Allow another tool by name"
               className="h-8 font-mono text-xs"
-              disabled={saving}
+              disabled={saving || full}
               autoComplete="off"
             />
-            <SubmitButton size="xs" variant="outline" pending={saving} disabled={!extra.trim()}>
+            <SubmitButton
+              size="xs"
+              variant="outline"
+              pending={saving}
+              disabled={!extra.trim() || full}
+            >
               <Plus /> Allow tool
             </SubmitButton>
           </form>
