@@ -43,6 +43,8 @@ function surfaceFor(type: string, id: string): string {
       return `/formulas/${enc}`;
     case 'draw':
       return `/draw/${enc}`;
+    case 'present':
+      return `/present/${enc}`;
     case 'secret':
       return `/secrets/${enc}`;
     default:

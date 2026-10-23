@@ -4,6 +4,7 @@ import {
   KeyRound,
   Map as MapIcon,
   PenTool,
+  Presentation,
   Sigma,
   Table2,
   UserRound,
@@ -82,6 +83,12 @@ export const pagesAdapter = ownIconAdapter('pages', { one: 'page', many: 'pages'
 /** Drawings and tables: their paged lists showed the item's icon on its row,
  *  so the tree does too. */
 export const drawAdapter = ownIconAdapter('draw', { one: 'drawing', many: 'drawings' }, PenTool);
+/** Present canvases: in folders like drawings, the item's icon on its row. */
+export const presentAdapter = ownIconAdapter(
+  'present',
+  { one: 'canvas', many: 'canvases' },
+  Presentation,
+);
 export const tablesAdapter = ownIconAdapter('tables', { one: 'table', many: 'tables' }, Table2);
 export const formulasAdapter = simpleAdapter(
   'formulas',

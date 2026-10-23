@@ -1,0 +1,156 @@
+'use client';
+
+import { useRef, useState } from 'react';
+import { Code, Expand, Presentation, RotateCcw } from 'lucide-react';
+import { CanvasSandbox } from '@mantle/share-ui/canvas-sandbox';
+import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
+import { AccessSlot } from '@/components/share/access-slot';
+import { itemAccess, readOnlyNote } from '@/lib/item-access';
+
+/** A canvas as GET /api/presents/:id answers it. */
+export type PresentDetail = {
+  id: string;
+  title: string;
+  icon: string | null;
+  tags: string[];
+  description: string | null;
+  summary: string | null;
+  meta: {
+    size: { w: number; h: number } | 'fill';
+    theme: 'follow' | 'fixed';
+    libs: string[];
+    scripts: string[];
+  };
+  rev: number;
+  source: string;
+  updatedAt: string;
+  createdAt: string;
+};
+
+function sizeLabel(size: PresentDetail['meta']['size']): string {
+  return size === 'fill' ? 'Fills the view' : `${size.w} × ${size.h}, scaled to fit`;
+}
+
+/**
+ * One canvas, live: the standard item header (fixed slots: Maximise is the
+ * fourth from the right, drawn by ItemHeader), then the canvas running in its
+ * sandbox, or its source, read only. No Edit slot: Present v1 is agent
+ * driven, a canvas changes when Presenter changes it.
+ *
+ * Kind tools: Full screen (the browser's Fullscreen API on the frame alone,
+ * for presenting; a deck's arrow keys reach it there), Replay (a new frame
+ * from the start, so an animation runs again) and Source (pressed while the
+ * source shows).
+ */
+export function PresentView({
+  present,
+  shares,
+  onDelete,
+}: {
+  present: PresentDetail;
+  /** The share marks for Access (`shareMarksOf`). */
+  shares: unknown;
+  onDelete: () => void;
+}) {
+  const toast = useToast();
+  const access = itemAccess(present);
+  const note = readOnlyNote(access);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const [replay, setReplay] = useState(0);
+  const [showSource, setShowSource] = useState(false);
+
+  const fullScreen: HeaderTool = {
+    key: 'full-screen',
+    label: 'Full screen',
+    icon: <Expand />,
+    disabled: showSource,
+    onSelect: () => {
+      const frame = frameRef.current;
+      if (!frame) return;
+      frame
+        .requestFullscreen()
+        .then(() => frame.focus())
+        .catch(() => toast.error('Full screen is not available here'));
+    },
+  };
+  const replayTool: HeaderTool = {
+    key: 'replay',
+    label: 'Replay from the start',
+    icon: <RotateCcw />,
+    disabled: showSource,
+    onSelect: () => setReplay((n) => n + 1),
+  };
+  const sourceTool: HeaderTool = {
+    key: 'source',
+    label: showSource ? 'Back to the canvas' : 'Source (read only)',
+    icon: <Code />,
+    pressed: showSource,
+    onSelect: () => setShowSource((v) => !v),
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ItemHeader
+        sticky
+        section="Present"
+        visual={
+          present.icon ? (
+            <span aria-hidden>{present.icon}</span>
+          ) : (
+            <Presentation className="size-4 text-muted-foreground" aria-hidden />
+          )
+        }
+        title={present.title}
+        access={
+          <AccessSlot type="present" nodeId={present.id} canShare={access.share} shares={shares} />
+        }
+        tools={[fullScreen, replayTool, sourceTool]}
+        onDelete={access.manage ? onDelete : undefined}
+        deleteDisabled={!access.manage}
+        deleteLabel="Delete canvas"
+        move={
+          access.move ? { kind: 'present', item: { id: present.id, title: present.title } } : null
+        }
+        info={{
+          description: present.description ?? present.summary ?? undefined,
+          tags: present.tags,
+          rows: [
+            ...(note ? [{ label: 'Access', value: note }] : []),
+            { label: 'Size', value: sizeLabel(present.meta.size) },
+            ...(present.meta.libs.length
+              ? [{ label: 'Libraries', value: present.meta.libs.join(', ') }]
+              : []),
+            { label: 'Version', value: String(present.rev) },
+            { label: 'Updated', value: new Date(present.updatedAt).toLocaleString() },
+          ],
+        }}
+        infoLabel="About this canvas"
+      />
+
+      <div className="relative min-h-0 flex-1">
+        {showSource ? (
+          <pre
+            aria-label="Canvas source (read only)"
+            className="absolute inset-0 m-0 overflow-auto bg-muted/20 p-6 font-mono text-xs leading-relaxed whitespace-pre-wrap text-foreground scrollbar-thin"
+          >
+            {present.source}
+          </pre>
+        ) : (
+          <CanvasSandbox
+            // A new save (rev) or Replay starts the canvas again.
+            reloadKey={present.rev * 1000 + replay}
+            presentId={present.id}
+            apiBase={apiUrl(`/api/presents/${present.id}`)}
+            fetcher={(input, init) => fetch(input, withAuth(init))}
+            title={present.title}
+            frameRef={frameRef}
+            loader={<Spinner />}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

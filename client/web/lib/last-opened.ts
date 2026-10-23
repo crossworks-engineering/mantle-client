@@ -23,7 +23,14 @@
 import { ApiError } from '@mantle/web-ui/api-fetch';
 
 /** The sections that remember, by their index path. */
-export const LAST_OPENED_SECTIONS = ['pages', 'notes', 'files', 'tables', 'draw'] as const;
+export const LAST_OPENED_SECTIONS = [
+  'pages',
+  'notes',
+  'files',
+  'tables',
+  'draw',
+  'present',
+] as const;
 export type LastOpenedSection = (typeof LAST_OPENED_SECTIONS)[number];
 
 const PREFIX = 'jackdaw_last_opened_v1:';
@@ -146,6 +153,9 @@ export async function itemRestore(
         // The drawing's own address: open to look at, the folders beside it;
         // the editor is one click on (`?edit=1`).
         return { href: `/draw/${enc}` };
+      case 'present':
+        await fetchJson(`/api/presents/${enc}`);
+        return { href: `/present/${enc}` };
       case 'notes':
         await fetchJson(`/api/notes/${enc}`);
         return { href: `/notes/${enc}` };

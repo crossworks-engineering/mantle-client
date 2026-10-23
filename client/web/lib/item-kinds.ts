@@ -12,6 +12,7 @@ export const ITEM_KIND_LABEL: Record<string, string> = {
   page: 'Page',
   note: 'Note',
   draw: 'Drawing',
+  present: 'Canvas',
   task: 'Task',
   event: 'Event',
   file: 'File',
@@ -35,6 +36,8 @@ export function queryKeysForType(type: string): string[][] {
       return [['notes']];
     case 'draw':
       return [['draws']];
+    case 'present':
+      return [['presents']];
     case 'table':
       return [['tables']];
     case 'app':
