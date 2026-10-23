@@ -20,7 +20,19 @@ describe('peerState', () => {
 
   it('names the peer in the line it says', () => {
     expect(peerStateText('waiting', 'Lab')).toContain('until you paste their token');
-    expect(peerStateText('linked', 'Lab')).toContain('Lab can call this brain');
+    expect(peerStateText('linked', 'Lab', '2026-10-23T10:00:00Z')).toContain(
+      'Lab has called this brain',
+    );
+  });
+
+  it('claims their direction only once they have called', () => {
+    // This brain cannot see whether their owner pasted your token.
+    expect(peerStateText('linked', 'Lab', null)).not.toContain('Both ways work');
+    expect(peerStateText('linked', 'Lab', null)).toContain('once their owner pastes your token');
+    expect(peerStateText('waiting', 'Lab', null)).toContain('once their owner pastes your token');
+    expect(peerStateText('waiting', 'Lab', '2026-10-23T10:00:00Z')).toContain(
+      'Lab has called this brain',
+    );
   });
 });
 

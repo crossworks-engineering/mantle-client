@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  KeyRound,
   Link2,
   Network,
   Plus,
@@ -127,7 +128,16 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
     if (hit) return { mode: 'view', id: hit.id };
     return initialPeers[0] ? { mode: 'view', id: initialPeers[0].id } : { mode: 'create' };
   });
-  const [reveal, setReveal] = useState<Reveal | null>(null);
+  // One token to show per peer, kept until "I've copied it": switching peers
+  // must not lose a token shown only once, nor show it under another peer.
+  const [reveals, setReveals] = useState<Record<string, Reveal>>({});
+  const showReveal = (peerId: string, reveal: Reveal) =>
+    setReveals((r) => ({ ...r, [peerId]: reveal }));
+  const clearReveal = (peerId: string) =>
+    setReveals((r) => {
+      const { [peerId]: _gone, ...rest } = r;
+      return rest;
+    });
 
   const selected = sel.mode === 'view' ? (peers.find((p) => p.id === sel.id) ?? null) : null;
 
@@ -151,14 +161,7 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
                   : `${peers.length} ${peers.length === 1 ? 'brain' : 'brains'}`}
               </p>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setReveal(null);
-                setSel({ mode: 'create' });
-              }}
-            >
+            <Button type="button" size="sm" onClick={() => setSel({ mode: 'create' })}>
               <Plus /> Link a brain
             </Button>
           </div>
@@ -174,17 +177,21 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
                 return (
                   <ListCard
                     key={p.id}
-                    onClick={() => {
-                      setReveal(null);
-                      setSel({ mode: 'view', id: p.id });
-                    }}
+                    onClick={() => setSel({ mode: 'view', id: p.id })}
                     selected={sel.mode === 'view' && sel.id === p.id}
                     dimmed={state === 'off'}
                   >
                     <div className="flex items-center gap-2">
                       <Network className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                       <ListCardTitle>{p.displayName}</ListCardTitle>
-                      <PeerStatePill state={state} className="ml-auto" />
+                      {reveals[p.id] ? (
+                        <KeyRound
+                          className="ml-auto size-3.5 shrink-0 text-primary-ink"
+                          role="img"
+                          aria-label="A new token to copy"
+                        />
+                      ) : null}
+                      <PeerStatePill state={state} className={reveals[p.id] ? '' : 'ml-auto'} />
                     </div>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="min-w-0 flex-1 truncate">{peerHost(p.baseUrl)}</span>
@@ -213,7 +220,7 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
           <CreatePeer
             onCreated={(peer, inboundToken) => {
               setPeers((p) => [peer, ...p]);
-              setReveal({ token: inboundToken, replaced: false });
+              showReveal(peer.id, { token: inboundToken, replaced: false, at: 'tokens' });
               setSel({ mode: 'view', id: peer.id });
             }}
           />
@@ -221,17 +228,18 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
           <PeerDetail
             key={selected.id}
             peer={selected}
-            reveal={reveal}
-            onClearReveal={() => setReveal(null)}
+            reveal={reveals[selected.id] ?? null}
+            onClearReveal={() => clearReveal(selected.id)}
             onChanged={(patch) =>
               setPeers((list) => list.map((p) => (p.id === selected.id ? { ...p, ...patch } : p)))
             }
             // A rotate or an owner bind: either way the old inbound token is gone.
-            onRevealNew={(t) => setReveal({ token: t, replaced: true })}
+            // The id is this render's peer, so a late answer lands on its own peer.
+            onRevealNew={(t, at) => showReveal(selected.id, { token: t, replaced: true, at })}
             onDeleted={() => {
               const next = peers.filter((p) => p.id !== selected.id);
               setPeers(next);
-              setReveal(null);
+              clearReveal(selected.id);
               setSel(next[0] ? { mode: 'view', id: next[0].id } : { mode: 'create' });
             }}
           />
@@ -421,11 +429,12 @@ function PeerDetail({
   reveal: Reveal | null;
   onClearReveal: () => void;
   onChanged: (patch: Partial<Peer>) => void;
-  onRevealNew: (token: string) => void;
+  onRevealNew: (token: string, at: Reveal['at']) => void;
   onDeleted: () => void;
 }) {
   const toast = useToast();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [enabling, setEnabling] = useState(false);
   const [shares, setShares] = useState<Share[]>([]);
   const [typeShares, setTypeShares] = useState<TypeShare[]>([]);
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
@@ -480,6 +489,7 @@ function PeerDetail({
   }, [q]);
 
   const toggleEnabled = async (enabled: boolean) => {
+    setEnabling(true);
     try {
       await apiSend(`/api/peers/${peer.id}`, 'PATCH', { enabled });
       onChanged({
@@ -489,6 +499,8 @@ function PeerDetail({
       toast.success(enabled ? 'Link turned on' : 'Link turned off');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not update the link');
+    } finally {
+      setEnabling(false);
     }
   };
 
@@ -589,7 +601,7 @@ function PeerDetail({
           id={`peer-connection-${peer.id}`}
           icon={Link2}
           title="Connection"
-          description={peerStateText(state, peer.displayName)}
+          description={peerStateText(state, peer.displayName, peer.lastSeenAt)}
           control={
             <>
               <Label
@@ -601,6 +613,7 @@ function PeerDetail({
               <Switch
                 id={`peer-enabled-${peer.id}`}
                 checked={peer.enabled}
+                disabled={enabling}
                 onCheckedChange={toggleEnabled}
               />
             </>
@@ -643,9 +656,9 @@ function PeerDetail({
 
         <PeerTokens
           peer={peer}
-          reveal={reveal}
+          reveal={reveal?.at === 'tokens' ? reveal : null}
           onClearReveal={onClearReveal}
-          onRevealNew={onRevealNew}
+          onRevealNew={(t) => onRevealNew(t, 'tokens')}
           onSaved={() =>
             onChanged({
               hasOutboundToken: true,
@@ -767,7 +780,9 @@ function PeerDetail({
                 peerName={peer.displayName}
                 access={access}
                 onChanged={onChanged}
-                onRevealNew={onRevealNew}
+                reveal={reveal?.at === 'access' ? reveal : null}
+                onClearReveal={onClearReveal}
+                onRevealNew={(t) => onRevealNew(t, 'access')}
               />
             </div>
           </div>

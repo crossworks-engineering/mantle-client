@@ -12,7 +12,7 @@
  *    brain; you paste it here (PATCH outboundToken) so this brain can call
  *    theirs. A link waiting for it turns active when it is saved.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Check, Copy, KeyRound, RefreshCw } from 'lucide-react';
 import { apiSend, ApiError, apiUrl } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -34,8 +34,11 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { PeerSection } from './peer-section';
 
-/** A token to show once. `replaced`: it took the place of one that now fails. */
-export type Reveal = { token: string; replaced: boolean };
+/** A token to show once. `replaced`: it took the place of one that now fails.
+ *  `at`: where it shows, next to what made it: the Pairing tokens section (a
+ *  new link, a new token) or the tools column (binding the peer to Owner). The
+ *  screen keeps one per peer, so it shows only under the peer it belongs to. */
+export type Reveal = { token: string; replaced: boolean; at: 'tokens' | 'access' };
 
 /** The address the other brain enters for this one: the API's origin (the
  *  brain itself in detached and desktop mode, this page's origin when the
@@ -66,8 +69,10 @@ export function ThisBrainAddress() {
   );
 }
 
-/** Reveal-once box for a freshly minted token for them. */
-function TokenReveal({
+/** Reveal-once box for a freshly minted token for them. It scrolls itself
+ *  into view and takes focus when it appears, so a token made by a control
+ *  lower down is not left out of sight. */
+export function TokenReveal({
   token,
   replaced,
   peerName,
@@ -80,13 +85,25 @@ function TokenReveal({
 }) {
   const toast = useToast();
   const [copied, setCopied] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    box.current?.focus({ preventScroll: true });
+  }, [token]);
   const copy = async () => {
     await copyText(token);
     setCopied(true);
     toast.success('Token copied');
   };
   return (
-    <div role="status" className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
+    // A region, not a live region: a screen reader must not read the token aloud.
+    <div
+      ref={box}
+      role="region"
+      aria-label={`New token for ${peerName}`}
+      tabIndex={-1}
+      className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <p className="text-sm font-medium">Copy it now: it is shown only this once</p>
       <p className="text-xs text-muted-foreground">
         Send it to {peerName}&apos;s owner by a private channel. This brain keeps only a hash, so if

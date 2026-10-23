@@ -41,13 +41,23 @@ export function peerStateTone(s: PeerState): string {
   return TONE[s];
 }
 
-/** One line on what the state means for the two directions. */
-export function peerStateText(s: PeerState, name: string): string {
+/**
+ * One line on what the state means for the two directions. This brain knows
+ * its own direction (it holds their token or not). It cannot know whether
+ * their owner pasted your token, so their direction is claimed only once
+ * they have called (`lastSeenAt`).
+ */
+export function peerStateText(s: PeerState, name: string, lastSeenAt?: string | null): string {
+  const theirs = lastSeenAt
+    ? `${name} has called this brain`
+    : `${name} can call this brain once their owner pastes your token`;
   switch (s) {
     case 'linked':
-      return `Both ways work: this brain can call ${name}, and ${name} can call this brain.`;
+      return lastSeenAt
+        ? `Both ways work: this brain can call ${name}, and ${name} has called this brain.`
+        : `This brain can call ${name}. ${theirs}; no call from them yet.`;
     case 'waiting':
-      return `${name} can call this brain, but this brain cannot call ${name} until you paste their token.`;
+      return `This brain cannot call ${name} until you paste their token. ${theirs}.`;
     case 'off':
       return 'Turned off: neither brain can use this link until you turn it on again.';
   }

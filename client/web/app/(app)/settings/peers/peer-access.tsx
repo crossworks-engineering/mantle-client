@@ -8,10 +8,12 @@
  * (peer-risky-tools.ts). Every change saves at once through
  * PATCH /api/peers/:id; the brain checks the login. Since W8 the peer keeps
  * only the login, and acts as that login is now.
- * Binding a peer to the owner may mint a new inbound token; the answer then
- * carries it and the reveal shows it once.
+ * Binding a peer to the owner always mints a new inbound token (the brain
+ * re-keys a peer that moves into the owner's binding), so that choice asks
+ * first; the answer carries the token and the reveal shows it once, here in
+ * the column where it was chosen.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, TriangleAlert } from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
@@ -19,6 +21,16 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Field, FieldDescription, FieldLabel } from '@mantle/web-ui/ui/field';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@mantle/web-ui/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -32,6 +44,7 @@ import { revealPatchToken, type PeerPatchAnswer } from './peer-patch';
 import {
   ACTS_AS_NEEDS_USERS,
   ACTS_AS_NONE,
+  ACTS_AS_OWNER,
   actsAsOptions,
   actsAsOwner,
   actsAsValue,
@@ -48,8 +61,11 @@ import {
   withRisky,
 } from './peer-risky-tools';
 import { FlagRow, PeerColumnHeading } from './peer-section';
+import { TokenReveal, type Reveal } from './peer-tokens';
 
 const RISKY_COUNT = RISKY_TOOL_GROUPS.reduce((n, g) => n + g.tools.length, 0);
+/** Names the catalog lists; a saved name outside it shows under Other. */
+const CATALOG = new Set(RISKY_TOOL_GROUPS.flatMap((g) => g.tools));
 
 export type PeerAccess = ActsAsBinding & {
   writeEnabled: boolean;
@@ -97,16 +113,22 @@ export function PeerToolAccess({
   peerName,
   access,
   onChanged,
+  reveal,
+  onClearReveal,
   onRevealNew,
 }: {
   peerId: string;
   peerName: string;
   access: PeerAccess;
   onChanged: (patch: PeerAccess) => void;
+  /** A token minted by an owner bind from this column, shown here once. */
+  reveal: Reveal | null;
+  onClearReveal: () => void;
   onRevealNew: (token: string) => void;
 }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
+  const [confirmOwner, setConfirmOwner] = useState(false);
   const logins = usePeerLogins(access);
 
   const save = async (body: Record<string, unknown>, optimistic?: Partial<PeerAccess>) => {
@@ -139,6 +161,10 @@ export function PeerToolAccess({
   };
 
   const bound = access.actsAsLoginId !== null || !!access.actsAsRole;
+  const setActsAs = (v: string) => save({ actsAs: v === ACTS_AS_NONE ? null : v });
+  const actsAsHint = bound
+    ? 'Changing it usually turns Write and the risky tools off again.'
+    : 'Nobody: they read only what you share, and cannot call tools here.';
 
   return (
     <div className="space-y-4">
@@ -156,7 +182,11 @@ export function PeerToolAccess({
         <Select
           value={logins.value}
           disabled={saving}
-          onValueChange={(v) => save({ actsAs: v === ACTS_AS_NONE ? null : v })}
+          onValueChange={(v) => {
+            // Into the owner's binding: the brain re-keys the peer, so ask first.
+            if (v === ACTS_AS_OWNER && !logins.asOwner) setConfirmOwner(true);
+            else setActsAs(v);
+          }}
         >
           <SelectTrigger id={`peer-acts-as-${peerId}`} size="sm" className="w-full">
             <SelectValue placeholder="Nobody (share only)" />
@@ -170,12 +200,18 @@ export function PeerToolAccess({
           </SelectContent>
         </Select>
         <FieldDescription>
-          {bound
-            ? 'Changing it turns Write and the risky tools off again.'
-            : 'Nobody: they read only what you share, and cannot call tools here.'}
+          {logins.asOwner ? actsAsHint : `${actsAsHint} Owner makes a new token for them.`}
         </FieldDescription>
         {logins.needsUsers ? <FieldDescription>{ACTS_AS_NEEDS_USERS}</FieldDescription> : null}
       </Field>
+      {reveal ? (
+        <TokenReveal
+          token={reveal.token}
+          replaced={reveal.replaced}
+          peerName={peerName}
+          onDone={onClearReveal}
+        />
+      ) : null}
 
       {bound ? (
         <div className="divide-y divide-border rounded-md border border-border px-3">
@@ -208,6 +244,30 @@ export function PeerToolAccess({
         saving={saving}
         onSave={(next) => save({ allowedRiskyTools: next }, { allowedRiskyTools: next })}
       />
+
+      <AlertDialog open={confirmOwner} onOpenChange={setConfirmOwner}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Let {peerName} act as the owner?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This brain makes a new token for {peerName}, and the token they have now stops working
+              at once. Copy the new one here and send it to their owner. {peerName} can then call
+              this brain&apos;s tools as you.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOwner(false);
+                setActsAs(ACTS_AS_OWNER);
+              }}
+            >
+              Make new token
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -233,6 +293,12 @@ function RiskyTools({
   const disabled = saving;
   const on = new Set(allowed);
   const groups = riskyGroupsFor(allowed);
+  // The toast's Undo runs after later renders: read the list and the save as
+  // they are then, not as they were when the toast was made.
+  const latest = useRef({ allowed, onSave });
+  useEffect(() => {
+    latest.current = { allowed, onSave };
+  });
 
   const set = (names: readonly string[], value: boolean) => {
     const next = withRisky(allowed, names, value);
@@ -241,6 +307,20 @@ function RiskyTools({
       return;
     }
     onSave(next);
+    // A name outside the catalog has no row once it is off: only Undo, or
+    // typing it again, brings it back.
+    const gone = value ? [] : names.filter((n) => on.has(n) && !CATALOG.has(n));
+    if (gone.length > 0) {
+      toast.push({
+        kind: 'info',
+        message: `Removed ${gone.join(', ')}.`,
+        durationMs: 10_000,
+        action: {
+          label: 'Undo',
+          onClick: () => latest.current.onSave(withRisky(latest.current.allowed, gone, true)),
+        },
+      });
+    }
   };
 
   const addExtra = (e: React.FormEvent) => {
