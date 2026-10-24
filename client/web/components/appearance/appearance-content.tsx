@@ -4,7 +4,7 @@ import { FontRows } from '@/components/appearance/font-rows';
 import { LogoControl } from '@/components/appearance/logo-control';
 import { AvatarStyleControls, AvatarStyleList } from '@/components/appearance/avatar-style-gallery';
 import { BackgroundGallery } from '@/components/appearance/background-gallery';
-import { NeatGenerator } from '@/components/appearance/neat-generator';
+import { BackgroundGenerator } from '@/components/appearance/background-generator';
 import { ShareModeControl } from '@/components/appearance/share-mode-control';
 import { ColorPalette } from '@/components/theme-preview/color-palette';
 
@@ -54,11 +54,11 @@ export function AppearanceContent() {
           tint live up in the controls column with the other settings. */}
       <AvatarStyleList />
 
-      {/* Full-width: the generated Neat gradient — the whole-surface animated
+      {/* Full-width: the generated Drift background — the whole-surface animated
           background (login screen, and possibly the content area). Sits with
           the other background setting so "how does the app look behind
           content" is answered in one place. */}
-      <NeatGenerator />
+      <BackgroundGenerator />
 
       {/* The public face follows the background it applies to: what mode a
           share link opens in, next to the gradient it would paint. */}

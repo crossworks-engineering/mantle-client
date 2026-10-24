@@ -1,5 +1,5 @@
-import { NeatBackdrop } from '@mantle/web-ui/neat-backdrop';
-import { decodeNeatSpec } from '@mantle/share-ui/neat-background';
+import { DriftThemeBackdrop } from '@mantle/web-ui/drift-backdrop';
+import { decodeDriftSpec } from '@mantle/share-ui/drift';
 import { loadBrainAppearance } from '@/lib/appearance';
 import { brainOrigin } from '@/lib/brain-origin';
 import { readBrandFields, resolveLoginBrand } from '@/lib/brand';
@@ -35,13 +35,13 @@ export default async function InvitePage({
     brainOrigin(),
   ]);
   const brand = resolveLoginBrand(readBrandFields(appearance));
-  const neat = decodeNeatSpec(appearance?.neatBackground);
+  const drift = decodeDriftSpec(appearance?.neatBackground);
   const code = typeof params.code === 'string' ? params.code : '';
 
   return (
     <main className="relative isolate flex min-h-screen flex-col bg-background px-4 py-8">
       <LinkCodeScript />
-      {neat && <NeatBackdrop spec={neat} className="-z-10" resolution={0.75} />}
+      {drift && <DriftThemeBackdrop spec={drift} className="-z-10" />}
       <div className="flex w-full flex-1 items-center justify-center">
         <div className="w-full max-w-sm space-y-8">
           <InviteClient mark={<LoginMark brand={brand} srcBase={origin} />} initialCode={code} />

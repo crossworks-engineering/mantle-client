@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Dices } from 'lucide-react';
+import { Dices, Loader2, Save } from 'lucide-react';
+import {
+  DRIFT_STYLE_LABELS,
+  DRIFT_TONE_LABELS,
+  useSavedBackground,
+} from '@/components/appearance/background-generator';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Slider } from '@mantle/web-ui/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
@@ -18,32 +23,18 @@ import {
   type DriftStats,
   type DriftStyle,
   type DriftTone,
-} from '@mantle/web-ui/drift';
+} from '@mantle/share-ui/drift';
 
 /**
- * The Drift lab — every option of the Neat replacement, live, in the current
+ * The Drift lab: every option of the brain's background, live, in the current
  * colour theme. It drives the same path a saved background will
  * (DriftThemeBackdrop: spec + live tokens → engine), so what it shows is what
  * a surface would paint.
  *
- * Nothing here saves yet: the brain's stored spec is still validated as Neat
- * v1 server-side. The encoded spec is shown so a look can be carried over by
- * hand once v2 lands.
+ * It opens on the brain's saved background (a fresh roll when none is set)
+ * and saves through the generator's own path, so a look tuned here is the
+ * one every surface paints.
  */
-
-const STYLE_LABELS: Record<DriftStyle, string> = {
-  mesh: 'Mesh',
-  silk: 'Silk',
-  aurora: 'Aurora',
-  dunes: 'Dunes',
-  marble: 'Marble',
-};
-
-const TONES: ReadonlyArray<{ value: DriftTone; label: string }> = [
-  { value: 'darker', label: 'Darker' },
-  { value: 'auto', label: 'Auto' },
-  { value: 'lighter', label: 'Lighter' },
-];
 
 type NumericKey = 'speed' | 'str' | 'scale' | 'warp' | 'soft' | 'light' | 'grain' | 'angle';
 
@@ -67,11 +58,13 @@ const SLIDERS: ReadonlyArray<{
 export function DriftLab() {
   // Rolled after mount: a random seed during render would differ between the
   // server and client passes.
+  const { saved, busy, save, isDirty } = useSavedBackground();
   const [spec, setSpec] = useState<DriftSpec | null>(null);
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setSpec(randomDriftSpec()));
+    if (spec !== null || saved === undefined) return;
+    const raf = requestAnimationFrame(() => setSpec(saved ?? randomDriftSpec()));
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [spec, saved]);
 
   const [pointer, setPointer] = useState(false);
   const [handle, setHandle] = useState<DriftHandle | null>(null);
@@ -131,7 +124,7 @@ export function DriftLab() {
         >
           {DRIFT_STYLES.map((s) => (
             <ToggleGroupItem key={s} value={s}>
-              {STYLE_LABELS[s]}
+              {DRIFT_STYLE_LABELS[s]}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
@@ -143,7 +136,7 @@ export function DriftLab() {
           onValueChange={(v) => v && set({ tone: v as DriftTone })}
           aria-label="Tone relative to the page surface"
         >
-          {TONES.map((t) => (
+          {DRIFT_TONE_LABELS.map((t) => (
             <ToggleGroupItem key={t.value} value={t.value}>
               {t.label}
             </ToggleGroupItem>
@@ -197,6 +190,14 @@ export function DriftLab() {
           {encoded}
         </code>
         <CopyButton value={encoded} />
+        <Button
+          size="sm"
+          disabled={busy !== null || !isDirty(spec)}
+          onClick={() => void save(spec)}
+        >
+          {busy === 'save' ? <Loader2 className="animate-spin" /> : <Save />}
+          Save background
+        </Button>
       </div>
     </section>
   );
