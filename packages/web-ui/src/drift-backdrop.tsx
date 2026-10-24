@@ -4,16 +4,22 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { useColorTheme } from './color-theme-provider';
 import { cn } from './lib/utils';
-import { createDrift, type DriftHandle } from './drift/engine';
-import type { DriftOptions } from './drift/options';
-import { driftOptionsFromSpec, encodeDriftSpec, type DriftSpec } from './drift/spec';
-import { readDriftThemeTokens } from './drift/theme';
+import {
+  createDrift,
+  driftOptionsFromSpec,
+  encodeDriftSpec,
+  readDriftThemeTokens,
+  type DriftHandle,
+  type DriftOptions,
+  type DriftSpec,
+} from '@mantle/share-ui/drift';
 
 /**
- * Drift, filling its positioned parent. The canvas and its WebGL context are
+ * Drift, filling its positioned parent. The engine and the spec codec are the
+ * brain's (@mantle/share-ui/drift, the same code the /s reader paints with);
+ * this file is only the React shell around them. The canvas and its WebGL context are
  * created ONCE per mount; every later change — options, spec, theme, mode —
- * is an `update()` (uniform writes), never a teardown. NeatBackdrop rebuilt
- * the whole context on each change, which flashed and briefly held two.
+ * is an `update()` (uniform writes), never a teardown.
  *
  * `onReady` hands out the engine handle (stats, pause/resume) for callers
  * that want it, like the lab.
@@ -83,10 +89,17 @@ export function DriftBackdrop({
  * A saved {@link DriftSpec} painted in the live theme. Colours are read off
  * the document a frame AFTER a theme/mode change commits: next-themes applies
  * the `.dark` class in a parent effect that runs after this child's, so a
- * synchronous read would see the outgoing theme (the NeatBackdrop lesson).
+ * synchronous read would see the outgoing theme.
  *
  * `overrides` lets a caller adjust engine-only knobs (resolution, fps cap,
- * pointer) without changing the stored spec.
+ * pointer) without changing the stored spec. Real surfaces pass none: the
+ * pointer lean is the lab's alone. The palette always holds the legibility
+ * floor (muted text at AA, see driftOptionsFromSpec).
+ *
+ * Mount it ONCE per surface, in a persistent, non-scrolling layer (the app
+ * shell does, beside its scroller): each mount compiles a shader, opens a
+ * WebGL context and fades in, so it must never sit inside a page or be keyed
+ * by the route.
  */
 export function DriftThemeBackdrop({
   spec,
@@ -112,7 +125,9 @@ export function DriftThemeBackdrop({
         return;
       }
       const mode = resolvedTheme === 'dark' ? 'dark' : 'light';
-      setOptions(driftOptionsFromSpec(JSON.parse(specKey) as DriftSpec, tokens, mode));
+      const next = driftOptionsFromSpec(JSON.parse(specKey) as DriftSpec, tokens, mode);
+      // A theme whose colours did not parse paints nothing, not a guess.
+      setOptions(next.colors && next.colors.length > 0 ? next : null);
     });
     return () => cancelAnimationFrame(raf);
   }, [specKey, resolvedTheme, colorTheme]);

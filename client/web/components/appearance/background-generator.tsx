@@ -10,65 +10,71 @@ import { Skeleton } from '@mantle/web-ui/ui/skeleton';
 import { Slider } from '@mantle/web-ui/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { NeatBackdrop } from '@mantle/web-ui/neat-backdrop';
+import { DriftThemeBackdrop } from '@mantle/web-ui/drift-backdrop';
 import {
-  NEAT_SPEED_MAX,
-  decodeNeatSpec,
-  encodeNeatSpec,
-  randomNeatSpec,
-  type NeatBackgroundSpec,
-  type NeatTone,
-} from '@mantle/share-ui/neat-background';
+  DRIFT_SPEED_MAX,
+  DRIFT_STYLES,
+  decodeDriftSpec,
+  encodeDriftSpec,
+  randomDriftSpec,
+  type DriftSpec,
+  type DriftStyle,
+  type DriftTone,
+} from '@mantle/share-ui/drift';
 
 /**
- * The Neat background generator (Settings → Appearance) — one animated
- * gradient for the whole brain, drawn from the live theme tokens.
+ * The background generator (Settings > Appearance): one animated Drift
+ * background for the whole brain, drawn from the live theme tokens.
  *
- * The user never edits colours or wave maths: GENERATE re-rolls a seed, the
- * two knobs that survive are the ones with an obvious effect (tone, motion),
- * and everything else derives deterministically from the seed. That is the
- * whole interaction: roll until one lands, save it.
+ * The everyday knobs only: GENERATE re-rolls the seed, and the shape, tone
+ * and motion have an obvious effect. Every other option keeps its value (the
+ * Drift lab, linked below, sets them all and saves through the same path).
  *
- * The preview carries sample content ON the gradient — a floating card and a
- * line of plain text — because "does this fight the text" is the question the
+ * The preview carries sample content ON the background, a floating card and a
+ * line of plain text, because "does this fight the text" is the question the
  * screen exists to answer, and a bare swatch cannot answer it.
  *
- * Saved as a spec to `PUT /api/profile/neat-background` (brain-level, like
- * the colour theme), read back from the public /api/appearance — the same
- * route the login screen will resolve it from. The cache is patched in place
- * on save rather than invalidated: /api/appearance is served with a 30s
- * public cache, so a refetch inside that window would report the old value
- * and make the save look lost.
+ * Saved as a v2 spec to `PUT /api/profile/neat-background` (brain-level, like
+ * the colour theme; the route keeps its first name), read back from the
+ * public /api/appearance, the route the login screen resolves it from. A
+ * Neat-era v1 spec opens here as silk and saves as v2. The cache is patched
+ * in place on save rather than invalidated: /api/appearance is served with a
+ * 30s public cache, so a refetch inside that window would report the old
+ * value and make the save look lost.
  */
 
 type AppearancePayload = {
   neatBackground?: string | null;
 };
 
-const TONE_LABELS: ReadonlyArray<{ value: NeatTone; label: string }> = [
+export const DRIFT_STYLE_LABELS: Record<DriftStyle, string> = {
+  mesh: 'Mesh',
+  silk: 'Silk',
+  aurora: 'Aurora',
+  dunes: 'Dunes',
+  marble: 'Marble',
+};
+
+export const DRIFT_TONE_LABELS: ReadonlyArray<{ value: DriftTone; label: string }> = [
   { value: 'darker', label: 'Darker' },
   { value: 'auto', label: 'Auto' },
   { value: 'lighter', label: 'Lighter' },
 ];
 
-export function NeatGenerator() {
+/** The brain's saved background, decoded (v1 or v2), and the one save path
+ *  the generator and the Drift lab share. `saved` is undefined until the
+ *  appearance query answers, null when no background is set. */
+export function useSavedBackground() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const appearance = useQuery({
     queryKey: ['appearance'],
     queryFn: () => apiFetch<AppearancePayload>('/api/appearance'),
   });
-
-  const saved = appearance.data ? decodeNeatSpec(appearance.data.neatBackground) : null;
-  // The draft starts as the saved background (so the preview opens truthful)
-  // or a first roll; null means the query hasn't answered yet.
-  const [draft, setDraft] = useState<NeatBackgroundSpec | null>(null);
   const [busy, setBusy] = useState<'save' | 'remove' | null>(null);
-  if (draft === null && appearance.isSuccess) {
-    setDraft(saved ?? randomNeatSpec());
-  }
-
-  const dirty = draft !== null && (!saved || encodeNeatSpec(draft) !== encodeNeatSpec(saved));
+  const saved: DriftSpec | null | undefined = appearance.isSuccess
+    ? decodeDriftSpec(appearance.data.neatBackground)
+    : undefined;
 
   const patchCache = (value: string | null) => {
     queryClient.setQueryData<AppearancePayload>(['appearance'], (old) => ({
@@ -77,11 +83,10 @@ export function NeatGenerator() {
     }));
   };
 
-  const save = async () => {
-    if (!draft) return;
+  const save = async (spec: DriftSpec) => {
     setBusy('save');
     try {
-      const encoded = encodeNeatSpec(draft);
+      const encoded = encodeDriftSpec(spec);
       await apiSend('/api/profile/neat-background', 'PUT', { neatBackground: encoded });
       patchCache(encoded);
       toast.success('Background saved.');
@@ -98,13 +103,29 @@ export function NeatGenerator() {
       // '' is the deliberate clear, the same contract as /api/profile/backgrounds.
       await apiSend('/api/profile/neat-background', 'PUT', { neatBackground: '' });
       patchCache(null);
-      toast.success('Background removed — surfaces fall back to the plain fill.');
+      toast.success('Background removed. Surfaces fall back to the plain fill.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not remove the background.');
     } finally {
       setBusy(null);
     }
   };
+
+  const isDirty = (draft: DriftSpec | null) =>
+    draft !== null && (!saved || encodeDriftSpec(draft) !== encodeDriftSpec(saved));
+
+  return { saved, busy, save, remove, isDirty };
+}
+
+export function BackgroundGenerator() {
+  const { saved, busy, save, remove, isDirty } = useSavedBackground();
+  // The draft starts as the saved background (so the preview opens truthful)
+  // or a first roll; null means the query hasn't answered yet.
+  const [draft, setDraft] = useState<DriftSpec | null>(null);
+  if (draft === null && saved !== undefined) {
+    setDraft(saved ?? randomDriftSpec());
+  }
+  const dirty = isDirty(draft);
 
   return (
     <section className="space-y-3">
@@ -113,12 +134,12 @@ export function NeatGenerator() {
           Background generator
         </h2>
         <p className="text-xs text-muted-foreground">
-          An animated gradient drawn from the current colour theme — it follows every theme and
+          An animated background drawn from the current colour theme. It follows every theme and
           light/dark mode, and stays close to the page surface so text on it keeps reading. Roll
           until one lands, then save it for the whole brain: it paints the sign-in screen, the area
           behind every screen&apos;s content, and public share pages.{' '}
           <Link href="/settings/appearance/drift" className="underline underline-offset-2">
-            Try Drift, its replacement
+            Every option is in the Drift lab
           </Link>
           .
         </p>
@@ -128,15 +149,15 @@ export function NeatGenerator() {
         <Skeleton className="aspect-[21/9] w-full rounded-xl" />
       ) : (
         <>
-          {/* The preview IS the renderer the real surfaces will use, with
-              sample content on top so legibility is judged, not hoped for. */}
+          {/* The preview IS the renderer the real surfaces use, with sample
+              content on top so legibility is judged, not hoped for. */}
           <div className="relative aspect-[21/9] w-full overflow-hidden rounded-xl border border-border bg-background">
-            <NeatBackdrop spec={draft} resolution={0.75} />
+            <DriftThemeBackdrop spec={draft} />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-64 max-w-[80%] rounded-xl border border-border bg-card/80 p-4 backdrop-blur-sm">
                 <p className="text-sm font-medium text-card-foreground">Text stays readable</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  This panel sits on the gradient the way content will.
+                  This panel sits on the background the way content will.
                 </p>
               </div>
             </div>
@@ -150,7 +171,7 @@ export function NeatGenerator() {
               variant="outline"
               size="sm"
               disabled={busy !== null}
-              onClick={() => setDraft(randomNeatSpec(draft))}
+              onClick={() => setDraft(randomDriftSpec(draft))}
             >
               <Dices />
               Generate
@@ -160,13 +181,30 @@ export function NeatGenerator() {
               type="single"
               variant="outline"
               size="sm"
+              value={draft.style}
+              onValueChange={(style) => {
+                if (style) setDraft({ ...draft, style: style as DriftStyle });
+              }}
+              aria-label="Shape"
+            >
+              {DRIFT_STYLES.map((s) => (
+                <ToggleGroupItem key={s} value={s}>
+                  {DRIFT_STYLE_LABELS[s]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
               value={draft.tone}
               onValueChange={(tone) => {
-                if (tone) setDraft({ ...draft, tone: tone as NeatTone });
+                if (tone) setDraft({ ...draft, tone: tone as DriftTone });
               }}
               aria-label="Tone relative to the page surface"
             >
-              {TONE_LABELS.map((t) => (
+              {DRIFT_TONE_LABELS.map((t) => (
                 <ToggleGroupItem key={t.value} value={t.value}>
                   {t.label}
                 </ToggleGroupItem>
@@ -178,7 +216,7 @@ export function NeatGenerator() {
               <Slider
                 value={[draft.speed]}
                 min={0}
-                max={NEAT_SPEED_MAX}
+                max={DRIFT_SPEED_MAX}
                 step={0.5}
                 onValueChange={(v) => setDraft({ ...draft, speed: v[0] ?? draft.speed })}
                 aria-label="Animation speed"
@@ -198,7 +236,7 @@ export function NeatGenerator() {
                   Remove
                 </Button>
               )}
-              <Button size="sm" disabled={busy !== null || !dirty} onClick={() => void save()}>
+              <Button size="sm" disabled={busy !== null || !dirty} onClick={() => void save(draft)}>
                 {busy === 'save' ? <Loader2 className="animate-spin" /> : <Save />}
                 Save background
               </Button>

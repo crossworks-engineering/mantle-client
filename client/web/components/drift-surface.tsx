@@ -2,14 +2,15 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
-import { NeatBackdrop } from '@mantle/web-ui/neat-backdrop';
-import { decodeNeatSpec } from '@mantle/share-ui/neat-background';
+import { DriftThemeBackdrop } from '@mantle/web-ui/drift-backdrop';
+import { decodeDriftSpec } from '@mantle/share-ui/drift';
 
 /**
- * The brain's SAVED Neat background on a real surface (the shell's content
- * area, the team workspace; the login screen passes its server-loaded spec to
- * NeatBackdrop directly). Renders nothing when no background is saved — the
- * plain themed fill is the default, not an empty gradient.
+ * The brain's SAVED background (Drift) on a real surface (the shell's content
+ * area, the team workspace; the login and invite screens pass their
+ * server-loaded spec to DriftThemeBackdrop directly). Renders nothing when no
+ * background is saved: the plain themed fill is the default, not an empty
+ * canvas. A Neat-era v1 spec paints as silk.
  *
  * Reads the public /api/appearance under the same ['appearance'] query key the
  * Appearance generator card patches on save, so saving or removing a
@@ -21,7 +22,7 @@ import { decodeNeatSpec } from '@mantle/share-ui/neat-background';
  * the `shareNeat` switch, so an owner can keep the app decorated while shared
  * surfaces stay on the plain, printable fill.
  */
-export function NeatSurface({
+export function DriftSurface({
   className,
   shared = false,
 }: {
@@ -34,7 +35,7 @@ export function NeatSurface({
       apiFetch<{ neatBackground?: string | null; shareNeat?: boolean }>('/api/appearance'),
   });
   if (shared && appearance.data?.shareNeat === false) return null;
-  const spec = appearance.data ? decodeNeatSpec(appearance.data.neatBackground) : null;
+  const spec = appearance.data ? decodeDriftSpec(appearance.data.neatBackground) : null;
   if (!spec) return null;
-  return <NeatBackdrop spec={spec} className={className} resolution={0.75} />;
+  return <DriftThemeBackdrop spec={spec} className={className} />;
 }
