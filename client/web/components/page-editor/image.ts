@@ -14,14 +14,18 @@ export const ASSET_PATH_ATTR = 'data-asset-path';
  *  `none` and `hidden`, the bar's own words (`data-note`) always. */
 export const CANVAS_EMBED_CLASS =
   'canvas-embed group/canvas not-prose my-5 overflow-hidden rounded-lg border border-border bg-card';
+// Shown only once the brain has said the reader may see it (live, stale):
+// until then the picture is not drawn, so a broken image's alt never shows.
 const CANVAS_EMBED_IMG_CLASS =
-  'm-0 block h-auto w-full group-data-[canvas-state=hidden]/canvas:hidden group-data-[canvas-state=none]/canvas:hidden';
+  'm-0 block h-auto w-full opacity-0 group-data-[canvas-state=live]/canvas:opacity-100 group-data-[canvas-state=stale]/canvas:opacity-100 ' +
+  'group-data-[canvas-state=hidden]/canvas:hidden group-data-[canvas-state=none]/canvas:hidden group-data-[canvas-state=error]/canvas:hidden';
 const CANVAS_EMBED_BAR_CLASS =
   'm-0 flex items-center gap-2 border-t border-border px-3 py-1.5 text-xs text-muted-foreground before:content-[attr(data-note)] ' +
   'group-data-[canvas-state=live]/canvas:cursor-pointer group-data-[canvas-state=stale]/canvas:cursor-pointer group-data-[canvas-state=none]/canvas:cursor-pointer ' +
   'group-data-[canvas-state=stale]/canvas:text-warning-ink ' +
   'group-data-[canvas-state=hidden]/canvas:justify-center group-data-[canvas-state=hidden]/canvas:border-t-0 group-data-[canvas-state=hidden]/canvas:py-8 ' +
-  'group-data-[canvas-state=none]/canvas:justify-center group-data-[canvas-state=none]/canvas:border-t-0 group-data-[canvas-state=none]/canvas:py-8';
+  'group-data-[canvas-state=none]/canvas:justify-center group-data-[canvas-state=none]/canvas:border-t-0 group-data-[canvas-state=none]/canvas:py-8 ' +
+  'group-data-[canvas-state=error]/canvas:justify-center group-data-[canvas-state=error]/canvas:border-t-0 group-data-[canvas-state=error]/canvas:py-8';
 
 /**
  * Re-sign the rendered `<img>` srcs when the asset token arrives or rotates.
@@ -152,7 +156,10 @@ export const PageImage = Node.create<{
     const nodeId = HTMLAttributes['data-node-id'];
     const drawId = HTMLAttributes['data-draw-id'];
     const presentId = HTMLAttributes['data-present-id'];
-    if (typeof presentId === 'string' && presentId) {
+    // A drawing first, the one order every renderer keeps (a node never
+    // carries both; one written by hand that does is a drawing).
+    const isDraw = typeof drawId === 'string' && drawId !== '';
+    if (!isDraw && typeof presentId === 'string' && presentId) {
       // An embedded canvas: its snapshot (the poster route, in the reader's
       // scope) in a figure with a caption bar. Static, as every image: the
       // canvas-embed stamp marks its state (live, stale, none, hidden) and

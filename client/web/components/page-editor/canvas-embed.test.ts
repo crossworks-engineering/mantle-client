@@ -64,6 +64,8 @@ describe('a canvas embed in the page schema', () => {
 describe('the state of a canvas embed', () => {
   it("follows the brain's answer for this reader", () => {
     expect(canvasEmbedState(null)).toBe('hidden');
+    // A failed read is no answer: never the no-access look.
+    expect(canvasEmbedState('error')).toBe('error');
     expect(canvasEmbedState({ title: 'T', rev: 3, posterRev: null, current: false })).toBe('none');
     expect(canvasEmbedState({ title: 'T', rev: 3, posterRev: 2, current: false })).toBe('stale');
     expect(canvasEmbedState({ title: 'T', rev: 3, posterRev: 3, current: true })).toBe('live');

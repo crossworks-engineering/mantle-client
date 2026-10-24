@@ -91,11 +91,13 @@ export function CanvasPicker({ editor }: { editor: Editor }) {
   const embed = useCallback(
     (row: CanvasRow) => {
       setOpen(false);
-      // The node markdownToDoc makes of `![Title](present:<id>)`.
+      // The node markdownToDoc makes of `![Canvas](present:<id>)`. The alt is
+      // page text every reader sees, so it is the word, never the canvas's
+      // title: a reader who may not read the canvas learns nothing of it.
       editor
         .chain()
         .focus()
-        .insertContent({ type: 'image', attrs: { src: null, alt: row.title, presentId: row.id } })
+        .insertContent({ type: 'image', attrs: { src: null, alt: 'Canvas', presentId: row.id } })
         .run();
     },
     [editor],

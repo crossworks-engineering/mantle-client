@@ -7,13 +7,15 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
 import type { Editor } from '@tiptap/react';
 import { Expand, ExternalLink, Presentation } from 'lucide-react';
 import { CanvasSandbox } from '@mantle/share-ui/canvas-sandbox';
-import { apiFetch, apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
+import { ApiError, apiFetch, apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
+import { onSignOut } from '@mantle/web-ui/sign-out';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -31,9 +33,12 @@ import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
  *
  *   live    the reader may open the canvas; the picture is its latest save
  *   stale   the same, but the canvas has been saved since the picture
- *   none    the reader may open it; no picture has been drawn yet
+ *   none    the reader may open it; no snapshot has been drawn yet (a save
+ *           with no look, over the API, or a render that failed)
  *   hidden  the brain answers no canvas for this reader: a placeholder, no
  *           picture, no title from the canvas, no way through
+ *   error   the answer did not come (offline, a failure): asked again on
+ *           the next look, nothing opens meanwhile
  *
  * A click on a canvas the reader may open shows the LIVE canvas over the
  * page's display area (`CanvasEmbedHost`), in the same sandbox and with the
@@ -44,29 +49,42 @@ import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
 
 /** What the brain answers about a canvas for this reader. */
 type EmbedFacts = { title: string; rev: number; posterRev: number | null; current: boolean };
-export type CanvasEmbedState = 'loading' | 'live' | 'stale' | 'none' | 'hidden';
+/** What a facts read gave: the facts, `null` when the brain answers no
+ *  canvas for this reader (a 404), or 'error' for anything else. */
+type FactsAnswer = EmbedFacts | null | 'error';
+export type CanvasEmbedState = 'loading' | 'live' | 'stale' | 'none' | 'hidden' | 'error';
 
 /** Facts per canvas, kept a short while: a page with the same canvas twice,
  *  or a re-render, asks once. A save elsewhere shows on the next look. */
 const FACTS_TTL_MS = 30_000;
-const facts = new Map<string, { at: number; p: Promise<EmbedFacts | null> }>();
+const facts = new Map<string, { at: number; p: Promise<FactsAnswer> }>();
 
-function factsOf(presentId: string): Promise<EmbedFacts | null> {
+function factsOf(presentId: string): Promise<FactsAnswer> {
   const hit = facts.get(presentId);
   if (hit && Date.now() - hit.at < FACTS_TTL_MS) return hit.p;
-  const p = apiFetch<EmbedFacts>(
+  const p: Promise<FactsAnswer> = apiFetch<EmbedFacts>(
     `/api/presents/${encodeURIComponent(presentId)}/poster?meta=1`,
-  ).catch(() => null);
+  ).catch((err: unknown) => {
+    // Only the brain's "no canvas for you" is an answer to keep. A failure
+    // (offline, a 500, a refused bearer) is asked again next time.
+    if (err instanceof ApiError && err.status === 404) return null;
+    facts.delete(presentId);
+    return 'error';
+  });
   facts.set(presentId, { at: Date.now(), p });
   return p;
 }
 
-/** Forget what was asked, so the next stamp asks again (a save came in). */
+/** Forget what was asked, so the next stamp asks again (a save came in, or
+ *  another login is in). */
 export function forgetCanvasEmbedFacts(): void {
   facts.clear();
 }
+// What one login was told is never another's.
+onSignOut(forgetCanvasEmbedFacts);
 
-export function canvasEmbedState(f: EmbedFacts | null): CanvasEmbedState {
+export function canvasEmbedState(f: FactsAnswer): CanvasEmbedState {
+  if (f === 'error') return 'error';
   if (!f) return 'hidden';
   if (f.posterRev === null) return 'none';
   return f.current ? 'live' : 'stale';
@@ -77,8 +95,11 @@ const NOTE: Record<CanvasEmbedState, string> = {
   loading: 'Canvas',
   live: 'Canvas: open it live',
   stale: 'Canvas: a newer version exists, open it to see',
-  none: 'Canvas: no picture yet, open it live',
+  // A canvas the reader may open but with no snapshot yet (saved over the
+  // API, or its render failed): never the no-access look.
+  none: 'No snapshot yet: open the live canvas',
   hidden: 'A canvas you cannot open',
+  error: 'The canvas could not be loaded just now',
 };
 
 /**
@@ -102,7 +123,7 @@ export function stampCanvasEmbeds(root: ParentNode): () => void {
       const state = canvasEmbedState(f);
       fig.setAttribute('data-canvas-state', state);
       bar?.setAttribute('data-note', NOTE[state]);
-      if (state === 'hidden') {
+      if (state === 'hidden' || state === 'error') {
         // Nothing of the canvas for a reader who may not read it: the
         // picture (a 404) goes, and only the placeholder shows.
         fig.querySelector('img')?.removeAttribute('src');
@@ -144,13 +165,29 @@ export function CanvasEmbedHost({
   className?: string;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  // Where the focus was when the canvas opened, given back when it closes.
+  const back = useRef<HTMLElement | null>(null);
+  const open = useCallback((id: string) => {
+    back.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOpenId(id);
+  }, []);
+  const close = useCallback(() => {
+    setOpenId(null);
+    // A save may have come in while it was open: the next look asks again.
+    forgetCanvasEmbedFacts();
+    const el = back.current;
+    back.current = null;
+    if (el?.isConnected) el.focus();
+  }, []);
   return (
-    <OpenCanvas.Provider value={setOpenId}>
+    <OpenCanvas.Provider value={open}>
       <div className={cn('relative', className)}>
-        {children}
-        {openId && (
-          <CanvasEmbedView key={openId} presentId={openId} onClose={() => setOpenId(null)} />
-        )}
+        {/* The page under an open canvas takes no focus and no keys: typing
+            can never edit what the canvas covers. */}
+        <div className="contents" inert={openId ? true : undefined}>
+          {children}
+        </div>
+        {openId && <CanvasEmbedView key={openId} presentId={openId} onClose={close} />}
       </div>
     </OpenCanvas.Provider>
   );
@@ -233,22 +270,27 @@ function CanvasEmbedView({ presentId, onClose }: { presentId: string; onClose: (
   useEffect(() => {
     let live = true;
     void factsOf(presentId).then((f) => {
-      if (live && f?.title) setTitle(f.title);
+      if (live && f && f !== 'error' && f.title) setTitle(f.title);
     });
     return () => {
       live = false;
     };
   }, [presentId]);
 
-  // Esc returns to the page while the focus is on the page side; inside the
-  // frame the canvas has the keys (a deck's own Esc), and Back is there.
+  // The focus moves into the canvas view at once (its Back button), so the
+  // keys never reach the page under it, ready or not.
+  const backRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !document.fullscreenElement) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    backRef.current?.focus();
+  }, []);
+  // Esc returns to the page while the focus is in this view outside the
+  // frame (inside it the canvas has the keys, a deck's own Esc); an Esc
+  // another control took (a menu of the header) is that control's.
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || document.fullscreenElement) return;
+    e.preventDefault();
+    onClose();
+  };
 
   const fullScreen: HeaderTool = {
     key: 'full-screen',
@@ -280,8 +322,9 @@ function CanvasEmbedView({ presentId, onClose }: { presentId: string; onClose: (
   return (
     <div
       role="dialog"
-      aria-modal="false"
+      aria-modal="true"
       aria-label={`Canvas: ${title}`}
+      onKeyDown={onKeyDown}
       className="absolute inset-0 z-30 flex min-h-0 flex-col bg-background"
     >
       <ItemHeader
@@ -290,7 +333,7 @@ function CanvasEmbedView({ presentId, onClose }: { presentId: string; onClose: (
         title={title}
         focus={false}
         textActions={
-          <Button variant="outline" size="sm" onClick={onClose}>
+          <Button ref={backRef} variant="outline" size="sm" onClick={onClose}>
             Back to page
           </Button>
         }
