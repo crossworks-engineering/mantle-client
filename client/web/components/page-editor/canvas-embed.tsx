@@ -249,10 +249,20 @@ export function useCanvasEmbeds(editor: Editor | null): void {
     };
     stamp();
     editor.on('update', stamp);
+    // ProseMirror redraws a node's DOM on more than an update (a decoration,
+    // a re-render of the view), which drops the stamp: an embed back at
+    // 'loading' is stamped again (the facts are kept, so it is at once).
+    const redrawn = new MutationObserver(() => {
+      if (editor.view.dom.querySelector('figure[data-present-id][data-canvas-state="loading"]')) {
+        stamp();
+      }
+    });
+    redrawn.observe(editor.view.dom, { childList: true, subtree: true });
     const unlisten = open ? listenForCanvasClicks(editor.view.dom, open, true) : () => {};
     return () => {
       cancel();
       unlisten();
+      redrawn.disconnect();
       editor.off('update', stamp);
     };
   }, [editor, open]);
@@ -322,7 +332,9 @@ function CanvasEmbedView({ presentId, onClose }: { presentId: string; onClose: (
   return (
     <div
       role="dialog"
-      aria-modal="true"
+      // Not modal: the page's own header above stays in reach (the page
+      // under the canvas is inert, the header is not).
+      aria-modal="false"
       aria-label={`Canvas: ${title}`}
       onKeyDown={onKeyDown}
       className="absolute inset-0 z-30 flex min-h-0 flex-col bg-background"
