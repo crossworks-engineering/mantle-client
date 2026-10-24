@@ -41,7 +41,7 @@ export default async function InvitePage({
   return (
     <main className="relative isolate flex min-h-screen flex-col bg-background px-4 py-8">
       <LinkCodeScript />
-      {drift && <DriftThemeBackdrop spec={drift} className="-z-10" />}
+      {drift && <DriftThemeBackdrop spec={drift} surface="public" className="-z-10" />}
       <div className="flex w-full flex-1 items-center justify-center">
         <div className="w-full max-w-sm space-y-8">
           <InviteClient mark={<LoginMark brand={brand} srcBase={origin} />} initialCode={code} />

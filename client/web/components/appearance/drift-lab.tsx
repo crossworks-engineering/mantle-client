@@ -86,6 +86,7 @@ export function DriftLab() {
       <div className="relative aspect-[21/9] w-full overflow-hidden rounded-xl border border-border bg-background">
         <DriftThemeBackdrop
           spec={spec}
+          surface="app"
           overrides={{ pointer: pointer ? 0.6 : 0 }}
           onReady={setHandle}
         />
@@ -108,6 +109,12 @@ export function DriftLab() {
           </p>
         )}
       </div>
+      {/* The generator's line, for the same reason: this is the in-app
+          (floored) surface, and the public screens paint full colour. */}
+      <p className="text-xs text-muted-foreground">
+        This is the in-app look, kept close to the page so text on it reads. The sign-in, invite and
+        shared pages show it in full colour, with their text on a solid card.
+      </p>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button variant="outline" size="sm" onClick={() => setSpec(randomDriftSpec(spec))}>

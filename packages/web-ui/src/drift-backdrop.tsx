@@ -12,6 +12,7 @@ import {
   type DriftHandle,
   type DriftOptions,
   type DriftSpec,
+  type DriftSurface,
 } from '@mantle/share-ui/drift';
 
 /**
@@ -91,10 +92,16 @@ export function DriftBackdrop({
  * the `.dark` class in a parent effect that runs after this child's, so a
  * synchronous read would see the outgoing theme.
  *
+ * `surface` picks the look, through the brain's one gateway
+ * (driftOptionsFromSpec): 'app' inside the signed-in shell, and in the
+ * settings previews, holds the legibility floor (muted text at AA);
+ * 'public' (the sign-in and invite screens) paints the spec's full colour,
+ * which is safe only because those screens keep every word on an opaque
+ * card. A new public surface keeps that rule.
+ *
  * `overrides` lets a caller adjust engine-only knobs (resolution, fps cap,
  * pointer) without changing the stored spec. Real surfaces pass none: the
- * pointer lean is the lab's alone. The palette always holds the legibility
- * floor (muted text at AA, see driftOptionsFromSpec).
+ * pointer lean is the lab's alone.
  *
  * Mount it ONCE per surface, in a persistent, non-scrolling layer (the app
  * shell does, beside its scroller): each mount compiles a shader, opens a
@@ -103,11 +110,13 @@ export function DriftBackdrop({
  */
 export function DriftThemeBackdrop({
   spec,
+  surface,
   className,
   overrides,
   onReady,
 }: {
   spec: DriftSpec;
+  surface: DriftSurface;
   className?: string;
   overrides?: Partial<DriftOptions>;
   onReady?: (handle: DriftHandle | null) => void;
@@ -125,12 +134,12 @@ export function DriftThemeBackdrop({
         return;
       }
       const mode = resolvedTheme === 'dark' ? 'dark' : 'light';
-      const next = driftOptionsFromSpec(JSON.parse(specKey) as DriftSpec, tokens, mode);
+      const next = driftOptionsFromSpec(JSON.parse(specKey) as DriftSpec, tokens, mode, surface);
       // A theme whose colours did not parse paints nothing, not a guess.
       setOptions(next.colors && next.colors.length > 0 ? next : null);
     });
     return () => cancelAnimationFrame(raf);
-  }, [specKey, resolvedTheme, colorTheme]);
+  }, [specKey, surface, resolvedTheme, colorTheme]);
 
   if (!options) return null;
   return (

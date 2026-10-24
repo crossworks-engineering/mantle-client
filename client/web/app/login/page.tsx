@@ -48,8 +48,12 @@ export default async function LoginPage({
     // short viewport the page scrolls instead of the two overlapping.
     // `isolate` + the backdrop's -z-10 keep the gradient above this main's own
     // bg-background but below the card and credit, the chat AreaBackdrop idiom.
+    // The backdrop is the PUBLIC surface: full colour, no legibility floor,
+    // which holds only while every word stays on the opaque card (the credit
+    // below it is the product logotype, no text of its own). The invite
+    // screen shares this layout and this rule.
     <main className="relative isolate flex min-h-screen flex-col bg-background px-4 py-8">
-      {drift && <DriftThemeBackdrop spec={drift} className="-z-10" />}
+      {drift && <DriftThemeBackdrop spec={drift} surface="public" className="-z-10" />}
       <div className="flex w-full flex-1 items-center justify-center">
         <div className="w-full max-w-sm space-y-8">
           <LoginClient
