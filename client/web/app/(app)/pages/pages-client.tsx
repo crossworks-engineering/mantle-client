@@ -101,6 +101,7 @@ import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import { visibilityRefusal } from '@/components/item-tree/sharing';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
 import { PageView } from '@/components/page-editor/page-view';
+import { CanvasEmbedHost } from '@/components/page-editor/canvas-embed';
 import { shareMarksOf } from '@/components/share/access-stack';
 import { AccessSlot } from '@/components/share/access-slot';
 import { PageOutline } from '@mantle/web-ui/page-outline';
@@ -835,14 +836,17 @@ export function PagesClient() {
             </div>
           ) : selected ? (
             <MeasurePane id="pages-preview" defaultSize="900px" minSize="480px">
-              <div className="h-full min-h-0 overflow-y-auto scrollbar-thin">
-                <PagePreview
-                  key={selected.id}
-                  row={selected}
-                  shares={shareMarksOf(selected, openedRow)}
-                  onDelete={() => setDeleteTarget(selected)}
-                />
-              </div>
+              {/* A canvas the page embeds opens live over this pane. */}
+              <CanvasEmbedHost key={selected.id} className="h-full min-h-0">
+                <div className="h-full min-h-0 overflow-y-auto scrollbar-thin">
+                  <PagePreview
+                    key={selected.id}
+                    row={selected}
+                    shares={shareMarksOf(selected, openedRow)}
+                    onDelete={() => setDeleteTarget(selected)}
+                  />
+                </div>
+              </CanvasEmbedHost>
             </MeasurePane>
           ) : (
             <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">

@@ -100,6 +100,10 @@ describe('which pictures of a reply show', () => {
     expect(chatImageAllowed(`/api/files/files/${FILE}?raw=1`, false)).toBe(true);
     expect(chatImageAllowed(`/api/files/files/${FILE}?thumb=1`, false)).toBe(true);
     expect(chatImageAllowed(`/api/draws/${DRAW}/svg?raw=1`, false)).toBe(true);
+    expect(chatImageAllowed(`/api/presents/${DRAW}/poster`, false)).toBe(true);
+    // A canvas's poster in one shape only: no other route of a canvas.
+    expect(chatImageAllowed(`/api/presents/${DRAW}/frame`, false)).toBe(false);
+    expect(chatImageAllowed(`/api/presents/${DRAW}/poster?meta=1`, false)).toBe(false);
     expect(chatImageAllowed(`/api/files/files/${FILE.toUpperCase()}?raw=1`, false)).toBe(true);
     // An entity before the query is refused, even one that spells the shape.
     expect(chatImageAllowed(`&#47;api/files/files/${FILE}?raw=1`, false)).toBe(false);

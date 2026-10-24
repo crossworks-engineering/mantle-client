@@ -231,6 +231,16 @@ describe('links and pictures in a reply (W7f)', () => {
     expect(url).toContain(`<img src="/api/files/files/${FILE}?thumb=1"`);
   });
 
+  it('a present: picture is the canvas snapshot, the image node draws its figure', () => {
+    const CANVAS = '3f1c2b4a-0000-4000-8000-000000000001';
+    for (const adminUser of [true, false]) {
+      const html = richMarkdownToHtml(`See ![Pump deck](present:${CANVAS}) here.`, { adminUser });
+      expect(html).toContain(
+        `<img src="/api/presents/${CANVAS}/poster" data-present-id="${CANVAS}" alt="Pump deck">`,
+      );
+    }
+  });
+
   it('anyone else: a same-origin picture off the owner routes still shows', () => {
     const html = richMarkdownToHtml('![logo](/brand/logo.png)', { adminUser: false });
     expect(html).toContain('<img src="/brand/logo.png"');

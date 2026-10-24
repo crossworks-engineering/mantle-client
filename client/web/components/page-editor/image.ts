@@ -8,6 +8,21 @@ import { DRAW_EMBED_CLASS } from '@/components/draw/snapshot-theme';
  *  editor — can re-sign it without re-deriving which shape produced it. */
 export const ASSET_PATH_ATTR = 'data-asset-path';
 
+/** The figure an embedded Present canvas renders as (canvas-embed.tsx), its
+ *  picture and its caption bar. The state the stamp writes
+ *  (`data-canvas-state`) picks the look: a placeholder with no picture for
+ *  `none` and `hidden`, the bar's own words (`data-note`) always. */
+export const CANVAS_EMBED_CLASS =
+  'canvas-embed group/canvas not-prose my-5 overflow-hidden rounded-lg border border-border bg-card';
+const CANVAS_EMBED_IMG_CLASS =
+  'm-0 block h-auto w-full group-data-[canvas-state=hidden]/canvas:hidden group-data-[canvas-state=none]/canvas:hidden';
+const CANVAS_EMBED_BAR_CLASS =
+  'm-0 flex items-center gap-2 border-t border-border px-3 py-1.5 text-xs text-muted-foreground before:content-[attr(data-note)] ' +
+  'group-data-[canvas-state=live]/canvas:cursor-pointer group-data-[canvas-state=stale]/canvas:cursor-pointer group-data-[canvas-state=none]/canvas:cursor-pointer ' +
+  'group-data-[canvas-state=stale]/canvas:text-warning-ink ' +
+  'group-data-[canvas-state=hidden]/canvas:justify-center group-data-[canvas-state=hidden]/canvas:border-t-0 group-data-[canvas-state=hidden]/canvas:py-8 ' +
+  'group-data-[canvas-state=none]/canvas:justify-center group-data-[canvas-state=none]/canvas:border-t-0 group-data-[canvas-state=none]/canvas:py-8';
+
 /**
  * Re-sign the rendered `<img>` srcs when the asset token arrives or rotates.
  *
@@ -91,11 +106,31 @@ export const PageImage = Node.create<{
         parseHTML: (el) => el.getAttribute('data-draw-id'),
         renderHTML: (attrs) => (attrs.drawId ? { 'data-draw-id': attrs.drawId } : {}),
       },
+      // An embedded Present canvas (markdown `![Title](present:<id>)`): the
+      // page shows its snapshot and opens the live canvas (canvas-embed.tsx).
+      presentId: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-present-id'),
+        renderHTML: (attrs) => (attrs.presentId ? { 'data-present-id': attrs.presentId } : {}),
+      },
     };
   },
 
   parseHTML() {
-    return [{ tag: 'img[src]' }];
+    // A canvas embed renders as a figure around its snapshot; read it back
+    // whole, before the plain img rule sees the picture inside it.
+    return [
+      {
+        tag: 'figure[data-present-id]',
+        priority: 60,
+        getAttrs: (el) => ({
+          presentId: el.getAttribute('data-present-id'),
+          alt: el.querySelector('img')?.getAttribute('alt') ?? null,
+          src: null,
+        }),
+      },
+      { tag: 'img[src]' },
+    ];
   },
 
   addOptions() {
@@ -116,6 +151,38 @@ export const PageImage = Node.create<{
     // — saves serialize via getJSON, so the stored doc keeps the raw attrs.
     const nodeId = HTMLAttributes['data-node-id'];
     const drawId = HTMLAttributes['data-draw-id'];
+    const presentId = HTMLAttributes['data-present-id'];
+    if (typeof presentId === 'string' && presentId) {
+      // An embedded canvas: its snapshot (the poster route, in the reader's
+      // scope) in a figure with a caption bar. Static, as every image: the
+      // canvas-embed stamp marks its state (live, stale, none, hidden) and
+      // the page's click opens the live canvas (canvas-embed.tsx).
+      let posterPath = `/api/presents/${encodeURIComponent(presentId)}/poster`;
+      const mapPath = this.options.mapAssetPath;
+      if (mapPath) posterPath = mapPath(posterPath);
+      const alt = typeof HTMLAttributes.alt === 'string' ? HTMLAttributes.alt : '';
+      return [
+        'figure',
+        {
+          class: CANVAS_EMBED_CLASS,
+          'data-present-id': presentId,
+          'data-no-lightbox': '',
+          'data-canvas-state': 'loading',
+        },
+        [
+          'img',
+          {
+            src: assetUrl(posterPath),
+            alt,
+            loading: 'lazy',
+            draggable: 'false',
+            class: CANVAS_EMBED_IMG_CLASS,
+            [ASSET_PATH_ATTR]: posterPath,
+          },
+        ],
+        ['figcaption', { class: CANVAS_EMBED_BAR_CLASS, 'data-canvas-open': '' }],
+      ];
+    }
     const rawSrc = typeof HTMLAttributes.src === 'string' ? HTMLAttributes.src : null;
     let src = rawSrc;
     let extraClass: string | null = null;

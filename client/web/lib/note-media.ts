@@ -20,9 +20,12 @@ import {
   drawRawSrc,
   fileRawSrc,
   mediaFileId,
+  presentNodeId,
+  presentPosterSrc,
 } from '@mantle/content-core/markdown-refs';
 
-/** The admin byte path a `media:` or `draw:` reference names, or null for
+/** The admin byte path a `media:`, `draw:` or `present:` reference names,
+ *  or null for
  *  any other href. */
 export function noteRefPath(href: string): string | null {
   const s = href.trim();
@@ -30,6 +33,8 @@ export function noteRefPath(href: string): string | null {
   if (file) return fileRawSrc(file);
   const draw = drawNodeId(s);
   if (draw) return drawRawSrc(draw);
+  const canvas = presentNodeId(s);
+  if (canvas) return presentPosterSrc(canvas);
   return null;
 }
 

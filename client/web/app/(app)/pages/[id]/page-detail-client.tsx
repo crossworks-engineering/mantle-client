@@ -30,6 +30,7 @@ import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { TagPill } from '@mantle/web-ui/tag-pill';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
+import { CanvasEmbedHost } from '@/components/page-editor/canvas-embed';
 import { revealFoldsAt } from '@/components/page-editor/heading-fold';
 import { SurfaceErrorBoundary } from '@mantle/web-ui/ui/error-boundary';
 import { docToMarkdown } from '@mantle/content-core/doc-to-markdown';
@@ -1027,7 +1028,9 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       {/* The editor scrolls in its own pane. Min-h-0 on the wrapper is required
           per ui-style-guide.md so it doesn't hijack the page scroll. Pages-assist
           now lives in the global assistant overlay (auto-armed for this page). */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* The page's display area: a canvas the page embeds opens live over
+          it (CanvasEmbedHost), the header above stays. */}
+      <CanvasEmbedHost className="flex min-h-0 flex-1 flex-col">
         {mdMode ? (
           /* Markdown mode is a flat, full-pane source view: header band pinned
              on top, the textarea filling the remaining height edge-to-edge with
@@ -1130,7 +1133,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
             </div>
           </MeasurePane>
         )}
-      </div>
+      </CanvasEmbedHost>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

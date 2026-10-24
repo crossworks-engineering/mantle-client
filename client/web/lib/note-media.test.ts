@@ -23,6 +23,7 @@ describe('noteRefPath', () => {
   it('names the same admin byte paths a page image carries', () => {
     expect(noteRefPath(`media:${FILE}`)).toBe(`/api/files/files/${FILE}?raw=1`);
     expect(noteRefPath(`draw:${DRAW}`)).toBe(`/api/draws/${DRAW}/svg?raw=1`);
+    expect(noteRefPath(`present:${DRAW}`)).toBe(`/api/presents/${DRAW}/poster`);
   });
 
   it('is null for every other href', () => {

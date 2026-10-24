@@ -54,6 +54,8 @@ import { Marked, type TokenizerAndRendererExtension } from 'marked';
 import {
   drawNodeId,
   drawRawSrc,
+  presentNodeId,
+  presentPosterSrc,
   fileRawSrc,
   mediaFileId,
 } from '@mantle/content-core/markdown-refs';
@@ -185,16 +187,20 @@ const mediaImageExtension: TokenizerAndRendererExtension = {
     // <img src="draw:…">, which is the exact divergence this file exists to
     // prevent (see the header) — Pages resolving a scheme that chat does not.
     const drawId = drawNodeId(m[2]);
+    // `present:` too: a canvas's snapshot, as a page shows it.
+    const presentId = presentNodeId(m[2]);
     // Any other href (http, data, a relative path) is an ordinary markdown
     // image. Hand it back to marked's own tokenizer.
-    if (!nodeId && !drawId) return undefined;
-    return { type: 'mediaImage', raw: m[0], text: m[1] ?? '', nodeId, drawId };
+    if (!nodeId && !drawId && !presentId) return undefined;
+    return { type: 'mediaImage', raw: m[0], text: m[1] ?? '', nodeId, drawId, presentId };
   },
   renderer(token) {
     const nodeId = typeof token.nodeId === 'string' ? token.nodeId : '';
     const drawId = typeof token.drawId === 'string' ? token.drawId : '';
+    const presentId = typeof token.presentId === 'string' ? token.presentId : '';
     const alt = typeof token.text === 'string' ? token.text : '';
     if (drawId) return drawImageHtml(drawId, alt);
+    if (presentId) return presentImageHtml(presentId, alt);
     if (!nodeId) return '';
     return mediaImageHtml(nodeId, alt);
   },
@@ -219,6 +225,16 @@ function drawImageHtml(drawId: string, alt: string): string {
   if (!chatImageAllowed(src, viewerIsAdmin)) return escapeText(alt);
   return `<img src="${escapeAttr(src)}" data-draw-id="${escapeAttr(
     drawId,
+  )}" alt="${escapeAttr(alt)}">`;
+}
+
+/** The `<img>` for an embedded canvas's snapshot: the schema's image node
+ *  reads `data-present-id` and draws it as the page does (image.ts). */
+function presentImageHtml(presentId: string, alt: string): string {
+  const src = presentPosterSrc(presentId);
+  if (!chatImageAllowed(src, viewerIsAdmin)) return escapeText(alt);
+  return `<img src="${escapeAttr(src)}" data-present-id="${escapeAttr(
+    presentId,
   )}" alt="${escapeAttr(alt)}">`;
 }
 

@@ -13,7 +13,9 @@ import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
 import { TableControls } from './table-controls';
 import { DrawPicker } from './draw-picker';
+import { CanvasPicker } from './canvas-picker';
 import { useDrawEmbedTheme } from './draw-embed-theme';
+import { useCanvasEmbeds } from './canvas-embed';
 import { SlashCommand } from './slash-command';
 import { folderIndexGate } from './slash-menu';
 import { FocusMarks, focusMarksTr } from './focus-marks';
@@ -321,6 +323,7 @@ export function PageEditor({
 
   // Embedded drawings follow the app theme like the /draw previews do.
   useDrawEmbedTheme(editor);
+  useCanvasEmbeds(editor);
 
   if (!editor) return null;
 
@@ -332,6 +335,7 @@ export function PageEditor({
       {markerMode ? null : <EditorDragHandle editor={editor} />}
       <TableControls editor={editor} />
       <DrawPicker editor={editor} />
+      <CanvasPicker editor={editor} />
       <div className="relative">
         {markerMode && onMarksChange && (
           <FocusGutter editor={editor} marks={marks ?? []} onChange={onMarksChange} />

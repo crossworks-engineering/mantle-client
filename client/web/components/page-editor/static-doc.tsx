@@ -6,6 +6,7 @@ import { generateHTML, generateJSON, type JSONContent } from '@tiptap/core';
 import { assetUrl, subscribeAssetToken } from '@mantle/web-ui/asset-url';
 import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
 import { stampDrawEmbeds } from './draw-embed-theme';
+import { useStaticCanvasEmbeds } from './canvas-embed';
 import { lowlight, pageExtensions } from './extensions';
 import { ASSET_PATH_ATTR } from './image';
 import { FolderIndexList } from './folder-index-list';
@@ -199,6 +200,9 @@ export function StaticDoc({
   // this replaces had, where the content appeared once the client editor
   // mounted. Rendering during hydration instead would be a mismatch.
   const [rendered, setRendered] = useState<string | null>(null);
+  // Embedded canvases: their state stamped, and a click opens the live
+  // canvas over the page when a CanvasEmbedHost holds this view.
+  useStaticCanvasEmbeds(ref, rendered);
   useEffect(() => {
     let out = renderStatic({ html, json, transformDoc });
     if (mapAssetPath) out = remapAssets(out, mapAssetPath);

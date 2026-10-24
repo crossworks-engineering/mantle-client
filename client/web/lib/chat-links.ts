@@ -156,14 +156,14 @@ export function chatLinkAction(href: string, origin: string): ChatLinkAction {
 
 /** The owner byte routes. Only their exact shapes below show for a login
  *  that is not an Admin user. */
-const OWNER_BYTES = /^\/api\/(?:files|draws)(?:\/|$)/i;
+const OWNER_BYTES = /^\/api\/(?:files|draws|presents)(?:\/|$)/i;
 
 /** A file or drawing id as the brain mints it, its hex in either case. */
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 const UUID_RE = new RegExp(`^${UUID}$`);
 
 /** The exact owner byte shapes a login that is not an Admin user may show
- *  (W7e): a file's bytes or thumbnail, a drawing's SVG. Matched against the
+ *  (W7e): a file's bytes or thumbnail, a drawing's SVG, a canvas's snapshot. Matched against the
  *  src as written (after entities), so an escape, a dot segment, a second
  *  slash or any other query is not one of them. The path and the query are
  *  matched case sensitively (`/API/FILES/...` is not one); only the id's hex
@@ -171,6 +171,8 @@ const UUID_RE = new RegExp(`^${UUID}$`);
 const OWNER_BYTE_SHAPES = [
   new RegExp(`^/api/files/files/${UUID}\\?(?:raw|thumb)=1$`),
   new RegExp(`^/api/draws/${UUID}/svg\\?raw=1$`),
+  // A canvas's snapshot, in the login's scope (the poster route).
+  new RegExp(`^/api/presents/${UUID}/poster$`),
 ];
 
 /** Whether a normalised same-origin src is one of the owner byte shapes. */

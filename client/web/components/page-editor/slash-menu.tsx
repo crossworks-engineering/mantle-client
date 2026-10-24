@@ -35,6 +35,7 @@ import {
   TextQuote,
   Type,
   type LucideIcon,
+  Presentation,
 } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
@@ -43,6 +44,7 @@ import { columnsContent } from './column';
 import { randomAsideAngle, randomAsideColor } from '@mantle/web-ui/aside-style';
 import { uploadAndInsert } from './upload';
 import { openDrawPicker } from './draw-picker';
+import { openCanvasPicker } from './canvas-picker';
 
 /** Open a native file picker, upload the chosen file, and insert the matching
  *  node (image or file chip) at the current selection. */
@@ -309,6 +311,19 @@ const ITEMS: SlashItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       openDrawPicker(editor);
+    },
+  },
+  {
+    group: 'Media',
+    id: 'canvas',
+    title: 'Canvas',
+    description: 'Embed a Present canvas (snapshot; click to open it live).',
+    icon: Presentation,
+    keywords: ['canvas', 'present', 'deck', 'slides', 'dashboard', 'presentation'],
+    // The picker dialog lives in PageEditor, as the drawing picker's.
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      openCanvasPicker(editor);
     },
   },
   {
