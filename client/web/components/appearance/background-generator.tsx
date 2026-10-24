@@ -135,9 +135,9 @@ export function BackgroundGenerator() {
         </h2>
         <p className="text-xs text-muted-foreground">
           An animated background drawn from the current colour theme. It follows every theme and
-          light/dark mode, and stays close to the page surface so text on it keeps reading. Roll
-          until one lands, then save it for the whole brain: it paints the sign-in screen, the area
-          behind every screen&apos;s content, and public share pages.{' '}
+          light/dark mode. Roll until one lands, then save it for the whole brain: it paints the
+          area behind every screen&apos;s content, the sign-in and invite screens, and public share
+          pages.{' '}
           <Link href="/settings/appearance/drift" className="underline underline-offset-2">
             Every option is in the Drift lab
           </Link>
@@ -149,10 +149,11 @@ export function BackgroundGenerator() {
         <Skeleton className="aspect-[21/9] w-full rounded-xl" />
       ) : (
         <>
-          {/* The preview IS the renderer the real surfaces use, with sample
-              content on top so legibility is judged, not hoped for. */}
+          {/* The preview IS the renderer the real surfaces use (the in-app
+              surface), with sample content on top so legibility is judged,
+              not hoped for. */}
           <div className="relative aspect-[21/9] w-full overflow-hidden rounded-xl border border-border bg-background">
-            <DriftThemeBackdrop spec={draft} />
+            <DriftThemeBackdrop spec={draft} surface="app" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-64 max-w-[80%] rounded-xl border border-border bg-card/80 p-4 backdrop-blur-sm">
                 <p className="text-sm font-medium text-card-foreground">Text stays readable</p>
@@ -165,6 +166,13 @@ export function BackgroundGenerator() {
               Plain text directly on the background
             </p>
           </div>
+          {/* The preview paints the in-app look (the floored 'app' surface);
+              the public screens paint the same spec in full colour, so say
+              so rather than let the preview promise one look for both. */}
+          <p className="text-xs text-muted-foreground">
+            This is the in-app look, kept close to the page so text on it reads. The sign-in, invite
+            and shared pages show it in full colour, with their text on a solid card.
+          </p>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Button

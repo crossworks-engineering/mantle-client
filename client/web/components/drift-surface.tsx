@@ -10,7 +10,8 @@ import { decodeDriftSpec } from '@mantle/share-ui/drift';
  * area, the team workspace; the login and invite screens pass their
  * server-loaded spec to DriftThemeBackdrop directly). Renders nothing when no
  * background is saved: the plain themed fill is the default, not an empty
- * canvas. A Neat-era v1 spec paints as silk.
+ * canvas. A Neat-era v1 spec paints as silk. Always the 'app' surface: the
+ * shell's own text sits right on the gradient, so the legibility floor holds.
  *
  * Reads the public /api/appearance under the same ['appearance'] query key the
  * Appearance generator card patches on save, so saving or removing a
@@ -37,5 +38,5 @@ export function DriftSurface({
   if (shared && appearance.data?.shareNeat === false) return null;
   const spec = appearance.data ? decodeDriftSpec(appearance.data.neatBackground) : null;
   if (!spec) return null;
-  return <DriftThemeBackdrop spec={spec} className={className} />;
+  return <DriftThemeBackdrop spec={spec} surface="app" className={className} />;
 }
