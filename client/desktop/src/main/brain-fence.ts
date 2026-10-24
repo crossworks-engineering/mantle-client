@@ -91,3 +91,38 @@ export function rewriteBrainWindowRequest(
   if (url.startsWith(`${origins.brain}/`)) return stripBrowserOnlyHeaders(requestHeaders);
   return requestHeaders;
 }
+
+/** The frame documents the brain serves into sandboxed iframes: a mini app's
+ *  and a Present canvas's (`/api/apps/<id>/frame`, `/api/presents/<id>/frame`). */
+const SANDBOX_FRAME_PATH = /^\/api\/(apps|presents)\/[^/]+\/frame$/;
+
+/**
+ * Whether a sub-frame may go to `toUrl`. A sandboxed app or canvas frame
+ * runs code the owner did not write, and a sandbox keeps the frame's right to
+ * navigate ITSELF: it could take its frame to any site, and the request would
+ * leave the machine before anything on the page could take the frame down.
+ * So a frame that is now such a document may only go to another one on the
+ * brain (the parent's own reload, a new ticket); every other sub-frame, and a
+ * first load from about:blank, is left alone. Pure, so it is tested without
+ * Electron.
+ */
+export function frameNavigationAllowed(
+  fromUrl: string,
+  toUrl: string,
+  brainOrigin: string,
+): boolean {
+  let from: URL;
+  try {
+    from = new URL(fromUrl);
+  } catch {
+    return true;
+  }
+  const isSandboxFrame = (u: URL) =>
+    u.origin === brainOrigin && SANDBOX_FRAME_PATH.test(u.pathname);
+  if (!isSandboxFrame(from)) return true;
+  try {
+    return isSandboxFrame(new URL(toUrl));
+  } catch {
+    return false;
+  }
+}

@@ -456,7 +456,15 @@ function EditButton({ edit }: { edit: HeaderEdit }) {
   const label = edit.label ?? 'Edit';
   if (edit.disabled) {
     return (
-      <HeaderIconButton label={label} tooltip="You can read this, not edit it" disabled>
+      <HeaderIconButton
+        label={label}
+        // A kind that says why it is greyed (Present: ask Presenter) says it
+        // here too; otherwise the read-only reason.
+        tooltip={
+          edit.label && edit.label !== 'Edit' ? edit.label : 'You can read this, not edit it'
+        }
+        disabled
+      >
         <Pencil />
       </HeaderIconButton>
     );

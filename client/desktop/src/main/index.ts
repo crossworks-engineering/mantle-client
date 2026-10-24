@@ -23,6 +23,7 @@ import { attentionMode, safeInAppPath } from './attention';
 import {
   brainRequestFilter,
   brainWindowRequestFilter,
+  frameNavigationAllowed,
   rewriteBrainWindowRequest,
 } from './brain-fence';
 import { createVault, type Vault } from './vault';
@@ -504,6 +505,14 @@ async function openAppWindow(profile: Profile, path?: string): Promise<void> {
       event.preventDefault();
       if (/^https?:/.test(url)) void shell.openExternal(url);
     }
+  });
+  // A sandboxed app or canvas frame may navigate itself; this refuses it
+  // before the request leaves, unless it goes to another such frame on the
+  // brain (frameNavigationAllowed).
+  win.webContents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame) return;
+    const from = event.frame?.url ?? '';
+    if (!frameNavigationAllowed(from, event.url, profile.origin)) event.preventDefault();
   });
 
   win.webContents.on('did-fail-load', (_event, _code, description, _url, isMainFrame) => {

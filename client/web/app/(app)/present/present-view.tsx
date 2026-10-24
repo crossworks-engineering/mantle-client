@@ -1,6 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Code, Expand, Presentation, RotateCcw } from 'lucide-react';
 import { CanvasSandbox } from '@mantle/share-ui/canvas-sandbox';
 import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
@@ -8,6 +9,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
 import { AccessSlot } from '@/components/share/access-slot';
+import { useDockActions } from '@/components/assistant/assistant-dock';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 
 /** A canvas as GET /api/presents/:id answers it. */
@@ -61,12 +63,27 @@ export function PresentView({
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [replay, setReplay] = useState(0);
   const [showSource, setShowSource] = useState(false);
+  // Full screen needs the frame: none while it loads or after it was stopped.
+  const [frameUp, setFrameUp] = useState(false);
+  const queryClient = useQueryClient();
+  const { registerTurnListener } = useDockActions();
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['presents', present.id] });
+
+  // Presenter changes a canvas from a chat turn: when any turn settles, read
+  // the canvas again, so a new save shows (its rev reloads the frame).
+  useEffect(
+    () =>
+      registerTurnListener(
+        () => void queryClient.invalidateQueries({ queryKey: ['presents', present.id] }),
+      ),
+    [registerTurnListener, queryClient, present.id],
+  );
 
   const fullScreen: HeaderTool = {
     key: 'full-screen',
     label: 'Full screen',
     icon: <Expand />,
-    disabled: showSource,
+    disabled: showSource || !frameUp,
     onSelect: () => {
       const frame = frameRef.current;
       if (!frame) return;
@@ -81,7 +98,11 @@ export function PresentView({
     label: 'Replay from the start',
     icon: <RotateCcw />,
     disabled: showSource,
-    onSelect: () => setReplay((n) => n + 1),
+    // Replay also reads the canvas again: a save that came in since shows.
+    onSelect: () => {
+      setReplay((n) => n + 1);
+      refresh();
+    },
   };
   const sourceTool: HeaderTool = {
     key: 'source',
@@ -133,9 +154,12 @@ export function PresentView({
         infoLabel="About this canvas"
       />
 
-      <div className="relative min-h-0 flex-1">
+      {/* A floor under the canvas and the source: on a narrow screen the
+          detail pane can have no height of its own (as Draw's). */}
+      <div className="relative min-h-[70vh] flex-1 md:min-h-0">
         {showSource ? (
           <pre
+            tabIndex={0}
             aria-label="Canvas source (read only)"
             className="absolute inset-0 m-0 overflow-auto bg-muted/20 p-6 font-mono text-xs leading-relaxed whitespace-pre-wrap text-foreground scrollbar-thin"
           >
@@ -144,13 +168,19 @@ export function PresentView({
         ) : (
           <CanvasSandbox
             // A new save (rev) or Replay starts the canvas again.
-            reloadKey={present.rev * 1000 + replay}
+            reloadKey={`${present.rev}:${replay}`}
             presentId={present.id}
             apiBase={apiUrl(`/api/presents/${present.id}`)}
             fetcher={(input, init) => fetch(input, withAuth(init))}
             title={present.title}
             frameRef={frameRef}
             loader={<Spinner />}
+            onReady={() => setFrameUp(true)}
+            onError={(message) => {
+              // Stopped (it tried to open another page, or never started):
+              // there is no frame to fill the screen with.
+              if (/another page|did not start/.test(message)) setFrameUp(false);
+            }}
           />
         )}
       </div>

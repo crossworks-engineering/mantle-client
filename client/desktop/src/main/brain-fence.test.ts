@@ -6,6 +6,7 @@ import {
   DESKTOP_BRAIN_KEY_HEADER,
   brainRequestFilter,
   brainWindowRequestFilter,
+  frameNavigationAllowed,
   rewriteBrainWindowRequest,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
@@ -174,5 +175,26 @@ describe('brain window requests', () => {
     expect(brainWindowRequestFilter('https://second.example', renderer)).toEqual({
       urls: ['https://second.example/*', `${renderer}/*`],
     });
+  });
+});
+
+describe('frameNavigationAllowed', () => {
+  const brain = 'https://brain.example';
+  const canvas = `${brain}/api/presents/11111111-1111-4111-8111-111111111111/frame?t=x`;
+  it('keeps a canvas or app frame on the brain', () => {
+    expect(frameNavigationAllowed(canvas, 'https://evil.example/', brain)).toBe(false);
+    expect(frameNavigationAllowed(canvas, `${brain}/api/presents`, brain)).toBe(false);
+    expect(frameNavigationAllowed(canvas, `${brain}/api/presents/22/frame?t=y`, brain)).toBe(true);
+    expect(
+      frameNavigationAllowed(`${brain}/api/apps/a1/frame`, 'https://evil.example/', brain),
+    ).toBe(false);
+    expect(frameNavigationAllowed(canvas, 'not a url', brain)).toBe(false);
+  });
+  it('leaves every other sub-frame alone', () => {
+    expect(frameNavigationAllowed('about:blank', canvas, brain)).toBe(true);
+    expect(
+      frameNavigationAllowed('https://www.youtube.com/embed/x', 'https://evil.example/', brain),
+    ).toBe(true);
+    expect(frameNavigationAllowed('', canvas, brain)).toBe(true);
   });
 });

@@ -155,9 +155,11 @@ export function PresentClient() {
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
               <p className="text-sm text-muted-foreground">Select a canvas.</p>
-              <p className="text-xs text-muted-foreground">
-                To make one, ask the assistant to draw, animate or present something.
-              </p>
+              {treeServes === false ? null : (
+                <p className="text-xs text-muted-foreground">
+                  To make one, ask the assistant to draw, animate or present something.
+                </p>
+              )}
             </div>
           )
         }
