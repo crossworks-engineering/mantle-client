@@ -176,11 +176,9 @@ export function PresentView({
             frameRef={frameRef}
             loader={<Spinner />}
             onReady={() => setFrameUp(true)}
-            onError={(message) => {
-              // Stopped (it tried to open another page, or never started):
-              // there is no frame to fill the screen with.
-              if (/another page|did not start/.test(message)) setFrameUp(false);
-            }}
+            // Reloading (a save, Replay) or stopped: no frame to fill the
+            // screen with until it is ready again.
+            onDown={() => setFrameUp(false)}
           />
         )}
       </div>
