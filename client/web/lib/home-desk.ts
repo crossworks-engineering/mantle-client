@@ -55,7 +55,22 @@ export type DeskPrefs = {
   /** Pinned items as desk icons. */
   icons: boolean;
   clock: 'digital' | 'analog';
+  /** Widgets this client does not know (a later build's), carried through
+   *  untouched so saving here never deletes them (`deskFrom`, `deskToWire`).
+   *  Not drawn. Absent when there are none. */
+  rest?: DeskStoredItem[];
 };
+
+/** A stored widget as the brain keeps it: any id (the client owns the
+ *  meaning), whole numbers in the brain's bounds. */
+export type DeskStoredItem = { id: string; x: number; y: number; w: number; h: number };
+
+/** The brain's bounds on a stored desk (mantle projectHomeDesk and its write
+ *  check): what a carried-through widget must stay within. */
+export const STORED_ITEMS_MAX = 400;
+export const STORED_COORD_MAX = 10_000;
+/** A stored id: printable ASCII, no spaces, at most 160 characters. */
+const STORED_ID = /^[\x21-\x7e]{1,160}$/;
 
 type Size = { w: number; h: number };
 /** `autoHeight`: the widget's height follows its content (the sticky
@@ -342,12 +357,31 @@ export function deskFrom(data: unknown): DeskPrefs | null {
   if (!Array.isArray(d.items)) return null;
   const seen = new Set<string>();
   let items: DeskItem[] = [];
+  const rest: DeskStoredItem[] = [];
   for (const raw of d.items as unknown[]) {
+    if (items.length + rest.length >= STORED_ITEMS_MAX) break;
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
-    if (!isWidgetId(r.id) || seen.has(r.id)) continue;
+    if (typeof r.id !== 'string' || seen.has(r.id)) continue;
     const nums = [r.x, r.y, r.w, r.h];
     if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
+    if (!isWidgetId(r.id)) {
+      // A widget a later build added: kept as it is, for that build, when it
+      // is within the brain's bounds; never drawn here.
+      const stored = nums.every(
+        (n) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= STORED_COORD_MAX,
+      );
+      if (!STORED_ID.test(r.id) || !stored) continue;
+      seen.add(r.id);
+      rest.push({
+        id: r.id,
+        x: r.x as number,
+        y: r.y as number,
+        w: r.w as number,
+        h: r.h as number,
+      });
+      continue;
+    }
     seen.add(r.id);
     items.push(
       fit({ id: r.id, x: r.x as number, y: r.y as number, w: r.w as number, h: r.h as number }),
@@ -368,6 +402,25 @@ export function deskFrom(data: unknown): DeskPrefs | null {
     counts,
     icons: d.icons !== false,
     clock: d.clock === 'analog' ? 'analog' : 'digital',
+    ...(rest.length > 0 ? { rest } : {}),
+  };
+}
+
+/** The desk as it is saved (the profile, this browser's storage): the
+ *  widgets drawn here and the ones carried through, in one list. */
+export function deskToWire(desk: DeskPrefs): {
+  v: 1;
+  items: DeskStoredItem[];
+  counts: Record<string, number>;
+  icons: boolean;
+  clock: 'digital' | 'analog';
+} {
+  return {
+    v: 1,
+    items: [...desk.items, ...(desk.rest ?? [])].slice(0, STORED_ITEMS_MAX),
+    counts: { ...desk.counts },
+    icons: desk.icons,
+    clock: desk.clock,
   };
 }
 
@@ -394,6 +447,31 @@ export function roamingDesk(
   const fromHere = profile === null && !migrated ? parseDesk(local) : null;
   if (fromHere) return { prefs: fromHere, upload: true };
   return { prefs: defaultDesk(kinds), upload: false };
+}
+
+/**
+ * Whether the desk is kept on the login's profile now. Once it was this
+ * visit (`roamed`), it stays so: a later read of the shell that leaves the
+ * desk out (the brain could not read the row that time) never turns this
+ * browser's old copy back on. `local`: the brain refused a save this visit.
+ */
+export function deskRoams(shellHasDesk: boolean, roamed: boolean, local: boolean): boolean {
+  return !local && (roamed || shellHasDesk);
+}
+
+/**
+ * What a later read of the shell does to the desk on show, on a brain that
+ * keeps it: `show` a desk read from the profile (arranged on another device,
+ * say), or `keep` the one on show. Kept when the read leaves the desk out
+ * (the brain could not read the row), when the profile has none (null: what
+ * is on show is the default or a desk on its way up), and when it is one
+ * this client cannot read.
+ */
+export function deskFromRead(shell: object): { show: DeskPrefs } | 'keep' {
+  if (!('homeDesk' in shell)) return 'keep';
+  const raw = (shell as { homeDesk: unknown }).homeDesk;
+  const desk = raw == null ? null : deskFrom(raw);
+  return desk ? { show: desk } : 'keep';
 }
 
 // ── What a kind widget lists ───────────────────────────────────────────────
