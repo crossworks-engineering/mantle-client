@@ -210,6 +210,16 @@ describe('the desk on the profile', () => {
     expect(roamingDesk(first.prefs, JSON.stringify(here), kinds).upload).toBe(false);
   });
 
+  it("never offers this browser's desk again once it was moved up", () => {
+    // The flag is per brain and login (desk-data): a profile still empty on a
+    // later visit (the first save failed, say) gets the default, not the
+    // stale local copy on every visit.
+    expect(roamingDesk(null, JSON.stringify(here), kinds, true)).toEqual({
+      prefs: defaultDesk([...kinds]),
+      upload: false,
+    });
+  });
+
   it('lays out the default, unsaved, when neither has a desk', () => {
     expect(roamingDesk(null, null, kinds)).toEqual({
       prefs: defaultDesk([...kinds]),
