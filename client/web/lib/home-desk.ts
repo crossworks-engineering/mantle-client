@@ -378,17 +378,20 @@ export function deskFrom(data: unknown): DeskPrefs | null {
  * The profile's desk wins whenever there is one (arranged on another device,
  * say), and this browser's copy is just retired. Only into an EMPTY profile
  * (`profile` null: never saved) does a desk this browser kept before the
- * desk roamed move up, once: after that save the profile has one. Neither:
- * the default desk, saved only when the person first changes it.
+ * desk roamed move up, and only once per brain and login: `migrated` says
+ * this browser already moved (or tried to move) its desk up, so a stale local
+ * copy is never offered again, whatever the profile says later. Neither: the
+ * default desk, saved only when the person first changes it.
  */
 export function roamingDesk(
   profile: unknown,
   local: string | null,
   kinds: readonly TreeKind[],
+  migrated = false,
 ): { prefs: DeskPrefs; upload: boolean } {
   const fromProfile = profile == null ? null : deskFrom(profile);
   if (fromProfile) return { prefs: fromProfile, upload: false };
-  const fromHere = profile === null ? parseDesk(local) : null;
+  const fromHere = profile === null && !migrated ? parseDesk(local) : null;
   if (fromHere) return { prefs: fromHere, upload: true };
   return { prefs: defaultDesk(kinds), upload: false };
 }

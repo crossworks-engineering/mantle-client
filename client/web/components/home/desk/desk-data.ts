@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { useFlushOnLeave } from '@mantle/web-ui/use-flush-on-leave';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
 import {
@@ -19,11 +20,13 @@ import { treeKindsOf } from '@/components/item-tree/use-tree-kinds';
 import {
   DESK_KINDS,
   defaultDesk,
+  deskFrom,
   deskItemsFor,
   parseDesk,
   roamingDesk,
   type DeskPrefs,
 } from '@/lib/home-desk';
+import { createDeskSaver, type DeskSaver } from '@/lib/home-desk-saver';
 
 /**
  * The desk's data: the login it belongs to, where it is kept, and what each
@@ -68,9 +71,46 @@ function storage(): Storage | null {
   }
 }
 
-/** How long the desk waits after the last change before saving it: a drag
- *  or a resize is many changes and one save. */
-const SAVE_DELAY_MS = 800;
+const MIGRATED_PREFIX = 'mantle_home_desk_migrated_v1:';
+
+/** Set once this browser has moved its local desk up to the login's profile
+ *  (per brain and per login, as the desk itself): the move is offered once,
+ *  never again on a later visit (lib/home-desk `roamingDesk`). */
+export function deskMigratedKey(brainOrigin: string, loginId: string): string {
+  return `${MIGRATED_PREFIX}${encodeURIComponent(brainOrigin)}:${encodeURIComponent(loginId)}`;
+}
+
+/** The desks (brain and login, deskStorageKey) whose save the brain refused
+ *  this visit: they stay in this browser's storage until the page reloads,
+ *  even when Home is left and opened again. */
+const refusedThisVisit = new Set<string>();
+
+function readStored(key: string): string | null {
+  try {
+    return storage()?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    storage()?.setItem(key, value);
+  } catch {
+    // Quota or blocked storage: the desk holds for this visit only.
+  }
+}
+
+/** PUT the desk to the login's profile. `keepalive` on the way out, so the
+ *  request outlives a closing tab. */
+function sendDesk(desk: DeskPrefs, opts: { keepalive: boolean }) {
+  return apiFetch<{ homeDesk: unknown }>('/api/profile/home-desk', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ homeDesk: desk }),
+    keepalive: opts.keepalive,
+  });
+}
 
 /**
  * The login's desk, and the two ways to change it.
@@ -78,66 +118,79 @@ const SAVE_DELAY_MS = 800;
  * Kept on the LOGIN's profile (PUT /api/profile/home-desk, read back in GET
  * /api/shell as `homeDesk`), so the desk follows the person to another
  * browser, another machine and the desktop app, as nav favourites do. A
- * change shows at once and is saved a moment later (SAVE_DELAY_MS); leaving
- * Home saves what is still waiting. The first visit to a brain that keeps
- * the desk moves a desk this browser kept before up to an empty profile,
- * once (lib/home-desk `roamingDesk`).
+ * change shows at once and is saved a moment later (lib/home-desk-saver:
+ * the debounce, the flush and the failures); leaving Home, hiding the tab or
+ * closing it saves what is still waiting. The first visit to a brain that
+ * keeps the desk moves a desk this browser kept before up to an empty
+ * profile, once per brain and login (lib/home-desk `roamingDesk`, the
+ * migrated flag).
  *
- * A brain on an older release doesn't send `homeDesk` at all. Against one of
- * those the desk stays in this browser's storage, per brain and per login,
- * as it was. Null until the shell names the login and the desk has been
- * read, which only happens after hydration, so the server and the first
- * client render agree. Blocked or junk storage falls back to the default.
+ * A save replaces the whole desk, so the last save wins across devices; when
+ * the window comes back after a long idle with nothing waiting, the desk is
+ * read again first (DESK_REFRESH_AFTER_MS), so a desk arranged on another
+ * device is shown before this one can overwrite it.
+ *
+ * The desk stays in this browser's storage, per brain and per login, as it
+ * was before it roamed, when: the brain is on an older release (no
+ * `homeDesk` in the shell); the brain could not read the login's row this
+ * time (`homeDesk` left out, never taken for "never saved"); or the brain
+ * refused a save (401 or 403), for the rest of the visit, without a toast.
+ * Null until the shell names the login and the desk has been read, which
+ * only happens after hydration, so the server and the first client render
+ * agree. Blocked or junk storage falls back to the default.
  */
 export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] | null) {
   const qc = useQueryClient();
   const toast = useToast();
   const shell = useDeskShell();
   const key = loginId ? deskStorageKey(brain(), loginId) : null;
-  // Null until the shell lands; false on a brain that predates the roaming desk.
-  const roams = shell.data ? 'homeDesk' in shell.data : null;
+  // A refusal this visit (this mount or an earlier one): the desk stays local.
+  const [refused, setRefused] = useState(false);
+  const local = refused || (key !== null && refusedThisVisit.has(key));
+  // Null until the shell lands; false on a brain that does not keep the desk
+  // for this login this visit.
+  const roams = shell.data ? 'homeDesk' in shell.data && !local : null;
   const [prefs, setPrefs] = useState<DeskPrefs | null>(null);
   // The desk as last set, for `update` to build on outside a state updater
   // (a save touches the shell query, which must not happen mid-render).
   const current = useRef<DeskPrefs | null>(null);
-  const pending = useRef<DeskPrefs | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keyRef = useRef(key);
+  keyRef.current = key;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const saverRef = useRef<DeskSaver | null>(null);
+  saverRef.current ??= createDeskSaver(sendDesk, {
+    onRefused: () => {
+      // Keep what the person sees, in this browser, and stop roaming quietly.
+      const k = keyRef.current;
+      if (k) {
+        refusedThisVisit.add(k);
+        if (current.current) writeStored(k, JSON.stringify(current.current));
+      }
+      setRefused(true);
+    },
+    onFailed: () => toastRef.current.error('Could not save your desk'),
+  });
+  const saver = saverRef.current;
   const kindsKey = kinds ? kinds.join(',') : null;
-
-  const flush = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    const desk = pending.current;
-    pending.current = null;
-    if (!desk) return;
-    apiSend('/api/profile/home-desk', 'PUT', { homeDesk: desk }).catch(() => {
-      toast.error('Could not save your desk');
-    });
-  }, [toast]);
 
   const save = useCallback(
     (desk: DeskPrefs) => {
       // The shell's copy at once: Home opened again this visit starts from it.
       qc.setQueryData<Shell>(['shell'], (d) => (d ? { ...d, homeDesk: desk } : d));
-      pending.current = desk;
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(flush, SAVE_DELAY_MS);
+      saver.save(desk);
     },
-    [qc, flush],
+    [qc, saver],
   );
 
-  // Leaving Home: what is still waiting is saved now, not dropped.
-  useEffect(() => flush, [flush]);
+  // Every way out (leaving Home, the tab hidden or closed, the session
+  // ending): what is still waiting is saved now, not dropped.
+  useFlushOnLeave(() => saver.flush({ keepalive: true }));
 
   useEffect(() => {
     if (!key || kindsKey === null || roams === null) return;
     const kindList = kindsKey ? (kindsKey.split(',') as TreeKind[]) : [];
-    let stored: string | null;
-    try {
-      stored = storage()?.getItem(key) ?? null;
-    } catch {
-      stored = null;
-    }
+    const stored = readStored(key);
     if (!roams) {
       current.current = parseDesk(stored) ?? defaultDesk(kindList);
       setPrefs(current.current);
@@ -146,11 +199,51 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
     // Read from the cache, not a dependency: a save writes it, and that must
     // not lay the desk out again.
     const profile = qc.getQueryData<Shell>(['shell'])?.homeDesk ?? null;
-    const { prefs: desk, upload } = roamingDesk(profile, stored, kindList);
+    const migratedKey = loginId ? deskMigratedKey(brain(), loginId) : null;
+    const migrated = migratedKey ? readStored(migratedKey) !== null : true;
+    const { prefs: desk, upload } = roamingDesk(profile, stored, kindList, migrated);
     current.current = desk;
     setPrefs(desk);
-    if (upload) save(desk);
-  }, [key, kindsKey, roams, qc, save]);
+    if (upload) {
+      // Offered once, whatever the save answers: a stale local desk is never
+      // moved up again on a later visit.
+      if (migratedKey) writeStored(migratedKey, '1');
+      save(desk);
+    }
+  }, [key, loginId, kindsKey, roams, qc, save]);
+
+  // Back to the window after a long idle, nothing waiting: read the desk
+  // again, so one arranged on another device shows before a change here
+  // replaces it (the last save wins). Only the desk is taken from the read;
+  // one that leaves it out (the brain could not read the row) changes nothing.
+  useEffect(() => {
+    if (!roams) return;
+    const onBack = () => {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (!saver.needsRefresh(now)) return;
+      saver.synced(now);
+      apiFetch<Shell>('/api/shell').then(
+        (fresh) => {
+          if (!('homeDesk' in fresh) || saver.pending || saver.stopped) return;
+          const desk = fresh.homeDesk == null ? null : deskFrom(fresh.homeDesk);
+          if (!desk) return;
+          qc.setQueryData<Shell>(['shell'], (d) => (d ? { ...d, homeDesk: fresh.homeDesk } : d));
+          current.current = desk;
+          setPrefs(desk);
+        },
+        () => {
+          // Offline: the desk shown stays; the next return tries again.
+        },
+      );
+    };
+    window.addEventListener('focus', onBack);
+    document.addEventListener('visibilitychange', onBack);
+    return () => {
+      window.removeEventListener('focus', onBack);
+      document.removeEventListener('visibilitychange', onBack);
+    };
+  }, [roams, qc, saver]);
 
   const update = useCallback(
     (fn: (p: DeskPrefs) => DeskPrefs) => {
@@ -163,11 +256,7 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
         save(next);
         return;
       }
-      try {
-        if (key) storage()?.setItem(key, JSON.stringify(next));
-      } catch {
-        // Quota or blocked storage: the desk holds for this visit only.
-      }
+      if (key) writeStored(key, JSON.stringify(next));
     },
     [key, roams, save],
   );
