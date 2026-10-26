@@ -12,7 +12,7 @@ import { wholeNav } from './shell-nav';
 /**
  * Each workspace's landing page (dev-brain task d78e7bde): Home shows the
  * landing page of the current workspace and changes when the login switches
- * at `/`: the Built-in home (the desk) with that workspace's pages, or the
+ * at `/`: Desk with that workspace's pages, or the
  * home app a spec names; "All my workspaces" shows all of them. An
  * Admin user lands there too: the brain health Dashboard is in the menu.
  * In-memory brain, no real one.
@@ -112,12 +112,12 @@ test("a workspace's home app fills Desk, with a toggle to the built-in Desk", as
     .poll(() => api.asked('admin'))
     .toContain(`POST /api/apps/${KIND_ITEMS.apps[1].id}/frame-ticket`);
   await expect(newest(page)).toHaveCount(0);
-  // The toggle: the Built-in home with Team's data, then the app again.
+  // The toggle: Desk with Team's data, then the app again.
   await builtIn.click();
   await expect(newest(page).getByText(PAGES.handbook.title, { exact: true })).toBeVisible();
   await app.click();
   await expect(newest(page)).toHaveCount(0);
-  // Another workspace has none: its Built-in home, no toggle.
+  // Another workspace has none: its Desk, no toggle.
   await pickWorkspace(page, WORKSPACES.admin.name);
   await expect(newest(page).getByText(PAGES.policy.title, { exact: true })).toBeVisible();
   await expect(main.getByRole('button', { name: 'Team board' })).toHaveCount(0);

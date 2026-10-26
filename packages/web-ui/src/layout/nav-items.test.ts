@@ -149,6 +149,7 @@ describe('workspaces (W5a) in the nav', () => {
 
   it('names the logins screen Users', () => {
     expect(matchNavItem('/settings/users')?.name).toBe('Users');
+    expect(matchNavItem('/')?.name).toBe('Desk');
     const groups: NavGroup[] = [
       { label: 'Settings', items: [{ name: 'Logins', href: '/settings/users', icon }] },
     ];
