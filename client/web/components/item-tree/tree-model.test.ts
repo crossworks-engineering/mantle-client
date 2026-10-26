@@ -13,6 +13,7 @@ import {
   folderManaged,
   isOnTheWayTo,
   itemMovable,
+  itemPlaceAt,
   liveFolder,
   mergeFolderPages,
   pickedAfterMove,
@@ -333,6 +334,46 @@ describe('dragging', () => {
     expect(afterFor(sibs, 'c', 'b', 'before')).toBe('a');
     expect(afterFor(sibs, 'a', 'b', 'before')).toBeNull();
     expect(afterFor(sibs, 'a', 'c', 'after')).toBe('c');
+  });
+
+  it('places an item before or after another item of its folder (a custom order)', () => {
+    expect(dropPosition(0.2, 'item', 'item')).toBe('before');
+    expect(dropPosition(0.8, 'item', 'item')).toBe('after');
+    const f = folder('f', 'notes.f');
+    const a = { item: item('a'), parent: f, mayOrder: true };
+    const b = { item: item('b'), parent: f };
+    expect(itemPlaceAt(a, b, 0.2, 1)).toBe('before');
+    expect(itemPlaceAt(a, b, 0.8, 1)).toBe('after');
+    // Not when the login may not order it, on itself, across folders, or
+    // carrying a pick of several (a pick moves, never orders).
+    expect(itemPlaceAt({ ...a, mayOrder: false }, b, 0.8, 1)).toBeNull();
+    expect(itemPlaceAt(a, { item: item('a'), parent: f }, 0.8, 1)).toBeNull();
+    expect(itemPlaceAt(a, { ...b, parent: folder('g', 'notes.g') }, 0.8, 1)).toBeNull();
+    expect(itemPlaceAt(a, b, 0.8, 2)).toBeNull();
+    // At the top level both sit in no folder.
+    expect(itemPlaceAt({ ...a, parent: null }, { ...b, parent: null }, 0.2, 1)).toBe('before');
+  });
+
+  it('carries the folder page’s order right and its items to each row', () => {
+    const pages = [
+      { ...page([folder('s', 'notes.s')], [item('1'), item('2')], null), mayOrder: true },
+    ];
+    const children = mergeFolderPages(pages);
+    expect(children.mayOrder).toBe(true);
+    expect(mergeFolderPages([page([], [item('1')], null)]).mayOrder).toBeUndefined();
+    const { rows } = flattenTree(
+      (id) =>
+        id === null ? { status: 'ok', children, loadingMore: false } : { status: 'pending' },
+      () => false,
+      { emptyText: 'none' },
+    );
+    const items = rows.filter((r): r is Extract<TreeRow, { type: 'item' }> => r.type === 'item');
+    expect(items.map((r) => [r.item.id, r.mayOrder, r.siblings?.map((x) => x.id)])).toEqual([
+      ['1', true, ['1', '2']],
+      ['2', true, ['1', '2']],
+    ]);
+    const f = rows.find((r) => r.type === 'folder') as Extract<TreeRow, { type: 'folder' }>;
+    expect(f.mayOrder).toBe(true);
   });
 
   it('steps a folder up or down among its siblings', () => {

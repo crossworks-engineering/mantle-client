@@ -3,7 +3,13 @@
  * drag would land, and what a reorder sends. No React, so the rules are
  * pinned by tests.
  */
-import type { TreeCrumb, TreeFolder, TreeFolderPage, TreeItem } from '@mantle/web-ui/types/tree';
+import type {
+  TreeCrumb,
+  TreeFolder,
+  TreeFolderPage,
+  TreeItem,
+  TreeSort,
+} from '@mantle/web-ui/types/tree';
 import { TREE_MAX_DEPTH } from '@mantle/web-ui/types/tree';
 import { itemAccess } from '@/lib/item-access';
 import { ELSEWHERE_MAX } from '@/lib/workspace-hits';
@@ -22,6 +28,17 @@ export function folderManaged(folder: TreeFolder): boolean {
   return !folder.system && itemAccess(folder).manage;
 }
 
+/** The item orders this client asks a folder for: the contract's sorts and
+ *  `custom`, the folder's own order (brain docs/folder-tree.md, "Custom
+ *  order"), from a brain whose shell says `features.treeCustomOrder`. The
+ *  contract package names `custom` from its next release; until then it is
+ *  added here, and the two agree. */
+export type TreeOrder = TreeSort | 'custom';
+
+/** A folder page's order fields (brain contract, "Custom order"): absent from
+ *  a brain before it. */
+type PageOrder = { ordered?: boolean; mayOrder?: boolean };
+
 /** One folder's children as loaded so far: its subfolders (they all come
  *  with the first page) and every item page fetched, in order. */
 export type FolderChildren = {
@@ -29,6 +46,9 @@ export type FolderChildren = {
   items: TreeItem[];
   /** More items wait behind the next cursor. */
   hasMore: boolean;
+  /** The login may set this folder's order (its items and subfolders): Write
+   *  on the folder, or Admin at the top level. Absent from a brain before it. */
+  mayOrder?: boolean;
   /** Asked with the switcher's workspace and none of its items here: the
    *  login's other workspaces that read items in this folder (brain task
    *  f26a516e). Absent otherwise, and from a brain before it. */
@@ -53,6 +73,7 @@ export function mergeFolderPages(pages: readonly TreeFolderPage[] | undefined): 
     folders: pages[0]!.folders,
     items,
     hasMore: pages.at(-1)!.nextCursor !== null,
+    ...((pages[0] as TreeFolderPage & PageOrder).mayOrder ? { mayOrder: true } : {}),
     ...(elsewhere?.length && !items.length ? { elsewhere } : {}),
   };
 }
@@ -111,6 +132,8 @@ export type TreeRow =
       folder: TreeFolder;
       parent: TreeFolder | null;
       siblings: TreeFolder[];
+      /** The login may order the parent's contents (FolderChildren). */
+      mayOrder: boolean;
       depth: number;
       isLast: boolean;
       guides: readonly boolean[];
@@ -124,6 +147,11 @@ export type TreeRow =
       /** The folder it sits in, when the row is inside the tree. */
       parent: TreeFolder | null;
       folderPath: string | null;
+      /** The items of its folder loaded so far, in order (a place's `after`).
+       *  Absent on a flat list's row. */
+      siblings?: TreeItem[];
+      /** The login may order its folder's items (FolderChildren). */
+      mayOrder?: boolean;
       depth: number;
       isLast: boolean;
       guides: readonly boolean[];
@@ -266,6 +294,8 @@ export function flattenTree(
           item: e.item,
           parent: folder,
           folderPath: folder?.path ?? null,
+          siblings: children.items,
+          mayOrder: children.mayOrder === true,
           depth,
           isLast: e.isLast,
           guides,
@@ -281,6 +311,7 @@ export function flattenTree(
         folder: f,
         parent: folder,
         siblings: children.folders,
+        mayOrder: children.mayOrder === true,
         depth,
         isLast: e.isLast,
         guides,
@@ -352,12 +383,37 @@ export function isOnTheWayTo(target: string | null | undefined, path: string): b
 
 export type DropPos = 'before' | 'after' | 'inside';
 
-/** What a pointer over a folder row means: the top and bottom thirds place a
- *  dragged folder beside it, the middle drops into it. An item has no manual
- *  order, so anywhere over a folder is into it. */
-export function dropPosition(rel: number, dragging: 'folder' | 'item'): DropPos {
+/** What a pointer over a row means. Over a folder: the top and bottom thirds
+ *  place a dragged folder beside it, the middle drops into it; an item
+ *  dropped on a folder goes into it. Over an item (a custom order, its own
+ *  folder's): the top half places the dragged item before it, the bottom
+ *  half after. */
+export function dropPosition(
+  rel: number,
+  dragging: 'folder' | 'item',
+  over: 'folder' | 'item' = 'folder',
+): DropPos {
+  if (over === 'item') return rel < 0.5 ? 'before' : 'after';
   if (dragging === 'item') return 'inside';
   return rel < 0.3 ? 'before' : rel > 0.7 ? 'after' : 'inside';
+}
+
+/**
+ * Where a dragged item lands on another item row, in a custom order: before
+ * or after it, when both sit in the same folder and the login may order it.
+ * Null when it cannot (another folder: drop it on the folder to move it; a
+ * pick of several moves, never orders).
+ */
+export function itemPlaceAt(
+  moving: { item: TreeItem; parent: TreeFolder | null; mayOrder?: boolean },
+  target: { item: TreeItem; parent: TreeFolder | null },
+  rel: number,
+  carrying: number,
+): 'before' | 'after' | null {
+  if (!moving.mayOrder || carrying > 1) return null;
+  if (moving.item.id === target.item.id) return null;
+  if ((moving.parent?.id ?? null) !== (target.parent?.id ?? null)) return null;
+  return dropPosition(rel, 'item', 'item') as 'before' | 'after';
 }
 
 /** A dragged folder may land in `target` when that is not itself, not one of

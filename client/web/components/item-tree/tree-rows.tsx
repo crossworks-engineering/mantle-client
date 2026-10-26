@@ -33,7 +33,6 @@ import {
   type TreeFolderPage,
   type TreeItem,
   type TreeKind,
-  type TreeSort,
 } from '@mantle/web-ui/types/tree';
 import { AppTile } from '@/components/app-nav/app-tile';
 import { TREE_INDENT, TREE_ROW_PAD, TreeGuides } from '@/components/app-nav/tree-guides';
@@ -44,8 +43,10 @@ import {
   mergeFolderPages,
   type FolderLoad,
   type TreeRow,
+  type TreeOrder,
 } from './tree-model';
 import { rowTabIndex, useTreeCtx, type DragData } from './tree-context';
+import { itemAccess } from '@/lib/item-access';
 
 /**
  * The rows of the item tree. Every row is one line, 32px high: an optional
@@ -114,7 +115,7 @@ function FolderLoader({
 }: {
   kind: TreeKind;
   source: TreeSource;
-  sort: TreeSort;
+  sort: TreeOrder;
   folderId: string | null;
   handles: Map<string, FolderHandle>;
   onUnsupported?: () => void;
@@ -227,7 +228,7 @@ export function useFolderRows({
   kind: TreeKind;
   /** Who the tree is read as (tree-api's TreeSource). */
   source?: TreeSource;
-  sort: TreeSort;
+  sort: TreeOrder;
   isOpen: (folderId: string) => boolean;
   foldersOnly?: boolean;
   emptyText: string;
@@ -540,6 +541,8 @@ export function FolderTreeRow({
           item={row.item}
           parent={row.parent}
           folderPath={row.folderPath}
+          siblings={row.siblings}
+          mayOrder={row.mayOrder}
           depth={row.depth}
           isLast={row.isLast}
           guides={row.guides}
@@ -593,11 +596,17 @@ export function FolderTreeRow({
 
 function FolderRow({ row }: { row: Extract<TreeRow, { type: 'folder' }> }) {
   const ctx = useTreeCtx();
-  const { folder, parent, siblings, depth, isLast, guides, open, hasChildren } = row;
+  const { folder, parent, siblings, mayOrder, depth, isLast, guides, open, hasChildren } = row;
   const picker = ctx.mode === 'picker';
   const selected = ctx.selectedFolderPath === folder.path;
   const disabled = ctx.folderDisabled?.(folder) ?? false;
-  const drag: DragData = { type: 'folder', folder, parent, siblings };
+  const drag: DragData = { type: 'folder', folder, parent, siblings, mayOrder };
+  // A folder moves by its own caps; one the login may only order (Write on
+  // it and on its parent) drags to its place among its siblings.
+  const draggable =
+    !folder.system &&
+    (ctx.canMoveFolder?.(folder) !== false ||
+      (ctx.mode === 'manage' && mayOrder && itemAccess(folder).edit));
   const tall = useRowHeight(folder);
   return (
     <TreeRowShell
@@ -605,9 +614,9 @@ function FolderRow({ row }: { row: Extract<TreeRow, { type: 'folder' }> }) {
       depth={depth}
       isLast={isLast}
       guides={guides}
-      drag={folder.system || ctx.canMoveFolder?.(folder) === false ? undefined : drag}
+      drag={draggable ? drag : undefined}
       drop={drag}
-      menu={ctx.folderMenu?.(folder, parent, siblings)}
+      menu={ctx.folderMenu?.(folder, parent, siblings, mayOrder)}
       label={folder.name}
     >
       {(style) => (
@@ -680,6 +689,8 @@ export function ItemRow({
   item,
   parent = null,
   folderPath = null,
+  siblings,
+  mayOrder = false,
   depth,
   isLast,
   guides,
@@ -689,6 +700,9 @@ export function ItemRow({
   item: TreeItem;
   parent?: TreeFolder | null;
   folderPath?: string | null;
+  /** Its folder's items in order, and whether the login may order them. */
+  siblings?: TreeItem[];
+  mayOrder?: boolean;
   depth: number;
   isLast: boolean;
   guides: readonly boolean[];
@@ -705,11 +719,16 @@ export function ItemRow({
   // Only a tree that manages drags (never a client's). An owner's private
   // items have no folder yet: they cannot be dragged anywhere. A member's
   // tree says which of its rows move.
+  // In a custom order a folder the login may order drags its items to
+  // place them, and each row takes a drop beside it.
+  const placeable =
+    ctx.mode === 'manage' && crumbs === undefined && ctx.ordering === true && mayOrder;
+  const data: DragData = { type: 'item', item, parent: parent ?? null, siblings, mayOrder };
   const drag: DragData | undefined =
     ctx.mode === 'manage' &&
     crumbs === undefined &&
-    (ctx.canMoveItem?.(item) ?? item.state !== 'private')
-      ? { type: 'item', item, parent: parent ?? null }
+    ((ctx.canMoveItem?.(item) ?? item.state !== 'private') || placeable)
+      ? data
       : undefined;
   const carried = picked ? ctx.picked.size : 1;
   const tall = useRowHeight(item);
@@ -723,7 +742,12 @@ export function ItemRow({
       isLast={isLast}
       guides={guides}
       drag={drag}
-      menu={ctx.itemMenu?.(item, where)}
+      drop={placeable ? data : undefined}
+      menu={ctx.itemMenu?.(
+        item,
+        where,
+        crumbs === undefined && siblings ? { siblings, mayOrder } : undefined,
+      )}
       label={item.title || 'Untitled'}
       badge={
         carried > 1 ? (
