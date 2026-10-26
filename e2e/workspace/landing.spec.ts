@@ -42,10 +42,10 @@ const homeWs = (role: 'admin' | 'member') =>
 /** The desk's Pages widget: pins first, then the workspace's newest pages. */
 const newest = (page: Page) => page.getByRole('main').getByRole('region', { name: 'Pages' });
 
-test('an Admin user switches at Home: the landing page follows the pick', async ({ page }) => {
+test('an Admin user switches at Desk: the landing page follows the pick', async ({ page }) => {
   await signIn(page, 'admin');
   const main = page.getByRole('main');
-  await expect(main.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Desk', level: 1 })).toBeVisible();
   // No Dashboard at Home any more.
   await expect(main.getByRole('link', { name: 'Operator view' })).toHaveCount(0);
 
@@ -78,7 +78,7 @@ test('an Admin user switches at Home: the landing page follows the pick', async 
 test('the Dashboard is in the menu, and opens on its own screen', async ({ page }) => {
   await signIn(page, 'admin');
   const nav = await wholeNav(page, 'admin');
-  await expect(nav.getByRole('link', { name: 'Home', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Desk', exact: true })).toBeVisible();
   await nav.getByRole('link', { name: 'Dashboard', exact: true }).click();
   await expect(page).toHaveURL((u) => u.pathname === '/dashboard');
   await expect(page.getByRole('main').getByRole('link', { name: 'Operator view' })).toBeVisible();
@@ -87,7 +87,7 @@ test('the Dashboard is in the menu, and opens on its own screen', async ({ page 
 test('a member lands on its workspace, and never on one it is not in', async ({ page }) => {
   await signIn(page, 'member');
   const main = page.getByRole('main');
-  await expect(main.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Desk', level: 1 })).toBeVisible();
   // Its own workspaces only, even under All my workspaces.
   await expect(newest(page).getByText(PAGES.handbook.title, { exact: true })).toBeVisible();
   await expect(newest(page).getByText(PAGES.minutes.title, { exact: true })).toHaveCount(0);
@@ -100,13 +100,13 @@ test('a member lands on its workspace, and never on one it is not in', async ({ 
   expect(api.asked('member')).not.toContain('GET /api/member/home');
 });
 
-test("a workspace's home app fills Home, with a toggle to the Built-in home", async ({ page }) => {
+test("a workspace's home app fills Desk, with a toggle to the built-in Desk", async ({ page }) => {
   api.homeApps.team = { id: KIND_ITEMS.apps[1].id, title: 'Team board', frame: true };
   await signIn(page, 'admin');
   await pickWorkspace(page, WORKSPACES.team.name);
   const main = page.getByRole('main');
   const app = main.getByRole('button', { name: 'Team board' });
-  const builtIn = main.getByRole('button', { name: 'Built-in home' });
+  const builtIn = main.getByRole('button', { name: 'Desk', exact: true });
   await expect(app).toHaveAttribute('aria-pressed', 'true');
   await expect
     .poll(() => api.asked('admin'))
@@ -123,7 +123,7 @@ test("a workspace's home app fills Home, with a toggle to the Built-in home", as
   await expect(main.getByRole('button', { name: 'Team board' })).toHaveCount(0);
 });
 
-test('a home app that does not load falls back to the Built-in home', async ({ page }) => {
+test('a home app that does not load falls back to the built-in Desk', async ({ page }) => {
   api.homeApps.team = { id: KIND_ITEMS.apps[1].id, title: 'Team board', frame: false };
   await signIn(page, 'admin');
   await pickWorkspace(page, WORKSPACES.team.name);

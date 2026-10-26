@@ -50,7 +50,7 @@ describe('homeAppToShow', () => {
     expect(homeAppToShow({ homeApp }, null)).toBe(homeApp);
   });
 
-  it('falls back to the Built-in home when that app failed to load, or there is none', () => {
+  it('falls back to Desk when that app failed to load, or there is none', () => {
     expect(homeAppToShow({ homeApp }, 'app-1')).toBeNull();
     expect(homeAppToShow({ homeApp: null }, null)).toBeNull();
     expect(homeAppToShow(undefined, null)).toBeNull();
@@ -70,10 +70,10 @@ describe('LandingAppView', () => {
     expect(typeof props.onLoadFailure).toBe('function');
     // The toggle names the app and the Built-in home; the app is pressed.
     expect(html).toMatch(/aria-pressed="true"[^>]*>.*Rota board/);
-    expect(html).toContain('Built-in home');
+    expect(html).toContain('>Desk<');
   });
 
-  it('the toggle shows the Built-in home and keeps the app mounted, hidden', () => {
+  it('the toggle shows Desk and keeps the app mounted, hidden', () => {
     const html = view(true);
     expect(html).toContain('BUILT-IN HOME');
     expect(html).toContain('data-app="app-1"');

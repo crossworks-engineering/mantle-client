@@ -30,11 +30,11 @@ import { useWorkspaceActions } from './workspace-queries';
 import { WorkspaceSection } from './workspace-section';
 
 export const BUILT_IN_HOME = '__built_in__';
-export const BUILT_IN_HOME_LABEL = 'Built-in home';
+export const BUILT_IN_HOME_LABEL = 'Desk';
 /** The picker's value for a set home app it cannot name: one the workspace
  *  no longer holds (audit M2). Picking the Built-in home from it clears it. */
 export const UNNAMED_HOME = '__unnamed__';
-export const NOT_HELD_TEXT = `An app this workspace no longer holds (users see the ${BUILT_IN_HOME_LABEL})`;
+export const NOT_HELD_TEXT = `An app this workspace no longer holds (users see ${BUILT_IN_HOME_LABEL})`;
 
 /** What the screen says the landing page is, for a reader. */
 export function landingText(app: WorkspaceLandingApp | null | undefined): string {
@@ -42,7 +42,7 @@ export function landingText(app: WorkspaceLandingApp | null | undefined): string
   // A missing `held` counts as held (audit L-c).
   if (app.held === false) return NOT_HELD_TEXT;
   const name = app.title ?? 'A home app';
-  return app.ready ? name : `${name} (no working build: users see the ${BUILT_IN_HOME_LABEL})`;
+  return app.ready ? name : `${name} (no working build: users see ${BUILT_IN_HOME_LABEL})`;
 }
 
 /** The picker's value for the current landing page. */
@@ -78,7 +78,7 @@ export function LandingSection({
     <WorkspaceSection
       title="Landing page"
       labelledBy="workspace-landing"
-      description="What users see at Home while this is their current workspace."
+      description="What users see at Desk while this is their current workspace."
     >
       {canSetLanding(workspace) ? (
         <LandingPicker key={landingValue(landingApp)} workspace={workspace} current={landingApp} />
@@ -117,7 +117,7 @@ function LandingPicker({
       await actions.update(workspace.id, { landingAppId: next === BUILT_IN_HOME ? null : next });
       toast.success(
         next === BUILT_IN_HOME
-          ? 'This workspace now lands on the Built-in home.'
+          ? 'This workspace now lands on Desk.'
           : 'This workspace now lands on the app.',
       );
     } catch (err) {
@@ -135,7 +135,7 @@ function LandingPicker({
         className="flex items-center gap-1.5 text-xs text-muted-foreground"
       >
         <LayoutTemplate className="size-3.5" aria-hidden />
-        Home
+        Desk
       </Label>
       <Select value={value} onValueChange={(v) => void apply(v)} disabled={pending}>
         <SelectTrigger id="landingApp" size="xs" aria-label="Landing page">
@@ -151,7 +151,7 @@ function LandingPicker({
       </Select>
       <p className="text-[11px] leading-snug text-muted-foreground">
         A published app this workspace holds. Share an app with the workspace in its Access panel to
-        list it here. Falls back to the {BUILT_IN_HOME_LABEL} if the app breaks.
+        list it here. Falls back to {BUILT_IN_HOME_LABEL} if the app breaks.
       </p>
     </div>
   );

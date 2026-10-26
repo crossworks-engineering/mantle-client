@@ -415,7 +415,7 @@ export function deskItemHref(kind: TreeKind, id: string): string | null {
 export const TOOL_LABELS: Record<DeskTool, { title: string; hint: string }> = {
   clock: { title: 'Clock', hint: 'The time, the date and a greeting' },
   calendar: { title: 'Calendar', hint: 'This month and what is coming up' },
-  'quick-note': { title: 'Quick note', hint: 'Jot a note without leaving Home' },
+  'quick-note': { title: 'Quick note', hint: 'Jot a note without leaving Desk' },
   theme: { title: 'Theme', hint: 'Light, dark and the colour theme' },
   drift: { title: 'Drift', hint: 'The moving background, live' },
   focus: { title: 'Focus timer', hint: 'Work in focused stretches' },

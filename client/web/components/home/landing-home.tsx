@@ -147,7 +147,7 @@ export function LandingAppView({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {showBuiltIn ? null : <SetPageTitle title="Home" />}
+      {showBuiltIn ? null : <SetPageTitle title="Desk" />}
       <div className="flex shrink-0 justify-end gap-2 px-3 py-2">
         <Button
           variant={showBuiltIn ? 'ghost' : 'outline'}
@@ -165,7 +165,7 @@ export function LandingAppView({
           onClick={() => onShowBuiltIn(true)}
         >
           <LayoutList className="size-4" aria-hidden />
-          Built-in home
+          Desk
         </Button>
       </div>
       {showBuiltIn ? (
