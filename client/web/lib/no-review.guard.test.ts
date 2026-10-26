@@ -120,7 +120,7 @@ describe('no review UI in the owner screens (W5c)', () => {
       'app/invite/invite-client.tsx',
       // The shell's (W5c): the home (every login's landing page since task
       // d78e7bde), the rail and the member libs.
-      'components/home/plain-home.tsx',
+      'components/home/desk/desk-home.tsx',
       'components/home/landing-home.tsx',
       'components/layout/rail/profile-menu.tsx',
     ].map((f) => WEB + f)) {

@@ -40,7 +40,7 @@ describe('no call to a route a W6b, W7 or W8 brain answers 410', () => {
     for (const f of [
       'client/web/components/item-tree/tree-api.ts',
       'client/web/lib/member-apps.ts',
-      'client/web/components/home/plain-home.tsx',
+      'client/web/components/home/desk/desk-data.ts',
       'client/web/app/(app)/pages/pages-client.tsx',
       'client/web/app/(app)/apps/apps-client.tsx',
       'packages/web-ui/src/api-fetch.ts',

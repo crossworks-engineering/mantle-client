@@ -12,7 +12,7 @@ import { wholeNav } from './shell-nav';
 /**
  * Each workspace's landing page (dev-brain task d78e7bde): Home shows the
  * landing page of the current workspace and changes when the login switches
- * at `/`: the Built-in home with that workspace's pages and apps, or the
+ * at `/`: the Built-in home (the desk) with that workspace's pages, or the
  * home app a spec names; "All my workspaces" shows all of them. An
  * Admin user lands there too: the brain health Dashboard is in the menu.
  * In-memory brain, no real one.
@@ -39,10 +39,8 @@ const homeWs = (role: 'admin' | 'member') =>
     .filter((r) => r.role === role && r.method === 'GET' && r.path === '/api/home')
     .map((r) => new URLSearchParams(r.query).get('ws'));
 
-const newest = (page: Page) =>
-  page
-    .getByRole('main')
-    .locator('section', { has: page.getByRole('heading', { name: 'Newest pages' }) });
+/** The desk's Pages widget: pins first, then the workspace's newest pages. */
+const newest = (page: Page) => page.getByRole('main').getByRole('region', { name: 'Pages' });
 
 test('an Admin user switches at Home: the landing page follows the pick', async ({ page }) => {
   await signIn(page, 'admin');
@@ -58,13 +56,11 @@ test('an Admin user switches at Home: the landing page follows the pick', async 
   }
   expect(homeWs('admin')).toEqual([null]);
 
-  // Team: Team's pages and apps only.
+  // Team: Team's pages only.
   await pickWorkspace(page, WORKSPACES.team.name);
   await expect(main.getByText(WORKSPACES.team.name, { exact: true }).first()).toBeVisible();
   await expect(newest(page).getByText(PAGES.handbook.title, { exact: true })).toBeVisible();
   await expect(newest(page).getByText(PAGES.policy.title, { exact: true })).toHaveCount(0);
-  await expect(main.getByRole('link', { name: KIND_ITEMS.apps[1].title })).toBeVisible();
-  await expect(main.getByRole('link', { name: KIND_ITEMS.apps[0].title })).toHaveCount(0);
   expect(homeWs('admin')).toContain(WORKSPACES.team.id);
 
   // Admin: its own, and no Team page.

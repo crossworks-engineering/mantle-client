@@ -46,6 +46,7 @@ describe('every Drift backdrop names its surface', () => {
         'components/appearance/background-generator.tsx',
         'components/appearance/drift-lab.tsx',
         'components/drift-surface.tsx',
+        'components/home/desk/widgets/look.tsx',
       ].sort(),
     );
   });

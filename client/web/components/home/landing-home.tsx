@@ -26,7 +26,7 @@ import {
 import { ownerAppSandboxProps } from '@/lib/owner-app-sandbox';
 import { noteListAnswer } from '@/lib/workspace-filter';
 import { ALL_WORKSPACES_LABEL, currentWorkspaceLabel } from '@/lib/workspaces';
-import { PlainHomeView } from './plain-home';
+import { DeskHome } from './desk/desk-home';
 
 /**
  * `/` for every login (task d78e7bde): the landing page of the current
@@ -62,11 +62,12 @@ function LandingFor({ ws }: { ws: string | null }) {
       : ALL_WORKSPACES_LABEL
     : undefined;
   const builtIn = (
-    <PlainHomeView
+    <DeskHome
+      ws={ws}
       workspaces={workspaces}
       scope={scope}
-      // A brain before the landing pages answers no /api/home: the screens
-      // and the workspaces, without the data.
+      // A brain before the landing pages answers no /api/home: the desk
+      // without the workspace's counts.
       hub={home.data?.hub ?? null}
       actions={
         <Button variant="outline" size="sm" onClick={() => openAssistant()}>
@@ -168,7 +169,8 @@ export function LandingAppView({
         </Button>
       </div>
       {showBuiltIn ? (
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{builtIn}</div>
+        // The desk scrolls itself.
+        <div className="min-h-0 flex-1">{builtIn}</div>
       ) : null}
       <div className={showBuiltIn ? 'hidden' : 'min-h-0 flex-1'}>
         <SurfaceErrorBoundary label="the home app" resetKeys={[homeApp.appId]}>
