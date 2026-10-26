@@ -1,5 +1,5 @@
 /**
- * The Home desk: the Built-in home as a desk of widgets on a grid (Jason,
+ * The Desk: the built-in home screen as widgets on a grid (Jason,
  * 2026-10-26: "like a desk, a real desk"). Every widget and every desk icon
  * (a pinned item) is a rectangle of whole cells on a DESK_COLS wide grid;
  * the person drags them anywhere and resizes them, and the desk remembers

@@ -37,7 +37,7 @@ export function splitJot(text: string): { title: string; content: string } {
 }
 
 /**
- * Jot it down without leaving Home: the first line is the title, the rest
+ * Jot it down without leaving the Desk: the first line is the title, the rest
  * the note. ⌘/Ctrl+Enter adds it; it lands in the switcher's workspace and
  * appears on the sticky notes at once.
  */
