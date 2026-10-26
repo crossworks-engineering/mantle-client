@@ -8,10 +8,17 @@
  * - A change is saved SAVE_DELAY_MS after the last one: a drag or a resize
  *   is many changes and one save. `flush` sends what is waiting now (leaving
  *   the Desk, the tab hidden or closed: `keepalive`, so the request outlives
- *   the page).
+ *   the page), and resolves once the saver is idle, so the session switch
+ *   and the 401 bounce (web-ui session-flush, capped at a second) wait for
+ *   the save before the login changes.
  * - One save in flight at a time. A desk flushed while one is in flight
  *   waits for it, and only the latest waits: two saves never race, so an
- *   older desk can never land after a newer one.
+ *   older desk can never land after a newer one. Except on the way out: a
+ *   `keepalive` flush sends at once, beside the save in flight, since a desk
+ *   left waiting would die with the page.
+ * - A desk is sent only as the login it was changed as (`hooks.session`,
+ *   read at `save`): one waiting while the login changed (a switch, another
+ *   tab) is dropped, never sent with the next login's credential.
  * - A refusal stops the saver for good: `onRefused` is called once with the
  *   status. 403 (a brain that does not let this login save its desk): the
  *   hook keeps the desk in this browser's storage for the rest of the visit,
@@ -56,6 +63,10 @@ export type DeskSaverHooks = {
   /** A save landed: the brain's answer, and the `gen` of the desk it
    *  carried (older than `gen` now: a change came since). */
   onSaved?: (answer: unknown, gen: number) => void;
+  /** The login in use now. Read at each change and again before its desk is
+   *  sent: a desk whose login is no longer the one in use is dropped (its
+   *  waiters are told `status: null`). */
+  session?: () => string | null;
 };
 
 export type DeskSaver = {
@@ -63,8 +74,10 @@ export type DeskSaver = {
    *  told how the save that carried this desk (or a later one that replaced
    *  it before it was sent) ended. */
   save: (desk: DeskPrefs, onSettled?: (outcome: DeskSaveOutcome) => void) => void;
-  /** Send what is waiting now, if anything (after the save in flight). */
-  flush: (opts?: { keepalive?: boolean }) => void;
+  /** Send what is waiting now, if anything (after the save in flight, or
+   *  at once with `keepalive`). Resolves when the saver is idle: nothing in
+   *  flight and nothing queued. Never rejects. */
+  flush: (opts?: { keepalive?: boolean }) => Promise<void>;
   /** A desk is waiting to be sent. */
   readonly pending: boolean;
   /** A save is on its way to the brain. */
@@ -93,12 +106,13 @@ export function shellReadIsOld(readAt: number, now: number): boolean {
 /**
  * Whether the brain answered the move of this browser's desk up to the
  * profile, so it is never offered again: it landed (2xx), or it was refused
- * for good (400: not a desk the brain keeps; 401, 403: this login may not
- * save it). No answer (offline) or a 5xx: offered again on a later visit.
+ * for good (400: not a desk the brain keeps; 403: this login may not save
+ * it). No answer (offline), a 5xx or a 401 (the session expired, not a no
+ * to the desk): offered again on a later visit.
  */
 export function moveUpAnswered(status: number | null): boolean {
   if (status === null) return false;
-  return (status >= 200 && status < 300) || status === 400 || status === 401 || status === 403;
+  return (status >= 200 && status < 300) || status === 400 || status === 403;
 }
 
 /** The HTTP status of a failed request, when it names one. */
@@ -112,6 +126,8 @@ type Waiting = {
   desk: DeskPrefs;
   gen: number;
   keepalive: boolean;
+  /** The login the change was made as (`hooks.session`). */
+  session: string | null;
   settled: Array<(outcome: DeskSaveOutcome) => void>;
 };
 
@@ -124,7 +140,10 @@ export function createDeskSaver(
   let pending: Waiting | null = null;
   // Flushed while a save was in flight: sent when it settles.
   let queued: Waiting | null = null;
-  let inFlight = false;
+  // Saves on their way: one, or two when a keepalive flush went out beside it.
+  let inFlight = 0;
+  // Flushes waiting for the saver to go idle.
+  let idleWaiters: Array<() => void> = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   let warned = false;
@@ -151,8 +170,28 @@ export function createDeskSaver(
     for (const fn of w.settled) fn(outcome);
   };
 
+  const session = () => hooks.session?.() ?? null;
+
+  const idle = () => inFlight === 0 && queued === null;
+
+  const whenIdle = (): Promise<void> =>
+    idle() ? Promise.resolve() : new Promise((resolve) => idleWaiters.push(resolve));
+
+  const wakeIfIdle = () => {
+    if (!idle()) return;
+    const waiters = idleWaiters;
+    idleWaiters = [];
+    for (const fn of waiters) fn();
+  };
+
   const sendNow = (w: Waiting) => {
-    inFlight = true;
+    if (w.session !== session()) {
+      // The login changed since this desk was changed: never sent as the
+      // next one.
+      tell(w, { status: null });
+      return;
+    }
+    inFlight += 1;
     lastSync = Date.now();
     send(w.desk, { keepalive: w.keepalive }).then(
       (answer) => {
@@ -184,23 +223,32 @@ export function createDeskSaver(
   };
 
   const settle = () => {
-    inFlight = false;
-    const next = queued;
-    queued = null;
-    if (next && !stopped) sendNow(next);
+    inFlight -= 1;
+    if (inFlight === 0 && queued) {
+      const next = queued;
+      queued = null;
+      if (!stopped) sendNow(next);
+    }
+    wakeIfIdle();
   };
 
   const flush = (opts: { keepalive?: boolean } = {}) => {
     clearTimer();
+    const keepalive = opts.keepalive === true;
     const w = pending;
     pending = null;
-    if (!w || stopped) return;
-    const out = { ...w, keepalive: w.keepalive || opts.keepalive === true };
-    if (inFlight) {
-      queued = join(queued, out);
-      return;
+    if (!stopped) {
+      if (w && inFlight > 0 && !keepalive) {
+        queued = join(queued, w);
+      } else if (w || keepalive) {
+        // On the way out a queued desk goes too: the page may not outlive
+        // the save in flight.
+        const out = w ? join(queued, w) : queued;
+        queued = null;
+        if (out) sendNow({ ...out, keepalive: out.keepalive || keepalive });
+      }
     }
-    sendNow(out);
+    return whenIdle();
   };
 
   return {
@@ -211,6 +259,7 @@ export function createDeskSaver(
         desk,
         gen,
         keepalive: false,
+        session: session(),
         settled: onSettled ? [onSettled] : [],
       });
       clearTimer();
@@ -221,7 +270,7 @@ export function createDeskSaver(
       return pending !== null || queued !== null;
     },
     get inFlight() {
-      return inFlight;
+      return inFlight > 0;
     },
     get stopped() {
       return stopped;
@@ -230,26 +279,13 @@ export function createDeskSaver(
       return gen;
     },
     readStart() {
-      return pending === null && queued === null && !inFlight ? gen : null;
+      return pending === null && idle() ? gen : null;
     },
     readFresh(token) {
-      return (
-        token !== null &&
-        token === gen &&
-        !stopped &&
-        pending === null &&
-        queued === null &&
-        !inFlight
-      );
+      return token !== null && token === gen && !stopped && pending === null && idle();
     },
     needsRefresh(now) {
-      return (
-        !stopped &&
-        pending === null &&
-        queued === null &&
-        !inFlight &&
-        now - lastSync >= DESK_REFRESH_AFTER_MS
-      );
+      return !stopped && pending === null && idle() && now - lastSync >= DESK_REFRESH_AFTER_MS;
     },
     synced(now) {
       lastSync = now;

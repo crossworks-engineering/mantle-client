@@ -27,11 +27,14 @@ import { onSessionBounce } from './session-flush';
  * fire together on a normal tab close. Every caller's save already no-ops when
  * nothing changed, which is what makes that true.
  *
+ * `flush` may return a promise: the session bounce and a login switch wait
+ * for it (capped, see `session-flush.ts`) before the credential changes.
+ *
  * ⚠ `flush` should also clear its own debounce timer. It is called on paths
  * that are NOT unmount, where an armed timer would otherwise fire a redundant
  * save afterwards.
  */
-export function useFlushOnLeave(flush: () => void): void {
+export function useFlushOnLeave(flush: () => unknown): void {
   const flushRef = useRef(flush);
   flushRef.current = flush;
 

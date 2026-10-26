@@ -17,6 +17,7 @@ import {
   parseDesk,
   resizeWidget,
   roamingDesk,
+  STORED_COUNTS_MAX,
   STORED_ITEMS_MAX,
   tidy,
   withAutoHeights,
@@ -161,6 +162,8 @@ describe('a stored desk', () => {
     expect(out.items.map((i) => i.id)).toEqual(['clock', 'theme']);
     noOverlap(out.items);
     expect(out.counts).toEqual({ notes: KIND_COUNT_MAX, pages: 3 });
+    // A count this client does not know is carried through, never used.
+    expect(out.restCounts).toEqual({ bogus: 2 });
   });
 
   it('is null for anything that is not a desk', () => {
@@ -317,9 +320,43 @@ describe('widgets from a later build', () => {
     expect(deskToWire(desk).items).toHaveLength(STORED_ITEMS_MAX);
   });
 
+  it("carries counts it does not know through, within the brain's bounds", () => {
+    const desk = deskFrom({
+      ...later([]),
+      counts: {
+        notes: 4,
+        weather: 3,
+        'has space': 1,
+        ['k'.repeat(33)]: 1,
+        neg: -1,
+        half: 0.5,
+        far: 10_001,
+        text: 'x',
+      },
+    })!;
+    expect(desk.counts).toEqual({ notes: 4 });
+    expect(desk.restCounts).toEqual({ weather: 3 });
+    // A change here keeps them: the save carries every count.
+    const changed = { ...desk, counts: { notes: 6 } };
+    expect(deskToWire(changed).counts).toEqual({ notes: 6, weather: 3 });
+    expect(parseDesk(JSON.stringify(deskToWire(changed)))).toEqual(changed);
+  });
+
+  it("stops the counts at the brain's cap, known ones first", () => {
+    const counts: Record<string, number> = { notes: 4 };
+    for (let i = 0; i < STORED_COUNTS_MAX + 5; i += 1) counts[`later-${i}`] = 1;
+    const desk = deskFrom({ ...later([]), counts })!;
+    expect(desk.counts).toEqual({ notes: 4 });
+    expect(Object.keys(desk.restCounts ?? {})).toHaveLength(STORED_COUNTS_MAX - 1);
+    expect(
+      Object.keys(deskToWire({ ...desk, counts: { notes: 4, pages: 2 } }).counts),
+    ).toHaveLength(STORED_COUNTS_MAX);
+  });
+
   it('adds nothing to a desk without any', () => {
     const desk = defaultDesk(['notes']);
     expect(deskFrom(deskToWire(desk))).toEqual(desk);
     expect('rest' in deskFrom(deskToWire(desk))!).toBe(false);
+    expect('restCounts' in deskFrom(deskToWire(desk))!).toBe(false);
   });
 });

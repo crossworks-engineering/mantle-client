@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampedInt, oneOf, parseFlag, readStored, serialiseFlag } from './use-persisted-state';
+import { clampedInt, oneOf, parseFlag, decodeStored, serialiseFlag } from './use-persisted-state';
 
 /**
  * The pure core of the persisted-preference hook. The hook itself is three
@@ -7,25 +7,25 @@ import { clampedInt, oneOf, parseFlag, readStored, serialiseFlag } from './use-p
  * what a stored string means, and that needs no DOM to pin.
  */
 
-describe('readStored', () => {
+describe('decodeStored', () => {
   const parseView = oneOf('list', 'grid', 'dual');
 
   it('takes a recognised stored value', () => {
-    expect(readStored('grid', parseView, 'list')).toBe('grid');
-    expect(readStored('dual', parseView, 'list')).toBe('dual');
+    expect(decodeStored('grid', parseView, 'list')).toBe('grid');
+    expect(decodeStored('dual', parseView, 'list')).toBe('dual');
   });
 
   it('falls back when nothing is stored', () => {
-    expect(readStored(null, parseView, 'list')).toBe('list');
+    expect(decodeStored(null, parseView, 'list')).toBe('list');
   });
 
   // A value written by an older build, or edited by hand, must not become the
   // view. The old code did `stored === 'grid' ? 'grid' : …'list'`, which had
   // this property by accident; here it is the contract.
   it('falls back on a value it does not recognise', () => {
-    expect(readStored('tiles', parseView, 'list')).toBe('list');
-    expect(readStored('', parseView, 'list')).toBe('list');
-    expect(readStored('GRID', parseView, 'list')).toBe('list');
+    expect(decodeStored('tiles', parseView, 'list')).toBe('list');
+    expect(decodeStored('', parseView, 'list')).toBe('list');
+    expect(decodeStored('GRID', parseView, 'list')).toBe('list');
   });
 
   it('carries a non-string preference through its own parser', () => {
@@ -33,9 +33,9 @@ describe('readStored', () => {
       const n = Number(s);
       return Number.isFinite(n) && n > 0 ? n : null;
     };
-    expect(readStored('320', parseWidth, 240)).toBe(320);
-    expect(readStored('-1', parseWidth, 240)).toBe(240);
-    expect(readStored('wide', parseWidth, 240)).toBe(240);
+    expect(decodeStored('320', parseWidth, 240)).toBe(320);
+    expect(decodeStored('-1', parseWidth, 240)).toBe(240);
+    expect(decodeStored('wide', parseWidth, 240)).toBe(240);
   });
 });
 
@@ -62,13 +62,13 @@ describe('parseFlag / serialiseFlag', () => {
   });
 
   it('distinguishes a stored false from an absent key', () => {
-    // The whole reason parse returns null rather than false: `readStored` has
+    // The whole reason parse returns null rather than false: `decodeStored` has
     // to be able to tell "the user collapsed it" from "nothing is stored", and
     // for a flag whose fallback is true those are different screens.
     expect(parseFlag('0')).toBe(false);
     expect(parseFlag('')).toBeNull();
-    expect(readStored(null, parseFlag, true)).toBe(true);
-    expect(readStored('0', parseFlag, true)).toBe(false);
+    expect(decodeStored(null, parseFlag, true)).toBe(true);
+    expect(decodeStored('0', parseFlag, true)).toBe(false);
   });
 
   it('refuses anything that is not one of the two', () => {

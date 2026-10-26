@@ -6,6 +6,7 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { useFlushOnLeave } from '@mantle/web-ui/use-flush-on-leave';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { activeSession } from '@mantle/web-ui/session-registry';
 import {
   TREE_KIND_SPECS,
   type TreeItem,
@@ -94,9 +95,30 @@ function fetchShell(): Promise<Shell> {
 }
 
 /** Read the shell again now, through the shell query: a read already on its
- *  way (AppShell's own, on focus) is joined, never sent twice. */
-function readShellNow(qc: QueryClient): Promise<Shell> {
-  return qc.fetchQuery({ queryKey: SHELL_KEY, queryFn: fetchShell, staleTime: 0 });
+ *  way (AppShell's own, on focus) is joined, never sent twice. Sent even
+ *  offline (`networkMode: 'always'`): the query's default would pause it
+ *  until the network came back, and the Desk would wait on it; this way it
+ *  fails at once and the desk falls back to the copy in the cache. */
+export function readShellNow(qc: QueryClient): Promise<Shell> {
+  return qc.fetchQuery({
+    queryKey: SHELL_KEY,
+    queryFn: fetchShell,
+    staleTime: 0,
+    networkMode: 'always',
+  });
+}
+
+/** When the shell was last read from the brain, per query client: set by
+ *  `watchShell` on every read that lands, never by a write of our own
+ *  (setQueryData bumps `dataUpdatedAt`, so that cannot say how old the
+ *  brain's copy is). */
+const shellReads = new WeakMap<QueryClient, number>();
+
+/** When the shell was last read from the brain (0: never). Before the
+ *  watcher saw a read, the cached read's own time: nothing of ours wrote the
+ *  shell before the watcher started. */
+export function shellReadAt(qc: QueryClient): number {
+  return shellReads.get(qc) ?? qc.getQueryState(SHELL_KEY)?.dataUpdatedAt ?? 0;
 }
 
 /** PUT the desk to the login's profile. `keepalive` on the way out, so the
@@ -152,6 +174,9 @@ function visitFor(key: string, qc: QueryClient): DeskVisit {
         visit.view?.refused();
       },
       onFailed: () => visit.warn(),
+      // A desk is saved only as the login it was changed as: a switch (or
+      // another tab's) between the change and the send drops it.
+      session: () => activeSession()?.id ?? null,
       onSaved: (answer, gen) => {
         // The brain's copy of the desk it kept, into the shell; unless a
         // change came since, which the shell already holds.
@@ -189,21 +214,25 @@ const watched = new WeakSet<QueryClient>();
  * time). A fresh read with a desk in it (arranged on another device, say)
  * is shown. Once per query client, for the visit.
  */
-function watchShell(qc: QueryClient) {
+export function watchShell(qc: QueryClient) {
   if (watched.has(qc)) return;
   watched.add(qc);
+  const first = qc.getQueryState(SHELL_KEY);
+  if (first?.dataUpdatedAt) shellReads.set(qc, first.dataUpdatedAt);
   let token: number | null = null;
   qc.getQueryCache().subscribe((event) => {
     if (event.type !== 'updated' || !isShellKey(event.query.queryKey)) return;
+    const { action } = event;
+    // `manual`: a write of our own (setQueryData), not a read.
+    const landed = action.type === 'success' && !action.manual;
+    if (landed) shellReads.set(qc, event.query.state.dataUpdatedAt);
     const visit = activeKey ? visits.get(activeKey) : undefined;
     if (!visit) return;
-    const { action } = event;
     if (action.type === 'fetch') {
       token = visit.saver.readStart();
       return;
     }
-    // `manual`: a write of our own (setQueryData), not a read.
-    if (action.type !== 'success' || action.manual) return;
+    if (!landed) return;
     if (!visit.roamed || visit.refused) return;
     const fresh = event.query.state.data as Shell | undefined;
     if (!fresh) return;
@@ -292,7 +321,8 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
   );
 
   // Every way out (leaving the Desk, the tab hidden or closed, the session
-  // ending): what is still waiting is saved now, not dropped.
+  // ending): what is still waiting is saved now, not dropped. The promise
+  // lets a session switch wait for the save before the login changes.
   useFlushOnLeave(() => visit?.saver.flush({ keepalive: true }));
 
   useEffect(() => {
@@ -330,7 +360,7 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
       visit.saver.flush();
     };
     const first = plan();
-    const readAt = qc.getQueryState(SHELL_KEY)?.dataUpdatedAt ?? 0;
+    const readAt = shellReadAt(qc);
     if (!first.upload && !shellReadIsOld(readAt, Date.now())) {
       show(first.prefs);
       return;

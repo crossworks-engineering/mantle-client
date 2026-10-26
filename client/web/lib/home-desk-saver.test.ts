@@ -146,22 +146,108 @@ describe('the desk saver', () => {
     saver.save(desk('digital', 2));
     saver.flush();
     saver.save(desk('analog', 3));
-    saver.flush({ keepalive: true });
+    saver.flush();
     // Nothing more goes out while the first is on its way.
     expect(calls).toHaveLength(1);
     expect(saver.pending).toBe(true);
     answers[0]!({});
     await vi.advanceTimersByTimeAsync(0);
-    // Then the latest alone, with the keepalive one flush asked for.
+    // Then the latest alone.
     expect(calls).toEqual([
       { desk: desk('digital', 1), keepalive: false },
-      { desk: desk('analog', 3), keepalive: true },
+      { desk: desk('analog', 3), keepalive: false },
     ]);
     answers[1]!({});
     await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
     expect(calls).toHaveLength(2);
     expect(saver.inFlight).toBe(false);
     expect(saver.pending).toBe(false);
+  });
+
+  it('sends at once on the way out, with a save in flight: nothing dies with the page', async () => {
+    const answers: Array<(v: unknown) => void> = [];
+    const { send, calls } = sender(() => new Promise((resolve) => answers.push(resolve)));
+    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
+    saver.save(desk('digital', 1));
+    saver.flush();
+    // A desk queued behind the save in flight, then a newer one waiting.
+    saver.save(desk('digital', 2));
+    saver.flush();
+    saver.save(desk('analog', 3));
+    saver.flush({ keepalive: true });
+    expect(calls).toEqual([
+      { desk: desk('digital', 1), keepalive: false },
+      { desk: desk('analog', 3), keepalive: true },
+    ]);
+    expect(saver.pending).toBe(false);
+    // A queued desk alone goes too, when nothing newer is waiting.
+    saver.save(desk('digital', 4));
+    saver.flush();
+    expect(calls).toHaveLength(2);
+    saver.flush({ keepalive: true });
+    expect(calls[2]).toEqual({ desk: desk('digital', 4), keepalive: true });
+    for (const answer of answers) answer({});
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
+    expect(calls).toHaveLength(3);
+    expect(saver.inFlight).toBe(false);
+  });
+
+  it('flush resolves once the saver is idle, the queued desk sent', async () => {
+    const answers: Array<(v: unknown) => void> = [];
+    const { send, calls } = sender(() => new Promise((resolve) => answers.push(resolve)));
+    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
+    await expect(saver.flush()).resolves.toBeUndefined(); // idle: at once
+    saver.save(desk('digital', 1));
+    void saver.flush();
+    saver.save(desk('digital', 2));
+    let done = false;
+    void saver.flush().then(() => {
+      done = true;
+    });
+    answers[0]!({});
+    await vi.advanceTimersByTimeAsync(0);
+    // The first landed; the queued one is on its way now.
+    expect(calls).toHaveLength(2);
+    expect(done).toBe(false);
+    answers[1]!({});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toBe(true);
+  });
+
+  it('never sends a desk once the login changed: dropped, and told so', async () => {
+    const answers: Array<(v: unknown) => void> = [];
+    const { send, calls } = sender(() => new Promise((resolve) => answers.push(resolve)));
+    let login: string | null = 'a';
+    const saver = createDeskSaver(send, {
+      onRefused: vi.fn(),
+      onFailed: vi.fn(),
+      session: () => login,
+    });
+    saver.save(desk('digital', 1));
+    void saver.flush();
+    const queuedTold = vi.fn();
+    saver.save(desk('digital', 2), queuedTold);
+    const idle = saver.flush();
+    // A switch: the save in flight lands after the login changed.
+    login = 'b';
+    answers[0]!({});
+    await idle;
+    expect(calls).toHaveLength(1);
+    expect(queuedTold).toHaveBeenCalledWith({ status: null });
+    expect(saver.pending).toBe(false);
+    expect(saver.inFlight).toBe(false);
+    // Nor a desk changed as one login and flushed as another.
+    login = 'c';
+    const waitingTold = vi.fn();
+    saver.save(desk('analog', 3), waitingTold);
+    login = 'd';
+    await saver.flush({ keepalive: true });
+    expect(calls).toHaveLength(1);
+    expect(waitingTold).toHaveBeenCalledWith({ status: null });
+    // A change as the login in use is sent.
+    saver.save(desk('analog', 4));
+    void saver.flush();
+    expect(calls).toHaveLength(2);
   });
 
   it('tells each save how it ended, the replaced ones by the save that carried them', async () => {
@@ -253,8 +339,9 @@ describe('reading the desk again', () => {
   });
 
   it('marks the move up done only when the brain answered it', () => {
-    for (const s of [200, 204, 400, 401, 403]) expect(moveUpAnswered(s), String(s)).toBe(true);
-    for (const s of [null, 404, 409, 413, 429, 500, 502, 503]) {
+    for (const s of [200, 204, 400, 403]) expect(moveUpAnswered(s), String(s)).toBe(true);
+    // 401: the session expired, not an answer about the desk.
+    for (const s of [null, 401, 404, 409, 413, 429, 500, 502, 503]) {
       expect(moveUpAnswered(s), String(s)).toBe(false);
     }
   });
