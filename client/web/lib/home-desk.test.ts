@@ -12,6 +12,7 @@ import {
   overlaps,
   parseDesk,
   resizeWidget,
+  roamingDesk,
   tidy,
   withAutoHeights,
   withPins,
@@ -180,5 +181,53 @@ describe('a kind widget', () => {
     expect(deskItemHref('pages', 'a b')).toBe('/pages/a%20b');
     expect(deskItemHref('apps', 'x')).toBe('/apps/x');
     expect(deskItemHref('files', 'x')).toBeNull();
+  });
+});
+
+describe('the desk on the profile', () => {
+  const kinds = ['notes', 'pages', 'tasks'] as const;
+  const mine = {
+    ...defaultDesk([...kinds]),
+    items: [{ id: 'clock' as const, x: 4, y: 1, w: 3, h: 2 }],
+    clock: 'analog' as const,
+  };
+  const here = {
+    ...defaultDesk([...kinds]),
+    items: [{ id: 'theme' as const, x: 0, y: 0, w: 4, h: 2 }],
+  };
+
+  it("shows the profile's desk and leaves this browser's copy behind", () => {
+    expect(roamingDesk(mine, JSON.stringify(here), kinds)).toEqual({
+      prefs: mine,
+      upload: false,
+    });
+  });
+
+  it("moves this browser's desk up to an empty profile, once", () => {
+    const first = roamingDesk(null, JSON.stringify(here), kinds);
+    expect(first).toEqual({ prefs: here, upload: true });
+    // Saved: the next visit finds the profile's desk and moves nothing.
+    expect(roamingDesk(first.prefs, JSON.stringify(here), kinds).upload).toBe(false);
+  });
+
+  it('lays out the default, unsaved, when neither has a desk', () => {
+    expect(roamingDesk(null, null, kinds)).toEqual({
+      prefs: defaultDesk([...kinds]),
+      upload: false,
+    });
+    expect(roamingDesk(null, '{"v":1,', kinds).upload).toBe(false);
+  });
+
+  it('moves nothing over a profile desk it cannot read', () => {
+    // A desk from a later client's format: not ours to replace unasked.
+    expect(roamingDesk({ v: 2, items: [] }, JSON.stringify(here), kinds)).toEqual({
+      prefs: defaultDesk([...kinds]),
+      upload: false,
+    });
+  });
+
+  it("drops the profile desk's widgets this client does not know, one by one", () => {
+    const later = { ...mine, items: [...mine.items, { id: 'weather', x: 0, y: 6, w: 3, h: 2 }] };
+    expect(roamingDesk(later, null, kinds).prefs.items).toEqual(mine.items);
   });
 });

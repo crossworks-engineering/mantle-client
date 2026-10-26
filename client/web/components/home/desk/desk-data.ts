@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useQueries, useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
 import {
   TREE_KIND_SPECS,
@@ -15,7 +16,14 @@ import type { HubData } from '@mantle/share-ui/app-bridge-protocol';
 import type { Shell } from '@/lib/contract/shell';
 import { fetchFolderPage, fetchMarks, folderKey, marksKey } from '@/components/item-tree/tree-api';
 import { treeKindsOf } from '@/components/item-tree/use-tree-kinds';
-import { DESK_KINDS, defaultDesk, deskItemsFor, parseDesk, type DeskPrefs } from '@/lib/home-desk';
+import {
+  DESK_KINDS,
+  defaultDesk,
+  deskItemsFor,
+  parseDesk,
+  roamingDesk,
+  type DeskPrefs,
+} from '@/lib/home-desk';
 
 /**
  * The desk's data: the login it belongs to, where it is kept, and what each
@@ -60,43 +68,108 @@ function storage(): Storage | null {
   }
 }
 
+/** How long the desk waits after the last change before saving it: a drag
+ *  or a resize is many changes and one save. */
+const SAVE_DELAY_MS = 800;
+
 /**
- * The login's desk, kept in this browser like the rail width or the last
- * opened item (a per-device convenience: the person's desk on this
- * machine). Null until the shell names the login and storage has been read,
- * which only happens after hydration, so the server and the first client
- * render agree. Blocked or junk storage falls back to the default desk.
+ * The login's desk, and the two ways to change it.
+ *
+ * Kept on the LOGIN's profile (PUT /api/profile/home-desk, read back in GET
+ * /api/shell as `homeDesk`), so the desk follows the person to another
+ * browser, another machine and the desktop app, as nav favourites do. A
+ * change shows at once and is saved a moment later (SAVE_DELAY_MS); leaving
+ * Home saves what is still waiting. The first visit to a brain that keeps
+ * the desk moves a desk this browser kept before up to an empty profile,
+ * once (lib/home-desk `roamingDesk`).
+ *
+ * A brain on an older release doesn't send `homeDesk` at all. Against one of
+ * those the desk stays in this browser's storage, per brain and per login,
+ * as it was. Null until the shell names the login and the desk has been
+ * read, which only happens after hydration, so the server and the first
+ * client render agree. Blocked or junk storage falls back to the default.
  */
 export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] | null) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const shell = useDeskShell();
   const key = loginId ? deskStorageKey(brain(), loginId) : null;
+  // Null until the shell lands; false on a brain that predates the roaming desk.
+  const roams = shell.data ? 'homeDesk' in shell.data : null;
   const [prefs, setPrefs] = useState<DeskPrefs | null>(null);
+  // The desk as last set, for `update` to build on outside a state updater
+  // (a save touches the shell query, which must not happen mid-render).
+  const current = useRef<DeskPrefs | null>(null);
+  const pending = useRef<DeskPrefs | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const kindsKey = kinds ? kinds.join(',') : null;
 
+  const flush = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const desk = pending.current;
+    pending.current = null;
+    if (!desk) return;
+    apiSend('/api/profile/home-desk', 'PUT', { homeDesk: desk }).catch(() => {
+      toast.error('Could not save your desk');
+    });
+  }, [toast]);
+
+  const save = useCallback(
+    (desk: DeskPrefs) => {
+      // The shell's copy at once: Home opened again this visit starts from it.
+      qc.setQueryData<Shell>(['shell'], (d) => (d ? { ...d, homeDesk: desk } : d));
+      pending.current = desk;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(flush, SAVE_DELAY_MS);
+    },
+    [qc, flush],
+  );
+
+  // Leaving Home: what is still waiting is saved now, not dropped.
+  useEffect(() => flush, [flush]);
+
   useEffect(() => {
-    if (!key || kindsKey === null) return;
+    if (!key || kindsKey === null || roams === null) return;
+    const kindList = kindsKey ? (kindsKey.split(',') as TreeKind[]) : [];
     let stored: string | null;
     try {
       stored = storage()?.getItem(key) ?? null;
     } catch {
       stored = null;
     }
-    setPrefs(parseDesk(stored) ?? defaultDesk(kindsKey ? (kindsKey.split(',') as TreeKind[]) : []));
-  }, [key, kindsKey]);
+    if (!roams) {
+      current.current = parseDesk(stored) ?? defaultDesk(kindList);
+      setPrefs(current.current);
+      return;
+    }
+    // Read from the cache, not a dependency: a save writes it, and that must
+    // not lay the desk out again.
+    const profile = qc.getQueryData<Shell>(['shell'])?.homeDesk ?? null;
+    const { prefs: desk, upload } = roamingDesk(profile, stored, kindList);
+    current.current = desk;
+    setPrefs(desk);
+    if (upload) save(desk);
+  }, [key, kindsKey, roams, qc, save]);
 
   const update = useCallback(
     (fn: (p: DeskPrefs) => DeskPrefs) => {
-      setPrefs((prev) => {
-        if (!prev) return prev;
-        const next = fn(prev);
-        try {
-          if (key) storage()?.setItem(key, JSON.stringify(next));
-        } catch {
-          // Quota or blocked storage: the desk holds for this visit only.
-        }
-        return next;
-      });
+      const prev = current.current;
+      if (!prev) return;
+      const next = fn(prev);
+      current.current = next;
+      setPrefs(next);
+      if (roams) {
+        save(next);
+        return;
+      }
+      try {
+        if (key) storage()?.setItem(key, JSON.stringify(next));
+      } catch {
+        // Quota or blocked storage: the desk holds for this visit only.
+      }
     },
-    [key],
+    [key, roams, save],
   );
 
   const reset = useCallback(() => {

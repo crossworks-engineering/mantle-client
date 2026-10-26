@@ -332,6 +332,11 @@ export function parseDesk(raw: string | null): DeskPrefs | null {
   } catch {
     return null;
   }
+  return deskFrom(data);
+}
+
+/** `parseDesk` for a value already parsed (the profile's, from the shell). */
+export function deskFrom(data: unknown): DeskPrefs | null {
   if (!data || typeof data !== 'object' || (data as { v?: unknown }).v !== 1) return null;
   const d = data as Record<string, unknown>;
   if (!Array.isArray(d.items)) return null;
@@ -364,6 +369,28 @@ export function parseDesk(raw: string | null): DeskPrefs | null {
     icons: d.icons !== false,
     clock: d.clock === 'analog' ? 'analog' : 'digital',
   };
+}
+
+/**
+ * The desk to show on a brain that keeps it on the login's profile, and
+ * whether to save it there now.
+ *
+ * The profile's desk wins whenever there is one (arranged on another device,
+ * say), and this browser's copy is just retired. Only into an EMPTY profile
+ * (`profile` null: never saved) does a desk this browser kept before the
+ * desk roamed move up, once: after that save the profile has one. Neither:
+ * the default desk, saved only when the person first changes it.
+ */
+export function roamingDesk(
+  profile: unknown,
+  local: string | null,
+  kinds: readonly TreeKind[],
+): { prefs: DeskPrefs; upload: boolean } {
+  const fromProfile = profile == null ? null : deskFrom(profile);
+  if (fromProfile) return { prefs: fromProfile, upload: false };
+  const fromHere = profile === null ? parseDesk(local) : null;
+  if (fromHere) return { prefs: fromHere, upload: true };
+  return { prefs: defaultDesk(kinds), upload: false };
 }
 
 // ── What a kind widget lists ───────────────────────────────────────────────
