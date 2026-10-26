@@ -5,14 +5,19 @@ import {
   addWidget,
   defaultDesk,
   deskBottom,
+  deskFrom,
+  deskFromRead,
   deskItemHref,
   deskItemsFor,
+  deskRoams,
+  deskToWire,
   firstFree,
   moveWidget,
   overlaps,
   parseDesk,
   resizeWidget,
   roamingDesk,
+  STORED_ITEMS_MAX,
   tidy,
   withAutoHeights,
   withPins,
@@ -236,8 +241,85 @@ describe('the desk on the profile', () => {
     });
   });
 
-  it("drops the profile desk's widgets this client does not know, one by one", () => {
+  it("does not draw the profile desk's widgets this client does not know", () => {
     const later = { ...mine, items: [...mine.items, { id: 'weather', x: 0, y: 6, w: 3, h: 2 }] };
     expect(roamingDesk(later, null, kinds).prefs.items).toEqual(mine.items);
+  });
+
+  it('keeps roaming for the visit once it roamed, whatever a later read leaves out', () => {
+    expect(deskRoams(true, false, false)).toBe(true);
+    // An older brain, or the first read could not read the row: local.
+    expect(deskRoams(false, false, false)).toBe(false);
+    // Roamed earlier this visit: a read without the desk changes nothing.
+    expect(deskRoams(false, true, false)).toBe(true);
+    // A refusal (403) keeps it in this browser, roamed or not.
+    expect(deskRoams(true, true, true)).toBe(false);
+  });
+
+  it('keeps the desk on show for a read without a desk it can use', () => {
+    expect(deskFromRead({ navFavorites: [] })).toBe('keep');
+    expect(deskFromRead({ homeDesk: null })).toBe('keep');
+    expect(deskFromRead({ homeDesk: { v: 2, items: [] } })).toBe('keep');
+    expect(deskFromRead({ homeDesk: mine })).toEqual({ show: mine });
+  });
+});
+
+describe('widgets from a later build', () => {
+  const later = (items: unknown[]) => ({
+    v: 1,
+    items: [{ id: 'clock', x: 0, y: 0, w: 3, h: 2 }, ...items],
+    counts: {},
+    icons: true,
+    clock: 'digital',
+  });
+  const weather = { id: 'weather', x: 0, y: 6, w: 3, h: 2 };
+
+  it('carries them through untouched, never drawn, and saves them back', () => {
+    const desk = deskFrom(later([weather, { id: 'kind:maps', x: 4, y: 6, w: 5, h: 20 }]))!;
+    expect(desk.items.map((i) => i.id)).toEqual(['clock']);
+    expect(desk.rest).toEqual([weather, { id: 'kind:maps', x: 4, y: 6, w: 5, h: 20 }]);
+    // A change here keeps them: the save carries every widget.
+    const moved = { ...desk, items: moveWidget(desk.items, 'clock', 4, 0) };
+    expect(deskToWire(moved).items).toEqual([
+      { id: 'clock', x: 4, y: 0, w: 3, h: 2 },
+      weather,
+      { id: 'kind:maps', x: 4, y: 6, w: 5, h: 20 },
+    ]);
+    expect(parseDesk(JSON.stringify(deskToWire(moved)))).toEqual(moved);
+  });
+
+  it("carries only what the brain would keep, within the brain's bounds", () => {
+    const desk = deskFrom(
+      later([
+        { id: 'w\u00e9ather', x: 0, y: 0, w: 1, h: 1 },
+        { id: 'has space', x: 0, y: 0, w: 1, h: 1 },
+        { id: 'x'.repeat(161), x: 0, y: 0, w: 1, h: 1 },
+        { id: 'neg', x: -1, y: 0, w: 1, h: 1 },
+        { id: 'half', x: 0.5, y: 0, w: 1, h: 1 },
+        { id: 'far', x: 0, y: 10_001, w: 1, h: 1 },
+        weather,
+        { ...weather, x: 9 },
+      ]),
+    )!;
+    expect(desk.rest).toEqual([weather]);
+  });
+
+  it('stops at the cap, drawn and carried together', () => {
+    const many = Array.from({ length: STORED_ITEMS_MAX + 10 }, (_, i) => ({
+      id: `later-${i}`,
+      x: 0,
+      y: i,
+      w: 1,
+      h: 1,
+    }));
+    const desk = deskFrom(later(many))!;
+    expect(desk.items.length + (desk.rest?.length ?? 0)).toBe(STORED_ITEMS_MAX);
+    expect(deskToWire(desk).items).toHaveLength(STORED_ITEMS_MAX);
+  });
+
+  it('adds nothing to a desk without any', () => {
+    const desk = defaultDesk(['notes']);
+    expect(deskFrom(deskToWire(desk))).toEqual(desk);
+    expect('rest' in deskFrom(deskToWire(desk))!).toBe(false);
   });
 });

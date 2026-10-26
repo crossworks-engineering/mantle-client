@@ -8,7 +8,7 @@
  *
  * A verbatim copy of mantle packages/client-types/src/dto/shell.ts (brain
  * W8 integration, b36d4a44a: no client role; homeDesk, mantle
- * feat/home-desk-pref fix round 1: optional). Replace the copy by hand when the
+ * feat/home-desk-pref fix round 2: optional). Replace the copy by hand when the
  * brain's file changes. One line differs: the brain's `../tree` is the
  * published package's `@mantle/client-types/tree` here (the same TreeKind
  * list).
@@ -23,7 +23,7 @@ export type ShellRole = 'admin' | 'member';
 export type ShellFeatures = { recallV2: boolean };
 
 /**
- * The login's Home desk: where each widget and desk icon sits on the
+ * The login's Desk: where each widget and desk icon sits on the
  * client's grid, and the desk's few settings. The CLIENT owns the meaning
  * (which ids exist, each widget's bounds); the brain only keeps the shape
  * sound and the size bounded (projectHomeDesk), so a new widget needs no
@@ -70,7 +70,7 @@ export type Shell = {
   email: string | null;
   /** The login's starred screens. [] when none. */
   navFavorites: string[];
-  /** The login's Home desk; null until one is saved (the client lays out its
+  /** The login's Desk; null until one is saved (the client lays out its
    *  default). Absent from a brain that predates saving it, and when the
    *  brain could not read the login's own row this time (never read as
    *  "never saved": the client keeps its local desk for that visit). */
