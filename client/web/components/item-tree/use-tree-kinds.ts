@@ -68,3 +68,17 @@ export function useReaderTreeServes(kind: TreeKind | null): boolean | undefined 
 export function treeKindOfItem(nodeType: string): TreeKind | null {
   return TREE_KINDS.find((k) => TREE_KIND_SPECS[k].nodeType === nodeType) ?? null;
 }
+
+/** Whether this brain serves the tree's custom order (`features.treeCustomOrder`
+ *  on /api/shell): the `custom` sort and placing items. False until the shell
+ *  is known, and from a brain before it, which refuses `sort=custom`. */
+export function useTreeCustomOrder(): boolean {
+  const { data } = useQuery({
+    queryKey: ['shell'],
+    queryFn: () => apiFetch<Shell>('/api/shell'),
+    enabled: false,
+    select: (d: Shell) =>
+      (d.features as { treeCustomOrder?: unknown } | undefined)?.treeCustomOrder === true,
+  });
+  return data === true;
+}

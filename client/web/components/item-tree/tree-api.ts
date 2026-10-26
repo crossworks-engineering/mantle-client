@@ -15,9 +15,9 @@ import type {
   TreeMarkList,
   TreeMarkView,
   TreeSearchResult,
-  TreeSort,
   TreeTagList,
 } from '@mantle/web-ui/types/tree';
+import type { TreeOrder } from './tree-model';
 
 /**
  * Who the tree is read as: since workspaces W6b every login reads and writes
@@ -44,7 +44,7 @@ export const treeKey = (kind: TreeKind, source: TreeSource = 'owner') =>
 export const folderKey = (
   kind: TreeKind,
   folderId: string | null,
-  sort: TreeSort,
+  sort: TreeOrder,
   source: TreeSource = 'owner',
   ws: string | null = null,
 ) => ['tree', treeScope(kind, source), 'folder', folderId ?? 'root', sort, ws ?? 'all'] as const;
@@ -75,7 +75,7 @@ function query(params: Record<string, string | null | undefined>): string {
 export function folderUrl(
   kind: TreeKind,
   folderId: string | null,
-  sort: TreeSort,
+  sort: TreeOrder,
   cursor: string | null,
   source: TreeSource = 'owner',
   ws: string | null = null,
@@ -113,7 +113,7 @@ export function marksUrl(kind: TreeKind, view: TreeMarkView): string {
 export const fetchFolderPage = (
   kind: TreeKind,
   folderId: string | null,
-  sort: TreeSort,
+  sort: TreeOrder,
   cursor: string | null,
   source: TreeSource = 'owner',
   ws: string | null = null,
@@ -241,6 +241,12 @@ export const moveTreeItems = (
     folderId,
     ...(confirm ? { confirm: true, ...(seen !== undefined ? { seen } : {}) } : {}),
   });
+
+/** Put an item in its folder's custom order, right after another item of
+ *  that folder (null = first). One order for everyone: Write on the folder
+ *  (an Admin at the top level), else a 403 in the brain's words. */
+export const placeTreeItem = (kind: TreeKind, id: string, after: string | null) =>
+  apiSend<{ ok: true }>(`${BASE.owner}/${kind}/place`, 'POST', { id, after });
 
 export const setTreeItemPinned = (id: string, pinned: boolean) =>
   apiSend<{ ok: true }>(`/api/tree/items/${id}/pin`, 'PUT', { pinned });

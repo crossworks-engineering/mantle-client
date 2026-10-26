@@ -74,7 +74,6 @@ import {
   type TreeFolderPage,
   type TreeItem,
   type TreeKind,
-  type TreeSort,
 } from '@mantle/web-ui/types/tree';
 import { AppLookPicker } from '@/components/app-nav/app-look-picker';
 import { DeleteFolderDialog, FolderNameDialog } from '@/components/app-nav/folder-dialogs';
@@ -93,6 +92,7 @@ import {
   marksKey,
   moveTreeItems,
   patchTreeFolder,
+  placeTreeItem,
   recordTreeItemOpened,
   searchKey,
   setTreeItemPinned,
@@ -106,6 +106,7 @@ import {
   TreeContext,
   type DragData,
   type DropHint,
+  type ItemOrder,
   type ItemWhere,
   type TreeCtx,
 } from './tree-context';
@@ -118,11 +119,14 @@ import {
   isOnTheWayTo,
   folderManaged,
   itemMovable,
+  itemPlaceAt,
   pickedAfterMove,
   rangeOfItems,
   refreshFor,
+  type TreeOrder,
   type TreeRow,
 } from './tree-model';
+import { useTreeCustomOrder } from './use-tree-kinds';
 import {
   FolderHitRow,
   FolderTile,
@@ -163,7 +167,8 @@ const VIEWS: Array<{ id: View; label: string }> = [
   { id: 'used', label: 'Most used' },
   { id: 'az', label: 'A to Z' },
 ];
-const SORT_LABEL: Record<TreeSort, string> = {
+const SORT_LABEL: Record<TreeOrder, string> = {
+  custom: 'Custom order',
   name: 'Name',
   updated: 'Last changed',
   start: 'Start',
@@ -313,11 +318,21 @@ export function ItemTree({
   // the tree mounted, so they keep the view.
   const [chosenView, setView] = useState<View>('tree');
   const view: View = views.some((v) => v.id === chosenView) ? chosenView : 'tree';
-  const [sort, setSort] = usePersistedState<TreeSort>(
-    `mantle_tree_sort_v1:${scope}`,
-    spec.sorts[0]!,
-    (s) => (spec.sorts.includes(s as TreeSort) ? (s as TreeSort) : null),
+  // The custom order first, from a brain that serves it (one order for
+  // everyone, set by dragging; an unordered folder lists as before). The
+  // choice is this browser's; v2 of the key so every tree opens on the
+  // custom order once.
+  const customOrder = useTreeCustomOrder();
+  const sorts: readonly TreeOrder[] = [
+    ...(customOrder ? (['custom'] as const) : []),
+    ...(spec.sorts as readonly TreeOrder[]).filter((s) => s !== 'custom'),
+  ];
+  const [chosenSort, setSort] = usePersistedState<TreeOrder>(
+    `mantle_tree_sort_v2:${scope}`,
+    'custom',
+    (s) => (s === 'custom' || spec.sorts.includes(s as never) ? (s as TreeOrder) : null),
   );
+  const sort: TreeOrder = sorts.includes(chosenSort) ? chosenSort : sorts[0]!;
   const [open, setOpen] = useOpenFolders(scope);
   // Show or hide the share pills (task ca907a89): one choice for every tree,
   // per login, kept in this browser. Hidden by default: each workspace's icon
@@ -345,6 +360,8 @@ export function ItemTree({
   // time would quietly hide things.
   const [filter, setFilter] = useState<TreeFilter>({});
   const filtering = filter.tag !== undefined;
+  // The tree lists items in their folder's custom order: their rows place.
+  const ordering = sort === 'custom' && view === 'tree' && !searching && !filtering;
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const tagsQ = useQuery({
     queryKey: tagsKey(kind, ws),
@@ -691,6 +708,18 @@ export function ItemTree({
       { action, verb: 'Move' },
     );
 
+  /** Put an item right after `after` in its folder's custom order (null =
+   *  first). The brain refuses (403, in its words) a login that may not
+   *  order the folder; the tree refetches on its `tree` event either way. */
+  const placeItem = async (item: TreeItem, after: string | null) => {
+    try {
+      await placeTreeItem(kind, item.id, after);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : `Could not move the ${adapter.noun.one}`);
+    }
+  };
+
   /** What a move of `item` carries: the whole pick when it is part of it. */
   const carried = (item: TreeItem): TreeItem[] =>
     picked.has(item.id) && picked.size > 1 ? [...picked.values()] : [item];
@@ -717,9 +746,20 @@ export function ItemTree({
   const NewItemIcon =
     newItemInFolder?.icon ?? (spec.nodeType === 'table' ? Table2 : nodeTypeIcon(spec.nodeType));
   const folderMenu = manage
-    ? (folder: TreeFolder, _parent: TreeFolder | null, siblings: TreeFolder[]) => {
+    ? (
+        folder: TreeFolder,
+        _parent: TreeFolder | null,
+        siblings: TreeFolder[],
+        mayOrder?: boolean,
+      ) => {
         const up = afterForStep(siblings, folder.id, -1);
         const down = afterForStep(siblings, folder.id, 1);
+        // A folder's place among its siblings, one order for everyone: Write
+        // on it and on the folder that holds it (an Admin at the top level),
+        // as the brain asks. A brain before the custom order: its Moderators.
+        const orderable =
+          !folder.system &&
+          (customOrder ? mayOrder === true && itemAccess(folder).edit : itemAccess(folder).manage);
         const newInside = newInsideEntry(folder, { manage, newItemInFolder });
         return (
           <DropdownMenuContent
@@ -773,7 +813,7 @@ export function ItemTree({
                 Move to…
               </DropdownMenuItem>
             )}
-            {owner && itemAccess(folder).manage && (
+            {orderable && (
               <>
                 <DropdownMenuItem
                   disabled={up === undefined}
@@ -806,8 +846,12 @@ export function ItemTree({
     : undefined;
 
   const itemMenu = manage
-    ? (item: TreeItem, where: ItemWhere) => {
+    ? (item: TreeItem, where: ItemWhere, order?: ItemOrder) => {
         const extra = itemActions?.(item, where);
+        // Its place in the folder's custom order, by the keyboard too.
+        const placing = ordering && order?.mayOrder === true;
+        const up = placing ? afterForStep(order!.siblings, item.id, -1) : undefined;
+        const down = placing ? afterForStep(order!.siblings, item.id, 1) : undefined;
         return (
           <DropdownMenuContent align="start" side="right" className="w-52">
             <DropdownMenuItem onSelect={() => openItem(item, where)}>Open</DropdownMenuItem>
@@ -838,6 +882,22 @@ export function ItemTree({
                 </DropdownMenuItem>
               </>
             )}
+            {placing && (
+              <>
+                <DropdownMenuItem
+                  disabled={up === undefined}
+                  onSelect={() => up !== undefined && void placeItem(item, up)}
+                >
+                  Move up
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={down === undefined}
+                  onSelect={() => down !== undefined && void placeItem(item, down)}
+                >
+                  Move down
+                </DropdownMenuItem>
+              </>
+            )}
             {extra && (
               <>
                 <DropdownMenuSeparator />
@@ -861,16 +921,31 @@ export function ItemTree({
     const o = over?.data.current as DragData | undefined;
     if (!over || !rect || !a || !o || a.type === 'root') return null;
     const overId = String(over.id);
+    const rel = (rect.top + rect.height / 2 - over.rect.top) / over.rect.height;
+    // A dragged item may only be placed (no move), a folder only ordered
+    // among its siblings (no move), when the login's caps allow no more.
+    const movesItem = a.type === 'item' && canMove(a.item);
+    const movesFolder = a.type === 'folder' && folderManaged(a.folder);
     if (o.type === 'root') {
-      return a.parent === null ? null : { over: overId, pos: 'inside' };
+      return a.parent === null || !(movesItem || movesFolder)
+        ? null
+        : { over: overId, pos: 'inside' };
+    }
+    if (o.type === 'item') {
+      if (a.type !== 'item' || !ordering) return null;
+      const pos = itemPlaceAt(a, o, rel, carried(a.item).length);
+      return pos ? { over: overId, pos } : null;
     }
     if (o.type !== 'folder') return null;
-    const rel = (rect.top + rect.height / 2 - over.rect.top) / over.rect.height;
     const pos = dropPosition(rel, a.type);
     if (a.type === 'item') {
-      return a.parent?.id === o.folder.id ? null : { over: overId, pos };
+      return a.parent?.id === o.folder.id || !movesItem ? null : { over: overId, pos };
     }
     if (a.folder.id === o.folder.id || isAtOrBelow(o.folder.path, a.folder.path)) return null;
+    if (!movesFolder && (pos === 'inside' || o.parent?.id !== a.parent?.id)) return null;
+    // A place beside a sibling needs the order right of the folder it lands
+    // in (the brain asks it before any move).
+    if (pos !== 'inside' && customOrder && !o.mayOrder) return null;
     if (pos === 'inside') return canNestFolder(a.folder, o.folder) ? { over: overId, pos } : null;
     return canNestFolder(a.folder, o.parent) ? { over: overId, pos } : null;
   };
@@ -882,6 +957,13 @@ export function ItemTree({
     if (!h) return;
     const a = e.active.data.current as DragData;
     const o = e.over!.data.current as DragData;
+    if (a.type === 'item' && o.type === 'item') {
+      void placeItem(
+        a.item,
+        afterFor(o.siblings ?? [], a.item.id, o.item.id, h.pos as 'before' | 'after'),
+      );
+      return;
+    }
     if (a.type === 'item') {
       void moveItems(carried(a.item), o.type === 'folder' ? o.folder : null);
       return;
@@ -927,6 +1009,7 @@ export function ItemTree({
     // Drag follows the same rule as the Move menu: the item's caps.
     canMoveItem: canMove,
     canMoveFolder: folderManaged,
+    ordering,
     folderMenu,
     itemMenu,
     menuFor,
@@ -1317,14 +1400,14 @@ export function ItemTree({
                     align="end"
                     className="max-h-96 w-52 overflow-y-auto scrollbar-thin"
                   >
-                    {view === 'tree' && !filtering && spec.sorts.length > 1 && (
+                    {view === 'tree' && !filtering && sorts.length > 1 && (
                       <>
                         <DropdownMenuLabel>Sort {adapter.noun.many}</DropdownMenuLabel>
                         <DropdownMenuRadioGroup
                           value={sort}
-                          onValueChange={(v) => setSort(v as TreeSort)}
+                          onValueChange={(v) => setSort(v as TreeOrder)}
                         >
-                          {spec.sorts.map((s) => (
+                          {sorts.map((s) => (
                             <DropdownMenuRadioItem key={s} value={s}>
                               {SORT_LABEL[s]}
                             </DropdownMenuRadioItem>
