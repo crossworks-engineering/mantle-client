@@ -59,6 +59,9 @@ export type DeskPrefs = {
    *  untouched so saving here never deletes them (`deskFrom`, `deskToWire`).
    *  Not drawn. Absent when there are none. */
   rest?: DeskStoredItem[];
+  /** Counts this client does not know (a later build's widget's), carried
+   *  through untouched as `rest` is. Absent when there are none. */
+  restCounts?: Record<string, number>;
 };
 
 /** A stored widget as the brain keeps it: any id (the client owns the
@@ -71,6 +74,11 @@ export const STORED_ITEMS_MAX = 400;
 export const STORED_COORD_MAX = 10_000;
 /** A stored id: printable ASCII, no spaces, at most 160 characters. */
 const STORED_ID = /^[\x21-\x7e]{1,160}$/;
+/** The brain's bounds on the stored counts: at most this many keys, each
+ *  printable ASCII of at most 32 characters, each value within
+ *  STORED_COORD_MAX. */
+export const STORED_COUNTS_MAX = 32;
+const STORED_COUNT_KEY = /^[\x21-\x7e]{1,32}$/;
 
 type Size = { w: number; h: number };
 /** `autoHeight`: the widget's height follows its content (the sticky
@@ -389,10 +397,25 @@ export function deskFrom(data: unknown): DeskPrefs | null {
   }
   for (const i of [...items]) items = settle(items, i.id);
   const counts: Partial<Record<TreeKind, number>> = {};
-  if (d.counts && typeof d.counts === 'object') {
+  const restCounts: Record<string, number> = {};
+  if (d.counts && typeof d.counts === 'object' && !Array.isArray(d.counts)) {
+    let kept = 0;
     for (const [k, n] of Object.entries(d.counts as Record<string, unknown>)) {
-      if (isTreeKind(k) && typeof n === 'number' && Number.isFinite(n)) {
+      if (kept >= STORED_COUNTS_MAX) break;
+      if (typeof n !== 'number' || !Number.isFinite(n)) continue;
+      if (isTreeKind(k)) {
         counts[k] = clamp(Math.round(n), KIND_COUNT_MIN, KIND_COUNT_MAX);
+        kept += 1;
+      } else if (
+        STORED_COUNT_KEY.test(k) &&
+        Number.isInteger(n) &&
+        n >= 0 &&
+        n <= STORED_COORD_MAX
+      ) {
+        // A count a later build added: kept as it is, for that build, when
+        // it is within the brain's bounds; never used here.
+        restCounts[k] = n;
+        kept += 1;
       }
     }
   }
@@ -403,11 +426,13 @@ export function deskFrom(data: unknown): DeskPrefs | null {
     icons: d.icons !== false,
     clock: d.clock === 'analog' ? 'analog' : 'digital',
     ...(rest.length > 0 ? { rest } : {}),
+    ...(Object.keys(restCounts).length > 0 ? { restCounts } : {}),
   };
 }
 
 /** The desk as it is saved (the profile, this browser's storage): the
- *  widgets drawn here and the ones carried through, in one list. */
+ *  widgets drawn here and the ones carried through, in one list, and the
+ *  counts the same way. */
 export function deskToWire(desk: DeskPrefs): {
   v: 1;
   items: DeskStoredItem[];
@@ -418,7 +443,12 @@ export function deskToWire(desk: DeskPrefs): {
   return {
     v: 1,
     items: [...desk.items, ...(desk.rest ?? [])].slice(0, STORED_ITEMS_MAX),
-    counts: { ...desk.counts },
+    counts: Object.fromEntries(
+      [...Object.entries(desk.counts), ...Object.entries(desk.restCounts ?? {})].slice(
+        0,
+        STORED_COUNTS_MAX,
+      ),
+    ),
     icons: desk.icons,
     clock: desk.clock,
   };

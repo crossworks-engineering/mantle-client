@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { readStored, writeStored } from './safe-storage';
 
 /**
  * A preference that survives a reload, read WITHOUT breaking hydration.
@@ -34,7 +35,11 @@ import { useCallback, useEffect, useState } from 'react';
  * value written by an older build, a hand-edited one, and the `null` that
  * comes back when the key is absent.
  */
-export function readStored<T>(raw: string | null, parse: (s: string) => T | null, fallback: T): T {
+export function decodeStored<T>(
+  raw: string | null,
+  parse: (s: string) => T | null,
+  fallback: T,
+): T {
   if (raw === null) return fallback;
   const parsed = parse(raw);
   return parsed === null ? fallback : parsed;
@@ -91,14 +96,11 @@ export function usePersistedState<T>(
 ): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(fallback);
 
-  // After hydration, not during it. Storage access itself can throw.
+  // After hydration, not during it. No storage (lib/safe-storage reads
+  // null): the fallback stands, which is a working screen.
   useEffect(() => {
     if (key === null) return;
-    try {
-      setValue(readStored(window.localStorage.getItem(key), parse, fallback));
-    } catch {
-      /* no storage — the fallback stands, which is a working screen */
-    }
+    setValue(decodeStored(readStored(key), parse, fallback));
     // Deliberately once per key: re-running on a new `parse` identity would
     // stamp the stored value back over a choice the user just made.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,12 +109,8 @@ export function usePersistedState<T>(
   const set = useCallback(
     (v: T) => {
       setValue(v);
-      if (key === null) return;
-      try {
-        window.localStorage.setItem(key, serialise(v));
-      } catch {
-        /* private mode — the choice holds for this session and no longer */
-      }
+      // Private mode: the choice holds for this session and no longer.
+      if (key !== null) writeStored(key, serialise(v));
     },
     [key, serialise],
   );
