@@ -13,6 +13,7 @@ import {
   parseDesk,
   resizeWidget,
   tidy,
+  withAutoHeights,
   withPins,
   type DeskItem,
 } from './home-desk';
@@ -59,6 +60,27 @@ describe('moving and resizing', () => {
     expect(resizeWidget([a], 'clock', 1, 99)[0]).toMatchObject({ w: 2, h: 5 });
   });
 
+  it('grows a widget by the right edge in place, never sliding it left', () => {
+    const t: DeskItem = { id: 'theme', x: 8, y: 0, w: 4, h: 2 };
+    expect(resizeWidget([t], 'theme', 6, 2)[0]).toEqual(t);
+    const narrow: DeskItem = { ...t, x: 6 };
+    expect(resizeWidget([narrow], 'theme', 8, 2)[0]).toMatchObject({ x: 6, w: 6 });
+  });
+
+  it('draws a content-sized widget at its rows without storing the push', () => {
+    const notes: DeskItem = { id: 'kind:notes', x: 0, y: 0, w: 6, h: 3 };
+    const below: DeskItem = { id: 'kind:pages', x: 0, y: 3, w: 4, h: 3 };
+    const stored = [notes, below];
+    const tall = withAutoHeights(stored, { 'kind:notes': 5 });
+    expect(tall).toEqual([
+      { ...notes, h: 5 },
+      { ...below, y: 5 },
+    ]);
+    // Fewer rows again: what it pushed is back where it was put.
+    expect(withAutoHeights(stored, { 'kind:notes': 3 })).toEqual(stored);
+    expect(stored[1]).toEqual(below);
+  });
+
   it('tidies by closing gaps upward, never sideways', () => {
     const out = tidy([
       { ...a, y: 4 },
@@ -93,6 +115,14 @@ describe('placing', () => {
     const out = withPins(start, ['new'], true);
     expect(out.map((i) => i.id)).toEqual(['pin:new']);
     expect(withPins(start, ['old'], false)).toEqual([]);
+  });
+
+  it('keeps an icon whose pins could not be read, rather than losing its spot', () => {
+    const start: DeskItem[] = [{ id: 'pin:maybe', x: 4, y: 9, w: 1, h: 1 }];
+    expect(withPins(start, ['new'], true, false).map((i) => i.id)).toEqual([
+      'pin:maybe',
+      'pin:new',
+    ]);
   });
 
   it('keeps a moved icon where it was put', () => {

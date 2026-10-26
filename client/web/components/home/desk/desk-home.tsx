@@ -71,17 +71,23 @@ export function DeskHome({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const hubNewest = useMemo(() => hubNewestOf(hub), [hub]);
-  const pinById = useMemo(() => new Map((pins ?? []).map((p) => [p.item.id, p])), [pins]);
+  const pinById = useMemo(() => new Map((pins?.pins ?? []).map((p) => [p.item.id, p])), [pins]);
   const items = useMemo(
     () =>
       prefs
         ? withPins(
-            prefs.items,
-            pins?.map((p) => p.item.id),
+            // A stored widget of a kind this brain no longer serves this
+            // login is not drawn or asked for (it drops off at the next save).
+            prefs.items.filter((i) => {
+              const k = kindOf(i.id);
+              return k === null || kinds.includes(k);
+            }),
+            pins?.pins.map((p) => p.item.id),
             prefs.icons,
+            pins?.complete ?? true,
           )
         : [],
-    [prefs, pins],
+    [prefs, pins, kinds],
   );
 
   const setItems = useCallback(
@@ -146,7 +152,9 @@ export function DeskHome({
       </div>
       {settingsOpen && prefs ? (
         <DeskSettings
-          className="absolute inset-0 z-20 md:static md:inset-auto animate-in slide-in-from-right-8 fade-in duration-200"
+          // Beside the desk on a wide screen; over its right edge on a laptop,
+          // so opening it never squeezes the desk.
+          className="absolute inset-0 z-20 animate-in fade-in slide-in-from-right-8 duration-200 md:inset-y-0 md:left-auto md:right-0 md:shadow-2xl 2xl:static 2xl:shadow-none"
           prefs={prefs}
           kinds={kinds}
           onChange={update}
@@ -174,7 +182,7 @@ type WidgetEnv = {
 
 function renderWidget(item: DeskItem, env: WidgetEnv): ReactNode {
   const { id } = item;
-  if (isPin(id)) return env.pin ? <DeskIcon pin={env.pin} /> : null;
+  if (isPin(id)) return env.pin ? <DeskIcon id={id} pin={env.pin} /> : null;
   const kind = kindOf(id);
   if (kind === 'notes') {
     return (

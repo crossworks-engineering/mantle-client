@@ -58,7 +58,9 @@ export type DeskPrefs = {
 };
 
 type Size = { w: number; h: number };
-export type WidgetSpec = { size: Size; min: Size; max: Size };
+/** `autoHeight`: the widget's height follows its content (the sticky
+ *  notes); a person sets only its width. */
+export type WidgetSpec = { size: Size; min: Size; max: Size; autoHeight?: boolean };
 
 const spec = (w: number, h: number, min: Size, max: Size): WidgetSpec => ({
   size: { w, h },
@@ -78,7 +80,7 @@ export const TOOL_SPECS: Record<DeskTool, WidgetSpec> = {
 };
 
 const KIND_SPEC = spec(4, 3, { w: 2, h: 2 }, { w: 8, h: 8 });
-const NOTES_SPEC = spec(7, 3, { w: 3, h: 2 }, { w: 12, h: 16 });
+const NOTES_SPEC = { ...spec(7, 3, { w: 3, h: 2 }, { w: 12, h: 16 }), autoHeight: true };
 const ICON_SPEC = spec(1, 1, { w: 1, h: 1 }, { w: 1, h: 1 });
 
 export function specOf(id: DeskWidgetId): WidgetSpec {
@@ -169,15 +171,42 @@ export function moveWidget(
   return settle(next, id);
 }
 
-/** Give `id` the size w × h (within its bounds), the rest making way. */
+/** Give `id` the size w × h (within its bounds), the rest making way. It
+ *  grows from where it stands: never wider than the room to its right, so a
+ *  widget by the edge does not slide left as it grows. */
 export function resizeWidget(
   items: readonly DeskItem[],
   id: DeskWidgetId,
   w: number,
   h: number,
 ): DeskItem[] {
-  const next = items.map((i) => (i.id === id ? fit({ ...i, w, h }) : i));
+  const next = items.map((i) =>
+    i.id === id ? fit({ ...i, w: Math.min(w, DESK_COLS - i.x), h }) : i,
+  );
   return settle(next, id);
+}
+
+/**
+ * The desk as drawn: the stored desk with each content-sized widget at the
+ * rows its content needs (`auto`), the rest making way. Drawn, not stored:
+ * when the content shrinks again (or the screen grows taller, so fewer rows
+ * hold it) what it pushed goes back to where the person put it.
+ */
+export function withAutoHeights(
+  items: readonly DeskItem[],
+  auto: Readonly<Partial<Record<DeskWidgetId, number>>>,
+): DeskItem[] {
+  let out = [...items];
+  for (const item of items) {
+    const h = auto[item.id];
+    if (h === undefined || h === item.h) continue;
+    const s = specOf(item.id);
+    out = settle(
+      out.map((i) => (i.id === item.id ? { ...i, h: clamp(h, s.min.h, s.max.h) } : i)),
+      item.id,
+    );
+  }
+  return out;
 }
 
 function freeAt(items: readonly DeskItem[], probe: DeskItem): boolean {
@@ -244,17 +273,20 @@ export function tidy(items: readonly DeskItem[]): DeskItem[] {
  * The desk icons follow the person's pins: a newly pinned item gets an icon
  * in the first free spot down the right edge, an icon whose item is no
  * longer pinned goes. `pins` undefined: not known yet, the icons stay as
- * they were.
+ * they were. `complete` false: some kind's pins could not be read, so an
+ * icon missing from `pins` may only be unknown; it keeps its spot rather
+ * than losing it on the next save.
  */
 export function withPins(
   items: readonly DeskItem[],
   pins: readonly string[] | undefined,
   icons: boolean,
+  complete = true,
 ): DeskItem[] {
   if (!icons) return items.filter((i) => !isPin(i.id));
   if (pins === undefined) return [...items];
   const want = new Set(pins.map((p) => `pin:${p}` as const));
-  let out = items.filter((i) => !isPin(i.id) || want.has(i.id));
+  let out = complete ? items.filter((i) => !isPin(i.id) || want.has(i.id)) : [...items];
   for (const id of want) out = addWidget(out, id);
   return out;
 }

@@ -357,7 +357,7 @@ export function StickyNotesWidget({
   ws: string | null;
   onRemove: () => void;
 }) {
-  const pinned = useKindItems('notes', count, ws);
+  const pinned = useKindItems('notes', count, ws, undefined, false);
   const latest = useQuery({
     queryKey: ['notes', 'desk', ws ?? 'all'],
     queryFn: () => {
@@ -406,7 +406,7 @@ export function StickyNotesWidget({
 
   // The notes take the room they need: the widget grows or shrinks to fit
   // them all (no scrolling inside), pushing what is below it down.
-  const { fitHeight } = useDeskGrid();
+  const { fitHeight, rowH } = useDeskGrid();
   const board = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = board.current;
@@ -416,7 +416,8 @@ export function StickyNotesWidget({
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [fitHeight, id]);
+    // rowH: a taller or shorter screen changes the rows, not the notes.
+  }, [fitHeight, id, rowH]);
 
   return (
     <DeskWidget
@@ -498,9 +499,10 @@ export function StickyNotesWidget({
  * computer's desktop: a tile and its name. Opens on click; carried by
  * dragging it anywhere (the grid tells a press from a drag).
  */
-export function DeskIcon({ pin }: { pin: DeskPin }) {
+export function DeskIcon({ id, pin }: { id: DeskWidgetId; pin: DeskPin }) {
   const { kind, item } = pin;
   const open = useOpenItem();
+  const { nudge, narrow } = useDeskGrid();
   const KindIcon = KIND_ICONS[kind];
   const lucideOrEmoji = item.icon;
   return (
@@ -509,8 +511,17 @@ export function DeskIcon({ pin }: { pin: DeskPin }) {
       onClick={open(kind, item.id)}
       data-desk-handle
       draggable={false}
+      // Alt and an arrow moves the icon from the keyboard (Enter opens it).
+      onKeyDown={(e) => {
+        if (e.altKey && !narrow) nudge(id, e);
+      }}
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
       title={`${item.title} (${KIND_LABELS[kind]})`}
-      className="group/icon flex h-full w-full cursor-pointer select-none flex-col items-center justify-center gap-1.5 rounded-xl p-1 text-center outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+      className={cn(
+        'group/icon flex h-full w-full cursor-pointer select-none flex-col items-center justify-center gap-1.5 rounded-xl p-1 text-center outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing',
+        // On a desk a drag carries the icon; on a phone a swipe scrolls.
+        !narrow && 'touch-none',
+      )}
     >
       <span className="relative transition-transform duration-150 group-hover/icon:-translate-y-0.5 group-active/icon:scale-95">
         {lucideOrEmoji ? (

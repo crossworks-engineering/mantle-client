@@ -46,9 +46,16 @@ export function ThemeWidget({ id, onRemove }: { id: DeskWidgetId; onRemove: () =
   const { colorTheme, setColorTheme, shuffleNow } = useColorTheme();
   const [mounted, setMounted] = useState(false);
   const current = useRef<HTMLButtonElement>(null);
+  const strip = useRef<HTMLDivElement>(null);
   useEffect(() => setMounted(true), []);
+  // Centre the worn theme in the strip. The strip's own scroll only:
+  // scrollIntoView would also scroll the desk to this widget on load.
   useEffect(() => {
-    current.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    const el = strip.current;
+    const on = current.current;
+    if (!el || !on) return;
+    // The strip is `relative`, so a swatch's offsetLeft is its place in it.
+    el.scrollLeft = on.offsetLeft - (el.clientWidth - on.clientWidth) / 2;
   }, [colorTheme, mounted]);
   const mode = resolvedTheme === 'dark' ? 'dark' : 'light';
 
@@ -88,7 +95,8 @@ export function ThemeWidget({ id, onRemove }: { id: DeskWidgetId; onRemove: () =
           </span>
         </div>
         <div
-          className="flex gap-1.5 overflow-x-auto py-1 scrollbar-thin"
+          ref={strip}
+          className="relative flex gap-1.5 overflow-x-auto py-1 scrollbar-thin"
           role="listbox"
           aria-label="Colour theme"
         >

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { GripVertical, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { cn } from '@mantle/web-ui/lib/utils';
-import type { DeskWidgetId } from '@/lib/home-desk';
+import { specOf, type DeskWidgetId } from '@/lib/home-desk';
 import { useDeskGrid } from './desk-grid';
 
 /**
@@ -52,7 +52,9 @@ export function DeskWidget({
         data-desk-handle
         className={cn(
           'flex h-9 shrink-0 items-center gap-1.5 pl-1 pr-1.5',
-          !narrow && 'cursor-grab active:cursor-grabbing',
+          // touch-none: on a tablet a drag on the title bar carries the
+          // widget instead of scrolling the desk.
+          !narrow && 'cursor-grab touch-none active:cursor-grabbing',
         )}
       >
         {narrow ? (
@@ -100,7 +102,10 @@ export function DeskWidget({
         <div
           aria-hidden
           onPointerDown={(e) => startResize(id, e)}
-          className="absolute bottom-0 right-0 z-10 size-4 cursor-se-resize opacity-0 transition-opacity group-hover/widget:opacity-100"
+          className={cn(
+            'absolute bottom-0 right-0 z-10 size-4 touch-none opacity-0 transition-opacity group-hover/widget:opacity-100',
+            specOf(id).autoHeight ? 'cursor-ew-resize' : 'cursor-se-resize',
+          )}
         >
           <svg viewBox="0 0 16 16" className="size-4 text-muted-foreground/70">
             <path d="M14 6 6 14M14 10l-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" />

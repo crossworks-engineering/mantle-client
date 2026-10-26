@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -23,9 +24,22 @@ import {
   moveWidget,
   resizeWidget,
   specOf,
+  withAutoHeights,
   type DeskItem,
   type DeskWidgetId,
 } from '@/lib/home-desk';
+import {
+  GAP,
+  PAD,
+  SLOP,
+  carryBox,
+  carryTarget,
+  cellRect,
+  measureDesk,
+  rowsFor,
+  type Carry,
+  type Metrics,
+} from './desk-geometry';
 
 /**
  * The desk's grid: places every widget on whole cells, follows the pointer
@@ -36,43 +50,39 @@ import {
  *   few pixels, so a click on a desk icon still opens it.
  * - While carried it floats under the pointer, lifted and tilted a little;
  *   a dashed outline marks the cells it will take and the rest of the desk
- *   rearranges live (lib/home-desk `moveWidget`).
+ *   rearranges live (desk-geometry `carryTarget`). Near the desk's edge the
+ *   desk scrolls, and the widget stays under the pointer.
  * - The corner grip resizes, in whole cells, within the widget's bounds.
  * - From the keyboard, on a widget's grip: arrows move it a cell, Shift with
- *   an arrow resizes it.
- * - Below the md breakpoint there is no room for a desk: the widgets stack
- *   in reading order (top to bottom, left to right) and nothing drags.
+ *   an arrow resizes it (a desk icon: Alt with an arrow).
+ * - A widget whose height follows its content (the sticky notes) is drawn at
+ *   the rows it needs; what it pushes is pushed only as drawn, so when it
+ *   needs fewer rows again everything goes back where it was put.
+ * - On a phone (below the md breakpoint) the widgets stack in reading order
+ *   and nothing drags.
  */
 
-const PAD = 12;
-const GAP = 12;
-const MIN_ROW = 64;
-const MAX_ROW = 132;
-/** Pixels the pointer moves before a press becomes a carry. */
-const SLOP = 5;
-const NARROW = 768;
+/** Below md: the phone layout. The viewport decides, not the desk's own
+ *  width, so a panel opened beside the desk never flips it to the phone
+ *  layout (which would remount every widget mid-edit). */
+const PHONE = '(max-width: 767px)';
 
-type Metrics = { colW: number; rowH: number; width: number; height: number };
-
-type Carry = {
-  id: DeskWidgetId;
-  mode: 'move' | 'resize';
-  pointerId: number;
-  startX: number;
-  startY: number;
-  origin: DeskItem;
-  /** The carried widget's top-left (move) or size (resize) in px, live. */
-  px: { left: number; top: number; width: number; height: number };
-  started: boolean;
-};
+function subscribePhone(cb: () => void) {
+  const mq = window.matchMedia(PHONE);
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+}
 
 type DeskCtx = {
   carrying: DeskWidgetId | null;
   /** Move or resize from the keyboard (the widget's grip). */
   nudge: (id: DeskWidgetId, e: ReactKeyboardEvent) => boolean;
   /** A widget whose height follows its content (the sticky notes) reports
-   *  the px it needs; the desk gives it that many whole rows. */
+   *  the px it needs; the desk draws it that many whole rows tall. */
   fitHeight: (id: DeskWidgetId, px: number) => void;
+  /** The row height in px (it follows the screen's height), so a widget that
+   *  fits its content measures again when the rows change. */
+  rowH: number | null;
   /** Start a resize from a widget's corner grip. */
   startResize: (id: DeskWidgetId, e: ReactPointerEvent) => void;
   narrow: boolean;
@@ -84,15 +94,6 @@ export function useDeskGrid(): DeskCtx {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useDeskGrid outside DeskGrid');
   return ctx;
-}
-
-function cellRect(item: DeskItem, m: Metrics) {
-  return {
-    left: PAD + item.x * (m.colW + GAP),
-    top: PAD + item.y * (m.rowH + GAP),
-    width: item.w * m.colW + (item.w - 1) * GAP,
-    height: item.h * m.rowH + (item.h - 1) * GAP,
-  };
 }
 
 const ARROWS: Record<string, [number, number]> = {
@@ -115,74 +116,67 @@ export function DeskGrid({
   className?: string;
 }) {
   const scroller = useRef<HTMLDivElement | null>(null);
-  // The scroller is a different element in the stacked (narrow) layout, so
-  // the measuring follows whichever one is mounted.
+  // The scroller is a different element in the phone layout, so the
+  // measuring follows whichever one is mounted.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const scrollRef = useCallback((node: HTMLDivElement | null) => {
     scroller.current = node;
     setScrollEl(node);
   }, []);
+  const narrow = useSyncExternalStore(
+    subscribePhone,
+    () => window.matchMedia(PHONE).matches,
+    () => false,
+  );
   const [m, setM] = useState<Metrics | null>(null);
   const [carry, setCarry] = useState<Carry | null>(null);
-  const carryRef = useRef<Carry | null>(null);
-  carryRef.current = carry;
-  /** What fitHeight reads: the latest desk, never a stale render's. */
-  const latest = useRef({ items, onChange, m: null as Metrics | null, narrow: false });
+  /** Rows each content-sized widget needs right now (drawn, never stored). */
+  const [auto, setAuto] = useState<Partial<Record<DeskWidgetId, number>>>({});
   /** A carry that ended on a desk icon must not also open it. */
   const swallowClick = useRef(false);
+
+  // The desk as drawn: content-sized widgets at their rows, the rest settled.
+  const base = useMemo(() => withAutoHeights(items, auto), [items, auto]);
+
+  // What the window listeners and the drop read: always this render's.
+  const live = useRef({ base, m, onChange, carry });
+  live.current = { base, m, onChange, carry };
 
   useLayoutEffect(() => {
     const el = scrollEl;
     if (!el) return;
-    const measure = () => {
-      const width = el.clientWidth;
-      const height = el.clientHeight;
-      const colW = Math.max(24, (width - PAD * 2 - GAP * (DESK_COLS - 1)) / DESK_COLS);
-      const fill = (height - PAD * 2 - GAP * (DESK_SCREEN_ROWS - 1)) / DESK_SCREEN_ROWS;
-      const rowH = Math.min(MAX_ROW, Math.max(MIN_ROW, fill));
-      setM({ colW, rowH, width, height });
-    };
+    const measure = () => setM(measureDesk(el.clientWidth, el.clientHeight));
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [scrollEl]);
 
-  const narrow = m !== null && m.width < NARROW;
-  latest.current = { items, onChange, m, narrow };
-
   const fitHeight = useCallback((id: DeskWidgetId, px: number) => {
-    const { items: now, onChange: save, m: metrics, narrow: stacked } = latest.current;
-    if (!metrics || stacked || carryRef.current?.started) return;
-    const item = now.find((i) => i.id === id);
-    if (!item) return;
+    const { m: metrics, carry: c } = live.current;
+    if (!metrics || c?.started) return;
     const s = specOf(id);
-    const rows = Math.ceil((px + GAP) / (metrics.rowH + GAP));
-    const h = Math.min(s.max.h, Math.max(s.min.h, rows));
-    if (h !== item.h) save(resizeWidget(now, id, item.w, h));
+    const rows = Math.min(s.max.h, Math.max(s.min.h, rowsFor(px, metrics)));
+    setAuto((a) => (a[id] === rows ? a : { ...a, [id]: rows }));
   }, []);
 
-  /** Where the carried widget would land, from its live px box. */
-  const target = useMemo((): DeskItem[] | null => {
-    if (!carry?.started || !m) return null;
-    const { origin, px } = carry;
-    if (carry.mode === 'move') {
-      const x = Math.round((px.left - PAD) / (m.colW + GAP));
-      const y = Math.round((px.top - PAD) / (m.rowH + GAP));
-      return moveWidget(items, origin.id, x, y);
-    }
-    const w = Math.round((px.width + GAP) / (m.colW + GAP));
-    const h = Math.round((px.height + GAP) / (m.rowH + GAP));
-    return resizeWidget(items, origin.id, w, h);
-  }, [carry, items, m]);
+  const target = useMemo(
+    () => (carry?.started && m ? carryTarget(base, carry, m) : null),
+    [carry, base, m],
+  );
+  const shown = target ?? base;
 
-  const shown = target ?? items;
-
-  const finish = useCallback(
-    (commit: boolean) => {
-      const c = carryRef.current;
-      if (c?.started && commit && target) onChange(target);
+  const carrying = carry !== null;
+  // Pointer tracking lives on the window while a carry is open, so a fast
+  // flick off the widget (or off the desk) does not drop it mid-air. It is
+  // subscribed once per carry and reads everything from `live`, so a drop
+  // always lands where the last move put it.
+  useEffect(() => {
+    if (!carrying) return;
+    const finish = (commit: boolean) => {
+      const { carry: c, base: now, m: metrics, onChange: save } = live.current;
       if (c?.started) {
+        if (commit && metrics) save(carryTarget(now, c, metrics));
         // The click a drop makes (if the browser makes one) comes in this
         // same turn; after it, clicks are clicks again.
         swallowClick.current = true;
@@ -191,79 +185,73 @@ export function DeskGrid({
         }, 0);
       }
       setCarry(null);
-    },
-    [onChange, target],
-  );
-
-  // Pointer tracking lives on the window while a carry is open, so a fast
-  // flick off the widget (or off the desk) does not drop it mid-air.
-  useEffect(() => {
-    if (!carry) return;
+    };
     const onMove = (e: PointerEvent) => {
-      const c = carryRef.current;
-      if (!c || e.pointerId !== c.pointerId || !m) return;
-      const dx = e.clientX - c.startX;
-      const dy = e.clientY - c.startY;
-      if (!c.started && Math.hypot(dx, dy) < SLOP) return;
+      const c = live.current.carry;
+      if (!c || e.pointerId !== c.pointerId) return;
+      const el = scroller.current;
+      const moved = Math.hypot(e.clientX - c.startX, e.clientY - c.startY);
+      if (!c.started && moved < SLOP) return;
       // A carry is not a text selection: drop what the press began selecting.
       if (!c.started) window.getSelection()?.removeAllRanges();
-      const base = cellRect(c.origin, m);
-      const next: Carry =
-        c.mode === 'move'
-          ? { ...c, started: true, px: { ...base, left: base.left + dx, top: base.top + dy } }
-          : {
-              ...c,
-              started: true,
-              px: {
-                ...base,
-                width: Math.max(m.colW, base.width + dx),
-                height: Math.max(m.rowH, base.height + dy),
-              },
-            };
-      setCarry(next);
       // Near the desk's top or bottom edge, the desk scrolls to follow.
-      const el = scroller.current;
       if (el) {
         const r = el.getBoundingClientRect();
         if (e.clientY > r.bottom - 48) el.scrollTop += 14;
         else if (e.clientY < r.top + 48) el.scrollTop -= 14;
       }
+      const scrolled = el ? el.scrollTop - c.startScroll : 0;
+      setCarry({
+        ...c,
+        started: true,
+        dx: e.clientX - c.startX,
+        dy: e.clientY - c.startY + scrolled,
+      });
     };
     const onUp = (e: PointerEvent) => {
-      if (e.pointerId !== carryRef.current?.pointerId) return;
-      finish(true);
+      if (e.pointerId === live.current.carry?.pointerId) finish(true);
+    };
+    // The browser took the pointer (a touch turned into a scroll, a system
+    // gesture): the widget goes back where it was, nothing lands half-way.
+    const onCancel = (e: PointerEvent) => {
+      if (e.pointerId === live.current.carry?.pointerId) finish(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') finish(false);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('keydown', onKey);
     };
-  }, [carry, finish, m]);
+  }, [carrying]);
 
-  const begin = (id: DeskWidgetId, mode: Carry['mode'], e: ReactPointerEvent) => {
-    if (narrow || !m || e.button !== 0) return;
-    const origin = items.find((i) => i.id === id);
-    if (!origin) return;
-    const rect = cellRect(origin, m);
-    setCarry({
-      id,
-      mode,
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      origin,
-      px: rect,
-      started: false,
-    });
-  };
+  const begin = useCallback(
+    (id: DeskWidgetId, mode: Carry['mode'], e: ReactPointerEvent) => {
+      const { base: now, m: metrics } = live.current;
+      if (narrow || !metrics || e.button !== 0) return;
+      const origin = now.find((i) => i.id === id);
+      if (!origin) return;
+      setCarry({
+        id,
+        mode,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startScroll: scroller.current?.scrollTop ?? 0,
+        origin,
+        dx: 0,
+        dy: 0,
+        started: false,
+      });
+    },
+    [narrow],
+  );
 
   const onPointerDown = (id: DeskWidgetId) => (e: ReactPointerEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement;
@@ -281,6 +269,7 @@ export function DeskGrid({
       carrying: carry?.started ? carry.id : null,
       narrow,
       fitHeight,
+      rowH: m?.rowH ?? null,
       startResize: (id, e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -289,25 +278,31 @@ export function DeskGrid({
       nudge: (id, e) => {
         const step = ARROWS[e.key];
         if (!step) return false;
-        const item = items.find((i) => i.id === id);
+        const now = live.current.base;
+        const item = now.find((i) => i.id === id);
         if (!item) return false;
         e.preventDefault();
-        onChange(
+        const dh = specOf(id).autoHeight ? 0 : step[1];
+        live.current.onChange(
           e.shiftKey
-            ? resizeWidget(items, id, item.w + step[0], item.h + step[1])
-            : moveWidget(items, id, item.x + step[0], item.y + step[1]),
+            ? resizeWidget(now, id, item.w + step[0], item.h + dh)
+            : moveWidget(now, id, item.x + step[0], item.y + step[1]),
         );
         return true;
       },
     }),
-    // `begin` reads items and m, both deps here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [carry?.started, carry?.id, narrow, items, onChange, m, fitHeight],
+    [carry?.started, carry?.id, narrow, fitHeight, m?.rowH, begin],
   );
 
-  const ordered = useMemo(() => [...shown].sort((a, b) => a.y - b.y || a.x - b.x), [shown]);
+  /** Reading order of the desk as it stands (not as it is being dragged):
+   *  the order Tab walks and the phone stacks. */
+  const order = useMemo(
+    () => [...base].sort((a, b) => a.y - b.y || a.x - b.x).map((i) => i.id),
+    [base],
+  );
 
   if (narrow) {
+    const ordered = order.map((id) => base.find((i) => i.id === id)!);
     const icons = ordered.filter((i) => isPin(i.id));
     const widgets = ordered.filter((i) => !isPin(i.id));
     return (
@@ -339,6 +334,7 @@ export function DeskGrid({
   const rows = Math.max(DESK_SCREEN_ROWS, deskBottom(shown) + (carry?.started ? 2 : 0));
   const innerHeight = m ? PAD * 2 + rows * m.rowH + (rows - 1) * GAP : undefined;
   const placeholder = carry?.started && target ? target.find((i) => i.id === carry.id) : null;
+  const shownById = new Map(shown.map((i) => [i.id, i]));
 
   return (
     <Ctx.Provider value={ctx}>
@@ -367,24 +363,29 @@ export function DeskGrid({
             />
           ) : null}
           {m
-            ? shown.map((item) => {
-                const isCarried = carry?.started && carry.id === item.id;
+            ? order.map((id) => {
+                const item = shownById.get(id);
+                if (!item) return null;
+                const isCarried = carry?.started && carry.id === id;
                 const rect = cellRect(item, m);
-                const style: CSSProperties = isCarried
-                  ? {
-                      left: carry.px.left,
-                      top: carry.px.top,
-                      width: carry.mode === 'resize' ? carry.px.width : rect.width,
-                      height: carry.mode === 'resize' ? carry.px.height : rect.height,
-                      zIndex: 30,
-                      transform: carry.mode === 'move' ? 'rotate(-1.2deg) scale(1.02)' : undefined,
-                    }
-                  : rect;
+                let style: CSSProperties = rect;
+                if (isCarried) {
+                  const box = carryBox(carry, m);
+                  style = {
+                    left: box.left,
+                    top: box.top,
+                    width: carry.mode === 'resize' ? box.width : rect.width,
+                    height:
+                      carry.mode === 'resize' && !specOf(id).autoHeight ? box.height : rect.height,
+                    zIndex: 30,
+                    transform: carry.mode === 'move' ? 'rotate(-1.2deg) scale(1.02)' : undefined,
+                  };
+                }
                 return (
                   <div
-                    key={item.id}
-                    data-desk-item={item.id}
-                    onPointerDown={onPointerDown(item.id)}
+                    key={id}
+                    data-desk-item={id}
+                    onPointerDown={onPointerDown(id)}
                     className={cn(
                       'absolute flex flex-col',
                       isCarried
@@ -412,7 +413,7 @@ function DeskCells({ m, rows }: { m: Metrics; rows: number }) {
         <div
           key={`${x}:${y}`}
           className="absolute rounded-lg bg-foreground/[0.035]"
-          style={cellRect({ id: 'clock', x, y, w: 1, h: 1 }, m)}
+          style={cellRect({ x, y, w: 1, h: 1 }, m)}
         />,
       );
     }

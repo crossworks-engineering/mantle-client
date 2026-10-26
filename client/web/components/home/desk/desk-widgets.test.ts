@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { deskStorageKey } from './desk-data';
+import { folderKey, treeKey } from '@/components/item-tree/tree-api';
+import { deskNewestKey, deskStorageKey, hubNewestOf } from './desk-data';
 import { splitJot } from './widgets/misc';
 import { greeting, monthGrid } from './widgets/time';
 
@@ -36,6 +37,35 @@ describe('clock', () => {
       'Good evening',
       'Good night',
     ]);
+  });
+});
+
+describe("a kind widget's queries", () => {
+  it("keeps the newest items under its own key, never the tree's infinite one", () => {
+    const tree = folderKey('notes', null, 'updated', 'owner', 'w1');
+    const desk = deskNewestKey('notes', 'updated', 'w1');
+    expect(desk).not.toEqual(tree);
+    // Still under ['tree', kind], so a tree refresh reaches the desk.
+    expect(desk.slice(0, 2)).toEqual(treeKey('notes'));
+  });
+
+  it("reads the landing page's newest pages and apps as tree items", () => {
+    const got = hubNewestOf({
+      sections: [
+        {
+          token: 'p1',
+          title: 'Handbook',
+          icon: '📘',
+          summary: null,
+          updatedAt: '2026-10-26T00:00:00.000Z',
+          parentToken: null,
+        },
+      ],
+      apps: [{ token: 'a1', title: 'Board', description: null, updatedAt: '' }],
+    });
+    expect(got.pages?.[0]).toMatchObject({ id: 'p1', title: 'Handbook', icon: '📘' });
+    expect(got.apps?.[0]).toMatchObject({ id: 'a1', title: 'Board', icon: null });
+    expect(hubNewestOf(null)).toEqual({});
   });
 });
 

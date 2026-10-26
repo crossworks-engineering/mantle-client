@@ -9,6 +9,7 @@ import {
   type TreeItem,
   type TreeKind,
   type TreeMarkList,
+  type TreeSort,
 } from '@mantle/web-ui/types/tree';
 import type { HubData } from '@mantle/share-ui/app-bridge-protocol';
 import type { Shell } from '@/lib/contract/shell';
@@ -108,6 +109,17 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
 export type DeskListItem = TreeItem & { pinned: boolean };
 
 /**
+ * The key of a kind widget's newest items (one plain page of the kind's top
+ * level). Never the tree's own folderKey: the tree keeps an infinite query
+ * (pages of items) there, and one plain page under the same key would break
+ * the tree's view of it. Still under ['tree', kind], so a tree refresh
+ * reaches the desk too.
+ */
+export function deskNewestKey(kind: TreeKind, sort: TreeSort, ws: string | null) {
+  return [...folderKey(kind, null, sort, 'owner', ws), 'desk'] as const;
+}
+
+/**
  * A kind widget's items (lib/home-desk `deskItemsFor`): the login's pins,
  * then what it opened last, then the newest in the kind's top level when
  * those two do not fill the widget. `hubNewest`: the landing page's own
@@ -121,6 +133,8 @@ export function useKindItems(
   count: number,
   ws: string | null,
   hubNewest?: readonly TreeItem[],
+  /** False: pins and recent only (the sticky notes read their own newest). */
+  withNewest = true,
 ) {
   const pinned = useQuery({
     queryKey: marksKey(kind, 'pinned'),
@@ -135,9 +149,9 @@ export function useKindItems(
     : (TREE_KIND_SPECS[kind].sorts[0] ?? 'name');
   const marked = (pinned.data?.items.length ?? 0) + (recent.data?.items.length ?? 0);
   const settled = !pinned.isPending && !recent.isPending;
-  const needNewest = !hubNewest && settled && marked < count;
+  const needNewest = withNewest && !hubNewest && settled && marked < count;
   const newest = useQuery({
-    queryKey: folderKey(kind, null, sort, 'owner', ws),
+    queryKey: deskNewestKey(kind, sort, ws),
     queryFn: () => fetchFolderPage(kind, null, sort, null, 'owner', ws),
     enabled: needNewest,
   });
@@ -187,7 +201,8 @@ export type DeskPin = { kind: TreeKind; item: TreeItem };
 /**
  * Every pinned item of every kind on the desk, for the desk icons. Undefined
  * until all have answered, so an icon is never dropped because its kind's
- * list was merely slow (lib/home-desk `withPins`).
+ * list was merely slow; `complete` false when one failed, so its icons are
+ * kept rather than dropped (lib/home-desk `withPins`).
  */
 export function useDeskPins(kinds: readonly TreeKind[], enabled: boolean) {
   const results = useQueries({
@@ -198,6 +213,7 @@ export function useDeskPins(kinds: readonly TreeKind[], enabled: boolean) {
     })),
   });
   const done = enabled && results.every((r) => r.isSuccess || r.isError);
+  const complete = results.every((r) => r.isSuccess);
   const lists = results.map((r) => r.data as TreeMarkList | undefined);
   return useMemo(() => {
     if (!done) return undefined;
@@ -207,8 +223,8 @@ export function useDeskPins(kinds: readonly TreeKind[], enabled: boolean) {
       if (!kind) return;
       for (const item of list?.items ?? []) pins.push({ kind, item });
     });
-    return pins;
+    return { pins, complete };
     // `lists` is rebuilt every render; its members are the stable query data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [done, kinds, ...lists]);
+  }, [done, complete, kinds, ...lists]);
 }
