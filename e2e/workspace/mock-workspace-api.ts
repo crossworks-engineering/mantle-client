@@ -20,7 +20,7 @@ import { GONE_ROUTE, MEMBER_OPEN } from './shell-nav';
  * workspace with `?ws=` (403 workspace for one the login is not in), and the
  * retired routes answer 410. A member keeps /api/member/realtime and
  * /api/member/home. Every login's Home reads GET /api/home?ws= (task
- * d78e7bde: the current workspace's landing page, the Built-in home here).
+ * d78e7bde: the current workspace's landing page, Desk here).
  * Every request is recorded with the role that sent it,
  * so a spec can assert what a login never asked for.
  *
@@ -191,7 +191,7 @@ export type MockWorkspaceApi = {
   /** A workspace's home app (task d78e7bde): GET /api/home?ws= names it.
    *  `frame` true: its frame ticket and frame answer (the app loads but
    *  never signals ready); false: the ticket is a 404 (no build), so the
-   *  landing page falls back to the Built-in home. */
+   *  landing page falls back to Desk. */
   homeApps: Partial<Record<WorkspaceKey, { id: string; title: string; frame: boolean }>>;
   close: () => Promise<void>;
 };
@@ -384,7 +384,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       return (json(res, 200, { ...tree(kind, items, url), ...echo }), true);
     }
     // The landing page of the current workspace (task d78e7bde): the
-    // Built-in home's data, kept to `ws` (none: every workspace of the
+    // Desk's data, kept to `ws` (none: every workspace of the
     // login). A workspace the login is not in is 404.
     if (path === '/api/home' && method === 'GET') {
       const key = ws ? keyOfWs(ws) : null;

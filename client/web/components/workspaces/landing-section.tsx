@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * The workspace's landing page (task d78e7bde): what its users see at Home
- * while it is their current workspace. The Built-in home, or a home app the
+ * The workspace's landing page (task d78e7bde): what its users see at Desk
+ * while it is their current workspace. Desk, or a home app the
  * workspace holds with a working published build. A Moderator of the
  * workspace picks it (PATCH /api/workspaces/:id `landingAppId`); everyone
  * else reads it. The picker's apps are the landing page's own app list
@@ -32,7 +32,7 @@ import { WorkspaceSection } from './workspace-section';
 export const BUILT_IN_HOME = '__built_in__';
 export const BUILT_IN_HOME_LABEL = 'Desk';
 /** The picker's value for a set home app it cannot name: one the workspace
- *  no longer holds (audit M2). Picking the Built-in home from it clears it. */
+ *  no longer holds (audit M2). Picking Desk from it clears it. */
 export const UNNAMED_HOME = '__unnamed__';
 export const NOT_HELD_TEXT = `An app this workspace no longer holds (users see ${BUILT_IN_HOME_LABEL})`;
 
@@ -51,7 +51,7 @@ export function landingValue(app: WorkspaceLandingApp | null | undefined): strin
   return app.held !== false && app.appId ? app.appId : UNNAMED_HOME;
 }
 
-/** The picker's choices: the Built-in home, the current home app, then the
+/** The picker's choices: Desk, the current home app, then the
  *  other apps the workspace holds, each once, in the order given. */
 export function landingChoices(
   current: WorkspaceLandingApp | null | undefined,
@@ -135,7 +135,7 @@ function LandingPicker({
         className="flex items-center gap-1.5 text-xs text-muted-foreground"
       >
         <LayoutTemplate className="size-3.5" aria-hidden />
-        Desk
+        Shows at Desk
       </Label>
       <Select value={value} onValueChange={(v) => void apply(v)} disabled={pending}>
         <SelectTrigger id="landingApp" size="xs" aria-label="Landing page">

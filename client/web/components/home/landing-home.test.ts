@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 /**
  * The landing page with a home app (task d78e7bde, audit L2): the app runs
  * full-bleed with the landing page's data as its `host.hub`, a failed load
- * falls back to the Built-in home, and the toggle shows the Built-in home
+ * falls back to Desk, and the toggle shows Desk
  * while the app stays mounted.
  */
 
@@ -68,7 +68,7 @@ describe('LandingAppView', () => {
     const props = sandbox.props.at(-1)!;
     expect((props.hub as { getData: () => unknown }).getData()).toBe(hub);
     expect(typeof props.onLoadFailure).toBe('function');
-    // The toggle names the app and the Built-in home; the app is pressed.
+    // The toggle names the app and Desk; the app is pressed.
     expect(html).toMatch(/aria-pressed="true"[^>]*>.*Rota board/);
     expect(html).toContain('>Desk<');
   });

@@ -31,9 +31,9 @@ import { DeskHome } from './desk/desk-home';
 /**
  * `/` for every login (task d78e7bde): the landing page of the current
  * workspace, and it follows the switcher. GET /api/home?ws= names the
- * workspace's home app, if any, and the data of the Built-in home, kept to
- * that workspace. "All my workspaces" asks for no workspace: the Built-in
- * home over all of them. Each workspace gets its own view (keyed by the
+ * workspace's home app, if any, and the data of Desk, kept to
+ * that workspace. "All my workspaces" asks for no workspace: Desk
+ * over all of them. Each workspace gets its own view (keyed by the
  * pick), so a switch never shows the last workspace's app or toggle.
  */
 export function LandingHome() {
@@ -112,7 +112,7 @@ function LandingFor({ ws }: { ws: string | null }) {
 }
 
 /** The home app the landing page shows: the workspace's, unless it failed
- *  to load in this view (then the Built-in home). Null: the Built-in home. */
+ *  to load in this view (then Desk). Null: Desk. */
 export function homeAppToShow(
   data: Pick<WorkspaceHomeData, 'homeApp'> | undefined,
   failedAppId: string | null,
@@ -122,8 +122,8 @@ export function homeAppToShow(
 
 /**
  * The landing page with a home app: the app full-bleed, its `host.hub`
- * answered from the landing page's data, and a toggle to the Built-in home.
- * The app stays mounted while the Built-in home shows, so switching back
+ * answered from the landing page's data, and a toggle to Desk.
+ * The app stays mounted while Desk shows, so switching back
  * does not reload it.
  */
 export function LandingAppView({

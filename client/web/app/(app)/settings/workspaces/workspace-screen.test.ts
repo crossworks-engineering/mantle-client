@@ -723,7 +723,7 @@ describe('user search on screen open', () => {
 });
 
 describe('the Landing page section (task d78e7bde)', () => {
-  const app = { held: true, appId: 'app1', title: 'Desk', ready: true };
+  const app = { held: true, appId: 'app1', title: 'Rota board', ready: true };
   const html = (over: Partial<Workspace>, landingApp?: WorkspaceDetail['landingApp']) =>
     render(
       createElement(WorkspaceSections, {
@@ -753,7 +753,7 @@ describe('the Landing page section (task d78e7bde)', () => {
     const out = html({ me: { member: true, moderator: false } }, app);
     expect(out).toContain('>Landing page</h3>');
     expect(out).not.toContain('aria-label="Landing page"');
-    expect(out).toContain('>Desk</p>');
+    expect(out).toContain('>Rota board</p>');
     expect(html({ me: { member: false, moderator: false } }, null)).toContain('>Desk</p>');
   });
 
