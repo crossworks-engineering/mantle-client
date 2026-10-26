@@ -754,7 +754,7 @@ describe('the Landing page section (task d78e7bde)', () => {
     expect(out).toContain('>Landing page</h3>');
     expect(out).not.toContain('aria-label="Landing page"');
     expect(out).toContain('>Desk</p>');
-    expect(html({ me: { member: false, moderator: false } }, null)).toContain('>Built-in home</p>');
+    expect(html({ me: { member: false, moderator: false } }, null)).toContain('>Desk</p>');
   });
 
   it('says when the app has no working build', () => {
@@ -787,7 +787,7 @@ const { landingChoices, landingValue, BUILT_IN_HOME, UNNAMED_HOME } =
   await import('@/components/workspaces/landing-section');
 
 describe('landingChoices', () => {
-  it('the Built-in home first, then the current app, then the others once', () => {
+  it('Desk first, then the current app, then the others once', () => {
     expect(
       landingChoices({ held: true, appId: 'a', title: 'A', ready: true }, [
         { token: 'b', title: 'B' },
@@ -814,7 +814,7 @@ describe('landingChoices', () => {
     >[0];
     expect(landingValue(noHeld)).toBe('a');
     expect(landingChoices(noHeld, [{ token: 'b', title: 'B' }])).toEqual([
-      { value: BUILT_IN_HOME, label: 'Built-in home' },
+      { value: BUILT_IN_HOME, label: 'Desk' },
       { value: 'a', label: 'A' },
       { value: 'b', label: 'B' },
     ]);

@@ -101,11 +101,11 @@ export function DeskHome({
 
   return (
     <div className="relative flex h-full min-h-0">
-      <SetPageTitle title="Home" />
+      <SetPageTitle title="Desk" />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pt-3">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold leading-tight">Home</h1>
+            <h1 className="text-lg font-semibold leading-tight">Desk</h1>
             {scope ? <p className="truncate text-xs text-muted-foreground">{scope}</p> : null}
           </div>
           <div className="flex items-center gap-2">
