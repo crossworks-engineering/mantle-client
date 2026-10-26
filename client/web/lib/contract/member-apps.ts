@@ -1,5 +1,5 @@
 /**
- * A workspace's landing page (task d78e7bde): what every login's Home reads
+ * A workspace's landing page (task d78e7bde): what every login's Desk reads
  * from GET /api/home?ws=, the workspace's home app and the hub data the
  * Desk and the home app show. The older GET /api/member/home shape
  * stays for reference only; this client reads /api/home.
@@ -20,7 +20,7 @@ export type MemberHomeApp = {
 };
 
 /**
- * GET /api/member/home: the pinned home app (null = Desk, and
+ * GET /api/member/home: the pinned home app (null = the built-in Desk, and
  * then `hub` is null too) and what its `host.hub.get()` answers. A section's
  * token is a page id; an app card's token is an app id.
  *
@@ -34,13 +34,13 @@ export type MemberHomeData<THub = unknown> =
 
 /**
  * GET /api/home?ws=<id>: the landing page of a workspace, for every login
- * (task d78e7bde). Without `ws` it is "All my workspaces": Desk
- * over every workspace of the login, never a home app.
+ * (task d78e7bde). Without `ws` it is "All my workspaces": the built-in
+ * Desk over every workspace of the login, never a home app.
  *
  * `ws` echoes the workspace asked for (null: all). `homeApp` is the
  * workspace's home app when the workspace still holds it, its published
- * build is green and the login may run it; null means Desk.
- * `hub` is always there: the data of Desk and what a home
+ * build is green and the login may run it; null means the built-in Desk.
+ * `hub` is always there: the data of the built-in Desk and what a home
  * app's `host.hub.get()` answers, read in the login's scope and kept to
  * what the workspace reads (sections are its newest pages, counts its items
  * per kind, apps the other apps it holds that the login may run). A

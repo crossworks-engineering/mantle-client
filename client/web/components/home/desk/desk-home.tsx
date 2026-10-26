@@ -36,7 +36,7 @@ import { GlanceWidget, QuickNoteWidget, WorkspacesWidget } from './widgets/misc'
 import { CalendarWidget, ClockWidget, FocusWidget } from './widgets/time';
 
 /**
- * The Built-in home as a desk (Jason, 2026-10-26): the whole screen is a grid
+ * The built-in Desk (Jason, 2026-10-26): the whole screen is a grid
  * the person arranges like a real desk. Widgets for the kinds of workspace
  * items they work in (pins first), tools (clock, calendar, quick note, the
  * theme, Drift, a focus timer...) and every pinned item as a desk icon, each
