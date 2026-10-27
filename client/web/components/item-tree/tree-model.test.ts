@@ -15,6 +15,7 @@ import {
   itemMovable,
   itemPlaceAt,
   liveFolder,
+  placeSiblings,
   mergeFolderPages,
   pickedAfterMove,
   rangeOfItems,
@@ -352,6 +353,21 @@ describe('dragging', () => {
     expect(itemPlaceAt(a, b, 0.8, 2)).toBeNull();
     // At the top level both sit in no folder.
     expect(itemPlaceAt({ ...a, parent: null }, { ...b, parent: null }, 0.2, 1)).toBe('before');
+    // A read-only snapshot copy is neither placed nor landed beside.
+    const copy = { ...item('c'), readOnly: true };
+    expect(itemPlaceAt({ ...a, item: copy }, b, 0.8, 1)).toBeNull();
+    expect(itemPlaceAt(a, { ...b, item: copy }, 0.8, 1)).toBeNull();
+  });
+
+  it('steps and drops over the items of a folder, never over a copy', () => {
+    const copy = { ...item('c'), snapshotOf: 'a' };
+    const sibs = placeSiblings([item('a'), copy, item('b'), item('d')]);
+    expect(sibs.map((s) => s.id)).toEqual(['a', 'b', 'd']);
+    // b moves up past a (the copy beside a is no step), down past d.
+    expect(afterForStep(sibs, 'b', -1)).toBeNull();
+    expect(afterForStep(sibs, 'b', 1)).toBe('d');
+    // A drop before b follows a, not the copy.
+    expect(afterFor(sibs, 'd', 'b', 'before')).toBe('a');
   });
 
   it('carries the folder page’s order right and its items to each row', () => {
