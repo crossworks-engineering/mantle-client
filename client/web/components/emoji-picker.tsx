@@ -158,7 +158,45 @@ export const EMOJI_SECTIONS: EmojiSection[] = [
   },
 ];
 
+/** Faces, hands and hearts first, then the document set: the chat
+ *  screen's reactions and composer (Messenger V1 Phase 2). */
+export const CHAT_EMOJI_SECTIONS: EmojiSection[] = [
+  {
+    name: 'Smileys & reactions',
+    items: [
+      { e: '👍', k: 'thumbs up yes ok like agree' },
+      { e: '❤️', k: 'heart love red' },
+      { e: '😂', k: 'joy laugh tears funny' },
+      { e: '😊', k: 'smile happy blush' },
+      { e: '😀', k: 'grin smile happy' },
+      { e: '😉', k: 'wink' },
+      { e: '😍', k: 'heart eyes love' },
+      { e: '🤔', k: 'thinking hmm wonder' },
+      { e: '😮', k: 'wow surprised open mouth' },
+      { e: '😢', k: 'sad cry tear' },
+      { e: '😅', k: 'sweat smile phew' },
+      { e: '🙂', k: 'slight smile' },
+      { e: '🙃', k: 'upside down silly' },
+      { e: '😎', k: 'cool sunglasses' },
+      { e: '🥳', k: 'party celebrate' },
+      { e: '😴', k: 'sleep tired' },
+      { e: '🙏', k: 'thanks pray please' },
+      { e: '👏', k: 'clap applause well done' },
+      { e: '🙌', k: 'raised hands hooray' },
+      { e: '👋', k: 'wave hello bye' },
+      { e: '👌', k: 'ok perfect' },
+      { e: '✌️', k: 'peace victory' },
+      { e: '💪', k: 'strong muscle' },
+      { e: '👀', k: 'eyes look see' },
+      { e: '👎', k: 'thumbs down no dislike' },
+      { e: '💯', k: 'hundred perfect' },
+    ],
+  },
+  ...EMOJI_SECTIONS,
+];
+
 const ALL: EmojiEntry[] = EMOJI_SECTIONS.flatMap((s) => s.items);
+const CHAT_ALL: EmojiEntry[] = CHAT_EMOJI_SECTIONS.flatMap((s) => s.items);
 
 export function EmojiPicker({
   value,
@@ -166,19 +204,27 @@ export function EmojiPicker({
   onClear,
   trigger,
   align = 'start',
+  set = 'documents',
 }: {
   value?: string | null;
   onSelect: (emoji: string) => void;
   onClear?: () => void;
   trigger: ReactNode;
   align?: 'start' | 'center' | 'end';
+  /** `chat`: faces and hands first (CHAT_EMOJI_SECTIONS). */
+  set?: 'documents' | 'chat';
 }) {
+  const sections = set === 'chat' ? CHAT_EMOJI_SECTIONS : EMOJI_SECTIONS;
+  const all = set === 'chat' ? CHAT_ALL : ALL;
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
 
   const query = q.trim().toLowerCase();
   // While searching we flatten across sections; otherwise show the grouped set.
-  const matches = useMemo(() => (query ? ALL.filter((x) => x.k.includes(query)) : null), [query]);
+  const matches = useMemo(
+    () => (query ? all.filter((x) => x.k.includes(query)) : null),
+    [query, all],
+  );
 
   const choose = (emoji: string) => {
     onSelect(emoji);
@@ -225,7 +271,7 @@ export function EmojiPicker({
               <div className="grid grid-cols-8 gap-0.5">{matches.map(cell)}</div>
             )
           ) : (
-            EMOJI_SECTIONS.map((s) => (
+            sections.map((s) => (
               <div key={s.name} className="mb-1.5">
                 <p className="px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   {s.name}

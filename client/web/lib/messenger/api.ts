@@ -5,6 +5,10 @@
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import type {
   MessengerConversation,
+  MessengerCreateRequest,
+  MessengerCreateResponse,
+  MessengerFavouriteKind,
+  MessengerMessage,
   MessengerDirectoryResponse,
   MessengerListResponse,
   MessengerMessagesResponse,
@@ -40,4 +44,33 @@ export const messengerApi = {
       `${BASE}/directory${q ? `?q=${encodeURIComponent(q)}` : ''}`,
     ).then((r) => r.entries ?? []),
   unread: () => apiFetch<MessengerUnreadResponse>(`${BASE}/unread`),
+  create: (body: MessengerCreateRequest) =>
+    apiSend<MessengerCreateResponse>(`${BASE}/conversations`, 'POST', body),
+  /** A group's title (admins) and my mute. */
+  update: (id: string, body: { title?: string | null; muted?: boolean }) =>
+    apiSend<{ conversation: MessengerConversation }>(one(id), 'PATCH', body).then(
+      (r) => r.conversation,
+    ),
+  addPeople: (id: string, logins: string[]) =>
+    apiSend<unknown>(`${one(id)}/participants`, 'POST', { logins }),
+  removePerson: (id: string, loginId: string) =>
+    apiSend<unknown>(`${one(id)}/participants/${encodeURIComponent(loginId)}`, 'DELETE'),
+  leave: (id: string) => apiSend<unknown>(`${one(id)}/leave`, 'POST'),
+  /** Clear for me: I see nothing older, nobody else is affected. */
+  clear: (id: string) => apiSend<unknown>(`${one(id)}/clear`, 'POST'),
+  /** Delete the history for everyone (a group's admins). */
+  deleteHistory: (id: string) => apiSend<unknown>(`${one(id)}/history/delete`, 'POST', {}),
+  edit: (id: string, seq: number, body: string) =>
+    apiSend<{ message: MessengerMessage }>(`${one(id)}/messages/${seq}`, 'PATCH', { body }).then(
+      (r) => r.message,
+    ),
+  remove: (id: string, seq: number) => apiSend<unknown>(`${one(id)}/messages/${seq}`, 'DELETE'),
+  react: (id: string, seq: number, emoji: string) =>
+    apiSend<unknown>(`${one(id)}/messages/${seq}/reactions`, 'POST', { emoji }),
+  pin: (kind: MessengerFavouriteKind, id: string, on: boolean) =>
+    apiSend<unknown>(
+      `${BASE}/favourites/${kind}/${encodeURIComponent(id)}`,
+      on ? 'PUT' : 'DELETE',
+      on ? {} : undefined,
+    ),
 };

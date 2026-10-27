@@ -11,10 +11,23 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown } from 'lucide-react';
+import { useDefaultLayout } from 'react-resizable-panels';
+import { ArrowDown, Bell, BellOff, PanelRight, Pin, PinOff } from 'lucide-react';
 import { ApiError } from '@mantle/web-ui/api-fetch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@mantle/web-ui/ui/alert-dialog';
 import { Button } from '@mantle/web-ui/ui/button';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@mantle/web-ui/ui/resizable';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { ItemHeader } from '@/components/layout/item-header';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import {
@@ -24,7 +37,12 @@ import {
   useTyping,
 } from '@/components/messenger/messenger-live';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
-import type { MessengerConversation, MessengerListRow } from '@/lib/messenger/dto';
+import type {
+  MessengerConversation,
+  MessengerListRow,
+  MessengerMention,
+  MessengerMessage,
+} from '@/lib/messenger/dto';
 import { otherPeople, presenceLine, stampLabel } from '@/lib/messenger/format';
 import { shouldSendTyping, typingLine } from '@/lib/messenger/live';
 import {
@@ -33,6 +51,7 @@ import {
   authorReadSeqs,
   contiguousTop,
   refetchPlacement,
+  seqsCutAbove,
   lowestSeq,
   newClientMsgId,
   readCursorToSend,
@@ -47,7 +66,8 @@ import {
   type Transcript,
 } from '@/lib/messenger/transcript';
 import { ChatComposer } from './chat-composer';
-import { ChatMessage, OutboxMessage } from './chat-message';
+import { ChatInspector } from './chat-inspector';
+import { ChatMessage, MessageEditor, OutboxMessage } from './chat-message';
 
 /** Within this of the bottom the transcript follows new messages. */
 const STICK_PX = 80;
@@ -55,6 +75,19 @@ const STICK_PX = 80;
 const LOAD_OLDER_PX = 80;
 /** The catch-up's page: the brain's ceiling. */
 const CATCH_UP_LIMIT = 100;
+/** What `useDefaultLayout` reads on the server. */
+const NO_STORAGE = { getItem: () => null, setItem: () => {} };
+/** The inspector's open state, remembered for the next chat. */
+const INSPECTOR_KEY = 'mantle:chats:inspector';
+
+function readInspectorOpen(): boolean {
+  try {
+    return window.localStorage.getItem(INSPECTOR_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** The read cursor goes at most this often. */
 const READ_DEBOUNCE_MS = 400;
 
@@ -99,10 +132,17 @@ export function ChatRoom({
   const scroller = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  // Set before an older page lands: the scroll height to keep the reader's
-  // place against (the page grows above them).
-  const keepFrom = useRef<number | null>(null);
+  // Set before an older page lands: the message the reader's place is kept
+  // on (the page grows above it), and where it sat in the view.
+  const keepFrom = useRef<{ seq: number; offset: number } | null>(null);
   const scrollToBottom = useRef(true);
+  // Bumped by every page load: a catch-up, an older page or a refetch that
+  // was asked for before it belongs to the old window and is dropped.
+  const epoch = useRef(0);
+  // A reload that failed after the first page: the next event or gap tries
+  // it again (its error is not the first load's, and blocks nothing).
+  const reloadPending = useRef(false);
+  const reloadRef = useRef<() => Promise<void>>(async () => {});
 
   // One catch-up at a time; a second request while one runs runs again after.
   // It asks for what is above the top of the unbroken run held, so a seq
@@ -119,8 +159,19 @@ export function ChatRoom({
         again.current = false;
         let more = true;
         while (more) {
+          const ep = epoch.current;
           const after = contiguousTop(tRef.current.messages);
           const page = await messengerApi.messages(id, { afterSeq: after, limit: CATCH_UP_LIMIT });
+          // A page load replaced the window meanwhile: drop this page. A
+          // catch-up it asked for since (`again`) runs on the new window;
+          // one still in flight asks once it lands.
+          if (ep !== epoch.current) break;
+          // The seqs right above the window are gone (a history delete, or I
+          // was out of the group): what is held is stale, load the chat again.
+          if (seqsCutAbove(after, page.messages)) {
+            void reloadRef.current();
+            return;
+          }
           tRef.current = withNewer(tRef.current, page.messages);
           if (page.messages.length > 0) setT((cur) => withNewer(cur, page.messages));
           more =
@@ -144,13 +195,25 @@ export function ChatRoom({
   // (people, history, my clear from another tab). A page served before a
   // message committed can land after a catch-up merged that message, so a
   // catch-up always follows it.
+  // A reload asked for while one is in flight runs again once it lands: the
+  // page in flight may predate what asked (a history delete).
+  const loadAgain = useRef(false);
   const loadLatest = useCallback(async () => {
-    if (loading.current) return;
+    if (loading.current) {
+      loadAgain.current = true;
+      return;
+    }
     loading.current = true;
     try {
-      const page = await messengerApi.messages(id, { limit: PAGE_SIZE });
-      tRef.current = withLatestPage(tRef.current, page);
-      setT((cur) => withLatestPage(cur, page));
+      do {
+        loadAgain.current = false;
+        epoch.current += 1;
+        const page = await messengerApi.messages(id, { limit: PAGE_SIZE });
+        epoch.current += 1;
+        tRef.current = withLatestPage(tRef.current, page);
+        setT((cur) => withLatestPage(cur, page));
+      } while (loadAgain.current);
+      reloadPending.current = false;
       setLoadError(null);
       if (!loadedRef.current) scrollToBottom.current = true;
       loadedRef.current = true;
@@ -158,11 +221,13 @@ export function ChatRoom({
       void catchUp();
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) onGoneRef.current();
+      else if (loadedRef.current) reloadPending.current = true;
       else setLoadError(err instanceof Error ? err.message : 'Could not load the chat');
     } finally {
       loading.current = false;
     }
   }, [id, catchUp]);
+  reloadRef.current = loadLatest;
 
   const refetchSeq = useCallback(
     async (seq: number) => {
@@ -173,7 +238,9 @@ export function ChatRoom({
         return;
       }
       try {
+        const ep = epoch.current;
         const page = await messengerApi.messages(id, { afterSeq: seq - 1, limit: 1 });
+        if (ep !== epoch.current) return;
         const hit = page.messages.filter((m) => m.seq === seq);
         if (hit.length) setT((cur) => withNewer(cur, hit));
       } catch {
@@ -202,7 +269,10 @@ export function ChatRoom({
     if (e.kind === 'effect' && e.effect.c !== id) return;
     // No first page yet (in flight, or it failed): load it; it catches up
     // after itself.
-    if (!loadedRef.current) {
+    if (!loadedRef.current || reloadPending.current) {
+      if (e.kind === 'gap' || e.effect.reload) {
+        void queryClient.invalidateQueries({ queryKey: messengerKeys.conversation(id) });
+      }
       void loadLatest();
       return;
     }
@@ -218,16 +288,25 @@ export function ChatRoom({
   });
 
   // ── Scrolling ─────────────────────────────────────────────────────────
+  // An older page that failed stops the auto-fill below until the reader
+  // scrolls (no request loop while offline).
+  const [olderFailed, setOlderFailed] = useState(false);
   const loadOlder = useCallback(async () => {
     const before = lowestSeq(tRef.current.messages);
     if (loadingOlder || !tRef.current.hasOlder || before === null) return;
     setLoadingOlder(true);
     try {
+      const ep = epoch.current;
       const page = await messengerApi.messages(id, { beforeSeq: before, limit: PAGE_SIZE });
-      keepFrom.current = scroller.current?.scrollHeight ?? null;
+      if (ep !== epoch.current) return;
+      const el = scroller.current;
+      const anchor = el?.querySelector<HTMLElement>(`[data-seq="${before}"]`);
+      keepFrom.current =
+        el && anchor ? { seq: before, offset: anchor.offsetTop - el.scrollTop } : null;
+      setOlderFailed(false);
       setT((cur) => withOlderPage(cur, page));
     } catch {
-      /* scrolling up again retries */
+      setOlderFailed(true);
     } finally {
       setLoadingOlder(false);
     }
@@ -239,8 +318,12 @@ export function ChatRoom({
     const el = scroller.current;
     if (!el) return;
     if (keepFrom.current !== null) {
-      el.scrollTop += el.scrollHeight - keepFrom.current;
+      // The message that was at the top stays where it was in the view,
+      // whatever else landed in the same render (a catch-up at the bottom).
+      const keep = keepFrom.current;
       keepFrom.current = null;
+      const anchor = el.querySelector<HTMLElement>(`[data-seq="${keep.seq}"]`);
+      if (anchor) el.scrollTop = anchor.offsetTop - keep.offset;
       return;
     }
     if (scrollToBottom.current || atBottom.current) {
@@ -255,9 +338,9 @@ export function ChatRoom({
   // until the transcript can scroll (or there is nothing older).
   useEffect(() => {
     const el = scroller.current;
-    if (!el || !loaded || !t.hasOlder || loadingOlder) return;
+    if (!el || !loaded || !t.hasOlder || loadingOlder || olderFailed) return;
     if (el.scrollHeight <= el.clientHeight + LOAD_OLDER_PX) void loadOlder();
-  }, [loaded, t, loadingOlder, loadOlder]);
+  }, [loaded, t, loadingOlder, loadOlder, olderFailed]);
 
   // ── The read cursor ───────────────────────────────────────────────────
   // Sent when the newest message is on screen and the tab is visible, at
@@ -295,10 +378,15 @@ export function ChatRoom({
         void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
       })
       .catch((err) => {
-        // A refusal (I left, the chat is gone) will not change by retrying.
-        if (!(err instanceof ApiError && err.status >= 400 && err.status < 500)) {
-          readSent.current = 0;
-        }
+        // A refusal (I left, the chat is gone) will not change by retrying;
+        // a timeout or the rate limit will.
+        const refused =
+          err instanceof ApiError &&
+          err.status >= 400 &&
+          err.status < 500 &&
+          err.status !== 408 &&
+          err.status !== 429;
+        if (!refused) readSent.current = 0;
       });
   }, [id, me, queryClient]);
   const markRead = useCallback(() => {
@@ -308,6 +396,7 @@ export function ChatRoom({
   useEffect(
     () => () => {
       if (readTimer.current) clearTimeout(readTimer.current);
+      readTimer.current = null;
     },
     [],
   );
@@ -318,7 +407,10 @@ export function ChatRoom({
     const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     atBottom.current = fromBottom < STICK_PX;
     setShowJump(!atBottom.current);
-    if (el.scrollTop < LOAD_OLDER_PX) void loadOlder();
+    if (el.scrollTop < LOAD_OLDER_PX) {
+      setOlderFailed(false);
+      void loadOlder();
+    }
     if (atBottom.current) markRead();
   };
 
@@ -337,17 +429,22 @@ export function ChatRoom({
 
   // ── Sending ───────────────────────────────────────────────────────────
   const send = useCallback(
-    async (body: string, clientMsgId = newClientMsgId()) => {
+    async (body: string, mentions: MessengerMention[] = [], clientMsgId = newClientMsgId()) => {
       const line: OutboxLine = {
         clientMsgId,
         body,
         createdAt: new Date().toISOString(),
         state: 'sending',
+        mentions,
       };
       scrollToBottom.current = true;
       setT((cur) => withOutbox(cur, line));
       try {
-        const out = await messengerApi.send(id, { body, clientMsgId });
+        const out = await messengerApi.send(id, {
+          body,
+          clientMsgId,
+          ...(mentions.length ? { mentions } : {}),
+        });
         const top = contiguousTop(tRef.current.messages);
         scrollToBottom.current = true;
         tRef.current = withNewer(tRef.current, [out.message]);
@@ -376,8 +473,80 @@ export function ChatRoom({
     void messengerApi.typing(id).catch(() => {});
   }, [id]);
 
+  // ── Message actions ───────────────────────────────────────────────────
+  const toast = useToast();
+  const [editingSeq, setEditingSeq] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<MessengerMessage | null>(null);
+  const failed = (err: unknown, what: string) =>
+    toast.error(err instanceof Error ? err.message : what);
+
+  const react = useCallback(
+    (seq: number, emoji: string) => {
+      void messengerApi
+        .react(id, seq, emoji)
+        .then(() => refetchSeq(seq))
+        .catch((err) => failed(err, 'Could not react'));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `failed` is the toast
+    [id, refetchSeq],
+  );
+
+  const saveEdit = async (seq: number, body: string) => {
+    try {
+      const message = await messengerApi.edit(id, seq, body);
+      setT((cur) => withNewer(cur, [message]));
+      setEditingSeq(null);
+    } catch (err) {
+      failed(err, 'Could not save the edit');
+    }
+  };
+
+  const confirmDelete = async () => {
+    const m = deleting;
+    setDeleting(null);
+    if (!m) return;
+    try {
+      await messengerApi.remove(id, m.seq);
+      await refetchSeq(m.seq);
+      void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
+    } catch (err) {
+      failed(err, 'Could not delete the message');
+    }
+  };
+
+  // ── The inspector and my settings ─────────────────────────────────────
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  useEffect(() => setInspectorOpen(readInspectorOpen()), []);
+  const toggleInspector = () =>
+    setInspectorOpen((open) => {
+      try {
+        window.localStorage.setItem(INSPECTOR_KEY, open ? '0' : '1');
+      } catch {
+        /* a private window keeps it for this visit */
+      }
+      return !open;
+    });
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: 'chats:inspector',
+    panelIds: inspectorOpen ? ['room', 'inspector'] : ['room'],
+    onlySaveAfterUserInteractions: true,
+    storage: typeof window === 'undefined' ? NO_STORAGE : window.localStorage,
+  });
+  const setting = async (run: () => Promise<unknown>) => {
+    try {
+      await run();
+      void queryClient.invalidateQueries({ queryKey: messengerKeys.conversation(id) });
+      void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
+    } catch (err) {
+      failed(err, 'That did not work');
+    }
+  };
+
   // ── Drawing ───────────────────────────────────────────────────────────
-  const people = conversation?.participants ?? row?.participants ?? [];
+  const people = useMemo(
+    () => conversation?.participants ?? row?.participants ?? [],
+    [conversation?.participants, row?.participants],
+  );
   const group = (conversation?.kind ?? row?.kind) === 'group';
   const title = row?.title ?? conversation?.title ?? titleOf(conversation, me);
   const others = otherPeople(people, me);
@@ -397,6 +566,10 @@ export function ChatRoom({
   );
   const peerOnline = !group && others.some((p) => online.has(p.id));
   const left = conversation?.me.leftSeq != null;
+  const isAdmin = group && !!conversation?.me.admin;
+  const muted = conversation?.me.muted ?? row?.muted ?? false;
+  const pinned = row?.favourite ?? false;
+  const mentionNames = useMemo(() => people.map((p) => p.name), [people]);
 
   // Say a newly arrived message from someone else, once (the transcript
   // itself is not a live region: an older page would be read out whole).
@@ -404,15 +577,21 @@ export function ChatRoom({
   const announced = useRef<number | null>(null);
   useEffect(() => {
     if (!loaded) return;
-    const newest = t.messages[t.messages.length - 1];
-    if (!newest) return;
-    if (announced.current === null || newest.seq <= announced.current) {
-      announced.current = Math.max(announced.current ?? 0, newest.seq);
+    const top = t.messages.length ? t.messages[t.messages.length - 1]!.seq : 0;
+    // The first page is the baseline, an empty chat's too.
+    if (announced.current === null) {
+      announced.current = top;
       return;
     }
-    announced.current = newest.seq;
-    if (newest.authorId === me || newest.deletedAt) return;
-    setAnnounce(`${newest.authorName ?? 'Someone'}: ${newest.body.slice(0, 200)}`);
+    const since = announced.current;
+    if (top <= since) return;
+    announced.current = top;
+    // The newest from someone else that arrived since (my own send can land
+    // above theirs).
+    const theirs = [...t.messages]
+      .reverse()
+      .find((m) => m.seq > since && m.authorId !== me && !m.deletedAt && m.authorKind !== 'system');
+    if (theirs) setAnnounce(`${theirs.authorName ?? 'Someone'}: ${theirs.body.slice(0, 200)}`);
   }, [loaded, t.messages, me]);
 
   if (conversationQuery.isError && !conversation) {
@@ -444,98 +623,195 @@ export function ChatRoom({
             {presence}
           </span>
         }
+        tools={[
+          {
+            key: 'details',
+            label: inspectorOpen ? 'Hide details' : 'Details',
+            icon: <PanelRight />,
+            pressed: inspectorOpen,
+            onSelect: toggleInspector,
+          },
+        ]}
+        more={[
+          {
+            key: 'mute',
+            label: muted ? 'Unmute' : 'Mute',
+            icon: muted ? <Bell /> : <BellOff />,
+            onSelect: () => void setting(() => messengerApi.update(id, { muted: !muted })),
+          },
+          {
+            key: 'pin',
+            label: pinned ? 'Unpin' : 'Pin',
+            icon: pinned ? <PinOff /> : <Pin />,
+            onSelect: () => void setting(() => messengerApi.pin('conversation', id, !pinned)),
+          },
+        ]}
       />
-      <p className="sr-only" aria-live="polite">
-        {announce}
-      </p>
-      {/* No browser scroll anchoring: the place after an older page is kept
-          by hand (useLayoutEffect), and anchoring would add its own shift. */}
-      <div
-        ref={scroller}
-        onScroll={onScroll}
-        className="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin [overflow-anchor:none]"
-        data-testid="chat-transcript"
+      <ResizablePanelGroup
+        orientation="horizontal"
+        id="chats:inspector"
+        defaultLayout={defaultLayout}
+        onLayoutChanged={onLayoutChanged}
+        className="min-h-0 flex-1 items-stretch overflow-hidden"
       >
-        {loadingOlder ? (
-          // Out of the flow, so it moves nothing under the reader.
-          <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
-            <Spinner />
-          </div>
-        ) : null}
-        <div className="flex min-h-full flex-col justify-end gap-1 px-6 py-4">
-          {loadError && !loaded ? (
-            <div className="flex flex-col items-center gap-3 py-6 text-center text-sm text-muted-foreground">
-              <p>{loadError}</p>
-              <Button variant="outline" size="sm" onClick={() => void loadLatest()}>
-                Retry
-              </Button>
-            </div>
-          ) : !loaded ? (
-            <div className="flex justify-center py-6">
-              <Spinner />
-            </div>
-          ) : items.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No messages yet. Say hello.
+        <ResizablePanel id="room" minSize="360px">
+          <div className="flex h-full min-h-0 flex-col">
+            <p className="sr-only" aria-live="polite">
+              {announce}
             </p>
-          ) : (
-            items.map((it) =>
-              it.kind === 'stamp' ? (
-                <div
-                  key={it.key}
-                  className="py-2 text-center text-xs text-muted-foreground"
-                  data-testid="chat-stamp"
-                >
-                  {stampLabel(it.at)}
+            {/* No browser scroll anchoring: the place after an older page is kept
+          by hand (useLayoutEffect), and anchoring would add its own shift. */}
+            <div
+              ref={scroller}
+              onScroll={onScroll}
+              className="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin [overflow-anchor:none]"
+              data-testid="chat-transcript"
+            >
+              {loadingOlder ? (
+                // Out of the flow, so it moves nothing under the reader.
+                <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+                  <Spinner />
                 </div>
-              ) : it.kind === 'message' ? (
-                <ChatMessage
-                  key={it.key}
-                  message={it.message}
-                  mine={it.mine}
-                  showAuthor={it.showAuthor}
-                  read={it.mine && readByAll >= it.message.seq}
-                />
+              ) : null}
+              <div className="flex min-h-full flex-col justify-end gap-1 px-6 py-4">
+                {loadError && !loaded ? (
+                  <div className="flex flex-col items-center gap-3 py-6 text-center text-sm text-muted-foreground">
+                    <p>{loadError}</p>
+                    <Button variant="outline" size="sm" onClick={() => void loadLatest()}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : !loaded ? (
+                  <div className="flex justify-center py-6">
+                    <Spinner />
+                  </div>
+                ) : items.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No messages yet. Say hello.
+                  </p>
+                ) : (
+                  items.map((it) =>
+                    it.kind === 'stamp' ? (
+                      <div
+                        key={it.key}
+                        className="py-2 text-center text-xs text-muted-foreground"
+                        data-testid="chat-stamp"
+                      >
+                        {stampLabel(it.at)}
+                      </div>
+                    ) : it.kind === 'message' ? (
+                      <ChatMessage
+                        key={it.key}
+                        message={it.message}
+                        mine={it.mine}
+                        showAuthor={it.showAuthor}
+                        read={it.mine && readByAll >= it.message.seq}
+                        mentionNames={mentionNames}
+                        actions={
+                          left
+                            ? undefined
+                            : {
+                                onReact: (emoji) => react(it.message.seq, emoji),
+                                onEdit: it.mine ? () => setEditingSeq(it.message.seq) : undefined,
+                                onDelete:
+                                  it.mine || isAdmin ? () => setDeleting(it.message) : undefined,
+                              }
+                        }
+                        editing={
+                          editingSeq === it.message.seq ? (
+                            <MessageEditor
+                              initial={it.message.body}
+                              onSave={(body) => void saveEdit(it.message.seq, body)}
+                              onCancel={() => setEditingSeq(null)}
+                            />
+                          ) : undefined
+                        }
+                      />
+                    ) : (
+                      <OutboxMessage
+                        key={it.key}
+                        line={it.line}
+                        onRetry={() =>
+                          void send(it.line.body, it.line.mentions ?? [], it.line.clientMsgId)
+                        }
+                        onDiscard={() => setT((cur) => withoutOutbox(cur, it.line.clientMsgId))}
+                      />
+                    ),
+                  )
+                )}
+              </div>
+            </div>
+            {showJump ? (
+              <div className="pointer-events-none relative">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  className="pointer-events-auto absolute -top-12 right-6 rounded-full shadow-sm"
+                  aria-label="Jump to the latest message"
+                  onClick={() => {
+                    const el = scroller.current;
+                    if (el) el.scrollTop = el.scrollHeight;
+                  }}
+                >
+                  <ArrowDown />
+                </Button>
+              </div>
+            ) : null}
+            <div className="px-6 pb-4">
+              <p className="h-5 text-xs text-muted-foreground" aria-live="polite">
+                {typing ? `${typing}…` : ''}
+              </p>
+              {left ? (
+                <p className="rounded-lg border border-border bg-card/70 p-3 text-center text-sm text-muted-foreground">
+                  You left this chat.
+                </p>
               ) : (
-                <OutboxMessage
-                  key={it.key}
-                  line={it.line}
-                  onRetry={() => void send(it.line.body, it.line.clientMsgId)}
-                  onDiscard={() => setT((cur) => withoutOutbox(cur, it.line.clientMsgId))}
+                <ChatComposer
+                  onSend={(body, mentions) => void send(body, mentions)}
+                  onTyping={onTyping}
+                  people={others}
                 />
-              ),
-            )
-          )}
-        </div>
-      </div>
-      {showJump ? (
-        <div className="pointer-events-none relative">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            className="pointer-events-auto absolute -top-12 right-6 rounded-full shadow-sm"
-            aria-label="Jump to the latest message"
-            onClick={() => {
-              const el = scroller.current;
-              if (el) el.scrollTop = el.scrollHeight;
-            }}
-          >
-            <ArrowDown />
-          </Button>
-        </div>
-      ) : null}
-      <div className="px-6 pb-4">
-        <p className="h-5 text-xs text-muted-foreground" aria-live="polite">
-          {typing ? `${typing}…` : ''}
-        </p>
-        {left ? (
-          <p className="rounded-lg border border-border bg-card/70 p-3 text-center text-sm text-muted-foreground">
-            You left this chat.
-          </p>
-        ) : (
-          <ChatComposer onSend={(body) => void send(body)} onTyping={onTyping} />
-        )}
-      </div>
+              )}
+            </div>
+          </div>
+        </ResizablePanel>
+        {inspectorOpen && conversation ? <ResizableHandle withHandle /> : null}
+        {inspectorOpen && conversation ? (
+          <ResizablePanel id="inspector" defaultSize="320px" minSize="260px" maxSize="480px">
+            <div className="h-full min-h-0 overflow-y-auto border-l border-border scrollbar-thin">
+              <ChatInspector
+                conversation={conversation}
+                title={title}
+                me={me}
+                online={online}
+                pinned={pinned}
+                onLeft={onGone}
+                onCleared={reload}
+              />
+            </div>
+          </ResizablePanel>
+        ) : null}
+      </ResizablePanelGroup>
+      <AlertDialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this message?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It is deleted for everyone in the chat and shows as &ldquo;This message was
+              deleted&rdquo;.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void confirmDelete()}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

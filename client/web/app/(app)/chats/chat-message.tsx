@@ -1,13 +1,32 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { AlertCircle, Check, CheckCheck, Clock } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import {
+  AlertCircle,
+  Check,
+  CheckCheck,
+  Clock,
+  MoreHorizontal,
+  Pencil,
+  SmilePlus,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@mantle/web-ui/ui/dropdown-menu';
+import { RowButton } from '@mantle/web-ui/ui/row-button';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { ChatBubble } from '@/components/chat-bubble';
+import { EmojiPicker } from '@/components/emoji-picker';
 import type { MessengerMessage } from '@/lib/messenger/dto';
 import { bubbleTime } from '@/lib/messenger/format';
-import type { OutboxLine } from '@/lib/messenger/transcript';
+import { splitMentions } from '@/lib/messenger/mentions';
+import { sendableBody, type OutboxLine } from '@/lib/messenger/transcript';
 
 /** The bubble's shape: rounded, mine in the primary fill, theirs on the
  *  muted surface (ChatBubble's own treatment, the muted fill for theirs). */
@@ -24,21 +43,40 @@ function Row({ mine, children }: { mine: boolean; children: ReactNode }) {
   );
 }
 
+/** What a reader may do to a message (M2): react, and edit or delete. */
+export type MessageActions = {
+  onReact: (emoji: string) => void;
+  /** Mine and not deleted. */
+  onEdit?: () => void;
+  /** Mine, or any in a group I administer. */
+  onDelete?: () => void;
+};
+
 /**
  * One message of the transcript: the author's name above it in a group, the
  * bubble, then its time, an "edited" mark and, on mine, the ticks (one sent,
- * two read by everyone else), and the reactions under it.
+ * two read by everyone else), and the reactions under it (a chip toggles
+ * mine). Its actions sit beside the bubble, shown on hover and on keyboard
+ * focus: React (the emoji picker) and More (Edit, Delete).
  */
 export function ChatMessage({
   message,
   mine,
   showAuthor,
   read,
+  mentionNames = [],
+  actions,
+  editing,
 }: {
   message: MessengerMessage;
   mine: boolean;
   showAuthor: boolean;
   read: boolean;
+  /** The chat's people, to draw "@Name" in the mention ink. */
+  mentionNames?: readonly string[];
+  actions?: MessageActions;
+  /** The inline editor, while this message is being edited. */
+  editing?: ReactNode;
 }) {
   if (message.authorKind === 'system') {
     return (
@@ -49,6 +87,8 @@ export function ChatMessage({
   }
   const deleted = message.deletedAt !== null;
   const Tick = read ? CheckCheck : Check;
+  const tools =
+    actions && !deleted && !editing ? <MessageTools mine={mine} actions={actions} /> : null;
   return (
     <Row mine={mine}>
       {showAuthor ? (
@@ -56,28 +96,42 @@ export function ChatMessage({
           {message.authorName ?? 'Someone'}
         </span>
       ) : null}
-      <ChatBubble
-        role={mine ? 'user' : 'assistant'}
-        className={cn(BUBBLE, !mine && THEIRS, deleted && 'opacity-80')}
-      >
-        <span data-testid="chat-message" data-seq={message.seq}>
-          {deleted ? <em className="opacity-80">This message was deleted</em> : message.body}
-        </span>
-      </ChatBubble>
+      {editing ?? (
+        <div className={cn('group flex items-center gap-1', mine && 'flex-row-reverse')}>
+          <ChatBubble
+            role={mine ? 'user' : 'assistant'}
+            className={cn(BUBBLE, !mine && THEIRS, deleted && 'opacity-80')}
+          >
+            <span data-testid="chat-message" data-seq={message.seq}>
+              {deleted ? (
+                <em className="opacity-80">This message was deleted</em>
+              ) : (
+                <MessageBody body={message.body} names={mentionNames} mine={mine} />
+              )}
+            </span>
+          </ChatBubble>
+          {tools}
+        </div>
+      )}
       {message.reactions.length > 0 && !deleted ? (
         <div className="mt-1 flex flex-wrap gap-1">
           {message.reactions.map((r) => (
-            <span
+            <RowButton
               key={r.emoji}
+              onClick={() => actions?.onReact(r.emoji)}
+              disabled={!actions}
+              aria-pressed={r.mine}
               className={cn(
-                'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs',
-                r.mine ? 'border-primary/40 bg-primary/10' : 'border-border bg-card/70',
+                'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors',
+                r.mine
+                  ? 'border-primary/40 bg-primary/10 hover:bg-primary/15'
+                  : 'border-border bg-card/70 hover:bg-foreground/[0.06]',
               )}
-              aria-label={`${r.emoji} ${r.count}${r.mine ? ', including you' : ''}`}
+              aria-label={`${r.emoji} ${r.count}${r.mine ? ', including you. Remove yours' : '. Add yours'}`}
             >
               <span aria-hidden>{r.emoji}</span>
               <span className="tabular-nums text-muted-foreground">{r.count}</span>
-            </span>
+            </RowButton>
           ))}
         </div>
       ) : null}
@@ -93,6 +147,133 @@ export function ChatMessage({
         ) : null}
       </span>
     </Row>
+  );
+}
+
+/** The body, with each "@Name" of the chat's people in the mention ink. */
+function MessageBody({
+  body,
+  names,
+  mine,
+}: {
+  body: string;
+  names: readonly string[];
+  mine: boolean;
+}) {
+  const parts = splitMentions(body, names);
+  if (parts.length === 1 && !parts[0]!.mention) return <>{body}</>;
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.mention ? (
+          <span
+            key={i}
+            className={cn(
+              'font-semibold',
+              mine ? 'underline underline-offset-2' : 'text-primary-ink',
+            )}
+          >
+            {p.text}
+          </span>
+        ) : (
+          <span key={i}>{p.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function MessageTools({ mine, actions }: { mine: boolean; actions: MessageActions }) {
+  const more = actions.onEdit || actions.onDelete;
+  return (
+    <span className="flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 has-[[data-state=open]]:opacity-100">
+      <EmojiPicker
+        set="chat"
+        align={mine ? 'end' : 'start'}
+        onSelect={actions.onReact}
+        trigger={
+          <Button variant="ghost" size="icon-xs" aria-label="React">
+            <SmilePlus />
+          </Button>
+        }
+      />
+      {more ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-xs" aria-label="Message actions">
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={mine ? 'end' : 'start'}>
+            {actions.onEdit ? (
+              <DropdownMenuItem onSelect={actions.onEdit}>
+                <Pencil /> Edit
+              </DropdownMenuItem>
+            ) : null}
+            {actions.onDelete ? (
+              <DropdownMenuItem
+                onSelect={actions.onDelete}
+                className="text-destructive-ink focus:text-destructive-ink"
+              >
+                <Trash2 /> Delete
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </span>
+  );
+}
+
+/** Editing my message in place: the same box as the composer, Enter saves,
+ *  Escape cancels. */
+export function MessageEditor({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string;
+  onSave: (body: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(initial);
+  const body = sendableBody(text);
+  const save = () => {
+    if (!body) return;
+    if (body === initial) onCancel();
+    else onSave(body);
+  };
+  return (
+    <div className="w-[min(32rem,100%)] rounded-lg border border-border bg-card/70 p-2 shadow-sm">
+      <label htmlFor="chat-edit-text" className="sr-only">
+        Edit message
+      </label>
+      <Textarea
+        id="chat-edit-text"
+        autoFocus
+        value={text}
+        rows={Math.min(8, Math.max(2, text.split('\n').length))}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            save();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        className="min-h-0 resize-none border-0 px-2 focus-visible:ring-0 focus-visible:ring-offset-0"
+      />
+      <div className="flex justify-end gap-2 pt-1">
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={save} disabled={!body}>
+          Save
+        </Button>
+      </div>
+    </div>
   );
 }
 

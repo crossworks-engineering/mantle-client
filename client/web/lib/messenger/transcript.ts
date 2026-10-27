@@ -7,7 +7,7 @@
  * seq wins: an edit, a delete, a reaction), and the catch-up after a stream
  * event asks for what is above the highest seq held. Clocks only label.
  */
-import type { MessengerMessage, MessengerMessagesResponse } from './dto';
+import type { MessengerMention, MessengerMessage, MessengerMessagesResponse } from './dto';
 
 /** A send of mine the brain has not answered yet (or refused). */
 export type OutboxLine = {
@@ -17,6 +17,8 @@ export type OutboxLine = {
   state: 'sending' | 'failed';
   /** Why it failed, for the retry line. */
   error?: string;
+  /** The mentions it carries (a retry sends them again). */
+  mentions?: MessengerMention[];
 };
 
 export type Transcript = {
@@ -67,6 +69,16 @@ export function contiguousTop(messages: readonly MessengerMessage[]): number {
     top = seq;
   }
   return top;
+}
+
+/**
+ * A catch-up page that starts above `after + 1` means the seqs between are
+ * gone for me (a history delete, a stint out of a group): what is held is
+ * stale and the chat loads again. Seqs have no gaps otherwise.
+ */
+export function seqsCutAbove(after: number, page: readonly MessengerMessage[]): boolean {
+  const first = page[0];
+  return after > 0 && !!first && first.seq > after + 1;
 }
 
 /**

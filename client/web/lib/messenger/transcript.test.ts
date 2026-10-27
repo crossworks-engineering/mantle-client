@@ -9,6 +9,7 @@ import {
   authorReadSeqs,
   contiguousTop,
   refetchPlacement,
+  seqsCutAbove,
   highestSeq,
   lowestSeq,
   mergeMessages,
@@ -229,5 +230,16 @@ describe('readerSeesNewest', () => {
     expect(readerSeesNewest({ ...on, atBottom: false })).toBe(false);
     expect(readerSeesNewest({ ...on, loaded: false })).toBe(false);
     expect(readerSeesNewest({ ...on, error: 'Could not load the chat' })).toBe(false);
+  });
+});
+
+describe('seqsCutAbove (re-audit MEDIUM B)', () => {
+  it('a page that starts past the next seq means the seqs between are gone', () => {
+    // Held 181..200; history deleted up to 220; the catch-up after 200 gets 221..
+    expect(seqsCutAbove(200, [msg(221), msg(222)])).toBe(true);
+    expect(seqsCutAbove(200, [msg(201)])).toBe(false);
+    expect(seqsCutAbove(200, [])).toBe(false);
+    // Nothing held: the page is the start, never a cut.
+    expect(seqsCutAbove(0, [msg(57)])).toBe(false);
   });
 });
