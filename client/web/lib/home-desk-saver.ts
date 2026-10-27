@@ -22,8 +22,9 @@
  *   read cannot replace it (`busy` stays true; a Desk opened again shows
  *   `latest`). It goes again with the next change or on `flush`; nothing
  *   retries on a timer. `onFailed` is called once until a save lands again.
- * - 401 (the session is gone, or the desk is another login's): the saver
- *   stops for the visit. Any other refusal (a 400: a desk the brain will not
+ * - 401 (the session is gone) or 403 (the desk is another login's: the
+ *   login in use changed in another tab): the saver stops for the visit
+ *   (`onStopped`). Any other refusal (a 400: a desk the brain will not
  *   keep) drops that desk and calls `onFailed` the same way.
  * - A read of the desk (GET) is shown only when nothing is waiting or in
  *   flight and its version is not older than the one known here (`read`):
@@ -49,6 +50,8 @@ export type DeskSaverHooks = {
   onConflict: (state: HomeDeskState) => void;
   /** A save failed another way. Called once until a save lands again. */
   onFailed: () => void;
+  /** A 401 or 403 stopped the saver (its status). Called once. */
+  onStopped?: (status: number) => void;
 };
 
 export type DeskSaver = {
@@ -70,7 +73,7 @@ export type DeskSaver = {
   /** The newest desk not known to have landed (waiting, or on its way),
    *  for a Desk opened again meanwhile; null when there is none. */
   readonly latest: DeskPrefs | null;
-  /** A 401: nothing is sent any more this visit. */
+  /** A 401 or 403: nothing is sent any more this visit. */
   readonly stopped: boolean;
 };
 
@@ -101,22 +104,18 @@ function passing(status: number | null): boolean {
   return status === null || status >= 500 || status === 429;
 }
 
-/** A desk and the change it came from (later changes count higher). */
-type Change = { desk: DeskPrefs; seq: number };
-
 export function createDeskSaver(
   send: DeskSend,
   hooks: DeskSaverHooks,
   delayMs: number = SAVE_DELAY_MS,
 ): DeskSaver {
   let version = 0;
-  let seq = 0;
   // Changed and not landed: a change (its timer may be armed), or the desk
   // of a save that failed.
-  let waiting: Change | null = null;
+  let waiting: DeskPrefs | null = null;
   // `waiting` goes as soon as the save in flight settles (flushed meanwhile).
   let sendWhenFree = false;
-  let inFlight: Change | null = null;
+  let inFlight: DeskPrefs | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   let warned = false;
@@ -144,7 +143,7 @@ export function createDeskSaver(
     waiting = null;
     sendWhenFree = false;
     inFlight = sent;
-    send(sent.desk, version).then(
+    send(sent, version).then(
       (state) => {
         version = state.version;
         warned = false;
@@ -159,14 +158,15 @@ export function createDeskSaver(
           version = theirs.version;
           drop();
           hooks.onConflict(theirs);
-        } else if (status === 401) {
+        } else if (status === 401 || status === 403) {
           stopped = true;
           drop();
+          hooks.onStopped?.(status);
         } else {
           // On the way (offline, a 5xx): the desk waits for the next change
-          // or flush, unless a newer change waits already. Refused (a 400):
-          // it is not kept.
-          if (passing(status) && (!waiting || waiting.seq < sent.seq)) waiting = sent;
+          // or flush, unless a change made since waits already (it is
+          // newer). Refused (a 400): it is not kept.
+          if (passing(status) && !waiting) waiting = sent;
           warn();
         }
         settle();
@@ -196,7 +196,7 @@ export function createDeskSaver(
   return {
     save(desk) {
       if (stopped) return;
-      waiting = { desk, seq: ++seq };
+      waiting = desk;
       clearTimer();
       timer = setTimeout(() => void flush(), delayMs);
     },
@@ -213,7 +213,7 @@ export function createDeskSaver(
       return waiting !== null || inFlight !== null;
     },
     get latest() {
-      return (waiting ?? inFlight)?.desk ?? null;
+      return waiting ?? inFlight;
     },
     get stopped() {
       return stopped;

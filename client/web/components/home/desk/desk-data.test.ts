@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deskToWire, type DeskPrefs } from '@/lib/home-desk';
+import type { DeskSend } from '@/lib/home-desk-saver';
 
 const fetchDesk = vi.fn();
 vi.mock('@mantle/web-ui/api-fetch', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/web-ui/api-fetch')>()),
-  apiFetch: (path: string) => fetchDesk(path),
+  apiFetch: (...args: unknown[]) => fetchDesk(...args),
 }));
 
-const { carriedDesk, putDesk, readDesk } = await import('./desk-data');
+const { carriedDesk, carryUp, putDesk, readDesk } = await import('./desk-data');
+const { createDeskSaver } = await import('@/lib/home-desk-saver');
 
 const failure = (status: number) => Object.assign(new Error(`status ${status}`), { status });
 const state = (version: number) => ({
@@ -79,48 +81,56 @@ describe('saving the desk', () => {
     version: 4,
     loginId: 'login-1',
   });
-  const sent = vi.fn();
-  const answer = (status: number, json: unknown) =>
-    sent.mockResolvedValueOnce(
-      new Response(JSON.stringify(json), {
-        status,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-  afterEach(() => {
-    sent.mockReset();
-    vi.unstubAllGlobals();
-  });
 
   it('sends every save with keepalive, so it outlives the page, and names the login', async () => {
-    vi.stubGlobal('fetch', sent);
-    answer(200, { homeDesk: body().homeDesk, version: 5 });
-    expect(await putDesk(body())).toEqual({ homeDesk: body().homeDesk, version: 5 });
-    const [url, init] = sent.mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/api\/profile\/home-desk$/);
+    fetchDesk.mockResolvedValue(state(5));
+    expect(await putDesk(body())).toEqual(state(5));
+    const [path, init] = fetchDesk.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/profile/home-desk');
     expect(init.method).toBe('PUT');
     expect(init.keepalive).toBe(true);
     expect(JSON.parse(init.body as string)).toEqual(body());
   });
 
   it('a body over the keepalive cap goes without keepalive', async () => {
-    vi.stubGlobal('fetch', sent);
-    answer(400, { error: 'too big' });
+    fetchDesk.mockRejectedValue(failure(400));
     await expect(putDesk(body(2000))).rejects.toMatchObject({ status: 400 });
-    expect((sent.mock.calls[0]![1] as RequestInit).keepalive).toBe(false);
+    expect((fetchDesk.mock.calls[0]![1] as RequestInit).keepalive).toBe(false);
+  });
+});
+
+describe('carrying the v0.8.2 desk up', () => {
+  const kept: DeskPrefs = { v: 1, items: [], counts: {}, icons: true, clock: 'analog' };
+  const carried = (answer: DeskSend) => {
+    const forget = vi.fn();
+    const saver = createDeskSaver(answer, { onConflict: vi.fn(), onFailed: vi.fn() });
+    return { forget, run: () => carryUp(saver, kept, forget) };
+  };
+
+  it('forgets this browser copy once the save lands', async () => {
+    const { forget, run } = carried(() => Promise.resolve(state(1) as never));
+    await run();
+    expect(forget).toHaveBeenCalledTimes(1);
   });
 
-  it('a 409 rejects with the stored desk; a desk named for another login is a quiet 401', async () => {
-    vi.stubGlobal('fetch', sent);
-    answer(409, { homeDesk: null, version: 9 });
-    await expect(putDesk(body())).rejects.toMatchObject({
-      status: 409,
-      body: { homeDesk: null, version: 9 },
-    });
-    answer(401, { error: 'loginId is not the login of this session', code: 'login-mismatch' });
-    await expect(putDesk(body())).rejects.toMatchObject({
-      status: 401,
-      body: { code: 'login-mismatch' },
-    });
+  it('forgets it too when the brain refuses the desk (400, 413), so it is not sent every visit', async () => {
+    for (const status of [400, 413]) {
+      const { forget, run } = carried(() => Promise.reject(failure(status)));
+      await run();
+      expect(forget, String(status)).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('keeps it when the save failed on the way, or the saver stopped', async () => {
+    for (const err of [
+      failure(503),
+      new TypeError('Failed to fetch'),
+      failure(401),
+      failure(403),
+    ]) {
+      const { forget, run } = carried(() => Promise.reject(err));
+      await run();
+      expect(forget, String(err)).not.toHaveBeenCalled();
+    }
   });
 });

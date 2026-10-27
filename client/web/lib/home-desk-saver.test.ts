@@ -138,22 +138,26 @@ describe('the desk saver', () => {
     expect(conflictState(failure(500, { homeDesk: null, version: 3 }))).toBeNull();
   });
 
-  it('a 401 stops the saver for the visit: nothing waiting is sent, nothing new is taken', async () => {
-    const { send, calls, refuse } = sender();
-    const h = hooks();
-    const saver = createDeskSaver(send, h);
-    saver.save(desk('digital', 1));
-    void saver.flush();
-    saver.save(desk('digital', 2));
-    void saver.flush();
-    await refuse(0, failure(401));
-    expect(saver.stopped).toBe(true);
-    expect(h.onFailed).not.toHaveBeenCalled();
-    saver.save(desk('analog', 3));
-    await saver.flush();
-    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
-    expect(calls).toHaveLength(1);
-    expect(saver.read(stateOf(desk('analog'), 9))).toBe(false);
+  it('a 401 or a 403 stops the saver for the visit: nothing waiting is sent, nothing new is taken', async () => {
+    for (const status of [401, 403]) {
+      const { send, calls, refuse } = sender();
+      const h = { ...hooks(), onStopped: vi.fn() };
+      const saver = createDeskSaver(send, h);
+      saver.save(desk('digital', 1));
+      void saver.flush();
+      saver.save(desk('digital', 2));
+      void saver.flush();
+      await refuse(0, failure(status, { code: 'login-mismatch' }));
+      expect(saver.stopped).toBe(true);
+      expect(h.onStopped).toHaveBeenCalledWith(status);
+      expect(h.onFailed).not.toHaveBeenCalled();
+      saver.save(desk('analog', 3));
+      await saver.flush();
+      await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
+      expect(calls).toHaveLength(1);
+      expect(h.onStopped).toHaveBeenCalledTimes(1);
+      expect(saver.read(stateOf(desk('analog'), 9))).toBe(false);
+    }
   });
 
   it('a failed save warns once, not once a save; a save that lands arms it again', async () => {

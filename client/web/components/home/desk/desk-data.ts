@@ -2,16 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import {
-  ApiError,
-  apiFetch,
-  apiUrl,
-  bounceToLogin,
-  errorMessageOf,
-  isAuthFailure,
-  rewritePath,
-  withAuth,
-} from '@mantle/web-ui/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { useFlushOnLeave } from '@mantle/web-ui/use-flush-on-leave';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
@@ -115,44 +106,46 @@ export function carriedDesk(state: HomeDeskState, stored: string | null): DeskPr
  *  refuse anyway. */
 const KEEPALIVE_MAX_BYTES = 60 * 1024;
 
-/** The brain's 401 for a desk sent as another login (the login in use
- *  changed in another tab): stop saving, but nobody's session ended. */
-const LOGIN_MISMATCH = 'login-mismatch';
-
 /**
  * PUT the desk. Always with keepalive (the body is small), so a save on its
- * way when the page goes still reaches the brain. Read by hand rather than
- * through apiFetch for the one 401 that is not a session ending: a desk
- * named for another login (`LOGIN_MISMATCH`) stops the saver and leaves
- * every session as it is; any other 401 goes to sign-in, as apiFetch does.
+ * way when the page goes still reaches the brain. A desk named for another
+ * login (the login in use changed in another tab) is the brain's 403
+ * `login-mismatch`: the saver stops, and nobody is signed out.
  */
-export async function putDesk(body: HomeDeskPutBody): Promise<HomeDeskState> {
+export function putDesk(body: HomeDeskPutBody): Promise<HomeDeskState> {
   const text = JSON.stringify(body);
-  const path = '/api/profile/home-desk';
-  const res = await fetch(
-    apiUrl(rewritePath(path, 'PUT')),
-    withAuth({
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: text,
-      keepalive: new TextEncoder().encode(text).length <= KEEPALIVE_MAX_BYTES,
-    }),
-  );
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (res.status === 401 && data.code === LOGIN_MISMATCH) {
-    throw new ApiError(errorMessageOf(data, res), 401, data);
-  }
-  if (isAuthFailure(res)) {
-    bounceToLogin();
-    throw new ApiError('unauthorized', 401);
-  }
-  if (!res.ok) throw new ApiError(errorMessageOf(data, res), res.status, data);
-  return data as HomeDeskState;
+  return apiFetch<HomeDeskState>('/api/profile/home-desk', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: text,
+    keepalive: new TextEncoder().encode(text).length <= KEEPALIVE_MAX_BYTES,
+  });
 }
+
+/**
+ * Carry the desk this browser kept before desk saving v2 up into the
+ * profile (carriedDesk): saved now, from version 0. This browser's copy is
+ * forgotten once the save settles, unless it waits to go again (it failed on
+ * the way) or the saver stopped: so a desk the brain refuses (a 400, a 413)
+ * is not sent again on every visit.
+ */
+export async function carryUp(saver: DeskSaver, desk: DeskPrefs, forget: () => void) {
+  saver.save(desk);
+  await saver.flush();
+  if (!saver.busy && !saver.stopped) forget();
+}
+
+/** The quiet toast for a desk saved as another login, once a page. */
+let stoppedShown = false;
 
 /** The saver of one login's desk, for the page's life (until it reloads),
  *  and what it tells the Desk on screen. */
-type DeskSaving = { saver: DeskSaver; conflict: () => void; failed: () => void };
+type DeskSaving = {
+  saver: DeskSaver;
+  conflict: () => void;
+  failed: () => void;
+  stopped: () => void;
+};
 
 const savings = new Map<string, DeskSaving>();
 
@@ -161,7 +154,7 @@ const savings = new Map<string, DeskSaving>();
  * Desk and coming back keeps one save in flight at a time and the version
  * it saved. What the brain answered goes into the desk's own query. Each
  * save names the login the desk belongs to; the brain refuses it for any
- * other (a 401: the saver stops), so a desk changed here after the login in
+ * other (a 403: the saver stops), so a desk changed here after the login in
  * use changed in another tab is never saved over that login's.
  */
 function savingFor(storageKey: string, loginId: string, qc: QueryClient): DeskSaving {
@@ -186,10 +179,16 @@ function savingFor(storageKey: string, loginId: string, qc: QueryClient): DeskSa
           saving.conflict();
         },
         onFailed: () => saving.failed(),
+        onStopped: (status) => {
+          if (status !== 403 || stoppedShown) return;
+          stoppedShown = true;
+          saving.stopped();
+        },
       },
     ),
     conflict: () => {},
     failed: () => {},
+    stopped: () => {},
   };
   savings.set(storageKey, saving);
   return saving;
@@ -245,6 +244,8 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
     // Kept after the Desk is left: a save on the way out can lose or fail too.
     saving.conflict = () => toastRef.current.info('Your Desk changed on another device');
     saving.failed = () => toastRef.current.error('Could not save your desk');
+    saving.stopped = () =>
+      toastRef.current.info('Your Desk is no longer saved here: another login is in use');
   }, [saving]);
 
   const show = useCallback((desk: DeskPrefs) => {
@@ -277,15 +278,10 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
       return;
     }
     // A profile that never had a desk takes the one this browser kept
-    // before desk saving v2, once: shown, and saved from version 0. The
-    // copy here is forgotten when that save lands, or when another device's
-    // desk wins (the saver's onSaved and onConflict).
+    // before desk saving v2, once: shown, and saved from version 0 (carryUp).
     const carried = first ? carriedDesk(data.state, readStored(key)) : null;
     show(carried ?? deskFrom(data.state.homeDesk) ?? defaultDesk(kindList));
-    if (carried) {
-      saving.saver.save(carried);
-      void saving.saver.flush();
-    }
+    if (carried) void carryUp(saving.saver, carried, () => forgetStored(key));
   }, [key, saving, kindsKey, read.data, read.isError, show]);
 
   // Every way out (leaving the Desk, the tab hidden or closed, the session

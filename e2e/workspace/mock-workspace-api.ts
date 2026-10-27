@@ -640,7 +640,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
             loginId?: unknown;
           };
           if (body.loginId !== LOGINS[role].loginId) {
-            return json(res, 401, {
+            return json(res, 403, {
               error: 'loginId is not the login of this session',
               code: 'login-mismatch',
             });
