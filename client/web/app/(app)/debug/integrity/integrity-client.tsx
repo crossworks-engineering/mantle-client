@@ -92,22 +92,28 @@ function CheckPill({ check }: { check: CheckResult }) {
   );
 }
 
-const CAP_LABELS: Record<keyof Capabilities, string> = {
+/** Local copy of the contract's `parser` capability (mantle, the parser
+ *  service) until the client-types pin carries it. A brain older than the
+ *  parser sends none: the panel then shows its Tika row as before. */
+type CapsWithParser = Capabilities & { parser?: Capabilities['tika'] };
+type CapKey = Exclude<keyof CapsWithParser, 'media'>;
+
+const CAP_LABELS: Record<CapKey, string> = {
+  parser: 'Parser',
   tika: 'Tika',
   vision: 'Vision',
   extractor: 'Extractor',
   embedding: 'Embedder',
   summarizer: 'Summarizer',
   reflector: 'Reflector',
-  media: 'Media',
   stt: 'STT (voice)',
 };
 
-function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
-  const order: (keyof Capabilities)[] = [
+function CapabilitiesPanel({ caps }: { caps: CapsWithParser }) {
+  const order: CapKey[] = [
     'extractor',
     'embedding',
-    'tika',
+    caps.parser ? 'parser' : 'tika',
     'vision',
     'summarizer',
     'reflector',
@@ -120,6 +126,7 @@ function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
       </span>
       {order.map((k) => {
         const c = caps[k];
+        if (!c) return null;
         const cls = c.available
           ? 'bg-primary/10 text-primary-ink border-primary/30'
           : 'bg-muted text-muted-foreground border-border';

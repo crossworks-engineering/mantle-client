@@ -4,6 +4,30 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Cpu, Database, HardDrive, MemoryStick } from 'lucide-react';
 import type { SystemHealth } from '@mantle/client-types';
+
+/** Local copy of the contract's `parser` field (mantle, the parser service)
+ *  until the client-types pin carries it. A brain older than the parser
+ *  sends no `parser`: the dashboard then shows its Tika pill as before. */
+type ParserVitals = {
+  up: boolean;
+  versions: Record<string, string>;
+  running: number | null;
+  queued: number | null;
+};
+
+/** The parser pill's hover text: its readers and tools, and its jobs. */
+function parserTitle(p: ParserVitals): string {
+  if (!p.up) return 'the parser service is not answering: uploaded files cannot be read';
+  const v = p.versions;
+  const tools = [
+    v.anydoc && `anydoc ${v.anydoc}`,
+    v['pdfjs-dist'] && `pdfjs ${v['pdfjs-dist']}`,
+    v.ezdxf ? `ezdxf ${v.ezdxf}` : 'CAD tier missing',
+    v.ffmpeg ? `ffmpeg ${v.ffmpeg.split('-')[0]}` : 'ffmpeg missing',
+  ].filter(Boolean);
+  const jobs = p.running != null ? ` · ${p.running} running, ${p.queued ?? 0} queued` : '';
+  return `${tools.join(' · ')}${jobs}`;
+}
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import { Skeleton } from '@mantle/web-ui/ui/skeleton';
@@ -64,11 +88,9 @@ export function SystemVitals() {
   if (!data) return <SystemVitalsSkeleton />;
 
   const { host, postgres, storage, tika, browser, embedder, network, sandboxes } = data;
-  // Media sidecar (yt-dlp + ffmpeg + the CAD render tiers) — servers ship it
-  // from v0.232.32; the DWF/DWG version fields from v0.232.101. The pin knows
-  // the full shape, but an older BRAIN omits the field entirely on the wire —
-  // keep the undefined guard so the pill simply hides there.
-  const media = (data as SystemHealth & { media?: SystemHealth['media'] }).media;
+  // The parser service reads every file the brain receives (it replaced Tika
+  // and the media sidecar). An older brain omits it: show its Tika pill.
+  const parser = (data as SystemHealth & { parser?: ParserVitals }).parser;
   const memValue = host.mem
     ? `${formatBytes(host.mem.usedBytes)} / ${formatBytes(host.mem.totalBytes)}`
     : '—';
@@ -89,7 +111,11 @@ export function SystemVitals() {
           {/* objectStoreUp arrived with the backend-neutral object store (mantle
               v0.232.245); older brains only send minioUp. */}
           <Pill ok={storage.objectStoreUp ?? storage.minioUp} label="Object store" />
-          <Pill ok={tika.up} label="Tika" title={tika.version ?? undefined} />
+          {parser ? (
+            <Pill ok={parser.up} label="Parser" title={parserTitle(parser)} />
+          ) : (
+            <Pill ok={tika.up} label="Tika" title={tika.version ?? undefined} />
+          )}
           <Pill ok={browser.up} label="Chromium" title={browser.version ?? undefined} />
           <Pill
             ok={embedder.up}
@@ -111,27 +137,6 @@ export function SystemVitals() {
                   : 'switched off (Settings > Services)'
             }
           />
-          {media !== undefined && (
-            <Pill
-              ok={media.up}
-              label="Media"
-              href="/settings/services"
-              title={
-                media.up
-                  ? `yt-dlp ${media.ytDlpVersion ?? '?'} · ffmpeg ${media.ffmpegVersion ?? '?'} · ` +
-                    (media.ezdwfVersion
-                      ? `dwf ${media.ezdwfVersion}`
-                      : 'DWF tier missing (renders fall back to thumbnails)') +
-                    ' · ' +
-                    (media.dwg2dxfVersion && media.ezdxfVersion
-                      ? `dwg ${media.dwg2dxfVersion}/ezdxf ${media.ezdxfVersion}`
-                      : 'DWG tier missing (update the media image to v0.232.99+)')
-                  : media.up === false
-                    ? 'media sidecar unreachable'
-                    : 'switched off (Settings > Services)'
-              }
-            />
-          )}
           <Pill ok={network.up} label="Tailnet" title={network.detail ?? undefined} />
           <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
             {data.scope}

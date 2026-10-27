@@ -44,7 +44,7 @@ const RUN_POLL_MS = 2_000;
 
 /**
  * Settings > Services: start and stop the box's optional services
- * (sandboxes, media, the local embedder and, on a core box, the helpers).
+ * (sandboxes, the local embedder and, on a core box, the PDF-export helper).
  * A card per service gives ONE line on what it enables and a switch that
  * asks the box's updater to start or stop it. What uses it, what stops,
  * what is kept and what it costs live in the help rail (topic `services`,

@@ -1,6 +1,6 @@
 /**
- * Optional services on the dashboard: sandboxes, media, the local embedder
- * and (on a core box) the helpers, each with a
+ * Optional services on the dashboard: sandboxes, the local embedder and (on
+ * a core box) the PDF-export helper, each with a
  * switch an admin flips to start or stop it (mantle docs/services.md). The
  * brain serves the state and the plain-language description on
  * GET /api/services; POST /api/services/:name {enable} asks the box's
@@ -37,13 +37,14 @@ export type {
  *  enables. The details (what uses it, what stops while it is off, what it
  *  costs) are in the screen's help topic, mantle docs/guide/06-help/services.md.
  *  Not "mini apps": those run without sandboxes, and switching sandboxes off
- *  leaves them alone. */
-export const SERVICE_ENABLES: Record<ServiceName, string> = {
+ *  leaves them alone. The parser service, which reads every file, is core
+ *  and has no switch; an older brain may still list `media`, which falls
+ *  back to its own description. */
+export const SERVICE_ENABLES: Partial<Record<ServiceName, string>> = {
   sandboxes: 'Lets the coder and app agents build, run and test code in isolated workspaces.',
-  media: 'Lets the brain read video and audio (transcripts) and CAD drawings (DWF, DWG, DXF).',
   'local-embedder':
     'Lets the brain index and search your text on this box, with no online embedder.',
-  helpers: 'Lets the brain read rare file types (ODT, PPTX, DOC, RTF) and make PDF exports.',
+  helpers: 'Lets the brain make PDF exports of pages.',
 };
 
 /** Every service the brain can list. The union keeps this file compiling
