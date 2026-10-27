@@ -121,6 +121,7 @@ import {
   itemMovable,
   itemPlaceAt,
   pickedAfterMove,
+  placeSiblings,
   rangeOfItems,
   refreshFor,
   type TreeOrder,
@@ -755,11 +756,11 @@ export function ItemTree({
         const up = afterForStep(siblings, folder.id, -1);
         const down = afterForStep(siblings, folder.id, 1);
         // A folder's place among its siblings, one order for everyone: Write
-        // on it and on the folder that holds it (an Admin at the top level),
-        // as the brain asks. A brain before the custom order: its Moderators.
+        // on the folder that holds it (an Admin at the top level), as the
+        // brain asks of a patch of `after` alone. A brain before the custom
+        // order: the owner, on a folder it manages.
         const orderable =
-          !folder.system &&
-          (customOrder ? mayOrder === true && itemAccess(folder).edit : itemAccess(folder).manage);
+          !folder.system && (customOrder ? mayOrder === true : owner && itemAccess(folder).manage);
         const newInside = newInsideEntry(folder, { manage, newItemInFolder });
         return (
           <DropdownMenuContent
@@ -848,10 +849,13 @@ export function ItemTree({
   const itemMenu = manage
     ? (item: TreeItem, where: ItemWhere, order?: ItemOrder) => {
         const extra = itemActions?.(item, where);
-        // Its place in the folder's custom order, by the keyboard too.
-        const placing = ordering && order?.mayOrder === true;
-        const up = placing ? afterForStep(order!.siblings, item.id, -1) : undefined;
-        const down = placing ? afterForStep(order!.siblings, item.id, 1) : undefined;
+        // Its place in the folder's custom order, by the keyboard too. Never
+        // a read-only copy's, and a copy is no step: the brain leaves copies
+        // out of a place's neighbours.
+        const placing = ordering && order?.mayOrder === true && !itemAccess(item).copy;
+        const steps = placing ? placeSiblings(order!.siblings) : [];
+        const up = placing ? afterForStep(steps, item.id, -1) : undefined;
+        const down = placing ? afterForStep(steps, item.id, 1) : undefined;
         return (
           <DropdownMenuContent align="start" side="right" className="w-52">
             <DropdownMenuItem onSelect={() => openItem(item, where)}>Open</DropdownMenuItem>
@@ -960,7 +964,12 @@ export function ItemTree({
     if (a.type === 'item' && o.type === 'item') {
       void placeItem(
         a.item,
-        afterFor(o.siblings ?? [], a.item.id, o.item.id, h.pos as 'before' | 'after'),
+        afterFor(
+          placeSiblings(o.siblings ?? []),
+          a.item.id,
+          o.item.id,
+          h.pos as 'before' | 'after',
+        ),
       );
       return;
     }

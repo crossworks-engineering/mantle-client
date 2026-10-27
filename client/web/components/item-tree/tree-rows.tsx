@@ -602,11 +602,10 @@ function FolderRow({ row }: { row: Extract<TreeRow, { type: 'folder' }> }) {
   const disabled = ctx.folderDisabled?.(folder) ?? false;
   const drag: DragData = { type: 'folder', folder, parent, siblings, mayOrder };
   // A folder moves by its own caps; one the login may only order (Write on
-  // it and on its parent) drags to its place among its siblings.
+  // its parent) drags to its place among its siblings.
   const draggable =
     !folder.system &&
-    (ctx.canMoveFolder?.(folder) !== false ||
-      (ctx.mode === 'manage' && mayOrder && itemAccess(folder).edit));
+    (ctx.canMoveFolder?.(folder) !== false || (ctx.mode === 'manage' && mayOrder));
   const tall = useRowHeight(folder);
   return (
     <TreeRowShell
@@ -720,10 +719,22 @@ export function ItemRow({
   // items have no folder yet: they cannot be dragged anywhere. A member's
   // tree says which of its rows move.
   // In a custom order a folder the login may order drags its items to
-  // place them, and each row takes a drop beside it.
+  // place them, and each row takes a drop beside it. A read-only snapshot
+  // copy keeps its place: it is neither placed nor a place to drop beside
+  // (the brain leaves copies out of a place's neighbours).
   const placeable =
-    ctx.mode === 'manage' && crumbs === undefined && ctx.ordering === true && mayOrder;
-  const data: DragData = { type: 'item', item, parent: parent ?? null, siblings, mayOrder };
+    ctx.mode === 'manage' &&
+    crumbs === undefined &&
+    ctx.ordering === true &&
+    mayOrder &&
+    !itemAccess(item).copy;
+  const data: DragData = {
+    type: 'item',
+    item,
+    parent: parent ?? null,
+    siblings,
+    mayOrder: placeable,
+  };
   const drag: DragData | undefined =
     ctx.mode === 'manage' &&
     crumbs === undefined &&
@@ -746,7 +757,7 @@ export function ItemRow({
       menu={ctx.itemMenu?.(
         item,
         where,
-        crumbs === undefined && siblings ? { siblings, mayOrder } : undefined,
+        crumbs === undefined && siblings ? { siblings, mayOrder: placeable } : undefined,
       )}
       label={item.title || 'Untitled'}
       badge={

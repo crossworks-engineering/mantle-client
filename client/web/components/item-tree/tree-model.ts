@@ -411,9 +411,19 @@ export function itemPlaceAt(
   carrying: number,
 ): 'before' | 'after' | null {
   if (!moving.mayOrder || carrying > 1) return null;
+  // A read-only snapshot copy keeps its place and is no place to land.
+  if (itemAccess(moving.item).copy || itemAccess(target.item).copy) return null;
   if (moving.item.id === target.item.id) return null;
   if ((moving.parent?.id ?? null) !== (target.parent?.id ?? null)) return null;
   return dropPosition(rel, 'item', 'item') as 'before' | 'after';
+}
+
+/** The items a place steps over and lands beside: its folder's items in
+ *  order, without the read-only snapshot copies. A copy keeps its place,
+ *  and the brain leaves copies out of a place's neighbours, so Move up,
+ *  Move down and a drop count only the rest. */
+export function placeSiblings<T extends object>(siblings: readonly T[]): T[] {
+  return siblings.filter((s) => !itemAccess(s).copy);
 }
 
 /** A dragged folder may land in `target` when that is not itself, not one of
