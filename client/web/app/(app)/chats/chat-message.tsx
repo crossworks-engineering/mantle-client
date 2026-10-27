@@ -87,6 +87,7 @@ export function ChatMessage({
         {mine && !deleted ? (
           <Tick
             className={cn('size-3.5', read ? 'text-success-ink' : 'text-muted-foreground')}
+            role="img"
             aria-label={read ? 'Read' : 'Sent'}
           />
         ) : null}
@@ -130,7 +131,7 @@ export function OutboxMessage({
         </span>
       ) : (
         <span className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
-          <Clock className="size-3" aria-label="Sending" />
+          <Clock className="size-3" role="img" aria-label="Sending" />
         </span>
       )}
     </Row>

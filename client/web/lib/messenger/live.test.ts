@@ -199,7 +199,7 @@ describe('the polling fallback', () => {
 });
 
 describe('connectMessengerLive', () => {
-  it('hands each event its effect and asks for the gap on every reconnect, not the first', () => {
+  it('hands each event its effect and asks for the gap on every connect', () => {
     const stream = fakeStream();
     const effects: LiveEffect[] = [];
     const onGap = vi.fn();
@@ -210,13 +210,13 @@ describe('connectMessengerLive', () => {
       onPoll: () => {},
     });
     stream.connect();
-    expect(onGap).not.toHaveBeenCalled();
+    expect(onGap).toHaveBeenCalledTimes(1);
     stream.send({ type: 'message', c: 'c1', seq: 2, kind: 'new' });
     stream.send('garbage');
     expect(effects).toHaveLength(1);
     expect(effects[0]).toMatchObject({ c: 'c1', catchUp: true });
     stream.connect();
-    expect(onGap).toHaveBeenCalledTimes(1);
+    expect(onGap).toHaveBeenCalledTimes(2);
   });
 });
 

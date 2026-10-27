@@ -7,11 +7,14 @@ import type { MessengerMessage } from './dto';
 import {
   EMPTY_TRANSCRIPT,
   authorReadSeqs,
+  contiguousTop,
+  refetchPlacement,
   highestSeq,
   lowestSeq,
   mergeMessages,
   pageQuery,
   readCursorToSend,
+  readerSeesNewest,
   sendableBody,
   transcriptItems,
   withLatestPage,
@@ -165,6 +168,10 @@ describe('readCursorToSend', () => {
     expect(readCursorToSend(4, 5)).toBeNull();
     expect(readCursorToSend(9, 5)).toBe(9);
   });
+
+  it('never sends for my own newest message (the send moved my cursor)', () => {
+    expect(readCursorToSend(9, 5, true)).toBeNull();
+  });
 });
 
 describe('sendableBody', () => {
@@ -187,5 +194,40 @@ describe('authorReadSeqs', () => {
     expect(reads.get(ANN)).toBe(3);
     expect(reads.get(ME)).toBe(2);
     expect(reads.size).toBe(2);
+  });
+});
+
+describe('the unbroken window (audit HIGH 1)', () => {
+  it('the catch-up starts from the top of the unbroken run, not the highest held', () => {
+    expect(contiguousTop([])).toBe(0);
+    expect(contiguousTop([msg(81), msg(82), msg(83)])).toBe(83);
+    // My send answered 102 before Ann's 101 arrived: fetch after 100.
+    const held = mergeMessages([msg(99), msg(100)], [msg(102, { authorId: ME })]);
+    expect(highestSeq(held)).toBe(102);
+    expect(contiguousTop(held)).toBe(100);
+    // Once 101 lands the run is whole again.
+    expect(contiguousTop(mergeMessages(held, [msg(101)]))).toBe(102);
+  });
+
+  it('a refetched seq merges only inside the window', () => {
+    const held = [msg(81), msg(82), msg(83)];
+    expect(refetchPlacement(held, 82)).toBe('merge');
+    // An edit of seq 5 while 81..83 are held: merging would make the window
+    // 5, 81..83 and scrolling up would skip 6..80.
+    expect(refetchPlacement(held, 5)).toBe('ignore');
+    // Above the window: the catch-up brings it with what is under it.
+    expect(refetchPlacement(held, 90)).toBe('catch-up');
+    expect(refetchPlacement([], 3)).toBe('catch-up');
+  });
+});
+
+describe('readerSeesNewest', () => {
+  const on = { loaded: true, error: null, visible: true, atBottom: true };
+  it('the cursor moves only while the newest message is on screen', () => {
+    expect(readerSeesNewest(on)).toBe(true);
+    expect(readerSeesNewest({ ...on, visible: false })).toBe(false);
+    expect(readerSeesNewest({ ...on, atBottom: false })).toBe(false);
+    expect(readerSeesNewest({ ...on, loaded: false })).toBe(false);
+    expect(readerSeesNewest({ ...on, error: 'Could not load the chat' })).toBe(false);
   });
 });

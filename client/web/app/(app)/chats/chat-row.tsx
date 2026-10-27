@@ -73,6 +73,7 @@ export function ChatRow({
                 'size-3.5 shrink-0',
                 read ? 'text-success-ink' : 'text-muted-foreground',
               )}
+              role="img"
               aria-label={read ? 'Read' : 'Sent'}
             />
           ) : null}
@@ -80,13 +81,25 @@ export function ChatRow({
             {line?.text ?? 'No messages yet'}
           </span>
           {row.favourite ? (
-            <Pin className="size-3.5 shrink-0 text-muted-foreground" aria-label="Pinned" />
+            <Pin
+              className="size-3.5 shrink-0 text-muted-foreground"
+              role="img"
+              aria-label="Pinned"
+            />
           ) : null}
           {row.muted ? (
-            <BellOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />
+            <BellOff
+              className="size-3.5 shrink-0 text-muted-foreground"
+              role="img"
+              aria-label="Muted"
+            />
           ) : null}
           {row.mention && row.unread > 0 ? (
-            <AtSign className="size-3.5 shrink-0 text-success-ink" aria-label="Mentions you" />
+            <AtSign
+              className="size-3.5 shrink-0 text-success-ink"
+              role="img"
+              aria-label="Mentions you"
+            />
           ) : null}
           {row.unread > 0 ? (
             <span

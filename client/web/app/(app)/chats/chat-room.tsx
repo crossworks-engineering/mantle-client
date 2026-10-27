@@ -31,10 +31,12 @@ import {
   EMPTY_TRANSCRIPT,
   PAGE_SIZE,
   authorReadSeqs,
-  highestSeq,
+  contiguousTop,
+  refetchPlacement,
   lowestSeq,
   newClientMsgId,
   readCursorToSend,
+  readerSeesNewest,
   transcriptItems,
   withLatestPage,
   withNewer,
@@ -53,6 +55,8 @@ const STICK_PX = 80;
 const LOAD_OLDER_PX = 80;
 /** The catch-up's page: the brain's ceiling. */
 const CATCH_UP_LIMIT = 100;
+/** The read cursor goes at most this often. */
+const READ_DEBOUNCE_MS = 400;
 
 export function ChatRoom({
   id,
@@ -80,10 +84,16 @@ export function ChatRoom({
   const [t, setT] = useState<Transcript>(EMPTY_TRANSCRIPT);
   const tRef = useRef(t);
   tRef.current = t;
+  // `loaded`: the first page has landed. Until then a stream event loads the
+  // page instead of catching up (a catch-up from nothing would pull the whole
+  // history).
   const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
   loadedRef.current = loaded;
+  const loading = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const onGoneRef = useRef(onGone);
+  onGoneRef.current = onGone;
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -94,21 +104,9 @@ export function ChatRoom({
   const keepFrom = useRef<number | null>(null);
   const scrollToBottom = useRef(true);
 
-  const loadLatest = useCallback(async () => {
-    try {
-      const page = await messengerApi.messages(id, { limit: PAGE_SIZE });
-      setT((cur) => withLatestPage(cur, page));
-      setLoadError(null);
-      scrollToBottom.current = true;
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) onGone();
-      else setLoadError(err instanceof Error ? err.message : 'Could not load the chat');
-    } finally {
-      setLoaded(true);
-    }
-  }, [id, onGone]);
-
   // One catch-up at a time; a second request while one runs runs again after.
+  // It asks for what is above the top of the unbroken run held, so a seq
+  // merged early (my own send) never hides the one under it.
   const catching = useRef<Promise<void> | null>(null);
   const again = useRef(false);
   const catchUp = useCallback(async (): Promise<void> => {
@@ -121,11 +119,14 @@ export function ChatRoom({
         again.current = false;
         let more = true;
         while (more) {
-          const after = highestSeq(tRef.current.messages);
+          const after = contiguousTop(tRef.current.messages);
           const page = await messengerApi.messages(id, { afterSeq: after, limit: CATCH_UP_LIMIT });
-          if (page.messages.length > 0) setT((cur) => withNewer(cur, page.messages));
           tRef.current = withNewer(tRef.current, page.messages);
-          more = page.hasMore && page.messages.length > 0;
+          if (page.messages.length > 0) setT((cur) => withNewer(cur, page.messages));
+          more =
+            page.hasMore &&
+            page.messages.length > 0 &&
+            contiguousTop(tRef.current.messages) > after;
         }
       } while (again.current);
     };
@@ -139,8 +140,38 @@ export function ChatRoom({
     return catching.current;
   }, [id]);
 
+  // The last page: on open, after a failed first load, and on a reload
+  // (people, history, my clear from another tab). A page served before a
+  // message committed can land after a catch-up merged that message, so a
+  // catch-up always follows it.
+  const loadLatest = useCallback(async () => {
+    if (loading.current) return;
+    loading.current = true;
+    try {
+      const page = await messengerApi.messages(id, { limit: PAGE_SIZE });
+      tRef.current = withLatestPage(tRef.current, page);
+      setT((cur) => withLatestPage(cur, page));
+      setLoadError(null);
+      if (!loadedRef.current) scrollToBottom.current = true;
+      loadedRef.current = true;
+      setLoaded(true);
+      void catchUp();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) onGoneRef.current();
+      else setLoadError(err instanceof Error ? err.message : 'Could not load the chat');
+    } finally {
+      loading.current = false;
+    }
+  }, [id, catchUp]);
+
   const refetchSeq = useCallback(
     async (seq: number) => {
+      const where = refetchPlacement(tRef.current.messages, seq);
+      if (where === 'ignore') return;
+      if (where === 'catch-up') {
+        void catchUp();
+        return;
+      }
       try {
         const page = await messengerApi.messages(id, { afterSeq: seq - 1, limit: 1 });
         const hit = page.messages.filter((m) => m.seq === seq);
@@ -149,7 +180,7 @@ export function ChatRoom({
         /* the next load shows it */
       }
     },
-    [id],
+    [id, catchUp],
   );
 
   const reload = useCallback(() => {
@@ -168,14 +199,20 @@ export function ChatRoom({
   }, [id, t.messages]);
 
   useMessengerBus((e) => {
+    if (e.kind === 'effect' && e.effect.c !== id) return;
+    // No first page yet (in flight, or it failed): load it; it catches up
+    // after itself.
+    if (!loadedRef.current) {
+      void loadLatest();
+      return;
+    }
     if (e.kind === 'gap') {
-      if (loadedRef.current) void catchUp();
+      void catchUp();
       void queryClient.invalidateQueries({ queryKey: messengerKeys.conversation(id) });
       return;
     }
     const fx = e.effect;
-    if (fx.c !== id) return;
-    if (fx.catchUp && loadedRef.current) void catchUp();
+    if (fx.catchUp) void catchUp();
     if (fx.refetchSeq !== null) void refetchSeq(fx.refetchSeq);
     if (fx.reload) reload();
   });
@@ -223,14 +260,31 @@ export function ChatRoom({
   }, [loaded, t, loadingOlder, loadOlder]);
 
   // ── The read cursor ───────────────────────────────────────────────────
+  // Sent when the newest message is on screen and the tab is visible, at
+  // most once per READ_DEBOUNCE_MS, never for my own newest message (my
+  // send moved my cursor), never before the first page or behind an error.
   const readSent = useRef(0);
+  const readTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const myRead = conversation?.me.lastReadSeq ?? 0;
-  const markRead = useCallback(() => {
-    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-    if (!atBottom.current) return;
+  const myReadRef = useRef(myRead);
+  myReadRef.current = myRead;
+  const loadErrorRef = useRef(loadError);
+  loadErrorRef.current = loadError;
+  const sendRead = useCallback(() => {
+    readTimer.current = null;
+    const seen = readerSeesNewest({
+      loaded: loadedRef.current,
+      error: loadErrorRef.current,
+      visible: typeof document === 'undefined' || document.visibilityState === 'visible',
+      atBottom: atBottom.current,
+    });
+    if (!seen) return;
+    const messages = tRef.current.messages;
+    const newest = messages.length ? messages[messages.length - 1]! : null;
     const seq = readCursorToSend(
-      tRef.current.messages.length ? highestSeq(tRef.current.messages) : null,
-      Math.max(myRead, readSent.current),
+      newest ? newest.seq : null,
+      Math.max(myReadRef.current, readSent.current),
+      !!newest && newest.authorKind === 'login' && newest.authorId === me,
     );
     if (seq === null) return;
     readSent.current = seq;
@@ -240,10 +294,23 @@ export function ChatRoom({
         void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
         void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
       })
-      .catch(() => {
-        readSent.current = 0;
+      .catch((err) => {
+        // A refusal (I left, the chat is gone) will not change by retrying.
+        if (!(err instanceof ApiError && err.status >= 400 && err.status < 500)) {
+          readSent.current = 0;
+        }
       });
-  }, [id, myRead, queryClient]);
+  }, [id, me, queryClient]);
+  const markRead = useCallback(() => {
+    if (readTimer.current) return;
+    readTimer.current = setTimeout(sendRead, READ_DEBOUNCE_MS);
+  }, [sendRead]);
+  useEffect(
+    () => () => {
+      if (readTimer.current) clearTimeout(readTimer.current);
+    },
+    [],
+  );
 
   const onScroll = () => {
     const el = scroller.current;
@@ -281,8 +348,12 @@ export function ChatRoom({
       setT((cur) => withOutbox(cur, line));
       try {
         const out = await messengerApi.send(id, { body, clientMsgId });
+        const top = contiguousTop(tRef.current.messages);
         scrollToBottom.current = true;
+        tRef.current = withNewer(tRef.current, [out.message]);
         setT((cur) => withNewer(cur, [out.message]));
+        // Someone wrote between the last seq held and mine: fetch it.
+        if (out.message.seq > top + 1) void catchUp();
         void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
       } catch (err) {
         const error =
@@ -294,7 +365,7 @@ export function ChatRoom({
         setT((cur) => withOutbox(cur, { ...line, state: 'failed', error }));
       }
     },
-    [id, queryClient],
+    [id, queryClient, catchUp],
   );
 
   const lastTyping = useRef<number | null>(null);
@@ -327,6 +398,23 @@ export function ChatRoom({
   const peerOnline = !group && others.some((p) => online.has(p.id));
   const left = conversation?.me.leftSeq != null;
 
+  // Say a newly arrived message from someone else, once (the transcript
+  // itself is not a live region: an older page would be read out whole).
+  const [announce, setAnnounce] = useState('');
+  const announced = useRef<number | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const newest = t.messages[t.messages.length - 1];
+    if (!newest) return;
+    if (announced.current === null || newest.seq <= announced.current) {
+      announced.current = Math.max(announced.current ?? 0, newest.seq);
+      return;
+    }
+    announced.current = newest.seq;
+    if (newest.authorId === me || newest.deletedAt) return;
+    setAnnounce(`${newest.authorName ?? 'Someone'}: ${newest.body.slice(0, 200)}`);
+  }, [loaded, t.messages, me]);
+
   if (conversationQuery.isError && !conversation) {
     const gone =
       conversationQuery.error instanceof ApiError && conversationQuery.error.status === 404;
@@ -357,25 +445,35 @@ export function ChatRoom({
           </span>
         }
       />
+      <p className="sr-only" aria-live="polite">
+        {announce}
+      </p>
+      {/* No browser scroll anchoring: the place after an older page is kept
+          by hand (useLayoutEffect), and anchoring would add its own shift. */}
       <div
         ref={scroller}
         onScroll={onScroll}
-        className="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin"
+        className="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin [overflow-anchor:none]"
         data-testid="chat-transcript"
-        aria-live="polite"
       >
+        {loadingOlder ? (
+          // Out of the flow, so it moves nothing under the reader.
+          <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+            <Spinner />
+          </div>
+        ) : null}
         <div className="flex min-h-full flex-col justify-end gap-1 px-6 py-4">
-          {loadingOlder ? (
-            <div className="flex justify-center py-2">
-              <Spinner />
+          {loadError && !loaded ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center text-sm text-muted-foreground">
+              <p>{loadError}</p>
+              <Button variant="outline" size="sm" onClick={() => void loadLatest()}>
+                Retry
+              </Button>
             </div>
-          ) : null}
-          {!loaded ? (
+          ) : !loaded ? (
             <div className="flex justify-center py-6">
               <Spinner />
             </div>
-          ) : loadError ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">{loadError}</p>
           ) : items.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No messages yet. Say hello.

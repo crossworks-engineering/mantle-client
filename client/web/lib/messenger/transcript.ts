@@ -45,9 +45,46 @@ export function mergeMessages(
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
 }
 
-/** The highest seq held (0 with none): the next catch-up's `after_seq`. */
+/** The highest seq held (0 with none). */
 export function highestSeq(messages: readonly MessengerMessage[]): number {
   return messages.length ? messages[messages.length - 1]!.seq : 0;
+}
+
+/**
+ * The top of the unbroken run of seqs from the lowest held: the next
+ * catch-up's `after_seq` (0 with none). Seqs have no gaps inside what a
+ * login may read (a history delete and a clear cut from the bottom), so a
+ * seq held above this top was merged early (my own send answered before the
+ * message under it arrived) and the catch-up must fetch from here, not
+ * from the highest.
+ */
+export function contiguousTop(messages: readonly MessengerMessage[]): number {
+  if (messages.length === 0) return 0;
+  let top = messages[0]!.seq;
+  for (let i = 1; i < messages.length; i += 1) {
+    const seq = messages[i]!.seq;
+    if (seq !== top + 1) break;
+    top = seq;
+  }
+  return top;
+}
+
+/**
+ * Where a refetched seq (an edit, a delete, a reaction) goes: merged when it
+ * is inside the window held; a catch-up when it is above it (the catch-up
+ * brings it with whatever is under it); ignored below the window (scrolling
+ * up loads it in place). Merging a seq outside the window would leave a
+ * hole that neither the catch-up nor scrolling up ever fills.
+ */
+export function refetchPlacement(
+  messages: readonly MessengerMessage[],
+  seq: number,
+): 'merge' | 'catch-up' | 'ignore' {
+  const low = lowestSeq(messages);
+  if (low === null) return 'catch-up';
+  if (seq < low) return 'ignore';
+  if (seq > contiguousTop(messages)) return 'catch-up';
+  return 'merge';
 }
 
 /** The lowest seq held: the next scroll-up's `before_seq`, null with none. */
@@ -161,15 +198,27 @@ export function transcriptItems(
 
 /**
  * The read cursor to send, or null: the newest seq on screen when it is past
- * my cursor. Only a message the brain stored counts (my own sends move my
- * cursor on the brain already, a read past them is harmless).
+ * my cursor and not my own (a send moves my cursor on the brain already).
  */
 export function readCursorToSend(
   newestOnScreen: number | null,
   myLastReadSeq: number,
+  newestIsMine = false,
 ): number | null {
-  if (newestOnScreen === null || newestOnScreen <= myLastReadSeq) return null;
+  if (newestOnScreen === null || newestIsMine || newestOnScreen <= myLastReadSeq) return null;
   return newestOnScreen;
+}
+
+/** Whether the reader is looking at the newest message now: the first page
+ *  landed without an error, the tab is visible and the transcript is at its
+ *  bottom. Only then does the read cursor move. */
+export function readerSeesNewest(s: {
+  loaded: boolean;
+  error: string | null;
+  visible: boolean;
+  atBottom: boolean;
+}): boolean {
+  return s.loaded && !s.error && s.visible && s.atBottom;
 }
 
 /** A fresh clientMsgId for a send (idempotent retries). */

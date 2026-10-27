@@ -187,8 +187,11 @@ export type StreamSource = (handlers: {
 
 /**
  * The messenger's live wiring, free of React: read the stream, hand each
- * event's effect to `onEffect`, ask for the gap on every connect after the
- * first (`onGap`), and poll (`onPoll`) while the stream is silent.
+ * event's effect to `onEffect`, ask for the gap on every connect (`onGap`:
+ * the first one too, since a message can commit between a chat's first page
+ * and the stream's subscribe, and a subscriber joining a stream that is
+ * already open hears no connect until the next one), and poll (`onPoll`)
+ * while the stream is silent.
  */
 export function connectMessengerLive(opts: {
   source: StreamSource;
@@ -198,7 +201,6 @@ export function connectMessengerLive(opts: {
   clock?: WatchdogClock;
 }): () => void {
   const dog = new SilenceWatchdog(opts.onPoll, { clock: opts.clock });
-  let connects = 0;
   const off = opts.source({
     onData: (data) => {
       dog.heard();
@@ -208,8 +210,7 @@ export function connectMessengerLive(opts: {
     onActivity: () => dog.heard(),
     onConnect: () => {
       dog.heard();
-      connects += 1;
-      if (connects > 1) opts.onGap();
+      opts.onGap();
     },
   });
   dog.start();

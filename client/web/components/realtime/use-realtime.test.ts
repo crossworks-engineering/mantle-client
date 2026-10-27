@@ -4,13 +4,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * A member's tab holds ONE live-update connection (W5c): the rail's
  * subscribers and the member workspace's all share /api/member/realtime.
  */
-const opened = vi.hoisted(() => [] as { path: string; onMessage: (d: string) => void }[]);
+type StreamOpts = { onActivity?: () => void; onConnect?: () => void };
+const opened = vi.hoisted(
+  () => [] as { path: string; onMessage: (d: string) => void; opts?: StreamOpts }[],
+);
 const stopped = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock('@mantle/web-ui/api-fetch', async (orig) => ({
   ...(await orig<typeof import('@mantle/web-ui/api-fetch')>()),
-  apiEventStream: (path: string, onMessage: (d: string) => void) => {
-    opened.push({ path, onMessage });
+  apiEventStream: (path: string, onMessage: (d: string) => void, opts?: StreamOpts) => {
+    opened.push({ path, onMessage, opts });
     return () => {
       stopped.count += 1;
     };
@@ -51,5 +54,31 @@ describe('one shared stream per tab', () => {
     expect(stopped.count).toBe(0);
     vi.advanceTimersByTime(5_000);
     expect(stopped.count).toBe(1);
+  });
+});
+
+describe('activity and connects reach every subscriber', () => {
+  it('the messenger hears keep-alives and reconnects through the shared stream', () => {
+    vi.useFakeTimers();
+    const path = '/api/messenger/stream';
+    let activity = 0;
+    let connects = 0;
+    const off = subscribeRealtime(path, {
+      types: null,
+      cb: () => {},
+      onActivity: () => (activity += 1),
+      onConnect: () => (connects += 1),
+    });
+    // A subscriber without the hooks is fine too.
+    const offPlain = subscribeRealtime(path, { types: null, cb: () => {} });
+    const stream = opened.find((o) => o.path === path)!;
+    stream.opts?.onConnect?.();
+    stream.opts?.onActivity?.();
+    stream.opts?.onActivity?.();
+    expect(connects).toBe(1);
+    expect(activity).toBe(2);
+    off();
+    offPlain();
+    vi.advanceTimersByTime(5_000);
   });
 });

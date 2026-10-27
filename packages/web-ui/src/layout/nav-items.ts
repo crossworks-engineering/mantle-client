@@ -69,7 +69,6 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
   },
   {
     // The messenger (Messenger V1 Phase 2): every login's chats, after Home.
-    // The rail hides it on a brain without the messenger (sidebar-nav.tsx).
     group: 'Workspace',
     after: '/',
     item: { name: 'Chats', href: '/chats', icon: MessagesSquare },

@@ -17,7 +17,7 @@ import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useItemAddress } from '@/components/layout/use-item-address';
 import { useZenMode } from '@/components/layout/zen-mode';
-import { ItemListEmpty, ItemSearch } from '@/components/item-list/item-list-header';
+import { ItemListEmpty, ItemListHeader } from '@/components/item-list/item-list-header';
 import { useListQuery } from '@/components/list-search';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { MessengerLiveSync } from '@/components/messenger/messenger-live';
@@ -36,7 +36,7 @@ export function ChatsClient() {
   const { zen } = useZenMode();
   const address = useItemAddress('chats');
   const me = useShellWorkspaces()?.loginId ?? null;
-  const { query, setQuery, inputRef } = useListQuery();
+  const { query, setQuery } = useListQuery();
   const [creating, setCreating] = useState(false);
 
   const listQuery = useQuery({
@@ -89,26 +89,25 @@ export function ChatsClient() {
         aria-label="Chats"
         className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card/70 shadow-sm"
       >
-        <div className="space-y-3 border-b border-border p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">Chats</h2>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="New chat"
-              title="New chat"
-              onClick={() => setCreating(true)}
-            >
-              <Plus />
-            </Button>
-          </div>
-          <ItemSearch
-            ref={inputRef}
-            value={query}
-            onChange={setQuery}
-            placeholder="Search chats…"
-          />
-        </div>
+        <ItemListHeader
+          heading={
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold">Chats</h2>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="New chat"
+                title="New chat"
+                onClick={() => setCreating(true)}
+              >
+                <Plus />
+              </Button>
+            </div>
+          }
+          search={query}
+          onSearch={setQuery}
+          placeholder="Search chats…"
+        />
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin" data-testid="chat-list">
           {listQuery.isPending ? (
             <div className="flex justify-center p-6">
