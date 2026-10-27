@@ -3,6 +3,8 @@
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiEventStream, apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { desktopShell } from '@mantle/web-ui/desktop-shell';
+import { useDocumentVisible } from '@/lib/use-document-visible';
 import {
   CONVERSATIONS_PATH,
   READ_PATH,
@@ -42,19 +44,22 @@ export function useAssistantUnreadCount(enabled: boolean): number {
 /**
  * Headless, mounted once by the shell: refresh the unread counts when the
  * login's own thread stream pings a reply. Not in the badge itself, which
- * can be mounted twice (the rail and the mobile drawer).
+ * can be mounted twice (the rail and the mobile drawer). A browser tab in the
+ * background closes the stream (one held socket fewer per tab) and refreshes
+ * the counts when it is shown again; the desktop window keeps it.
  */
 export function AssistantUnreadSync() {
   const queryClient = useQueryClient();
-  useEffect(
-    () =>
-      apiEventStream(THREAD_STREAM_PATH, (data) => {
-        if (pingChangesUnread(data)) {
-          void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
-        }
-      }),
-    [queryClient],
-  );
+  const visible = useDocumentVisible();
+  useEffect(() => {
+    if (!visible && !desktopShell()) return;
+    void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+    return apiEventStream(THREAD_STREAM_PATH, (data) => {
+      if (pingChangesUnread(data)) {
+        void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+      }
+    });
+  }, [visible, queryClient]);
   return null;
 }
 

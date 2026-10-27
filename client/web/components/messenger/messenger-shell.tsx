@@ -43,6 +43,8 @@ const UNREAD_REFRESH_MS = 60_000;
 /** The list a notice decides on may be this old (an event or a gap marks it
  *  stale at once, so a mute is seen right away). */
 const NOTICE_LIST_FRESH_MS = 30_000;
+/** The notices remembered so the event and the list never pop one twice. */
+const SHOWN_KEEP = 200;
 
 /** The rail's count and whether this brain has the messenger. */
 export function useMessengerUnread(): {
@@ -134,6 +136,10 @@ function MessengerNotices() {
       const key = `${c}:${seq}`;
       if (shown.current.has(key)) return;
       shown.current.add(key);
+      // Only recent keys matter (a seq comes once from each path).
+      if (shown.current.size > SHOWN_KEEP) {
+        shown.current.delete(shown.current.values().next().value!);
+      }
       const row = rows.find((r) => r.id === c && r.kind !== 'agent');
       // A chat the list does not know (yet), or a muted one: no notice.
       if (!row || row.muted) return;

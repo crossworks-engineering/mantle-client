@@ -44,7 +44,8 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   message. Delete confirms.
 - **The inspector** (`chat-inspector.tsx`, the "detail pane with an
   inspector" pattern): a resizable column beside the transcript, its width
-  and open state remembered. The title (an admin renames a group), the
+  and open state remembered. In a room narrower than 680 px it lies over the
+  transcript instead, opens only from Details and closes on Escape. The title (an admin renames a group), the
   people with admin marks (an admin adds and removes them), Mute and Pin,
   Clear for me, Leave group, Delete history (admins). Every destructive one
   confirms.
@@ -83,9 +84,11 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   messenger streams. A browser tab in the background gives its stream back
   and fetches the gap when it is shown again; the desktop window keeps its
   stream for the OS notices.
-- **Assistant replies count for every login**: the dock marks the shown
-  thread read for an Admin user too, and an assistant row in Chats marks it
-  read while the tab is visible, so the count clears as replies are read.
+- **Assistant replies count for every login**: the dock and an assistant
+  row in Chats mark the shown thread read for an Admin user too, and only
+  while the tab is visible, so the count clears as replies are read and a
+  reply that lands in a background tab still counts. The assistant's reply
+  stream is closed in a background browser tab as well.
 
 ## Live delivery
 

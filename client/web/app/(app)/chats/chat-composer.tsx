@@ -93,8 +93,8 @@ export function ChatComposer({
     const out = applyMention(text, typing.start, caret, p.name);
     setPicked((cur) => [...cur, { kind: p.kind, id: p.id, name: p.name }]);
     setActive(0);
-    // This "@" is done: the picker stays shut for it.
-    setDismissedAt(typing.start);
+    // The space after the name ends the mention (mentionAt), so the picker
+    // shuts without a dismissal that would keep it shut at this "@".
     place(out.text, out.caret);
   };
 
@@ -173,8 +173,15 @@ export function ChatComposer({
         value={text}
         disabled={disabled}
         onChange={(e) => {
-          setText(e.target.value);
-          setCaret(e.target.selectionStart ?? e.target.value.length);
+          const next = e.target.value;
+          const at = e.target.selectionStart ?? next.length;
+          // An Escape holds for its "@" until the "@" or the whole name after
+          // it is gone: then a mention typed there opens the picker again.
+          if (dismissedAt !== null && (next[dismissedAt] !== '@' || at <= dismissedAt + 1)) {
+            setDismissedAt(null);
+          }
+          setText(next);
+          setCaret(at);
           setActive(0);
           grow();
           if (e.target.value.trim()) onTyping();

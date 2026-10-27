@@ -116,14 +116,13 @@ export function AssistantThreadClient({
   // from the agent picker afterwards is left alone.
   const assignedSlug = threadQuery.data?.assigned?.slug ?? null;
   const assignedAt = threadQuery.data?.assigned?.assignedAt ?? null;
-  // The unread badge of a login that is not an Admin user reads its own
-  // threads (W7c): showing the live thread marks it read.
-  // Every login's (the messenger counts an Admin user's replies too): while
-  // the dock shows it, or, embedded in Chats, while the tab is visible.
+  // Showing the live thread marks it read for every login (the messenger's
+  // count includes an Admin user's replies too): while the dock or the Chats
+  // row shows it in a visible tab, so a reply in a background tab still counts.
   const visible = useDocumentVisible();
   useMarkThreadRead(
     threadQuery.data?.agent?.slug,
-    (embedded ? visible : panel === 'open') && view.kind === 'live',
+    (embedded || panel === 'open') && visible && view.kind === 'live',
   );
 
   useEffect(() => {

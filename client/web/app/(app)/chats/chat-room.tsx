@@ -539,6 +539,7 @@ export function ChatRoom({
   // the frame measures itself, not the window).
   const frame = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(false);
+  const roomShown = !!conversation;
   useLayoutEffect(() => {
     const el = frame.current;
     if (!el) return;
@@ -547,11 +548,20 @@ export function ChatRoom({
     const ro = new ResizeObserver(([entry]) => entry && measure(entry.contentRect.width));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // The frame mounts again when the chat comes back after a failed load.
+  }, [roomShown]);
   // ── The inspector and my settings ─────────────────────────────────────
   const [inspectorOpen, setInspectorOpen] = useState(false);
   useEffect(() => setInspectorOpen(readInspectorOpen()), []);
-  const toggleInspector = () =>
+  // A narrow room's inspector lies over the transcript and the composer, so
+  // it opens only when asked, is never remembered, and Escape closes it.
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const detailsOpen = narrow ? overlayOpen : inspectorOpen;
+  const toggleInspector = () => {
+    if (narrow) {
+      setOverlayOpen((open) => !open);
+      return;
+    }
     setInspectorOpen((open) => {
       try {
         window.localStorage.setItem(INSPECTOR_KEY, open ? '0' : '1');
@@ -560,6 +570,7 @@ export function ChatRoom({
       }
       return !open;
     });
+  };
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: 'chats:inspector',
     panelIds: inspectorOpen && !narrow ? ['room', 'inspector'] : ['room'],
@@ -642,9 +653,9 @@ export function ChatRoom({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [roomShown]);
   const inspectorColumn = inspectorOpen && !!conversation && !narrow;
-  const inspectorOverlay = inspectorOpen && !!conversation && narrow;
+  const inspectorOverlay = overlayOpen && !!conversation && narrow;
 
   if (conversationQuery.isError && !conversation) {
     const gone =
@@ -678,9 +689,9 @@ export function ChatRoom({
         tools={[
           {
             key: 'details',
-            label: inspectorOpen ? 'Hide details' : 'Details',
+            label: detailsOpen ? 'Hide details' : 'Details',
             icon: <PanelRight />,
-            pressed: inspectorOpen,
+            pressed: detailsOpen,
             onSelect: toggleInspector,
           },
         ]}
@@ -850,7 +861,14 @@ export function ChatRoom({
           ) : null}
         </ResizablePanelGroup>
         {inspectorOverlay && conversation ? (
-          <div className="absolute inset-y-0 right-0 z-10 w-[min(320px,100%)] overflow-y-auto border-l border-border bg-background shadow-md scrollbar-thin">
+          <div
+            className="absolute inset-y-0 right-0 z-10 w-[min(320px,100%)] overflow-y-auto border-l border-border bg-background shadow-md scrollbar-thin"
+            onKeyDown={(e) => {
+              // Not an Escape from a dialog it opened (a portal bubbles here).
+              if (e.key !== 'Escape' || e.defaultPrevented) return;
+              if (e.currentTarget.contains(e.target as Node)) setOverlayOpen(false);
+            }}
+          >
             <ChatInspector
               conversation={conversation}
               title={title}
