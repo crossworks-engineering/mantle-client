@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
-import type { Shell } from '@/lib/contract/shell';
+import type { Shell } from '@mantle/client-types';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { FontDialog } from '@mantle/web-ui/font-dialog';

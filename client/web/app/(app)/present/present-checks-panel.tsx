@@ -11,7 +11,7 @@ import type {
   PresentCheckItemDTO,
   PresentChecksDTO,
   PresentCircuitChecksDTO,
-} from '@/lib/contract/present-checks';
+} from '@mantle/client-types';
 
 /** The query key of a canvas's image check overview. */
 export const presentChecksKey = (id: string) => ['presents', id, 'checks'] as const;

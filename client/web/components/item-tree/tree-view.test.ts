@@ -25,7 +25,7 @@ describe('the view a tree opens on', () => {
   });
 
   it('the sort and the open folders are still remembered', () => {
-    expect(tree).toContain('usePersistedState<TreeOrder>( `mantle_tree_sort_v2:${scope}`,');
+    expect(tree).toContain('usePersistedState<TreeSort>( `mantle_tree_sort_v2:${scope}`,');
     expect(tree).toContain('const key = `mantle_tree_open_v1:${scope}`;');
   });
 

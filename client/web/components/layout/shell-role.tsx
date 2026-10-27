@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import type { Shell, ShellRole } from '@/lib/contract/shell';
+import type { Shell, ShellRole } from '@mantle/client-types';
 import { shellRoleOf } from '@/lib/workspaces';
 
 export type { ShellRole };

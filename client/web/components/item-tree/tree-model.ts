@@ -3,13 +3,7 @@
  * drag would land, and what a reorder sends. No React, so the rules are
  * pinned by tests.
  */
-import type {
-  TreeCrumb,
-  TreeFolder,
-  TreeFolderPage,
-  TreeItem,
-  TreeSort,
-} from '@mantle/web-ui/types/tree';
+import type { TreeCrumb, TreeFolder, TreeFolderPage, TreeItem } from '@mantle/web-ui/types/tree';
 import { TREE_MAX_DEPTH } from '@mantle/web-ui/types/tree';
 import { itemAccess } from '@/lib/item-access';
 import { ELSEWHERE_MAX } from '@/lib/workspace-hits';
@@ -27,17 +21,6 @@ export function itemMovable(item: TreeItem): boolean {
 export function folderManaged(folder: TreeFolder): boolean {
   return !folder.system && itemAccess(folder).manage;
 }
-
-/** The item orders this client asks a folder for: the contract's sorts and
- *  `custom`, the folder's own order (brain docs/folder-tree.md, "Custom
- *  order"), from a brain whose shell says `features.treeCustomOrder`. The
- *  contract package names `custom` from its next release; until then it is
- *  added here, and the two agree. */
-export type TreeOrder = TreeSort | 'custom';
-
-/** A folder page's order fields (brain contract, "Custom order"): absent from
- *  a brain before it. */
-type PageOrder = { ordered?: boolean; mayOrder?: boolean };
 
 /** One folder's children as loaded so far: its subfolders (they all come
  *  with the first page) and every item page fetched, in order. */
@@ -73,7 +56,7 @@ export function mergeFolderPages(pages: readonly TreeFolderPage[] | undefined): 
     folders: pages[0]!.folders,
     items,
     hasMore: pages.at(-1)!.nextCursor !== null,
-    ...((pages[0] as TreeFolderPage & PageOrder).mayOrder ? { mayOrder: true } : {}),
+    ...(pages[0]!.mayOrder ? { mayOrder: true } : {}),
     ...(elsewhere?.length && !items.length ? { elsewhere } : {}),
   };
 }

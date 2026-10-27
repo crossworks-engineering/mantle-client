@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { shellProbeFailure } from '@/lib/shell-probe';
 import { goesToOnboarding, hasArea, shellAreasOf, shellRoleOf } from '@/lib/workspaces';
 import { CreateWorkspaceSync } from '@/components/workspaces/create-workspace-sync';
-import type { Shell } from '@/lib/contract/shell';
+import type { Shell } from '@mantle/client-types';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, upgradeOwnerCookie } from '@mantle/web-ui/api-fetch';
@@ -100,7 +100,7 @@ function writeCookieValue(name: string, value: string | number) {
   document.cookie = `${name}=${value}; path=/; max-age=31536000; samesite=lax`;
 }
 
-/** GET /api/shell's answer: the brain's contract (lib/contract/shell.ts). */
+/** GET /api/shell's answer: the brain's contract (`Shell`, @mantle/client-types). */
 type ShellData = Shell;
 
 /** The shell's avatar as the renderer takes it. The contract leaves the

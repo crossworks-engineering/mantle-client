@@ -78,14 +78,11 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
 /**
  * Rows this client names differently from the pinned shared list. Logins is
  * Users since workspaces (W5a): a user is a login, and the screen holds
- * account actions only. `/` is Desk (owner decision, 2026-10-26; Home since
- * task d78e7bde): the landing page of the current workspace (the Dashboard
- * moved to /dashboard). Remove an
- * entry once the shared list carries the name.
+ * account actions only. Remove an entry once the shared list carries the
+ * name.
  */
 export const RENAMED_NAV_ITEMS: Readonly<Record<string, string>> = {
   '/settings/users': 'Users',
-  '/': 'Desk',
 };
 
 /** Pure, so the renames are unit-tested against any list. */

@@ -68,7 +68,6 @@ describe('no client login and no email code sign-in (W8)', () => {
       'client/web/app/login/login-form.tsx',
       'client/web/app/login/page.tsx',
       'client/web/lib/workspaces.ts',
-      'client/web/lib/contract/shell.ts',
       'client/web/lib/contract/workspaces.ts',
       'client/web/lib/mcp-screen.ts',
       'client/web/lib/login-key.ts',

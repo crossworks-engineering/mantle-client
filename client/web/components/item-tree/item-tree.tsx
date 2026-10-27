@@ -74,6 +74,7 @@ import {
   type TreeFolderPage,
   type TreeItem,
   type TreeKind,
+  type TreeSort,
 } from '@mantle/web-ui/types/tree';
 import { AppLookPicker } from '@/components/app-nav/app-look-picker';
 import { DeleteFolderDialog, FolderNameDialog } from '@/components/app-nav/folder-dialogs';
@@ -124,7 +125,6 @@ import {
   placeSiblings,
   rangeOfItems,
   refreshFor,
-  type TreeOrder,
   type TreeRow,
 } from './tree-model';
 import { useTreeCustomOrder } from './use-tree-kinds';
@@ -168,7 +168,7 @@ const VIEWS: Array<{ id: View; label: string }> = [
   { id: 'used', label: 'Most used' },
   { id: 'az', label: 'A to Z' },
 ];
-const SORT_LABEL: Record<TreeOrder, string> = {
+const SORT_LABEL: Record<TreeSort, string> = {
   custom: 'Custom order',
   name: 'Name',
   updated: 'Last changed',
@@ -324,16 +324,15 @@ export function ItemTree({
   // choice is this browser's; v2 of the key so every tree opens on the
   // custom order once.
   const customOrder = useTreeCustomOrder();
-  const sorts: readonly TreeOrder[] = [
-    ...(customOrder ? (['custom'] as const) : []),
-    ...(spec.sorts as readonly TreeOrder[]).filter((s) => s !== 'custom'),
-  ];
-  const [chosenSort, setSort] = usePersistedState<TreeOrder>(
+  const sorts: readonly TreeSort[] = customOrder
+    ? spec.sorts
+    : spec.sorts.filter((s) => s !== 'custom');
+  const [chosenSort, setSort] = usePersistedState<TreeSort>(
     `mantle_tree_sort_v2:${scope}`,
     'custom',
-    (s) => (s === 'custom' || spec.sorts.includes(s as never) ? (s as TreeOrder) : null),
+    (s) => (spec.sorts.includes(s as never) ? (s as TreeSort) : null),
   );
-  const sort: TreeOrder = sorts.includes(chosenSort) ? chosenSort : sorts[0]!;
+  const sort: TreeSort = sorts.includes(chosenSort) ? chosenSort : sorts[0]!;
   const [open, setOpen] = useOpenFolders(scope);
   // Show or hide the share pills (task ca907a89): one choice for every tree,
   // per login, kept in this browser. Hidden by default: each workspace's icon
@@ -1414,7 +1413,7 @@ export function ItemTree({
                         <DropdownMenuLabel>Sort {adapter.noun.many}</DropdownMenuLabel>
                         <DropdownMenuRadioGroup
                           value={sort}
-                          onValueChange={(v) => setSort(v as TreeOrder)}
+                          onValueChange={(v) => setSort(v as TreeSort)}
                         >
                           {sorts.map((s) => (
                             <DropdownMenuRadioItem key={s} value={s}>

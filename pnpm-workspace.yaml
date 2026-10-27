@@ -23,10 +23,10 @@ allowBuilds:
 # latest release) with known advisories; fast-uri / @xmldom/xmldom under
 # electron-builder (build-time only).
 overrides:
-  "@mantle/client-types": "npm:@crossworks/client-types@0.400.0"
-  "@mantle/content-core": "npm:@crossworks/content-core@0.400.0"
-  "@mantle/voice-client": "npm:@crossworks/voice-client@0.239.4"
-  "@mantle/share-ui": "npm:@crossworks/share-ui@0.400.0"
+  "@mantle/client-types": "npm:@crossworks/client-types@0.400.14"
+  "@mantle/content-core": "npm:@crossworks/content-core@0.400.14"
+  "@mantle/voice-client": "npm:@crossworks/voice-client@0.400.14"
+  "@mantle/share-ui": "npm:@crossworks/share-ui@0.400.14"
   # Mermaid is not supported (stubs/mermaid-to-excalidraw/README.md). Excalidraw
   # reaches its Mermaid feature through a dynamic import(), so the UI prop alone
   # would leave the real package installed and its ~640 KB chunk emitted; this

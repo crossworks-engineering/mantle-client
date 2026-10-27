@@ -33,6 +33,7 @@ import {
   type TreeFolderPage,
   type TreeItem,
   type TreeKind,
+  type TreeSort,
 } from '@mantle/web-ui/types/tree';
 import { AppTile } from '@/components/app-nav/app-tile';
 import { TREE_INDENT, TREE_ROW_PAD, TreeGuides } from '@/components/app-nav/tree-guides';
@@ -43,7 +44,6 @@ import {
   mergeFolderPages,
   type FolderLoad,
   type TreeRow,
-  type TreeOrder,
 } from './tree-model';
 import { rowTabIndex, useTreeCtx, type DragData } from './tree-context';
 import { itemAccess } from '@/lib/item-access';
@@ -115,7 +115,7 @@ function FolderLoader({
 }: {
   kind: TreeKind;
   source: TreeSource;
-  sort: TreeOrder;
+  sort: TreeSort;
   folderId: string | null;
   handles: Map<string, FolderHandle>;
   onUnsupported?: () => void;
@@ -228,7 +228,7 @@ export function useFolderRows({
   kind: TreeKind;
   /** Who the tree is read as (tree-api's TreeSource). */
   source?: TreeSource;
-  sort: TreeOrder;
+  sort: TreeSort;
   isOpen: (folderId: string) => boolean;
   foldersOnly?: boolean;
   emptyText: string;

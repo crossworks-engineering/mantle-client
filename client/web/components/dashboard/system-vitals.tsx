@@ -5,18 +5,8 @@ import Link from 'next/link';
 import { Cpu, Database, HardDrive, MemoryStick } from 'lucide-react';
 import type { SystemHealth } from '@mantle/client-types';
 
-/** Local copy of the contract's `parser` field (mantle, the parser service)
- *  until the client-types pin carries it. A brain older than the parser
- *  sends no `parser`: the dashboard then shows its Tika pill as before. */
-type ParserVitals = {
-  up: boolean;
-  versions: Record<string, string>;
-  running: number | null;
-  queued: number | null;
-};
-
 /** The parser pill's hover text: its readers and tools, and its jobs. */
-function parserTitle(p: ParserVitals): string {
+function parserTitle(p: SystemHealth['parser']): string {
   if (!p.up) return 'the parser service is not answering: uploaded files cannot be read';
   const v = p.versions;
   const tools = [
@@ -89,8 +79,9 @@ export function SystemVitals() {
 
   const { host, postgres, storage, tika, browser, embedder, network, sandboxes } = data;
   // The parser service reads every file the brain receives (it replaced Tika
-  // and the media sidecar). An older brain omits it: show its Tika pill.
-  const parser = (data as SystemHealth & { parser?: ParserVitals }).parser;
+  // and the media sidecar). A brain older than it sends no `parser`: show
+  // its Tika pill.
+  const parser = data.parser as SystemHealth['parser'] | undefined;
   const memValue = host.mem
     ? `${formatBytes(host.mem.usedBytes)} / ${formatBytes(host.mem.totalBytes)}`
     : '—';

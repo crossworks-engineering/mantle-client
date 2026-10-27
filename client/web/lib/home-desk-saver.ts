@@ -31,7 +31,7 @@
  *   a slow read that started before a save landed never brings back the desk
  *   that save replaced.
  */
-import type { HomeDeskState } from './contract/home-desk';
+import type { HomeDeskState } from '@mantle/client-types';
 import type { DeskPrefs } from './home-desk';
 
 /** How long the desk waits after the last change before saving it. */

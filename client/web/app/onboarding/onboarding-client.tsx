@@ -38,7 +38,7 @@ import { ToastProvider, useToast } from '@mantle/web-ui/ui/toast';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { PurposeFieldNote } from '@/components/purpose-field-note';
-import type { Shell } from '@/lib/contract/shell';
+import type { Shell } from '@mantle/client-types';
 import { isOwnerShell, onboardingExit } from '@/lib/workspaces';
 import { OWNER_ONLY_PROMPT_TEXT } from '@/lib/profile-owner-fields';
 import { checkPurpose } from '@/lib/purpose-input';

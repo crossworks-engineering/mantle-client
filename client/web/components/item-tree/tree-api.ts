@@ -15,9 +15,9 @@ import type {
   TreeMarkList,
   TreeMarkView,
   TreeSearchResult,
+  TreeSort,
   TreeTagList,
 } from '@mantle/web-ui/types/tree';
-import type { TreeOrder } from './tree-model';
 
 /**
  * Who the tree is read as: since workspaces W6b every login reads and writes
@@ -44,7 +44,7 @@ export const treeKey = (kind: TreeKind, source: TreeSource = 'owner') =>
 export const folderKey = (
   kind: TreeKind,
   folderId: string | null,
-  sort: TreeOrder,
+  sort: TreeSort,
   source: TreeSource = 'owner',
   ws: string | null = null,
 ) => ['tree', treeScope(kind, source), 'folder', folderId ?? 'root', sort, ws ?? 'all'] as const;
@@ -75,7 +75,7 @@ function query(params: Record<string, string | null | undefined>): string {
 export function folderUrl(
   kind: TreeKind,
   folderId: string | null,
-  sort: TreeOrder,
+  sort: TreeSort,
   cursor: string | null,
   source: TreeSource = 'owner',
   ws: string | null = null,
@@ -113,7 +113,7 @@ export function marksUrl(kind: TreeKind, view: TreeMarkView): string {
 export const fetchFolderPage = (
   kind: TreeKind,
   folderId: string | null,
-  sort: TreeOrder,
+  sort: TreeSort,
   cursor: string | null,
   source: TreeSource = 'owner',
   ws: string | null = null,

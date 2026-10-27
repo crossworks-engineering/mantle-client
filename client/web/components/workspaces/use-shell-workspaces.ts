@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
-import type { Shell } from '@/lib/contract/shell';
+import type { Shell } from '@mantle/client-types';
 import {
   isAdminUserShell,
   isOwnerShell,

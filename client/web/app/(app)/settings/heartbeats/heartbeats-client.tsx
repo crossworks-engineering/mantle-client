@@ -37,8 +37,7 @@ import { ListCard, ListCardMeta, ListCardTitle } from '@mantle/web-ui/ui/list-ca
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
-import type { AgentOptionDTO, SkillDTO } from '@mantle/client-types';
-import type { HeartbeatDTO } from '@/lib/contract/heartbeats';
+import type { AgentOptionDTO, HeartbeatDTO, SkillDTO } from '@mantle/client-types';
 import {
   HIDDEN_STATE_TEXT,
   heartbeatFireRefusal,

@@ -1,9 +1,9 @@
 'use client';
 
 import { createContext, useContext, type MouseEvent, type ReactNode } from 'react';
-import type { TreeFolder, TreeItem, TreeKind } from '@mantle/web-ui/types/tree';
+import type { TreeFolder, TreeItem, TreeKind, TreeSort } from '@mantle/web-ui/types/tree';
 import type { TreeKindAdapter } from './kinds/types';
-import type { DropPos, TreeOrder } from './tree-model';
+import type { DropPos } from './tree-model';
 
 /** Where an item was opened from: the folder it sits in when the tree knows
  *  it (a folder row's child), else the last crumb's id (a flat list). Null
@@ -46,7 +46,7 @@ export type ItemOrder = { siblings: readonly TreeItem[]; mayOrder: boolean };
 export type TreeCtx = {
   kind: TreeKind;
   adapter: TreeKindAdapter;
-  sort: TreeOrder;
+  sort: TreeSort;
   /** `manage`: menus and drag; `read`: rows only; `picker`: folders only, a
    *  click chooses a destination. */
   mode: 'manage' | 'read' | 'picker';

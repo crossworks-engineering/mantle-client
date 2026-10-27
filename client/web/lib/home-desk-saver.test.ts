@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HomeDeskState } from './contract/home-desk';
+import type { HomeDeskState } from '@mantle/client-types';
 import { defaultDesk, deskToWire, type DeskPrefs } from './home-desk';
 import { SAVE_DELAY_MS, conflictState, createDeskSaver, type DeskSend } from './home-desk-saver';
 

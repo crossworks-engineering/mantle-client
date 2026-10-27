@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SetPageTitle } from '@/components/layout/page-title';
-import type { HeartbeatDTO, HeartbeatFireSummary } from '@/lib/contract/heartbeats';
+import type { HeartbeatDTO, HeartbeatFireSummary } from '@mantle/client-types';
 import { JsonView } from '@mantle/web-ui/ui/json-view';
 import {
   HIDDEN_STATE_TEXT,

@@ -92,11 +92,9 @@ function CheckPill({ check }: { check: CheckResult }) {
   );
 }
 
-/** Local copy of the contract's `parser` capability (mantle, the parser
- *  service) until the client-types pin carries it. A brain older than the
- *  parser sends none: the panel then shows its Tika row as before. */
-type CapsWithParser = Capabilities & { parser?: Capabilities['tika'] };
-type CapKey = Exclude<keyof CapsWithParser, 'media'>;
+/** The capabilities shown (the media sidecar is gone). A brain older than
+ *  the parser sends no `parser`: the panel then shows its Tika row. */
+type CapKey = Exclude<keyof Capabilities, 'media'>;
 
 const CAP_LABELS: Record<CapKey, string> = {
   parser: 'Parser',
@@ -109,7 +107,7 @@ const CAP_LABELS: Record<CapKey, string> = {
   stt: 'STT (voice)',
 };
 
-function CapabilitiesPanel({ caps }: { caps: CapsWithParser }) {
+function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
   const order: CapKey[] = [
     'extractor',
     'embedding',

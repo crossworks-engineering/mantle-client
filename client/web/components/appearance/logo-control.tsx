@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ImageUp, Loader2, X } from 'lucide-react';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
-import type { Shell } from '@/lib/contract/shell';
+import type { Shell } from '@mantle/client-types';
 import { serverUrl } from '@mantle/web-ui/runtime-env';
 import { Button } from '@mantle/web-ui/ui/button';
 import { useToast } from '@mantle/web-ui/ui/toast';

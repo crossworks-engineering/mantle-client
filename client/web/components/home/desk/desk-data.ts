@@ -14,8 +14,7 @@ import {
   type TreeSort,
 } from '@mantle/web-ui/types/tree';
 import type { HubData } from '@mantle/share-ui/app-bridge-protocol';
-import type { HomeDeskPutBody, HomeDeskState } from '@/lib/contract/home-desk';
-import type { Shell } from '@/lib/contract/shell';
+import type { HomeDeskPutBody, HomeDeskState, Shell } from '@mantle/client-types';
 import { fetchFolderPage, fetchMarks, folderKey, marksKey } from '@/components/item-tree/tree-api';
 import { treeKindsOf } from '@/components/item-tree/use-tree-kinds';
 import {
@@ -347,9 +346,10 @@ export function useKindItems(
     queryKey: marksKey(kind, 'recent'),
     queryFn: () => fetchMarks(kind, 'recent'),
   });
-  const sort = TREE_KIND_SPECS[kind].sorts.includes('updated')
-    ? 'updated'
-    : (TREE_KIND_SPECS[kind].sorts[0] ?? 'name');
+  // Never `custom` (every kind's first sort since the contract named it):
+  // the newest are asked of a brain that may not serve it.
+  const sorts = TREE_KIND_SPECS[kind].sorts.filter((s) => s !== 'custom');
+  const sort = sorts.includes('updated') ? 'updated' : (sorts[0] ?? 'name');
   const marked = (pinned.data?.items.length ?? 0) + (recent.data?.items.length ?? 0);
   const settled = !pinned.isPending && !recent.isPending;
   const needNewest = withNewest && !hubNewest && settled && marked < count;

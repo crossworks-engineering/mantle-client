@@ -22,7 +22,7 @@ import type {
   WorkspaceUser,
   WorkspaceUserSearchHit as UserSearchHit,
 } from './contract/workspaces';
-import type { ShellRole } from './contract/shell';
+import type { ShellRole } from '@mantle/client-types';
 
 export type {
   ShellWorkspace,
@@ -668,7 +668,7 @@ export function shellAreasOf(shell: { areas?: unknown } | null | undefined): str
 }
 
 /** What the brain says a login is (GET /api/shell `role`, W5c contract:
- *  lib/contract/shell.ts). Since W6b every login reads its data on the same
+ *  `Shell` in @mantle/client-types). Since W6b every login reads its data on the same
  *  routes; the role picks the chat, the app runner and the byte routes. */
 export type { ShellRole };
 

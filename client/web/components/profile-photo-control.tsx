@@ -11,7 +11,7 @@ import ReactCrop, {
 import 'react-image-crop/dist/ReactCrop.css';
 import { Camera, X } from 'lucide-react';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
-import type { Shell } from '@/lib/contract/shell';
+import type { Shell } from '@mantle/client-types';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
   Dialog,

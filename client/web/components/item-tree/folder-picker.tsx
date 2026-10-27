@@ -12,11 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@mantle/web-ui/ui/dialog';
-import type { TreeFolder, TreeKind } from '@mantle/web-ui/types/tree';
+import type { TreeFolder, TreeKind, TreeSort } from '@mantle/web-ui/types/tree';
 import { TREE_ROW_PAD } from '@/components/app-nav/tree-guides';
 import type { TreeKindAdapter } from './kinds/types';
 import type { TreeSource } from './tree-api';
-import type { TreeRow, TreeOrder } from './tree-model';
+import type { TreeRow } from './tree-model';
 import { TreeContext, type TreeCtx } from './tree-context';
 import { FolderTile, FolderTreeRow, useFolderRows, VirtualRows } from './tree-rows';
 
@@ -45,7 +45,7 @@ export function FolderPickerDialog({
   /** Whose tree it browses (a member picks among the folders it sees). */
   source?: TreeSource;
   adapter: TreeKindAdapter;
-  sort: TreeOrder;
+  sort: TreeSort;
   title: string;
   description?: string;
   open: boolean;

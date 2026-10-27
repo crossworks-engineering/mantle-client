@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
-import type { Shell } from '@/lib/contract/shell';
+import type { Shell } from '@mantle/client-types';
 import { isTreeKind, TREE_KIND_SPECS, TREE_KINDS, type TreeKind } from '@mantle/web-ui/types/tree';
 
 /**
@@ -77,8 +77,7 @@ export function useTreeCustomOrder(): boolean {
     queryKey: ['shell'],
     queryFn: () => apiFetch<Shell>('/api/shell'),
     enabled: false,
-    select: (d: Shell) =>
-      (d.features as { treeCustomOrder?: unknown } | undefined)?.treeCustomOrder === true,
+    select: (d: Shell) => d.features?.treeCustomOrder === true,
   });
   return data === true;
 }
