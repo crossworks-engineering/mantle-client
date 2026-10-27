@@ -32,7 +32,7 @@ const ANSWER: Record<PresentCheckItemDTO['answer'], { label: string; tone: strin
 };
 
 /** The short note on the folded row (the brain's full note shows open). */
-const FOLDED_NOTE = 'Image checks help; they are not a guarantee.';
+const FOLDED_NOTE = 'Image checks help; they are not a guarantee. Verify on the drawing.';
 
 /** "12 checked by image · 1 image says no · 2 unsure", the parts there are. */
 export function countsLine(c: PresentCircuitChecksDTO['counts']): string {
@@ -53,8 +53,8 @@ export function countsLine(c: PresentCircuitChecksDTO['counts']): string {
  * traced P&ID, and folded by default: one row with the counts.
  *
  * Image checks help; they are not a guarantee: the folded row says so
- * (FOLDED_NOTE, and its tooltip on a narrow screen), and the brain's note
- * says so word for word once open. Crops are ordinary files, loaded and
+ * (FOLDED_NOTE, on its own line on a narrow screen), and the brain's note
+ * and limits say so first once open. Crops are ordinary files, loaded and
  * opened with the reader's own rights.
  */
 export function PresentChecksPanel({ presentId, rev }: { presentId: string; rev: number }) {
@@ -83,12 +83,15 @@ export function PresentChecksPanel({ presentId, rev }: { presentId: string; rev:
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         title={FOLDED_NOTE}
-        className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.04]"
+        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-4 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.04]"
       >
         <ScanSearch className="size-3.5 shrink-0" aria-hidden />
         <span className="font-medium text-foreground">Image checks</span>
         <span className="min-w-0 truncate">{summary}</span>
-        <span className="hidden min-w-0 shrink truncate md:inline">· {FOLDED_NOTE}</span>
+        <span className="order-last w-full min-w-0 truncate md:order-none md:w-auto md:shrink">
+          <span className="hidden md:inline">· </span>
+          {FOLDED_NOTE}
+        </span>
         <ChevronRight
           className={cn('ml-auto size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
           aria-hidden
@@ -96,17 +99,17 @@ export function PresentChecksPanel({ presentId, rev }: { presentId: string; rev:
       </RowButton>
       {open && (
         <div className="max-h-[40vh] overflow-y-auto px-4 pb-3 scrollbar-thin">
-          <p className="pb-2 text-xs text-muted-foreground">{checks.note}</p>
-          {checks.circuits.map((c) => (
-            <CircuitChecks key={c.circuit} circuit={c} />
-          ))}
+          <p className="pb-1 text-xs text-muted-foreground">{checks.note}</p>
           {checks.limits.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+            <ul className="space-y-0.5 pb-2 text-xs text-muted-foreground">
               {checks.limits.map((l) => (
                 <li key={l}>{l}</li>
               ))}
             </ul>
           )}
+          {checks.circuits.map((c) => (
+            <CircuitChecks key={c.circuit} circuit={c} />
+          ))}
         </div>
       )}
     </section>
@@ -148,7 +151,7 @@ function CropThumb({ id, label }: { id: string; label: string }) {
           'flex items-center p-1 text-center text-xs leading-tight text-muted-foreground',
         )}
       >
-        crop not shared with you
+        crop unavailable (not shared with you, or gone)
       </span>
     );
   return (
