@@ -29,7 +29,14 @@ export type RealtimeChange = { type: string; id: string };
  * the owner's, and a refused stream would only reconnect for ever. One shared
  * connection per stream path.
  */
-type Subscriber = { types: string[] | null; cb: (c: RealtimeChange) => void };
+type Subscriber = {
+  types: string[] | null;
+  cb: (c: RealtimeChange) => void;
+  /** Every frame, keep-alives included (the messenger's silence watch). */
+  onActivity?: () => void;
+  /** Each (re)connect of the shared stream (the messenger's gap fetch). */
+  onConnect?: () => void;
+};
 
 type Stream = {
   subscribers: Map<number, Subscriber>;
@@ -52,22 +59,34 @@ function streamFor(path: string): Stream {
 /** Open the shared stream for `path` if it isn't already running. */
 function ensureStream(path: string, s: Stream): void {
   if (s.stop) return;
-  s.stop = apiEventStream(path, (data) => {
-    let change: RealtimeChange;
-    try {
-      change = JSON.parse(data) as RealtimeChange;
-    } catch {
-      return; // ignore malformed frame
-    }
+  const each = (fn: (sub: Subscriber) => void) => {
     for (const sub of s.subscribers.values()) {
-      if (sub.types && !sub.types.includes(change.type)) continue;
       try {
-        sub.cb(change);
+        fn(sub);
       } catch {
         /* one consumer's bug must not break the fan-out to the others */
       }
     }
-  });
+  };
+  s.stop = apiEventStream(
+    path,
+    (data) => {
+      let change: RealtimeChange;
+      try {
+        change = JSON.parse(data) as RealtimeChange;
+      } catch {
+        return; // ignore malformed frame
+      }
+      each((sub) => {
+        if (sub.types && !sub.types.includes(change.type)) return;
+        sub.cb(change);
+      });
+    },
+    {
+      onActivity: () => each((sub) => sub.onActivity?.()),
+      onConnect: () => each((sub) => sub.onConnect?.()),
+    },
+  );
 }
 
 /** Register a subscriber against the shared stream; returns an unsubscribe

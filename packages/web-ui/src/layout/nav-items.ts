@@ -1,4 +1,4 @@
-import { LayoutDashboard, Layers, Link2, Power, Send } from 'lucide-react';
+import { LayoutDashboard, Layers, Link2, MessagesSquare, Power, Send } from 'lucide-react';
 import {
   NAV_GROUPS as SHARED_NAV_GROUPS,
   navItemMatches,
@@ -66,6 +66,13 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     group: 'System',
     after: '',
     item: { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  },
+  {
+    // The messenger (Messenger V1 Phase 2): every login's chats, after Home.
+    // The rail hides it on a brain without the messenger (sidebar-nav.tsx).
+    group: 'Workspace',
+    after: '/',
+    item: { name: 'Chats', href: '/chats', icon: MessagesSquare },
   },
   {
     // Telegram per user (W7d): pair your own chat, list your own chats.

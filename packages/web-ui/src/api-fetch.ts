@@ -270,6 +270,13 @@ export function apiEventStream(
      *  strand). */
     maxAttempts?: number;
     onExhausted?: () => void;
+    /** Every frame the stream delivers, a keep-alive comment included: a
+     *  consumer that watches for a silent stream (the messenger) hears it
+     *  breathe. */
+    onActivity?: () => void;
+    /** Each successful (re)connect: what was missed while it was down is
+     *  for the consumer to fetch. */
+    onConnect?: () => void;
   },
 ): () => void {
   return eventStreamCore(
@@ -300,6 +307,8 @@ export function eventStreamCore(
      *  absent ⇒ the original reconnect-forever behavior (owner realtime). */
     maxAttempts?: number;
     onExhausted?: () => void;
+    onActivity?: () => void;
+    onConnect?: () => void;
   },
 ): () => void {
   const controller = new AbortController();
@@ -338,6 +347,7 @@ export function eventStreamCore(
         if (!res.ok || !res.body) throw new ApiError(`stream failed (${res.status})`, res.status);
 
         attempt = 0; // connected — reset backoff.
+        opts?.onConnect?.();
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
@@ -351,6 +361,7 @@ export function eventStreamCore(
             const frame = buf.slice(0, sep);
             buf = buf.slice(sep + (buf[sep] === '\r' ? 4 : 2));
             const lines = frame.split(/\r\n|\n/);
+            opts?.onActivity?.();
             const data = lines
               .filter((l) => l.startsWith('data:'))
               .map((l) => l.slice(5).replace(/^ /, ''))

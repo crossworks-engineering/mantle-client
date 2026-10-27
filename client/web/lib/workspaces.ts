@@ -79,6 +79,9 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/settings/telegram', null],
   // Every login chats with its own assistants, in its own threads (W7c).
   ['/assistant', null],
+  // Every login chats with the logins it shares a workspace with (Messenger
+  // V1 Phase 2).
+  ['/chats', null],
   // Settings screens with an area of their own.
   ['/settings/users', 'users'],
   ['/settings/agents', 'assistants'],
