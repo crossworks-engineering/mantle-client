@@ -30,7 +30,7 @@ export function ChatAvatar({
 }: {
   name: string;
   kind?: 'person' | 'group' | 'agent';
-  /** The chosen avatar, from `useChatFaces().of(...)`. */
+  /** The chosen avatar, from the `useChatFaces()` lookup. */
   face?: ChatFace | null;
   online?: boolean;
   size?: keyof typeof PX;

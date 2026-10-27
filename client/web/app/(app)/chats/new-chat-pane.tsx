@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, SquarePen, Users, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -19,6 +19,7 @@ import type { MessengerDirectoryEntry, MessengerMention } from '@/lib/messenger/
 import type { ChatFace, FaceOf } from '@/lib/messenger/faces';
 import { rowAddress } from '@/lib/messenger/format';
 import { newClientMsgId } from '@/lib/messenger/transcript';
+import { draftStorageKey } from '@/app/(app)/assistant/assistant-thread-state';
 import { ChatComposer } from './chat-composer';
 import { ColumnSearch } from './column-search';
 
@@ -40,7 +41,8 @@ const FILTERS: { id: Filter; label: string }[] = [
  *   brain answers the existing one) and the room sends the line through its
  *   outbox. Open chat goes there without a message.
  * - An agent: its thread opens at once. It is the assistant's own thread, not
- *   a messenger chat, so it takes the first line in its own composer.
+ *   a messenger chat: a line typed here becomes that composer's draft (its
+ *   own session draft, when it has none), sent from there.
  * - Groups: New group, a name and its members; Send creates it with the
  *   line, Create group without one. I am its first admin; a group of one
  *   ("message yourself") is allowed.
@@ -61,7 +63,8 @@ export function NewChatPane({
   me: string | null;
   /** Opens an address without creating anything (an agent's thread). */
   onOpen: (address: string) => void;
-  /** The chat exists; the room sends `first` once it has its window. */
+  /** The chat exists; its room sends `first` (not called once the form
+   *  has closed). */
   onCreated: (
     conversationId: string,
     first: { body: string; mentions: MessengerMention[]; clientMsgId: string } | null,
@@ -77,6 +80,16 @@ export function NewChatPane({
   const [titleError, setTitleError] = useState<string | null>(null);
   const [members, setMembers] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const draft = useRef('');
+  // Closed (Cancel, a row opened) while a create was in flight: the chat
+  // still exists, but nothing opens and no line goes out.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const q = query.trim().toLowerCase();
   const matches = (e: MessengerDirectoryEntry) => !q || e.name.toLowerCase().includes(q);
@@ -115,6 +128,7 @@ export function NewChatPane({
       const name = title.trim();
       if (!name) {
         setTitleError('Give the group a name.');
+        document.getElementById('new-group-title')?.focus();
         return false;
       }
       request = { kind: 'group', participants: [...members], title: name };
@@ -126,6 +140,7 @@ export function NewChatPane({
     try {
       const out = await messengerApi.create(request);
       void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
+      if (!alive.current) return false;
       onCreated(out.conversation.id, line ? { ...line, clientMsgId: newClientMsgId() } : null);
       return true;
     } catch (err) {
@@ -144,6 +159,15 @@ export function NewChatPane({
 
   const pickRow = (e: MessengerDirectoryEntry) => {
     if (e.kind === 'agent') {
+      const text = draft.current.trim();
+      if (text && e.slug) {
+        try {
+          const key = draftStorageKey(e.slug);
+          if (!sessionStorage.getItem(key)) sessionStorage.setItem(key, text);
+        } catch {
+          /* no storage: the line stays unsent, as typing it there would */
+        }
+      }
       onOpen(rowAddress({ kind: 'agent', id: e.id }));
       return;
     }
@@ -247,7 +271,7 @@ export function NewChatPane({
             setTitleError(null);
           }}
           aria-invalid={!!titleError || undefined}
-          aria-describedby="new-group-title-error"
+          aria-describedby={titleError ? 'new-group-title-error' : undefined}
           placeholder="Design crew"
         />
         <FieldError id="new-group-title-error">{titleError}</FieldError>
@@ -394,6 +418,9 @@ export function NewChatPane({
                 : 'Type the first message…'
           }
           onSend={(body, mentions) => create({ body, mentions })}
+          onTextChange={(t) => {
+            draft.current = t;
+          }}
         />
       </div>
     </div>

@@ -32,16 +32,21 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   go:
   - A person becomes the recipient ("To", with a remove button). Send makes
     our direct chat (the brain answers an existing one), the pane turns
-    into the transcript, and the room sends the line through its outbox
-    (the clock, Retry with the same `clientMsgId`). Open chat goes there
+    into the transcript, and the room shows the line at once and sends it
+    through its outbox once its first page is in (the clock, Retry with the
+    same `clientMsgId`). Until it goes out the screen keeps it by chat, so a
+    chat left before its first page still sends it when opened again. Open chat goes there
     without a message. The people are the logins that share a workspace
     with me, online first.
   - An agent opens its thread at once: it is the assistant's own thread,
-    not a messenger chat, and takes the first line in its own composer.
+    not a messenger chat. A line typed here becomes that composer's draft
+    (when it has none of its own), sent from there.
   - Groups (or New group under All): a name and the members. Send creates
     it with the line, Create group without one. I am its first admin; a
     group of one ("message yourself") is allowed.
-  - Cancel in the header, or opening any chat, closes it.
+  - Cancel in the header (the focus goes back to New), or opening any
+    chat, closes it. A create still in flight then opens nothing and sends
+    nothing.
 - **A chat open** (`chat-room.tsx`): the standard `ItemHeader` (avatar,
   name, "Online" or "Offline", or a group's head count; Details as a tool;
   Mute and Pin in More), the transcript and the composer. The pane has no

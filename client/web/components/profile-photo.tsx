@@ -6,7 +6,8 @@ import { cn } from '@mantle/web-ui/lib/utils';
 
 /**
  * The uploaded profile photo as a circular <img> — the ONE place that knows
- * the photo URL shape, so the rail and the settings preview cannot drift.
+ * the photo URL shape (`<route>?v=<version>`), so the rail, the settings
+ * preview and the chat faces cannot drift. The route is mine by default.
  *
  * Owns the precedence rule's runtime half: photo → generated → initials means
  * a photo that cannot load (storage down, removed in another session, a

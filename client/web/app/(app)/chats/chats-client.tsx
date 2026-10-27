@@ -14,7 +14,7 @@
  * dynamic import so the editor bundle stays off every other route.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageSquareText, Plus } from 'lucide-react';
 import { ApiError } from '@mantle/web-ui/api-fetch';
@@ -49,9 +49,29 @@ export function ChatsClient() {
   // from anywhere (a row, a toast, the address) closes it.
   const [composing, setComposing] = useState(false);
   const startNew = () => setComposing(true);
-  // The first message typed in the form, handed to the new chat's room to
-  // send through its own outbox (clock, Retry, the same clientMsgId).
-  const [firstMessage, setFirstMessage] = useState<FirstMessage | null>(null);
+  // Cancel hands the focus back to New (the empty state's button is gone
+  // by then).
+  const newButton = useRef<HTMLButtonElement>(null);
+  const cancelNew = () => {
+    setComposing(false);
+    requestAnimationFrame(() => newButton.current?.focus());
+  };
+  // The first lines typed in the form, by chat, until each chat's room has
+  // sent its own through the outbox (clock, Retry, the same clientMsgId).
+  // Kept here, so a room left before its first page still finds it later.
+  const [firstMessages, setFirstMessages] = useState<ReadonlyMap<string, FirstMessage>>(
+    () => new Map(),
+  );
+  const firstSent = useCallback(
+    (c: string) =>
+      setFirstMessages((cur) => {
+        if (!cur.has(c)) return cur;
+        const next = new Map(cur);
+        next.delete(c);
+        return next;
+      }),
+    [],
+  );
   const faceOf = useChatFaces();
 
   const listQuery = useQuery({
@@ -73,7 +93,15 @@ export function ChatsClient() {
   const rows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
   const shown = useMemo(() => rows.filter((r) => rowMatches(r, query)), [rows, query]);
   const selectedId = address.id;
+  // Opening a chat closes the form once the address has moved, so the old
+  // room never flashes in between.
   useEffect(() => setComposing(false), [selectedId]);
+  /** Go to a chat from the form or the list; the address change closes the
+   *  form, or this does when the chat is the one already in the address. */
+  const go = (to: string) => {
+    if (to === selectedId) setComposing(false);
+    address.open(to);
+  };
   const selectedRow = rows.find((r) => rowAddress(r) === selectedId) ?? null;
   const agentId = agentIdOf(selectedId);
   // An assistant opened from New message has no row until its thread has a
@@ -112,7 +140,13 @@ export function ChatsClient() {
           placeholder="Search chats…"
           label="Search chats"
         />
-        <Button size="sm" onClick={startNew} aria-label="New chat" title="New chat">
+        <Button
+          ref={newButton}
+          size="icon-sm"
+          onClick={startNew}
+          aria-label="New chat"
+          title="New chat"
+        >
           <Plus aria-hidden />
         </Button>
       </div>
@@ -138,10 +172,7 @@ export function ChatsClient() {
                   online={online}
                   selected={!composing && rowAddress(row) === selectedId}
                   faceOf={faceOf}
-                  onOpen={() => {
-                    setComposing(false);
-                    address.open(rowAddress(row));
-                  }}
+                  onOpen={() => go(rowAddress(row))}
                 />
               </li>
             ))}
@@ -165,16 +196,12 @@ export function ChatsClient() {
             directoryError={directory.isError}
             faceOf={faceOf}
             me={me}
-            onOpen={(to) => {
-              setComposing(false);
-              address.open(to);
-            }}
+            onOpen={go}
             onCreated={(c, first) => {
-              setFirstMessage(first ? { c, ...first } : null);
-              setComposing(false);
-              address.open(c);
+              if (first) setFirstMessages((cur) => new Map(cur).set(c, { c, ...first }));
+              go(c);
             }}
-            onCancel={() => setComposing(false)}
+            onCancel={cancelNew}
           />
         ) : agentId ? (
           agentSlug ? (
@@ -195,8 +222,8 @@ export function ChatsClient() {
             row={selectedRow}
             me={me}
             online={online}
-            firstMessage={firstMessage?.c === selectedId ? firstMessage : null}
-            onFirstSent={() => setFirstMessage(null)}
+            firstMessage={firstMessages.get(selectedId) ?? null}
+            onFirstSent={firstSent}
             onGone={address.close}
           />
         ) : (

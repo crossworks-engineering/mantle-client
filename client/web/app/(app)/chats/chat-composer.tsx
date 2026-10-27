@@ -42,6 +42,7 @@ export function ChatComposer({
   canSend = true,
   placeholder = 'Type a message…',
   id = 'chat-composer-text',
+  onTextChange,
 }: {
   /** A promise keeps the text until it answers, and keeps it on false
    *  (the New message form: nothing was created). */
@@ -54,6 +55,9 @@ export function ChatComposer({
   canSend?: boolean;
   placeholder?: string;
   id?: string;
+  /** The text as it changes (the New message form carries it to an
+   *  assistant's own composer). */
+  onTextChange?: (text: string) => void;
 }) {
   const faceOf = useChatFaces();
   const [sending, setSending] = useState(false);
@@ -83,6 +87,7 @@ export function ChatComposer({
 
   const place = (next: string, at: number) => {
     setText(next);
+    onTextChange?.(next);
     setCaret(at);
     requestAnimationFrame(() => {
       const el = area.current;
@@ -211,6 +216,7 @@ export function ChatComposer({
             setDismissedAt(null);
           }
           setText(next);
+          onTextChange?.(next);
           setCaret(at);
           setActive(0);
           grow();

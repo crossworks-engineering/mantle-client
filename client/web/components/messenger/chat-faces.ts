@@ -19,9 +19,6 @@ export type { ChatFace };
 
 type AgentFace = { id: string; slug?: string; avatar?: MessengerAvatar | null };
 
-/** The directory refreshes on the screen's own minute (who is online). */
-const DIRECTORY_REFRESH_MS = 60_000;
-
 export function useChatFaces(): (who: FaceOf) => ChatFace {
   // The shell is fetched once by the app frame; this only reads it.
   const shell = useQuery({
@@ -29,10 +26,10 @@ export function useChatFaces(): (who: FaceOf) => ChatFace {
     queryFn: () => apiFetch<Shell>('/api/shell'),
     enabled: false,
   }).data;
+  // The chats screen polls the directory; this reads the same cache.
   const directory = useQuery({
     queryKey: messengerKeys.directory,
     queryFn: () => messengerApi.directory(),
-    refetchInterval: DIRECTORY_REFRESH_MS,
   }).data;
   const assistants = !!shell && hasArea(shell.areas, 'assistants');
   // The settings screen's own query (same key, same answer): the agents with

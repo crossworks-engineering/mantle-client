@@ -9,7 +9,7 @@
  * (admins). Every destructive one confirms.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, UserPlus, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -75,6 +75,12 @@ export function ChatInspector({
   const [name, setName] = useState(conversation.title ?? '');
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  // The Add button gives way to the form and takes the focus back after it.
+  const addButton = useRef<HTMLButtonElement>(null);
+  const doneAdding = () => {
+    setAdding(false);
+    requestAnimationFrame(() => addButton.current?.focus());
+  };
   const faceOf = useChatFaces();
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -216,7 +222,7 @@ export function ChatInspector({
             People
           </h4>
           {admin && !left && !adding ? (
-            <Button variant="outline" size="xs" onClick={() => setAdding(true)}>
+            <Button ref={addButton} variant="outline" size="xs" onClick={() => setAdding(true)}>
               <UserPlus /> Add
             </Button>
           ) : null}
@@ -225,7 +231,7 @@ export function ChatInspector({
           <AddPeople
             inChat={new Set(people.map((p) => p.id))}
             onAdd={(ids) => act('add', () => messengerApi.addPeople(id, ids), 'Added')}
-            onDone={() => setAdding(false)}
+            onDone={doneAdding}
           />
         ) : null}
         <ul className="space-y-1">
@@ -397,11 +403,10 @@ function SwitchRow({
   );
 }
 
-/** Add people to a group: the directory, less who is in it already. */
 /**
- * Add people, inline in the People section (no dialog in Chats): a search,
- * the directory's people not in the chat yet, Add and Cancel. They read the
- * group from now on, not what was said before.
+ * Add people, inline in the People section (no dialog in Chats): a search
+ * (it takes the focus), the directory's people not in the chat yet, Add and
+ * Cancel. They read the group from now on, not what was said before.
  */
 function AddPeople({
   inChat,
@@ -417,6 +422,10 @@ function AddPeople({
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    form.current?.querySelector<HTMLInputElement>('input')?.focus();
+  }, []);
   const directory = useQuery({
     queryKey: messengerKeys.directory,
     queryFn: () => messengerApi.directory(),
@@ -430,6 +439,7 @@ function AddPeople({
 
   return (
     <form
+      ref={form}
       noValidate
       aria-label="Add people"
       className="space-y-2 rounded-md bg-muted/40 p-2"

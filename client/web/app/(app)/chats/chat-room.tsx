@@ -117,10 +117,12 @@ export function ChatRoom({
   row: MessengerListRow | null;
   me: string | null;
   online: ReadonlySet<string>;
-  /** Sent once the first page has landed, through the outbox (a refused
-   *  one offers Retry with the same clientMsgId). */
+  /** Shown in the outbox at once (the clock), sent once the first page has
+   *  landed (a refused one offers Retry with the same clientMsgId). */
   firstMessage?: FirstMessage | null;
-  onFirstSent?: () => void;
+  /** It went out: the screen forgets it. Until then it stays with the
+   *  screen, so a room left before its first page still sends it later. */
+  onFirstSent?: (c: string) => void;
   /** The chat is not mine to read (left, removed, never in it). */
   onGone: () => void;
 }) {
@@ -497,17 +499,33 @@ export function ChatRoom({
     [id, queryClient, catchUp],
   );
 
-  // The New message form's first line goes out once the room holds its
-  // window, so it lands under what is already there.
+  // The New message form's first line shows in the outbox at once and goes
+  // out once the room holds its window, so it lands under what is already
+  // there (a catch-up before the first page would pull the whole history).
   const firstSent = useRef(false);
   const onFirstSentRef = useRef(onFirstSent);
   onFirstSentRef.current = onFirstSent;
+  const first = firstMessage?.c === id ? firstMessage : null;
   useEffect(() => {
-    if (!loaded || !firstMessage || firstSent.current || firstMessage.c !== id) return;
+    if (!first || firstSent.current) return;
+    if (!loaded) {
+      setT((cur) =>
+        cur.outbox.some((o) => o.clientMsgId === first.clientMsgId)
+          ? cur
+          : withOutbox(cur, {
+              clientMsgId: first.clientMsgId,
+              body: first.body,
+              createdAt: new Date().toISOString(),
+              state: 'sending',
+              mentions: first.mentions,
+            }),
+      );
+      return;
+    }
     firstSent.current = true;
-    onFirstSentRef.current?.();
-    void send(firstMessage.body, firstMessage.mentions, firstMessage.clientMsgId);
-  }, [loaded, firstMessage, id, send]);
+    onFirstSentRef.current?.(id);
+    void send(first.body, first.mentions, first.clientMsgId);
+  }, [loaded, first, id, send]);
 
   const lastTyping = useRef<number | null>(null);
   const onTyping = useCallback(() => {
