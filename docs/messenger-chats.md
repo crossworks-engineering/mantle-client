@@ -18,10 +18,10 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   (Files, Notes, Contacts): the dim column surface edge to edge, no card and
   no title (the nav says Chats), the search and New (+) on one row at the
   top, then the rows (rounded, the accent fill on the open one, no rule
-  between them). Each row's text is no taller than its 44 px avatar (see
-  Avatars, a green dot while the other person is online): the name, up to
-  two lines of the last message (in rem, so it scales with the interface
-  size), and at the right the time with the marks and the unread pill under
+  between them). Each row's text is no taller than its 44 px avatar at the
+  default interface size (see Avatars; a green dot while the other person
+  is online): the name, up to two lines of the last message (in rem, so it
+  scales with the interface size), and at the right the time with the marks and the unread pill under
   it. The time reads "10 minutes", "Yesterday" or
   "13 days"; the last message carries a tick when it is mine (one sent, two
   read) and "You:" in a group; the marks are a pin, a mute (the grey pill

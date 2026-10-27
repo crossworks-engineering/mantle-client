@@ -153,7 +153,9 @@ export function rowBadge(
 ): RowBadge | null {
   const n = Number.isFinite(row.unread) ? Math.max(0, Math.floor(row.unread)) : 0;
   if (n === 0) return null;
-  return { text: badgeCount(n), label: `${n} unread`, muted: row.muted, mention: row.mention };
+  // The grey pill stands in for the mute mark, so it says so aloud too.
+  const label = row.muted ? `${n} unread, muted` : `${n} unread`;
+  return { text: badgeCount(n), label, muted: row.muted, mention: row.mention };
 }
 
 /** The list search: the title, a participant's name or the last line. */

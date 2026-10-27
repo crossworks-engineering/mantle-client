@@ -179,6 +179,7 @@ describe('rowBadge', () => {
   });
   it('carries muted and the mention mark', () => {
     expect(rowBadge(r(2, { muted: true, mention: true }))).toMatchObject({
+      label: '2 unread, muted',
       muted: true,
       mention: true,
     });
