@@ -65,15 +65,27 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
 - **The rail count**: `GET /api/messenger/unread`, the brain's one sum of
   people chats, groups and assistant replies, on the Chats nav entry.
 - **No messenger, no entry**: a brain before Phase 1 answers that route 404;
-  the Chats entry hides (`lib/messenger/nav.ts`) and nothing else runs.
+  the Chats entry hides (`lib/messenger/nav.ts`) and nothing else runs. Any
+  other failure leaves the entry and the live parts as they are.
 - **Toasts**: a new message in a chat that is not on screen pops a toast
   with its author and first line; Open goes to the chat. Never for my own
-  message, never for a muted chat (it still counts), never for the chat the
-  reader is looking at.
+  message, a system line, a muted chat (it still counts) or the chat the
+  reader is looking at, and never for a chat the (fresh) list does not
+  know. A notice decides on a list fetched again after the event, so a mute
+  set anywhere is seen. While the stream is deaf (the gap, the polling
+  fallback) the list itself says which chats moved, and those pop.
 - **Desktop**: inside the desktop shell, while the window is hidden, the
   notice goes to the OS instead (`mantleDesktop.notify`, a click opens the
-  chat), and the dock or taskbar badge follows the count
-  (`mantleDesktop.setBadge`).
+  chat), and the app badge follows the count (`mantleDesktop.setBadge`: the
+  dock on macOS, the launcher on Linux); it clears when the window stops
+  counting.
+- **One stream slot per visible tab**: the brain allows a login five
+  messenger streams. A browser tab in the background gives its stream back
+  and fetches the gap when it is shown again; the desktop window keeps its
+  stream for the OS notices.
+- **Assistant replies count for every login**: the dock marks the shown
+  thread read for an Admin user too, and an assistant row in Chats marks it
+  read while the tab is visible, so the count clears as replies are read.
 
 ## Live delivery
 
@@ -85,7 +97,7 @@ screen needs (`lib/messenger/live.ts`, `effectOf`):
 
 | Event | What happens |
 | --- | --- |
-| `message` new | the list and the count refresh; the open chat fetches after its top seq; a toast may pop |
+| `message` new | the list and the count refresh; the open chat fetches after its top seq; a notice may pop |
 | `message` edit or delete, `reaction` | the open chat refetches that one seq |
 | `read` | the receipt of that login moves (two ticks) |
 | `typing` | "X is typing" for 5 seconds |

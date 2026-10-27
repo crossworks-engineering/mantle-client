@@ -84,6 +84,9 @@ export function MessengerLiveSync({ enabled = true }: { enabled?: boolean }) {
     const onVisible = () => {
       if (document.visibilityState === 'visible') gap();
     };
+    // Enabled again (the tab came back): a stream still lingering connects
+    // no more, so ask for the gap now.
+    gap();
     window.addEventListener('focus', gap);
     document.addEventListener('visibilitychange', onVisible);
     return () => {

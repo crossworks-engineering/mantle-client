@@ -8,9 +8,20 @@
 import type { MessengerMessage, MessengerUnreadResponse } from './dto';
 
 /**
+ * Whether this tab keeps the messenger's stream open. The brain allows a
+ * login five messenger streams; a browser tab in the background gives its
+ * slot back and fetches the gap when it is shown again. The desktop window
+ * keeps it, for the OS notices while it is hidden.
+ */
+export function liveStreamWanted(s: { visible: boolean; desktop: boolean }): boolean {
+  return s.visible || s.desktop;
+}
+
+/**
  * Whether this brain has the messenger: GET /api/messenger/unread answers
- * 404 on a brain before it (the Chats entry hides), anything else that
- * fails says nothing yet (the entry stays as it was).
+ * 404 on a brain before it (the Chats entry hides, nothing live runs);
+ * anything else that fails says nothing yet (the entry stays, the live
+ * parts keep running).
  */
 export function messengerAvailability(q: {
   data?: unknown;
@@ -46,6 +57,8 @@ export function shouldPop(s: {
   onScreen: boolean;
 }): boolean {
   if (s.muted || s.onScreen || s.message.deletedAt) return false;
+  // A system line (someone added, a rename) is the chat's own news.
+  if (s.message.authorKind === 'system') return false;
   if (s.message.authorKind === 'login' && s.message.authorId === s.me) return false;
   return true;
 }
@@ -65,7 +78,8 @@ export function noticeText(
 }
 
 /** Where a notice goes: the OS (the desktop shell, window hidden), or an
- *  in-app toast. A hidden browser tab still gets the toast: it waits there. */
+ *  in-app toast. (A hidden browser tab keeps no stream, see
+ *  `liveStreamWanted`, so it pops nothing.) */
 export function noticeRoute(s: { desktop: boolean; visible: boolean }): 'os' | 'toast' {
   return s.desktop && !s.visible ? 'os' : 'toast';
 }

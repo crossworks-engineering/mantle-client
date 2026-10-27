@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  liveStreamWanted,
   messengerAvailability,
   noticeRoute,
   noticeText,
@@ -52,6 +53,7 @@ describe('shouldPop', () => {
     expect(shouldPop({ ...base, muted: true })).toBe(false);
     expect(shouldPop({ ...base, message: { ...theirs, deletedAt: '2026-10-27' } })).toBe(false);
     expect(shouldPop({ ...base, onScreen: true })).toBe(false);
+    expect(shouldPop({ ...base, message: { ...theirs, authorKind: 'system' } })).toBe(false);
   });
 });
 
@@ -73,5 +75,13 @@ describe('noticeRoute', () => {
     expect(noticeRoute({ desktop: true, visible: false })).toBe('os');
     expect(noticeRoute({ desktop: true, visible: true })).toBe('toast');
     expect(noticeRoute({ desktop: false, visible: false })).toBe('toast');
+  });
+});
+
+describe('liveStreamWanted', () => {
+  it('a background browser tab gives its stream slot back; the desktop keeps it', () => {
+    expect(liveStreamWanted({ visible: true, desktop: false })).toBe(true);
+    expect(liveStreamWanted({ visible: false, desktop: false })).toBe(false);
+    expect(liveStreamWanted({ visible: false, desktop: true })).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ import { experienceOf, experienceTitle } from '@/lib/experience';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { useMarkThreadRead } from '@/components/assistant/use-assistant-unread';
+import { useDocumentVisible } from '@/lib/use-document-visible';
 import { useIsAdminUser, useViewerAreas } from '@/components/workspaces/use-shell-workspaces';
 import { chatFeatures, TURN_REFUSAL_TEXT } from '@/lib/assistant-turn-refusal';
 import { shortModelName } from '@mantle/web-ui/lib/model-name';
@@ -117,9 +118,12 @@ export function AssistantThreadClient({
   const assignedAt = threadQuery.data?.assigned?.assignedAt ?? null;
   // The unread badge of a login that is not an Admin user reads its own
   // threads (W7c): showing the live thread marks it read.
+  // Every login's (the messenger counts an Admin user's replies too): while
+  // the dock shows it, or, embedded in Chats, while the tab is visible.
+  const visible = useDocumentVisible();
   useMarkThreadRead(
     threadQuery.data?.agent?.slug,
-    (embedded || (!adminUser && panel === 'open')) && view.kind === 'live',
+    (embedded ? visible : panel === 'open') && view.kind === 'live',
   );
 
   useEffect(() => {

@@ -74,13 +74,15 @@ export function SidebarNav({
   // The Work / Settings / Admin choice is the settings area's (nav-scope.ts,
   // railGroups): a member or a client sees what it may open, flat.
   const scoped = hasArea(areas, 'settings');
-  // Chats (Messenger V1 Phase 2): shown once the brain answers its unread
-  // count (a brain before the messenger answers 404), with that count, the
-  // one sum of people, groups and assistant replies.
+  // Chats (Messenger V1 Phase 2): hidden when the brain answers its unread
+  // count with 404 (a brain before the messenger), else with that count,
+  // the one sum of people, groups and assistant replies.
   const messenger = useMessengerUnread();
   const groups: NavGroup[] = withChats(
     navWithAreas(NAV_GROUPS, areas),
-    messenger.available === 'yes',
+    // Hidden only on a 404: a count still loading (or failing) leaves the
+    // entry where it is, so the rows below it do not jump.
+    messenger.available !== 'no',
   ).map((g) => ({
     ...g,
     items: g.items.map((item) =>

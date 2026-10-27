@@ -709,7 +709,7 @@ function ShellFrame({
             its unread count follows its thread stream; a client has no chat
             yet. */}
         {role === 'admin' || role === 'member' ? <AssistantPanel /> : null}
-        {role === 'member' ? <AssistantUnreadSync /> : null}
+        {role === 'admin' || role === 'member' ? <AssistantUnreadSync /> : null}
         {/* The messenger's one live connection, its toasts and the desktop
             badge (Messenger V1 Phase 2); nothing on a brain without it. */}
         {role === 'admin' || role === 'member' ? <MessengerShell /> : null}
