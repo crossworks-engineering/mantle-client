@@ -15,6 +15,7 @@
  *   directory entry, the photo from GET /api/messenger/photo/:loginId. A
  *   brain before those fields sends neither: initials.
  */
+import { APP_TINTS, type AppTint } from '@mantle/client-types/app-nav';
 import type { MessengerAvatar } from './dto';
 
 /** What the renderer takes: a seed and the builder's parts. */
@@ -95,4 +96,23 @@ export function faceFor(who: FaceOf, src: FaceSources): ChatFace {
     };
   }
   return { avatar, photo: theirs };
+}
+
+/** A group's look as the tile takes it: the icon, and the colour only when
+ *  it is one of the tints this client knows (a stale name reads as none). */
+export type GroupLook = { icon: string | null; color: AppTint | null };
+
+export function groupLook(g: { icon?: unknown; color?: unknown } | null | undefined): GroupLook {
+  const icon = typeof g?.icon === 'string' && g.icon.trim() ? g.icon : null;
+  const color =
+    typeof g?.color === 'string' && (APP_TINTS as readonly string[]).includes(g.color)
+      ? (g.color as AppTint)
+      : null;
+  return { icon, color };
+}
+
+/** Whether the brain keeps a group's look: it sends the fields (null when
+ *  unset) once it does. */
+export function keepsGroupLook(c: object | null | undefined): boolean {
+  return !!c && ('icon' in c || 'color' in c);
 }

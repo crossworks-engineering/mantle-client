@@ -79,6 +79,11 @@ export type MessengerListRow = {
   participants: MessengerParticipant[];
   /** An agent thread's agent slug (it opens today's chat screen). */
   agentSlug?: string;
+  /** A group's icon (an emoji, or `lucide:<name>`) and colour (an AppTint
+   *  name), as a folder's. CLIENT-SIDE ADDITION, agreed with the brain's
+   *  coming fields: optional, so a brain without them still works. */
+  icon?: string | null;
+  color?: string | null;
 };
 
 export type MessengerListResponse = { rows: MessengerListRow[] };
@@ -97,6 +102,9 @@ export type MessengerConversation = {
   workspaceId: string | null;
   /** The group's agent (Phase 3), or null. */
   agentId: string | null;
+  /** A group's icon and colour (CLIENT-SIDE ADDITIONS, as on a list row). */
+  icon?: string | null;
+  color?: string | null;
   participants: MessengerParticipant[];
   /** My own participant row. */
   me: {
@@ -157,6 +165,10 @@ export type MessengerCreateRequest = {
    *  name none (a group of one, "message yourself"). */
   participants: string[];
   title?: string;
+  /** A group's look (CLIENT-SIDE ADDITIONS; a brain before them drops
+   *  them). */
+  icon?: string;
+  color?: string;
 };
 
 export type MessengerCreateResponse = {

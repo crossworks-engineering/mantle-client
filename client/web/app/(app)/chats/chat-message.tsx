@@ -81,6 +81,7 @@ export function ChatMessage({
   mine,
   showAuthor,
   author,
+  systemMark,
   read,
   mentionNames = [],
   actions,
@@ -91,6 +92,8 @@ export function ChatMessage({
   showAuthor: boolean;
   /** The author's face in a group (`Row`). */
   author?: ReactNode;
+  /** A system line's mark in a group: the group's own face. */
+  systemMark?: ReactNode;
   read: boolean;
   /** The chat's people, to draw "@Name" in the mention ink. */
   mentionNames?: readonly string[];
@@ -101,10 +104,11 @@ export function ChatMessage({
   if (message.authorKind === 'system') {
     return (
       <p
-        className="py-1 text-center text-xs text-muted-foreground"
+        className="flex items-center justify-center gap-1.5 py-1 text-center text-xs text-muted-foreground"
         data-testid="chat-system"
         data-seq={message.seq}
       >
+        {systemMark ? <span aria-hidden>{systemMark}</span> : null}
         {message.body}
       </p>
     );

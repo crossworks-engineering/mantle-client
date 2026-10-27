@@ -27,9 +27,10 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
 - **No chat open**: a centred empty state with Start new chat.
 - **New message** (`new-chat-pane.tsx`): New (+) and Start new chat open it
   in the chat pane, where the transcript goes. There is no dialog. At the
-  top the filter (All, People, Agents, Groups) and a search, then the pick
-  list, then the composer, so the first message is written and sent in one
-  go:
+  top one row: the search, and beside it the filter (a menu: All, People,
+  Agents, Groups; the pick shows on its button, All by default). Then the
+  pick list, then the composer, so the first message is written and sent in
+  one go:
   - A person becomes the recipient ("To", with a remove button). Send makes
     our direct chat (the brain answers an existing one), the pane turns
     into the transcript, and the room sends the line through its outbox
@@ -43,8 +44,10 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   - An agent opens its thread at once: it is the assistant's own thread,
     not a messenger chat. A line typed here becomes that composer's draft
     (when it has none of its own), sent from there.
-  - Groups (or New group under All): a name and the members. Send creates
-    it with the line, Create group without one. I am its first admin; a
+  - Groups (or New group under All): the group's icon and colour (the
+    round button beside the name opens the folders' own look popup,
+    `AppLookPicker`), a name and the members. Send creates it with the
+    line, Create group without one. I am its first admin; a
     group of one ("message yourself") is allowed.
   - Cancel in the header (the focus goes back to New), or opening any
     chat, closes it. A create still in flight then opens nothing and sends
@@ -76,7 +79,8 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   inspector" pattern): a resizable column beside the transcript, its width
   and open state remembered. In a room narrower than 680 px it lies over the
   transcript instead, opens only from Details (taking the focus) and closes
-  on Escape or when the room widens. The title (an admin renames a group), the
+  on Escape or when the room widens. The group's face (an admin clicks it
+  for the look popup: icon and colour), the title (an admin renames a group), the
   people with admin marks (an admin adds them inline, no dialog, and
   removes them), Mute and Pin,
   Clear for me, Leave group, Delete history (admins). Every destructive one
@@ -105,7 +109,9 @@ is the avatar its owner chose in Appearance, drawn by `ChatAvatar` from
   carries `photoVersion` (`GET /api/messenger/photo/:loginId?v=`), else the
   generated `avatar` it carries, else initials. A photo that fails to load
   steps down to the next rung.
-- **A group**: the group glyph.
+- **A group**: its icon tinted by its colour on a round tile (`AppTile`,
+  a folder's look), else the group glyph. It shows on the row, the header,
+  Details, the New message form and beside a group's system lines.
 
 ## Outside the screen
 
@@ -193,6 +199,10 @@ of those says otherwise.
 
 - There is no "last seen": the directory says online or not (the brain's
   two-minute window).
+- A group's `icon` and `color` (on a list row, the chat, the create and the
+  patch) are client-side additions too, agreed with the brain and not kept
+  yet. A brain before them drops them on create (the form then says so) and
+  refuses a look-only patch, so Details says so instead of sending it.
 - `avatar` and `photoVersion` on a participant and a directory entry, and
   the messenger photo route, are client-side additions to the DTO copy,
   agreed with the brain and not served yet: until the brain ships them,
@@ -218,7 +228,7 @@ Unit tests, `pnpm test` (pure functions, no DOM):
 - `lib/messenger/format.test.ts`, `mentions.test.ts`, `notify.test.ts`,
   `nav.test.ts`, `faces.test.ts`: the words and times, mentions, when a
   notice pops and where, the rail count, the entry hiding on a 404, whose
-  avatar each face draws.
+  avatar each face draws, a group's look.
 - `packages/web-ui/src/event-stream-core.test.ts` and
   `components/realtime/use-realtime.test.ts`: keep-alives count as activity,
   every reconnect is a connect, and the shared stream hands both to each

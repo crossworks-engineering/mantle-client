@@ -1,4 +1,4 @@
-import { AppWindow, Folder } from 'lucide-react';
+import { AppWindow, Folder, Users } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { LUCIDE_ICON_PREFIX, type AppTint } from '@mantle/client-types/app-nav';
 import { APP_ICONS } from './app-icons';
@@ -37,10 +37,15 @@ const SIZES = {
   // A circle the size of the rail's profile avatar (28px), so the workspace
   // switcher's face lines up with the login's face above it.
   avatar: { tile: 'size-7 rounded-full text-sm', icon: 'size-4' },
+  // A chat group's face, the size of the people's avatars beside it.
+  'face-xs': { tile: 'size-6 rounded-full text-xs', icon: 'size-3.5' },
+  'face-sm': { tile: 'size-8 rounded-full text-base', icon: 'size-4' },
+  'face-md': { tile: 'size-10 rounded-full text-lg', icon: 'size-5' },
 } as const;
 
 /**
- * An app or folder face: an icon (emoji or curated lucide) on a tinted tile.
+ * An app, folder or chat group face: an icon (emoji or curated lucide) on a
+ * tinted tile.
  * An icon this client doesn't know, or none at all, falls back to the default
  * glyph for the kind, so a stale stored name never renders as broken text.
  */
@@ -53,7 +58,7 @@ export function AppTile({
 }: {
   icon?: string | null;
   color?: AppTint | null;
-  kind?: 'app' | 'folder';
+  kind?: 'app' | 'folder' | 'group';
   size?: keyof typeof SIZES;
   className?: string;
 }) {
@@ -62,7 +67,7 @@ export function AppTile({
     ? APP_ICONS[icon.slice(LUCIDE_ICON_PREFIX.length)]
     : undefined;
   const emoji = icon && !icon.startsWith(LUCIDE_ICON_PREFIX) ? icon : null;
-  const Fallback = kind === 'folder' ? Folder : AppWindow;
+  const Fallback = kind === 'folder' ? Folder : kind === 'group' ? Users : AppWindow;
   return (
     <span
       aria-hidden

@@ -46,8 +46,11 @@ export const messengerApi = {
   unread: () => apiFetch<MessengerUnreadResponse>(`${BASE}/unread`),
   create: (body: MessengerCreateRequest) =>
     apiSend<MessengerCreateResponse>(`${BASE}/conversations`, 'POST', body),
-  /** A group's title (admins) and my mute. */
-  update: (id: string, body: { title?: string | null; muted?: boolean }) =>
+  /** A group's title and look (admins) and my mute. */
+  update: (
+    id: string,
+    body: { title?: string | null; muted?: boolean; icon?: string | null; color?: string | null },
+  ) =>
     apiSend<{ conversation: MessengerConversation }>(one(id), 'PATCH', body).then(
       (r) => r.conversation,
     ),

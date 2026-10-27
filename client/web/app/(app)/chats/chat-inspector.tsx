@@ -26,6 +26,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Separator } from '@mantle/web-ui/ui/separator';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
@@ -33,10 +34,12 @@ import { Switch } from '@mantle/web-ui/ui/switch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { HeaderPill } from '@/components/layout/item-header';
 import { ItemSearch } from '@/components/item-list/item-list-header';
+import { AppLookPicker, type AppLook } from '@/components/app-nav/app-look-picker';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useChatFaces } from '@/components/messenger/chat-faces';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerConversation } from '@/lib/messenger/dto';
+import { groupLook, keepsGroupLook, type GroupLook } from '@/lib/messenger/faces';
 
 type Confirm = {
   title: string;
@@ -108,6 +111,28 @@ export function ChatInspector({
     }
   };
 
+  // The group's look, shown at once as it is picked; the chat's answer
+  // takes over when it comes back.
+  const saved = groupLook(conversation);
+  const [look, setLook] = useState<GroupLook>(saved);
+  const { icon: savedIcon, color: savedColor } = saved;
+  useEffect(() => setLook({ icon: savedIcon, color: savedColor }), [savedIcon, savedColor]);
+  const changeLook = async (l: AppLook) => {
+    if (!keepsGroupLook(conversation)) {
+      toast.error('This brain does not keep a group’s icon and colour yet.');
+      return;
+    }
+    const patch: { icon?: string | null; color?: string | null } = {};
+    if (l.icon !== undefined) patch.icon = l.icon || null;
+    if (l.color !== undefined) patch.color = l.color;
+    setLook((cur) => ({
+      icon: patch.icon !== undefined ? patch.icon : cur.icon,
+      color: l.color !== undefined ? (l.color ?? null) : cur.color,
+    }));
+    const ok = await act('look', () => messengerApi.update(id, patch));
+    if (!ok) setLook(saved);
+  };
+
   const rename = async () => {
     const next = name.trim();
     if (!next || next === conversation.title) {
@@ -121,23 +146,49 @@ export function ChatInspector({
   };
 
   const peer = group ? null : people.find((p) => p.id !== me && p.kind === 'login');
+  const avatar = (
+    <ChatAvatar
+      name={title}
+      kind={group ? 'group' : 'person'}
+      look={group ? look : null}
+      face={
+        peer
+          ? faceOf({
+              kind: 'login',
+              id: peer.id,
+              avatar: peer.avatar,
+              photoVersion: peer.photoVersion,
+            })
+          : null
+      }
+    />
+  );
   return (
     <aside aria-label="Chat details" className="space-y-5 p-5" data-testid="chat-inspector">
       <div className="flex flex-col items-center gap-2 text-center">
-        <ChatAvatar
-          name={title}
-          kind={group ? 'group' : 'person'}
-          face={
-            peer
-              ? faceOf({
-                  kind: 'login',
-                  id: peer.id,
-                  avatar: peer.avatar,
-                  photoVersion: peer.photoVersion,
-                })
-              : null
-          }
-        />
+        {admin && !left ? (
+          // An admin picks the group's icon and colour as a folder's: the
+          // tree's own look popup, opened from the group's face.
+          <AppLookPicker
+            icon={look.icon}
+            color={look.color}
+            kind="group"
+            label={title}
+            align="center"
+            onChange={(l) => void changeLook(l)}
+            trigger={
+              <RowButton
+                aria-label="Change the group's icon and colour"
+                title="Change the group's icon and colour"
+                className="rounded-full focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {avatar}
+              </RowButton>
+            }
+          />
+        ) : (
+          avatar
+        )}
         {renaming ? (
           <form
             className="flex w-full items-center gap-2"

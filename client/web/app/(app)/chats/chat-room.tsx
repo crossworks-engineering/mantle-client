@@ -45,6 +45,7 @@ import type {
   MessengerMessage,
 } from '@/lib/messenger/dto';
 import { otherPeople, presenceLine, stampLabel } from '@/lib/messenger/format';
+import { groupLook } from '@/lib/messenger/faces';
 import { shouldSendTyping, typingLine } from '@/lib/messenger/live';
 import {
   EMPTY_TRANSCRIPT,
@@ -670,6 +671,9 @@ export function ChatRoom({
   );
   const peerOnline = !group && others.some((p) => online.has(p.id));
   const faceOf = useChatFaces();
+  // The group's icon and colour: the chat's own answer once it has one (a
+  // change in Details shows at once), else the list's row.
+  const look = group ? groupLook(conversation ?? row) : null;
   const peer = group ? null : (others.find((p) => p.kind === 'login') ?? null);
   /** A message's author in a group: the participant (an author who left
    *  still has a row) and the face they chose. */
@@ -752,6 +756,7 @@ export function ChatRoom({
           <ChatAvatar
             name={title}
             kind={group ? 'group' : 'person'}
+            look={look}
             face={
               peer
                 ? faceOf({
@@ -859,6 +864,11 @@ export function ChatRoom({
                           message={it.message}
                           mine={it.mine}
                           showAuthor={it.showAuthor}
+                          systemMark={
+                            group ? (
+                              <ChatAvatar name={title} kind="group" look={look} size="xs" />
+                            ) : undefined
+                          }
                           author={
                             // Theirs in a group: the author's face beside the
                             // first bubble of a run, the same gutter under it.

@@ -7,7 +7,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useReadByAll } from '@/components/messenger/messenger-live';
 import type { MessengerListRow } from '@/lib/messenger/dto';
-import type { ChatFace, FaceOf } from '@/lib/messenger/faces';
+import { groupLook, type ChatFace, type FaceOf } from '@/lib/messenger/faces';
 import { badgeCount, directPeer, listTime, otherPeople, previewLine } from '@/lib/messenger/format';
 
 /** Re-render the relative times once a minute. */
@@ -73,6 +73,7 @@ export function ChatRow({
                 })
               : null
         }
+        look={row.kind === 'group' ? groupLook(row) : null}
         online={!!peer && online.has(peer.id)}
       />
       <span className="min-w-0 flex-1">

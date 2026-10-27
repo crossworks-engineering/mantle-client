@@ -227,7 +227,7 @@ export function AppLookPicker({
 }: {
   icon: string | null | undefined;
   color: AppTint | null | undefined;
-  kind?: 'app' | 'folder';
+  kind?: 'app' | 'folder' | 'group';
   /** What the preview shows with no icon picked, when the thing has a
    *  default of its own (a workspace's kind icon). */
   defaultIcon?: string;

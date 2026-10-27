@@ -5,9 +5,10 @@ import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
 import { avatarPartsOf } from '@mantle/web-ui/avatar-parts';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { AppTile } from '@/components/app-nav/app-tile';
 import { ProfilePhoto } from '@/components/profile-photo';
 import { initials } from '@/lib/messenger/format';
-import type { ChatFace } from '@/lib/messenger/faces';
+import type { ChatFace, GroupLook } from '@/lib/messenger/faces';
 
 const PX = { xs: 24, sm: 32, md: 40 } as const;
 
@@ -17,13 +18,15 @@ const PX = { xs: 24, sm: 32, md: 40 } as const;
  * Appearance (`useChatFaces`). The same precedence as the rail's account
  * row: a person's uploaded photo, then the generated
  * avatar from their seed, then initials. An agent always has a generated
- * avatar (its seed, else its slug), never initials. A group keeps the group
+ * avatar (its seed, else its slug), never initials. A group shows its icon
+ * and colour on a round tile (`AppTile`, a folder's look), else the group
  * glyph. A small green dot at the corner while the person is online.
  */
 export function ChatAvatar({
   name,
   kind = 'person',
   face,
+  look,
   online = false,
   size = 'md',
   className,
@@ -32,6 +35,8 @@ export function ChatAvatar({
   kind?: 'person' | 'group' | 'agent';
   /** The chosen avatar, from the `useChatFaces()` lookup. */
   face?: ChatFace | null;
+  /** A group's icon and colour (`groupLook`). */
+  look?: GroupLook | null;
   online?: boolean;
   size?: keyof typeof PX;
   className?: string;
@@ -58,7 +63,9 @@ export function ChatAvatar({
       fallback
     );
   const drawn =
-    kind === 'person' && face?.photo ? (
+    kind === 'group' && (look?.icon || look?.color) ? (
+      <AppTile icon={look.icon} color={look.color} kind="group" size={`face-${size}`} />
+    ) : kind === 'person' && face?.photo ? (
       <ProfilePhoto
         path={face.photo.path}
         version={face.photo.version}

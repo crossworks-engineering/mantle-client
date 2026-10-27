@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanAvatar, faceFor, type FaceSources } from './faces';
+import { cleanAvatar, faceFor, groupLook, keepsGroupLook, type FaceSources } from './faces';
 
 const av = (seed: string) => ({ style: 'brain', seed, parts: null });
 
@@ -86,5 +86,27 @@ describe('faceFor', () => {
 
   it('never gives an agent a photo, even under my id', () => {
     expect(faceFor({ kind: 'agent', id: 'me', photoVersion: 'x' }, src()).photo).toBeNull();
+  });
+});
+
+describe('groupLook', () => {
+  it('keeps an icon and a known tint', () => {
+    expect(groupLook({ icon: '🚀', color: 'teal' })).toEqual({ icon: '🚀', color: 'teal' });
+    expect(groupLook({ icon: 'lucide:users', color: null })).toEqual({
+      icon: 'lucide:users',
+      color: null,
+    });
+  });
+  it('reads a stale tint, a blank icon or nothing as unset', () => {
+    expect(groupLook({ icon: '  ', color: 'mauve' })).toEqual({ icon: null, color: null });
+    expect(groupLook(null)).toEqual({ icon: null, color: null });
+  });
+});
+
+describe('keepsGroupLook', () => {
+  it('is true once the brain sends the fields, null included', () => {
+    expect(keepsGroupLook({ id: 'c', icon: null })).toBe(true);
+    expect(keepsGroupLook({ id: 'c' })).toBe(false);
+    expect(keepsGroupLook(null)).toBe(false);
   });
 });

@@ -2,21 +2,29 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, SquarePen, Users, X } from 'lucide-react';
+import { Bot, Check, ChevronDown, ListFilter, SquarePen, User, Users, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { Field, FieldError, FieldLabel } from '@mantle/web-ui/ui/field';
 import { Input } from '@mantle/web-ui/ui/input';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@mantle/web-ui/ui/dropdown-menu';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { ItemHeader } from '@/components/layout/item-header';
+import { AppLookPicker } from '@/components/app-nav/app-look-picker';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerDirectoryEntry, MessengerMention } from '@/lib/messenger/dto';
-import type { ChatFace, FaceOf } from '@/lib/messenger/faces';
+import { keepsGroupLook, type ChatFace, type FaceOf, type GroupLook } from '@/lib/messenger/faces';
 import { rowAddress } from '@/lib/messenger/format';
 import { newClientMsgId } from '@/lib/messenger/transcript';
 import { draftStorageKey } from '@/app/(app)/assistant/assistant-thread-state';
@@ -25,17 +33,18 @@ import { ColumnSearch } from './column-search';
 
 type Filter = 'all' | 'people' | 'agents' | 'groups';
 
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'people', label: 'People' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'groups', label: 'Groups' },
+const FILTERS: { id: Filter; label: string; Icon: typeof User }[] = [
+  { id: 'all', label: 'All', Icon: ListFilter },
+  { id: 'people', label: 'People', Icon: User },
+  { id: 'agents', label: 'Agents', Icon: Bot },
+  { id: 'groups', label: 'Groups', Icon: Users },
 ];
 
 /**
- * New message, in the chat pane where the transcript goes (no dialog): the
- * filter (All, People, Agents, Groups), a search, the pick list, and the
- * composer under it, so the first message is written and sent in one go.
+ * New message, in the chat pane where the transcript goes (no dialog): a
+ * search with the filter beside it (a menu: All, People, Agents, Groups;
+ * the pick shows on its button), the pick list, and the composer under it,
+ * so the first message is written and sent in one go.
  *
  * - A person: picked as the recipient ("To"); Send makes our direct chat (the
  *   brain answers the existing one) and the room sends the line through its
@@ -43,8 +52,9 @@ const FILTERS: { id: Filter; label: string }[] = [
  * - An agent: its thread opens at once. It is the assistant's own thread, not
  *   a messenger chat: a line typed here becomes that composer's draft (its
  *   own session draft, when it has none), sent from there.
- * - Groups: New group, a name and its members; Send creates it with the
- *   line, Create group without one. I am its first admin; a group of one
+ * - Groups: New group, its icon and colour (the folders' look popup), a
+ *   name and its members; Send creates it with the line, Create group
+ *   without one. I am its first admin; a group of one
  *   ("message yourself") is allowed.
  */
 export function NewChatPane({
@@ -79,6 +89,7 @@ export function NewChatPane({
   const [title, setTitle] = useState('');
   const [titleError, setTitleError] = useState<string | null>(null);
   const [members, setMembers] = useState<Set<string>>(new Set());
+  const [look, setLook] = useState<GroupLook>({ icon: null, color: null });
   const [busy, setBusy] = useState(false);
   const draft = useRef('');
   // Closed (Cancel, a row opened) while a create was in flight: the chat
@@ -110,6 +121,7 @@ export function NewChatPane({
   const shownPeople = people.filter(matches);
   const shownAgents = agents.filter(matches);
   const grouping = filter === 'groups';
+  const current = FILTERS.find((f) => f.id === filter) ?? FILTERS[0]!;
 
   const face = (e: MessengerDirectoryEntry) =>
     faceOf({
@@ -131,7 +143,13 @@ export function NewChatPane({
         document.getElementById('new-group-title')?.focus();
         return false;
       }
-      request = { kind: 'group', participants: [...members], title: name };
+      request = {
+        kind: 'group',
+        participants: [...members],
+        title: name,
+        ...(look.icon ? { icon: look.icon } : {}),
+        ...(look.color ? { color: look.color } : {}),
+      };
     } else {
       if (!to) return false;
       request = { kind: 'direct', participants: [to.id] };
@@ -141,6 +159,14 @@ export function NewChatPane({
       const out = await messengerApi.create(request);
       void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
       if (!alive.current) return false;
+      // A brain before the group look drops it: say so rather than lose it
+      // without a word.
+      if (grouping && (look.icon || look.color) && !keepsGroupLook(out.conversation)) {
+        toast.push({
+          kind: 'info',
+          message: 'Group created. This brain does not keep a group’s icon and colour yet.',
+        });
+      }
       onCreated(out.conversation.id, line ? { ...line, clientMsgId: newClientMsgId() } : null);
       // Still busy: the form is leaving for the chat, and a second send
       // while the address moves must not start another create.
@@ -263,18 +289,46 @@ export function NewChatPane({
     <div className="space-y-4 px-2 py-2">
       <Field data-invalid={!!titleError || undefined}>
         <FieldLabel htmlFor="new-group-title">Group name</FieldLabel>
-        <Input
-          id="new-group-title"
-          value={title}
-          maxLength={200}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            setTitleError(null);
-          }}
-          aria-invalid={!!titleError || undefined}
-          aria-describedby={titleError ? 'new-group-title-error' : undefined}
-          placeholder="Design crew"
-        />
+        <div className="flex items-center gap-2">
+          {/* The icon and colour, picked as a new folder's (the tree's own
+              look popup). */}
+          <AppLookPicker
+            icon={look.icon}
+            color={look.color}
+            kind="group"
+            label={title.trim() || 'New group'}
+            onChange={(l) =>
+              setLook((cur) => ({
+                icon: l.icon !== undefined ? l.icon || null : cur.icon,
+                color: l.color !== undefined ? (l.color ?? null) : cur.color,
+              }))
+            }
+            trigger={
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="rounded-full p-0"
+                aria-label="Choose the group's icon and colour"
+                title="Choose the group's icon and colour"
+              >
+                <ChatAvatar name={title || 'New group'} kind="group" look={look} />
+              </Button>
+            }
+          />
+          <Input
+            id="new-group-title"
+            value={title}
+            maxLength={200}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setTitleError(null);
+            }}
+            aria-invalid={!!titleError || undefined}
+            aria-describedby={titleError ? 'new-group-title-error' : undefined}
+            placeholder="Design crew"
+          />
+        </div>
         <FieldError id="new-group-title-error">{titleError}</FieldError>
       </Field>
       <section aria-labelledby="new-group-members" className="space-y-1">
@@ -330,25 +384,7 @@ export function NewChatPane({
         title="New message"
         tools={[{ key: 'cancel', label: 'Cancel', icon: <X />, onSelect: onCancel }]}
       />
-      <div className="flex flex-col gap-2 border-b border-border px-6 py-3">
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          value={filter}
-          onValueChange={(v) => {
-            if (!v) return;
-            setFilter(v as Filter);
-          }}
-          aria-label="Who to show"
-          className="flex w-full max-w-md"
-        >
-          {FILTERS.map((f) => (
-            <ToggleGroupItem key={f.id} value={f.id} className="h-8 flex-auto px-2 text-xs">
-              {f.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+      <div className="flex items-center gap-1.5 border-b border-border px-6 py-3">
         <ColumnSearch
           value={query}
           onChange={setQuery}
@@ -356,6 +392,31 @@ export function NewChatPane({
           label={grouping ? 'Search people to add' : 'Search people and agents'}
           autoFocus
         />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={`Show: ${current.label}`}
+              title="Who to show"
+            >
+              <current.Icon aria-hidden />
+              <span>{current.label}</span>
+              <ChevronDown className="opacity-60" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuLabel>Show</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={filter} onValueChange={(v) => setFilter(v as Filter)}>
+              {FILTERS.map((f) => (
+                <DropdownMenuRadioItem key={f.id} value={f.id}>
+                  <f.Icon aria-hidden />
+                  {f.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-4 py-2">
         {grouping ? groupForm : pickList}
@@ -366,7 +427,7 @@ export function NewChatPane({
             <>
               <span className="text-muted-foreground">To</span>
               <span className="inline-flex min-w-0 items-center gap-1.5 font-medium">
-                <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <ChatAvatar name={title || 'New group'} kind="group" look={look} size="xs" />
                 <span className="truncate">{title.trim() || 'The new group'}</span>
               </span>
               <Button
