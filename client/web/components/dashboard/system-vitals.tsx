@@ -89,7 +89,20 @@ export function SystemVitals() {
           {/* objectStoreUp arrived with the backend-neutral object store (mantle
               v0.232.245); older brains only send minioUp. */}
           <Pill ok={storage.objectStoreUp ?? storage.minioUp} label="Object store" />
-          <Pill ok={tika.up} label="Tika" title={tika.version ?? undefined} />
+          {/* Tika is an opt-in add-on (the `tika` compose profile). A brain
+              that has it off sends up: null, which reads as off, not as a
+              fault; older brains always sent a boolean. */}
+          <Pill
+            ok={tika.up}
+            label="Tika"
+            title={
+              tika.up
+                ? (tika.version ?? undefined)
+                : tika.up === false
+                  ? 'Tika add-on unreachable'
+                  : 'off: an optional add-on (not used on this box)'
+            }
+          />
           <Pill ok={browser.up} label="Chromium" title={browser.version ?? undefined} />
           <Pill
             ok={embedder.up}
