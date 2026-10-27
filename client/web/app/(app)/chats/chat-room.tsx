@@ -108,7 +108,7 @@ export function ChatRoom({
   row,
   me,
   online,
-  firstMessage = null,
+  firstMessages,
   onFirstSent,
   onGone,
 }: {
@@ -117,11 +117,12 @@ export function ChatRoom({
   row: MessengerListRow | null;
   me: string | null;
   online: ReadonlySet<string>;
-  /** Shown in the outbox at once (the clock), sent once the first page has
-   *  landed (a refused one offers Retry with the same clientMsgId). */
-  firstMessage?: FirstMessage | null;
-  /** It went out: the screen forgets it. Until then it stays with the
-   *  screen, so a room left before its first page still sends it later. */
+  /** The New message form's lines for this chat, in order: in the outbox
+   *  from the start (they show with the first page), sent once that page
+   *  has landed (a refused one offers Retry with the same clientMsgId). */
+  firstMessages?: readonly FirstMessage[];
+  /** They went out: the screen forgets them. Until then they stay with the
+   *  screen, so a room left before its first page still sends them later. */
   onFirstSent?: (c: string) => void;
   /** The chat is not mine to read (left, removed, never in it). */
   onGone: () => void;
@@ -499,33 +500,42 @@ export function ChatRoom({
     [id, queryClient, catchUp],
   );
 
-  // The New message form's first line shows in the outbox at once and goes
-  // out once the room holds its window, so it lands under what is already
+  // The New message form's lines wait in the outbox and go out, in order,
+  // once the room holds its window, so they land under what is already
   // there (a catch-up before the first page would pull the whole history).
   const firstSent = useRef(false);
   const onFirstSentRef = useRef(onFirstSent);
   onFirstSentRef.current = onFirstSent;
-  const first = firstMessage?.c === id ? firstMessage : null;
+  const firsts = useMemo(
+    () => (firstMessages ?? []).filter((f) => f.c === id),
+    [firstMessages, id],
+  );
   useEffect(() => {
-    if (!first || firstSent.current) return;
+    if (firsts.length === 0 || firstSent.current) return;
     if (!loaded) {
       setT((cur) =>
-        cur.outbox.some((o) => o.clientMsgId === first.clientMsgId)
-          ? cur
-          : withOutbox(cur, {
-              clientMsgId: first.clientMsgId,
-              body: first.body,
-              createdAt: new Date().toISOString(),
-              state: 'sending',
-              mentions: first.mentions,
-            }),
+        firsts.reduce(
+          (acc, f) =>
+            acc.outbox.some((o) => o.clientMsgId === f.clientMsgId)
+              ? acc
+              : withOutbox(acc, {
+                  clientMsgId: f.clientMsgId,
+                  body: f.body,
+                  createdAt: new Date().toISOString(),
+                  state: 'sending',
+                  mentions: f.mentions,
+                }),
+          cur,
+        ),
       );
       return;
     }
     firstSent.current = true;
     onFirstSentRef.current?.(id);
-    void send(first.body, first.mentions, first.clientMsgId);
-  }, [loaded, first, id, send]);
+    void (async () => {
+      for (const f of firsts) await send(f.body, f.mentions, f.clientMsgId);
+    })();
+  }, [loaded, firsts, id, send]);
 
   const lastTyping = useRef<number | null>(null);
   const onTyping = useCallback(() => {

@@ -56,10 +56,11 @@ export function ChatsClient() {
     setComposing(false);
     requestAnimationFrame(() => newButton.current?.focus());
   };
-  // The first lines typed in the form, by chat, until each chat's room has
-  // sent its own through the outbox (clock, Retry, the same clientMsgId).
-  // Kept here, so a room left before its first page still finds it later.
-  const [firstMessages, setFirstMessages] = useState<ReadonlyMap<string, FirstMessage>>(
+  // The first lines typed in the form, by chat and in order, until each
+  // chat's room has sent them through its outbox (clock, Retry, the same
+  // clientMsgId). Kept here, so a room left before its first page still
+  // finds them when it opens again (while this screen is open).
+  const [firstMessages, setFirstMessages] = useState<ReadonlyMap<string, readonly FirstMessage[]>>(
     () => new Map(),
   );
   const firstSent = useCallback(
@@ -96,8 +97,10 @@ export function ChatsClient() {
   // Opening a chat closes the form once the address has moved, so the old
   // room never flashes in between.
   useEffect(() => setComposing(false), [selectedId]);
-  /** Go to a chat from the form or the list; the address change closes the
-   *  form, or this does when the chat is the one already in the address. */
+  /** Go to a chat from the form: the address change closes it (so the old
+   *  room never flashes), or this does when the chat is the one already in
+   *  the address. A list row closes the form at once instead, so a create
+   *  still in flight finds it gone and opens nothing. */
   const go = (to: string) => {
     if (to === selectedId) setComposing(false);
     address.open(to);
@@ -172,7 +175,10 @@ export function ChatsClient() {
                   online={online}
                   selected={!composing && rowAddress(row) === selectedId}
                   faceOf={faceOf}
-                  onOpen={() => go(rowAddress(row))}
+                  onOpen={() => {
+                    setComposing(false);
+                    address.open(rowAddress(row));
+                  }}
                 />
               </li>
             ))}
@@ -198,7 +204,11 @@ export function ChatsClient() {
             me={me}
             onOpen={go}
             onCreated={(c, first) => {
-              if (first) setFirstMessages((cur) => new Map(cur).set(c, { c, ...first }));
+              if (first) {
+                setFirstMessages((cur) =>
+                  new Map(cur).set(c, [...(cur.get(c) ?? []), { c, ...first }]),
+                );
+              }
               go(c);
             }}
             onCancel={cancelNew}
@@ -222,7 +232,7 @@ export function ChatsClient() {
             row={selectedRow}
             me={me}
             online={online}
-            firstMessage={firstMessages.get(selectedId) ?? null}
+            firstMessages={firstMessages.get(selectedId)}
             onFirstSent={firstSent}
             onGone={address.close}
           />

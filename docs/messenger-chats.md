@@ -32,10 +32,12 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   go:
   - A person becomes the recipient ("To", with a remove button). Send makes
     our direct chat (the brain answers an existing one), the pane turns
-    into the transcript, and the room shows the line at once and sends it
-    through its outbox once its first page is in (the clock, Retry with the
-    same `clientMsgId`). Until it goes out the screen keeps it by chat, so a
-    chat left before its first page still sends it when opened again. Open chat goes there
+    into the transcript, and the room sends the line through its outbox
+    once its first page is in (it shows with that page: the clock, Retry
+    with the same `clientMsgId`). Until it goes out the screen keeps it by
+    chat, in order with any later one, so a chat left before its first page
+    still sends it when opened again while Chats stays open; leaving Chats
+    or reloading before then drops it. Open chat goes there
     without a message. The people are the logins that share a workspace
     with me, online first.
   - An agent opens its thread at once: it is the assistant's own thread,

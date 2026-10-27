@@ -142,8 +142,11 @@ export function NewChatPane({
       void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
       if (!alive.current) return false;
       onCreated(out.conversation.id, line ? { ...line, clientMsgId: newClientMsgId() } : null);
+      // Still busy: the form is leaving for the chat, and a second send
+      // while the address moves must not start another create.
       return true;
     } catch (err) {
+      setBusy(false);
       toast.error(
         err instanceof Error
           ? err.message
@@ -152,8 +155,6 @@ export function NewChatPane({
             : 'Could not start the chat',
       );
       return false;
-    } finally {
-      setBusy(false);
     }
   };
 
