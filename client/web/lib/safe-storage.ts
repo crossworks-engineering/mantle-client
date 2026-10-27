@@ -28,3 +28,11 @@ export function writeStored(key: string, value: string): void {
     // Quota or blocked storage: the value holds for this visit only.
   }
 }
+
+export function forgetStored(key: string): void {
+  try {
+    storage()?.removeItem(key);
+  } catch {
+    // Blocked storage: nothing was kept to forget.
+  }
+}

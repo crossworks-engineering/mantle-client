@@ -194,8 +194,9 @@ export type MockWorkspaceApi = {
    *  landing page falls back to Desk. */
   homeApps: Partial<Record<WorkspaceKey, { id: string; title: string; frame: boolean }>>;
   /** Each login's Desk as GET /api/profile/home-desk answers it (none: null
-   *  and 0). PUT is compare-and-set on `version`, as on a brain: a spec sets
-   *  one here to play another device's save. */
+   *  and 0). PUT is compare-and-set on `version`, as on a brain, and a body
+   *  naming another login is the brain's 401: a spec sets one here to play
+   *  another device's save. */
   desks: Partial<Record<Role, { homeDesk: unknown; version: number }>>;
   close: () => Promise<void>;
 };
@@ -636,7 +637,14 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           const body = JSON.parse((await readBody(req)) || '{}') as {
             homeDesk?: unknown;
             version?: unknown;
+            loginId?: unknown;
           };
+          if (body.loginId !== LOGINS[role].loginId) {
+            return json(res, 401, {
+              error: 'loginId is not the login of this session',
+              code: 'login-mismatch',
+            });
+          }
           if (body.version !== stored.version) return json(res, 409, stored);
           const saved = { homeDesk: body.homeDesk, version: stored.version + 1 };
           state.desks[role] = saved;

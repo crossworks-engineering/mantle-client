@@ -2,11 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@mantle/web-ui/api-fetch';
+import {
+  ApiError,
+  apiFetch,
+  apiUrl,
+  bounceToLogin,
+  errorMessageOf,
+  isAuthFailure,
+  rewritePath,
+  withAuth,
+} from '@mantle/web-ui/api-fetch';
 import { useFlushOnLeave } from '@mantle/web-ui/use-flush-on-leave';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
-import { activeSession } from '@mantle/web-ui/session-registry';
 import {
   TREE_KIND_SPECS,
   type TreeItem,
@@ -15,7 +23,7 @@ import {
   type TreeSort,
 } from '@mantle/web-ui/types/tree';
 import type { HubData } from '@mantle/share-ui/app-bridge-protocol';
-import type { HomeDeskState } from '@/lib/contract/home-desk';
+import type { HomeDeskPutBody, HomeDeskState } from '@/lib/contract/home-desk';
 import type { Shell } from '@/lib/contract/shell';
 import { fetchFolderPage, fetchMarks, folderKey, marksKey } from '@/components/item-tree/tree-api';
 import { treeKindsOf } from '@/components/item-tree/use-tree-kinds';
@@ -29,7 +37,7 @@ import {
   type DeskPrefs,
 } from '@/lib/home-desk';
 import { createDeskSaver, statusOf, type DeskSaver } from '@/lib/home-desk-saver';
-import { readStored, writeStored } from '@/lib/safe-storage';
+import { forgetStored, readStored, writeStored } from '@/lib/safe-storage';
 
 /**
  * The desk's data: the login it belongs to, where it is kept, and what each
@@ -80,7 +88,9 @@ export function deskQueryKey(storageKey: string) {
  */
 export type DeskRead = { local: false; state: HomeDeskState } | { local: true };
 
-async function fetchDesk(): Promise<DeskRead> {
+/** Read the desk. A read older than a save that landed meanwhile is the
+ *  saver's to refuse (`DeskSaver.read`). */
+export async function readDesk(): Promise<DeskRead> {
   try {
     return { local: false, state: await apiFetch<HomeDeskState>('/api/profile/home-desk') };
   } catch (err) {
@@ -91,17 +101,53 @@ async function fetchDesk(): Promise<DeskRead> {
 }
 
 /**
- * Read the desk; a read that answers an older version than the one already
- * known (it left before a save landed) keeps the newer, so the cache only
- * moves forward.
+ * The desk a release before desk saving v2 kept in this browser only (v0.8.2:
+ * localStorage, under this desk's own key), carried up ONCE into a profile
+ * that has never had one (`homeDesk` null, version 0). Null otherwise: a
+ * desk on the profile, saved from anywhere, always wins.
  */
-export async function readDesk(qc: QueryClient, storageKey: string): Promise<DeskRead> {
-  const read = await fetchDesk();
-  const known = qc.getQueryData<DeskRead>(deskQueryKey(storageKey));
-  if (!read.local && known && !known.local && known.state.version > read.state.version) {
-    return known;
+export function carriedDesk(state: HomeDeskState, stored: string | null): DeskPrefs | null {
+  return state.homeDesk === null && state.version === 0 ? parseDesk(stored) : null;
+}
+
+/** keepalive caps a request body at 64 KB (all in flight together); a
+ *  desk is at most 32 KB, so this only guards a desk the brain would
+ *  refuse anyway. */
+const KEEPALIVE_MAX_BYTES = 60 * 1024;
+
+/** The brain's 401 for a desk sent as another login (the login in use
+ *  changed in another tab): stop saving, but nobody's session ended. */
+const LOGIN_MISMATCH = 'login-mismatch';
+
+/**
+ * PUT the desk. Always with keepalive (the body is small), so a save on its
+ * way when the page goes still reaches the brain. Read by hand rather than
+ * through apiFetch for the one 401 that is not a session ending: a desk
+ * named for another login (`LOGIN_MISMATCH`) stops the saver and leaves
+ * every session as it is; any other 401 goes to sign-in, as apiFetch does.
+ */
+export async function putDesk(body: HomeDeskPutBody): Promise<HomeDeskState> {
+  const text = JSON.stringify(body);
+  const path = '/api/profile/home-desk';
+  const res = await fetch(
+    apiUrl(rewritePath(path, 'PUT')),
+    withAuth({
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: text,
+      keepalive: new TextEncoder().encode(text).length <= KEEPALIVE_MAX_BYTES,
+    }),
+  );
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (res.status === 401 && data.code === LOGIN_MISMATCH) {
+    throw new ApiError(errorMessageOf(data, res), 401, data);
   }
-  return read;
+  if (isAuthFailure(res)) {
+    bounceToLogin();
+    throw new ApiError('unauthorized', 401);
+  }
+  if (!res.ok) throw new ApiError(errorMessageOf(data, res), res.status, data);
+  return data as HomeDeskState;
 }
 
 /** The saver of one login's desk, for the page's life (until it reloads),
@@ -113,31 +159,26 @@ const savings = new Map<string, DeskSaving>();
 /**
  * One saver per brain and login, kept outside the component: leaving the
  * Desk and coming back keeps one save in flight at a time and the version
- * it saved. What the brain answered goes into the desk's own query.
+ * it saved. What the brain answered goes into the desk's own query. Each
+ * save names the login the desk belongs to; the brain refuses it for any
+ * other (a 401: the saver stops), so a desk changed here after the login in
+ * use changed in another tab is never saved over that login's.
  */
-function savingFor(storageKey: string, qc: QueryClient): DeskSaving {
+function savingFor(storageKey: string, loginId: string, qc: QueryClient): DeskSaving {
   const known = savings.get(storageKey);
   if (known) return known;
   const queryKey = deskQueryKey(storageKey);
-  // The login this desk is saved as. A switch to another login reloads this
-  // page, but one made in another tab does not: a desk changed here is never
-  // sent with that login's credential (refused as a 401: the saver stops).
-  const session = activeSession()?.id ?? null;
   const keep = (state: HomeDeskState) => {
     const read: DeskRead = { local: false, state };
     qc.setQueryData<DeskRead>(queryKey, read);
+    // The profile holds a desk now: this browser's copy from before desk
+    // saving v2, if any, is retired (carriedDesk).
+    forgetStored(storageKey);
   };
   const saving: DeskSaving = {
     saver: createDeskSaver(
-      (desk, version, { keepalive }) =>
-        (activeSession()?.id ?? null) !== session
-          ? Promise.reject(Object.assign(new Error('the login changed'), { status: 401 }))
-          : apiFetch<HomeDeskState>('/api/profile/home-desk', {
-              method: 'PUT',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ homeDesk: deskToWire(desk), version }),
-              keepalive,
-            }),
+      (desk, version) =>
+        putDesk({ homeDesk: deskToWire(desk) as HomeDeskPutBody['homeDesk'], version, loginId }),
       {
         onSaved: keep,
         onConflict: (state) => {
@@ -165,7 +206,11 @@ function savingFor(storageKey: string, qc: QueryClient): DeskSaving {
  * change shows at once and is saved a moment later, compare-and-set on the
  * version last read or saved (lib/home-desk-saver); leaving the Desk, hiding
  * the tab or closing it saves what is still waiting. When another device
- * saved first, its desk is shown and one quiet toast says so.
+ * saved first, its desk is shown and one quiet toast says so. A save that
+ * fails keeps its desk and goes again with the next change, on the way
+ * out, or when the browser is back online. A profile that never had a desk
+ * takes the one this browser kept before desk saving v2, once
+ * (carriedDesk).
  *
  * On a brain from before the desk's route the desk stays in this browser's
  * storage, per brain and per login. Null until the shell names the login
@@ -179,7 +224,7 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
   const key = loginId ? deskStorageKey(brain(), loginId) : null;
   const read = useQuery({
     queryKey: deskQueryKey(key ?? ''),
-    queryFn: () => readDesk(qc, key!),
+    queryFn: readDesk,
     enabled: key !== null,
     staleTime: 0,
     // This query only (the app's default is off): coming back to the window
@@ -187,7 +232,8 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
     refetchOnWindowFocus: true,
     retry: 1,
   });
-  const saving = key && typeof window !== 'undefined' ? savingFor(key, qc) : null;
+  const saving =
+    key && loginId && typeof window !== 'undefined' ? savingFor(key, loginId, qc) : null;
   const [prefs, setPrefs] = useState<DeskPrefs | null>(null);
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
@@ -200,6 +246,10 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
     // Kept after the Desk is left: a save on the way out can lose or fail too.
     saving.conflict = () => toastRef.current.info('Your Desk changed on another device');
     saving.failed = () => toastRef.current.error('Could not save your desk');
+    // Back online: a save that failed goes again (no timer retries it).
+    const retry = () => saving.saver.retry();
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
   }, [saving]);
 
   const show = useCallback((desk: DeskPrefs) => {
@@ -220,17 +270,33 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
       if (first) show(parseDesk(readStored(key)) ?? defaultDesk(kindList));
       return;
     }
-    // The first paint takes the read as it is; a later one only when the
-    // saver has nothing on its way and the read is not older than it.
-    if (saving.saver.read(data.state) || first) {
-      show(deskFrom(data.state.homeDesk) ?? defaultDesk(kindList));
+    // A read is shown only when the saver has nothing on its way and the
+    // read is not older than it. Else the first paint (the Desk opened
+    // again) shows the desk the saver holds: a change still on its way, or
+    // kept from a save that failed, is never replaced by the brain's older
+    // one.
+    if (!saving.saver.read(data.state)) {
+      if (first) {
+        show(saving.saver.latest ?? deskFrom(data.state.homeDesk) ?? defaultDesk(kindList));
+      }
+      return;
+    }
+    // A profile that never had a desk takes the one this browser kept
+    // before desk saving v2, once: shown, and saved from version 0. The
+    // copy here is forgotten when that save lands, or when another device's
+    // desk wins (the saver's onSaved and onConflict).
+    const carried = first ? carriedDesk(data.state, readStored(key)) : null;
+    show(carried ?? deskFrom(data.state.homeDesk) ?? defaultDesk(kindList));
+    if (carried) {
+      saving.saver.save(carried);
+      void saving.saver.flush();
     }
   }, [key, saving, kindsKey, read.data, read.isError, show]);
 
   // Every way out (leaving the Desk, the tab hidden or closed, the session
   // ending): what is still waiting is saved now, not dropped. The promise
   // lets a session switch wait for the save before the login changes.
-  useFlushOnLeave(() => saving?.saver.flush({ keepalive: true }));
+  useFlushOnLeave(() => saving?.saver.flush({ leaving: true }));
 
   const update = useCallback(
     (fn: (p: DeskPrefs) => DeskPrefs) => {
