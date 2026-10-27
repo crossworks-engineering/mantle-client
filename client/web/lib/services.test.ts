@@ -17,18 +17,18 @@ const GB = 1024 ** 3;
 
 function svc(over: Partial<ServiceInfo['description']> = {}): ServiceInfo {
   return {
-    name: 'media',
+    name: 'sandboxes',
     state: 'off',
     container: 'absent',
     health: 'none',
     description: {
-      title: 'Media',
+      title: 'Sandboxes',
       what: 'w',
       usedBy: 'u',
       whenOff: 'o',
       keeps: 'k',
       downloadMb: 300,
-      memory: 'up to 1 GB (3 GB is advised for large DWF drawing sets)',
+      memory: 'up to 1 GB (3 GB is advised for large builds)',
       memoryMaxMb: 3072,
       note: null,
       ...over,
@@ -55,7 +55,7 @@ function view(box: Partial<ServicesView['box']> = {}): ServicesView {
 function run(over: Partial<ServiceRunStatus> = {}): ServiceRunStatus {
   return {
     phase: 'done',
-    service: 'media',
+    service: 'sandboxes',
     enable: true,
     startedAt: '2026-10-05T12:00:00Z',
     finishedAt: '2026-10-05T12:01:00Z',
@@ -73,13 +73,13 @@ describe('memoryWarning (shown, never a block)', () => {
   it('warns a 4 GB box with its size and the service cost', () => {
     const w = memoryWarning(view({ memTotalBytes: 4 * GB, smallBox: true }), svc());
     expect(w).toContain('This box has 4 GB of memory');
-    expect(w).toContain('Media can use up to 1 GB');
+    expect(w).toContain('Sandboxes can use up to 1 GB');
     expect(w).toContain('Switch it off again');
   });
 
   it('stays short: drops the bracketed aside from the memory line', () => {
     const w = memoryWarning(view({ memTotalBytes: 4 * GB, smallBox: true }), svc()) ?? '';
-    expect(w).not.toContain('DWF');
+    expect(w).not.toContain('large builds');
     expect(w.length).toBeLessThan(140);
   });
 
@@ -155,18 +155,13 @@ describe("the screen is the settings area's", () => {
 
 describe('the one line per service card', () => {
   it('one short plain sentence per service, no en or em dash', () => {
-    for (const line of Object.values(SERVICE_ENABLES)) {
+    for (const line of Object.values(SERVICE_ENABLES) as string[]) {
       expect(line.startsWith('Lets ')).toBe(true);
       expect(line.endsWith('.')).toBe(true);
       expect(line.length).toBeLessThan(120);
       expect(line).not.toMatch(/[\u2013\u2014]/);
     }
-    expect(Object.keys(SERVICE_ENABLES).sort()).toEqual([
-      'helpers',
-      'local-embedder',
-      'media',
-      'sandboxes',
-    ]);
+    expect(Object.keys(SERVICE_ENABLES).sort()).toEqual(['helpers', 'local-embedder', 'sandboxes']);
   });
 });
 
