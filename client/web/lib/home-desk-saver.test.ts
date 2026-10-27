@@ -1,13 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultDesk, type DeskPrefs } from './home-desk';
-import {
-  DESK_REFRESH_AFTER_MS,
-  SAVE_DELAY_MS,
-  createDeskSaver,
-  moveUpAnswered,
-  shellReadIsOld,
-  type DeskSend,
-} from './home-desk-saver';
+import type { HomeDeskState } from './contract/home-desk';
+import { defaultDesk, deskToWire, type DeskPrefs } from './home-desk';
+import { SAVE_DELAY_MS, conflictState, createDeskSaver, type DeskSend } from './home-desk-saver';
 
 const desk = (clock: 'digital' | 'analog', x = 0): DeskPrefs => ({
   ...defaultDesk(['notes']),
@@ -15,17 +9,41 @@ const desk = (clock: 'digital' | 'analog', x = 0): DeskPrefs => ({
   clock,
 });
 
-/** A send that records each call and answers as `answer` says. */
-function sender(answer: () => Promise<unknown> = () => Promise.resolve({})) {
-  const calls: Array<{ desk: DeskPrefs; keepalive: boolean }> = [];
-  const send: DeskSend = vi.fn((d, opts) => {
-    calls.push({ desk: d, keepalive: opts.keepalive });
-    return answer();
-  });
-  return { send, calls };
+const stateOf = (d: DeskPrefs, version: number): HomeDeskState => ({
+  homeDesk: deskToWire(d) as HomeDeskState['homeDesk'],
+  version,
+});
+
+/** An API client's error, as apiFetch throws it. */
+const failure = (status: number, body?: Record<string, unknown>) =>
+  Object.assign(new Error(`status ${status}`), { status, body });
+
+type Call = { desk: DeskPrefs; version: number; keepalive: boolean; settle: Settle };
+type Settle = { ok: (state: HomeDeskState) => void; fail: (err: unknown) => void };
+
+/** A send that records each call and leaves it open until the test answers. */
+function sender() {
+  const calls: Call[] = [];
+  const send: DeskSend = vi.fn(
+    (d, version, opts) =>
+      new Promise<HomeDeskState>((ok, fail) => {
+        calls.push({ desk: d, version, keepalive: opts.keepalive, settle: { ok, fail } });
+      }),
+  );
+  /** Answer call `i` as the brain would for a save that landed. */
+  const land = async (i: number) => {
+    const c = calls[i]!;
+    c.settle.ok(stateOf(c.desk, c.version + 1));
+    await vi.runAllTimersAsync();
+  };
+  const refuse = async (i: number, err: unknown) => {
+    calls[i]!.settle.fail(err);
+    await vi.runAllTimersAsync();
+  };
+  return { send, calls, land, refuse };
 }
 
-const refusal = (status: number) => Object.assign(new Error('refused'), { status });
+const hooks = () => ({ onSaved: vi.fn(), onConflict: vi.fn(), onFailed: vi.fn() });
 
 describe('the desk saver', () => {
   beforeEach(() => {
@@ -37,312 +55,187 @@ describe('the desk saver', () => {
 
   it('debounces: many changes, one save of the last desk after the delay', () => {
     const { send, calls } = sender();
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
+    const saver = createDeskSaver(send, hooks());
     saver.save(desk('digital', 1));
     vi.advanceTimersByTime(SAVE_DELAY_MS - 1);
     saver.save(desk('digital', 2));
     vi.advanceTimersByTime(SAVE_DELAY_MS - 1);
     saver.save(desk('analog', 3));
     expect(calls).toEqual([]);
-    expect(saver.pending).toBe(true);
+    expect(saver.busy).toBe(true);
     vi.advanceTimersByTime(SAVE_DELAY_MS);
-    expect(calls).toEqual([{ desk: desk('analog', 3), keepalive: false }]);
-    expect(saver.pending).toBe(false);
+    expect(calls.map((c) => [c.desk, c.version, c.keepalive])).toEqual([
+      [desk('analog', 3), 0, false],
+    ]);
   });
 
-  it('flushes what is waiting at once (keepalive on the way out), and only once', () => {
-    const { send, calls } = sender();
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
-    saver.flush({ keepalive: true }); // nothing waiting: nothing sent
+  it('sends each save with the version of the last read or save that landed', async () => {
+    const { send, calls, land } = sender();
+    const h = hooks();
+    const saver = createDeskSaver(send, h);
+    expect(saver.read(stateOf(desk('digital'), 4))).toBe(true);
     saver.save(desk('analog'));
-    saver.flush({ keepalive: true });
-    expect(calls).toEqual([{ desk: desk('analog'), keepalive: true }]);
-    // The armed timer was cleared: no second save after the delay, and a
-    // second flush (pagehide after visibilitychange) sends nothing.
-    saver.flush({ keepalive: true });
-    vi.advanceTimersByTime(SAVE_DELAY_MS * 2);
+    void saver.flush();
+    expect(calls[0]!.version).toBe(4);
+    await land(0);
+    expect(h.onSaved).toHaveBeenCalledWith(stateOf(desk('analog'), 5));
+    expect(saver.version).toBe(5);
+    saver.save(desk('digital'));
+    void saver.flush();
+    expect(calls[1]!.version).toBe(5);
+  });
+
+  it('one save in flight: a desk changed meanwhile waits, only the latest, with the new version', async () => {
+    const { send, calls, land } = sender();
+    const saver = createDeskSaver(send, hooks());
+    saver.save(desk('digital', 1));
+    void saver.flush();
+    saver.save(desk('digital', 2));
+    void saver.flush();
+    saver.save(desk('analog', 3));
+    void saver.flush();
     expect(calls).toHaveLength(1);
+    await land(0);
+    expect(calls.map((c) => [c.desk, c.version])).toEqual([
+      [desk('digital', 1), 0],
+      [desk('analog', 3), 1],
+    ]);
+    await land(1);
+    expect(saver.busy).toBe(false);
+    expect(saver.version).toBe(2);
+  });
+
+  it('on a 409 adopts the other device desk and version, drops what waits, never retries', async () => {
+    const { send, calls, refuse } = sender();
+    const h = hooks();
+    const saver = createDeskSaver(send, h);
+    saver.save(desk('digital', 1));
+    void saver.flush();
+    // A change waits behind the save in flight, another is still debouncing.
+    saver.save(desk('digital', 2));
+    void saver.flush();
+    saver.save(desk('digital', 3));
+    const theirs = stateOf(desk('analog', 9), 7);
+    await refuse(0, failure(409, { ...theirs }));
+    expect(h.onConflict).toHaveBeenCalledTimes(1);
+    expect(h.onConflict).toHaveBeenCalledWith(theirs);
+    expect(h.onFailed).not.toHaveBeenCalled();
+    expect(saver.version).toBe(7);
+    expect(saver.busy).toBe(false);
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 3);
+    expect(calls).toHaveLength(1);
+    // The next change saves on top of the desk that won.
+    saver.save(desk('digital', 4));
+    void saver.flush();
+    expect(calls[1]!.version).toBe(7);
+  });
+
+  it('reads a 409 body only when it names a version', () => {
+    expect(conflictState(failure(409, { homeDesk: null, version: 3 }))).toEqual({
+      homeDesk: null,
+      version: 3,
+    });
+    expect(conflictState(failure(409, { error: 'x' }))).toBeNull();
+    expect(conflictState(failure(409))).toBeNull();
+    expect(conflictState(failure(500, { homeDesk: null, version: 3 }))).toBeNull();
+  });
+
+  it('a 401 stops the saver for the visit: nothing waiting is sent, nothing new is taken', async () => {
+    const { send, calls, refuse } = sender();
+    const h = hooks();
+    const saver = createDeskSaver(send, h);
+    saver.save(desk('digital', 1));
+    void saver.flush();
+    saver.save(desk('digital', 2));
+    void saver.flush();
+    await refuse(0, failure(401));
+    expect(saver.stopped).toBe(true);
+    expect(h.onFailed).not.toHaveBeenCalled();
+    saver.save(desk('analog', 3));
+    await saver.flush({ keepalive: true });
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
+    expect(calls).toHaveLength(1);
+    expect(saver.read(stateOf(desk('analog'), 9))).toBe(false);
   });
 
   it('a failed save warns once, not once a save; a save that lands arms it again', async () => {
-    let fail = true;
-    const { send } = sender(() =>
-      fail ? Promise.reject(new Error('offline')) : Promise.resolve(),
-    );
-    const onFailed = vi.fn();
-    const onRefused = vi.fn();
-    const saver = createDeskSaver(send, { onRefused, onFailed });
+    const { send, calls, land, refuse } = sender();
+    const h = hooks();
+    const saver = createDeskSaver(send, h);
     for (const x of [1, 2, 3]) {
       saver.save(desk('digital', x));
-      saver.flush();
-      await vi.runAllTimersAsync();
+      void saver.flush();
+      await refuse(calls.length - 1, new TypeError('Failed to fetch'));
     }
-    expect(onFailed).toHaveBeenCalledTimes(1);
-    expect(saver.stopped).toBe(false);
-    fail = false;
-    saver.save(desk('digital', 4));
-    saver.flush();
-    await vi.runAllTimersAsync();
-    fail = true;
-    saver.save(desk('digital', 5));
-    saver.flush();
-    await vi.runAllTimersAsync();
-    expect(onFailed).toHaveBeenCalledTimes(2);
-    expect(onRefused).not.toHaveBeenCalled();
-  });
-
-  it.each([401, 403])(
-    'a %s refusal stops the saver: one call, no toast, nothing sent again',
-    async (status) => {
-      const { send, calls } = sender(() => Promise.reject(refusal(status)));
-      const onFailed = vi.fn();
-      const onRefused = vi.fn();
-      const saver = createDeskSaver(send, { onRefused, onFailed });
-      saver.save(desk('digital'));
-      saver.flush();
-      // A second save waiting while the first is refused is dropped too.
-      saver.save(desk('analog'));
-      await vi.runAllTimersAsync();
-      expect(onRefused).toHaveBeenCalledTimes(1);
-      expect(onFailed).not.toHaveBeenCalled();
-      expect(saver.stopped).toBe(true);
-      expect(saver.pending).toBe(false);
-      saver.save(desk('analog', 9));
-      saver.flush({ keepalive: true });
-      await vi.runAllTimersAsync();
-      expect(calls).toHaveLength(1);
-      expect(onRefused).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it('asks for a fresh read only after a long idle, with nothing waiting', async () => {
-    const { send } = sender();
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
-    const t0 = Date.now();
-    expect(saver.needsRefresh(t0 + DESK_REFRESH_AFTER_MS - 1)).toBe(false);
-    expect(saver.needsRefresh(t0 + DESK_REFRESH_AFTER_MS)).toBe(true);
-    // A change waiting: never replaced by a read.
+    expect(h.onFailed).toHaveBeenCalledTimes(1);
+    // Each save carries the whole desk with the same version: the next one
+    // saves what a failed one missed.
+    expect(calls.map((c) => c.version)).toEqual([0, 0, 0]);
     saver.save(desk('analog'));
-    expect(saver.needsRefresh(t0 + DESK_REFRESH_AFTER_MS * 2)).toBe(false);
-    // A save restarts the idle clock, and so does a read.
-    vi.advanceTimersByTime(SAVE_DELAY_MS);
-    const saved = Date.now();
-    // In flight: never replaced by a read either, until it lands.
-    expect(saver.needsRefresh(saved + DESK_REFRESH_AFTER_MS * 2)).toBe(false);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(saver.needsRefresh(saved + DESK_REFRESH_AFTER_MS - 1)).toBe(false);
-    saver.synced(saved + DESK_REFRESH_AFTER_MS);
-    expect(saver.needsRefresh(saved + DESK_REFRESH_AFTER_MS * 2 - 1)).toBe(false);
-    expect(saver.needsRefresh(saved + DESK_REFRESH_AFTER_MS * 2)).toBe(true);
-  });
-
-  it('sends one save at a time: a desk flushed meanwhile waits, and only the latest', async () => {
-    const answers: Array<(v: unknown) => void> = [];
-    const { send, calls } = sender(() => new Promise((resolve) => answers.push(resolve)));
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
-    saver.save(desk('digital', 1));
-    saver.flush();
-    expect(saver.inFlight).toBe(true);
-    saver.save(desk('digital', 2));
-    saver.flush();
-    saver.save(desk('analog', 3));
-    saver.flush();
-    // Nothing more goes out while the first is on its way.
-    expect(calls).toHaveLength(1);
-    expect(saver.pending).toBe(true);
-    answers[0]!({});
-    await vi.advanceTimersByTimeAsync(0);
-    // Then the latest alone.
-    expect(calls).toEqual([
-      { desk: desk('digital', 1), keepalive: false },
-      { desk: desk('analog', 3), keepalive: false },
-    ]);
-    answers[1]!({});
-    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
-    expect(calls).toHaveLength(2);
-    expect(saver.inFlight).toBe(false);
-    expect(saver.pending).toBe(false);
-  });
-
-  it('sends at once on the way out, with a save in flight: nothing dies with the page', async () => {
-    const answers: Array<(v: unknown) => void> = [];
-    const { send, calls } = sender(() => new Promise((resolve) => answers.push(resolve)));
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
-    saver.save(desk('digital', 1));
-    saver.flush();
-    // A desk queued behind the save in flight, then a newer one waiting.
-    saver.save(desk('digital', 2));
-    saver.flush();
-    saver.save(desk('analog', 3));
-    saver.flush({ keepalive: true });
-    expect(calls).toEqual([
-      { desk: desk('digital', 1), keepalive: false },
-      { desk: desk('analog', 3), keepalive: true },
-    ]);
-    expect(saver.pending).toBe(false);
-    // A queued desk alone goes too, when nothing newer is waiting.
-    saver.save(desk('digital', 4));
-    saver.flush();
-    expect(calls).toHaveLength(2);
-    saver.flush({ keepalive: true });
-    expect(calls[2]).toEqual({ desk: desk('digital', 4), keepalive: true });
-    for (const answer of answers) answer({});
-    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
-    expect(calls).toHaveLength(3);
-    expect(saver.inFlight).toBe(false);
-  });
-
-  it('flush resolves once the saver is idle, the queued desk sent', async () => {
-    const answers: Array<(v: unknown) => void> = [];
-    const { send, calls } = sender(() => new Promise((resolve) => answers.push(resolve)));
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
-    await expect(saver.flush()).resolves.toBeUndefined(); // idle: at once
-    saver.save(desk('digital', 1));
     void saver.flush();
-    saver.save(desk('digital', 2));
+    await land(3);
+    saver.save(desk('digital', 4));
+    void saver.flush();
+    await refuse(4, failure(500));
+    expect(h.onFailed).toHaveBeenCalledTimes(2);
+  });
+
+  it('flushes on the way out with keepalive, at once, and only once', async () => {
+    const { send, calls, land } = sender();
+    const saver = createDeskSaver(send, hooks());
+    await saver.flush({ keepalive: true }); // nothing waiting: nothing sent
+    expect(calls).toHaveLength(0);
+    saver.save(desk('analog'));
+    const idle = saver.flush({ keepalive: true });
+    expect(calls.map((c) => [c.desk, c.keepalive])).toEqual([[desk('analog'), true]]);
+    // The armed timer was cleared: a second flush (pagehide after
+    // visibilitychange) and the delay send nothing more.
+    void saver.flush({ keepalive: true });
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS * 2);
+    expect(calls).toHaveLength(1);
     let done = false;
-    void saver.flush().then(() => {
-      done = true;
-    });
-    answers[0]!({});
-    await vi.advanceTimersByTimeAsync(0);
-    // The first landed; the queued one is on its way now.
-    expect(calls).toHaveLength(2);
-    expect(done).toBe(false);
-    answers[1]!({});
-    await vi.advanceTimersByTimeAsync(0);
+    void idle.then(() => (done = true));
+    await land(0);
     expect(done).toBe(true);
   });
 
-  it('never sends a desk once the login changed: dropped, and told so', async () => {
-    const answers: Array<(v: unknown) => void> = [];
-    const { send, calls } = sender(() => new Promise((resolve) => answers.push(resolve)));
-    let login: string | null = 'a';
-    const saver = createDeskSaver(send, {
-      onRefused: vi.fn(),
-      onFailed: vi.fn(),
-      session: () => login,
-    });
+  it('on the way out with a save in flight, the waiting desk goes next with keepalive', async () => {
+    const { send, calls, land } = sender();
+    const saver = createDeskSaver(send, hooks());
     saver.save(desk('digital', 1));
     void saver.flush();
-    const queuedTold = vi.fn();
-    saver.save(desk('digital', 2), queuedTold);
-    const idle = saver.flush();
-    // A switch: the save in flight lands after the login changed.
-    login = 'b';
-    answers[0]!({});
-    await idle;
+    saver.save(desk('analog', 2));
+    const idle = saver.flush({ keepalive: true });
     expect(calls).toHaveLength(1);
-    expect(queuedTold).toHaveBeenCalledWith({ status: null });
-    expect(saver.pending).toBe(false);
-    expect(saver.inFlight).toBe(false);
-    // Nor a desk changed as one login and flushed as another.
-    login = 'c';
-    const waitingTold = vi.fn();
-    saver.save(desk('analog', 3), waitingTold);
-    login = 'd';
-    await saver.flush({ keepalive: true });
-    expect(calls).toHaveLength(1);
-    expect(waitingTold).toHaveBeenCalledWith({ status: null });
-    // A change as the login in use is sent.
-    saver.save(desk('analog', 4));
-    void saver.flush();
-    expect(calls).toHaveLength(2);
-  });
-
-  it('tells each save how it ended, the replaced ones by the save that carried them', async () => {
-    let status: number | null = 200;
-    const { send } = sender(() =>
-      status === 200
-        ? Promise.resolve({})
-        : Promise.reject(status === null ? new Error('offline') : refusal(status)),
-    );
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn() });
-    const first = vi.fn();
-    const second = vi.fn();
-    saver.save(desk('digital', 1), first);
-    saver.save(desk('digital', 2), second);
+    await land(0);
+    expect(calls.map((c) => [c.desk, c.version, c.keepalive])).toEqual([
+      [desk('digital', 1), 0, false],
+      [desk('analog', 2), 1, true],
+    ]);
+    let done = false;
+    void idle.then(() => (done = true));
     await vi.runAllTimersAsync();
-    expect(first).toHaveBeenCalledWith({ status: 200 });
-    expect(second).toHaveBeenCalledWith({ status: 200 });
-    for (const s of [null, 503, 400] as const) {
-      status = s;
-      const told = vi.fn();
-      saver.save(desk('analog'), told);
-      saver.flush();
-      await vi.runAllTimersAsync();
-      expect(told).toHaveBeenCalledWith({ status: s });
-    }
+    expect(done).toBe(false);
+    await land(1);
+    expect(done).toBe(true);
   });
 
-  it.each([401, 403] as const)(
-    'names the refusal (%s), so the hook tells an expired session from a no',
-    async (status) => {
-      const { send } = sender(() => Promise.reject(refusal(status)));
-      const onRefused = vi.fn();
-      const waiting = vi.fn();
-      const saver = createDeskSaver(send, { onRefused, onFailed: vi.fn() });
-      saver.save(desk('digital'));
-      saver.flush();
-      saver.save(desk('analog'), waiting);
-      saver.flush();
-      await vi.runAllTimersAsync();
-      expect(onRefused).toHaveBeenCalledWith(status);
-      // The desk queued behind it is never sent, and is told why.
-      expect(waiting).toHaveBeenCalledWith({ status });
-    },
-  );
-
-  it('counts the changes, and drops a read that started before one', async () => {
-    const answers: Array<(v: unknown) => void> = [];
-    const { send } = sender(() => new Promise((resolve) => answers.push(resolve)));
-    const saved = vi.fn();
-    const saver = createDeskSaver(send, { onRefused: vi.fn(), onFailed: vi.fn(), onSaved: saved });
-    // Idle: a read may be shown when it lands, if nothing changed.
-    const idle = saver.readStart();
-    expect(idle).toBe(0);
-    expect(saver.readFresh(idle)).toBe(true);
-    // A change while the read is on its way: the read is dropped.
-    saver.save(desk('digital', 1));
-    expect(saver.gen).toBe(1);
-    expect(saver.readFresh(idle)).toBe(false);
-    // A read that starts with a change waiting, or a save in flight, is
-    // never shown: it may predate the save.
-    expect(saver.readStart()).toBeNull();
-    saver.flush();
-    const during = saver.readStart();
-    expect(during).toBeNull();
-    saver.save(desk('digital', 2));
-    answers[0]!({ homeDesk: 'first' });
-    await vi.advanceTimersByTimeAsync(0);
-    // Its answer names the change it carried, older than the latest.
-    expect(saved).toHaveBeenLastCalledWith({ homeDesk: 'first' }, 1);
-    expect(saver.readFresh(during)).toBe(false);
-    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
-    answers[1]!({ homeDesk: 'second' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(saved).toHaveBeenLastCalledWith({ homeDesk: 'second' }, 2);
-    // Settled: a read from now on may be shown again.
-    const after = saver.readStart();
-    expect(after).toBe(2);
-    expect(saver.readFresh(after)).toBe(true);
-  });
-});
-
-describe('reading the desk again', () => {
-  it('reads the shell again when the Desk opens on an old read', () => {
-    const now = 1_000_000_000;
-    expect(shellReadIsOld(now - DESK_REFRESH_AFTER_MS + 1, now)).toBe(false);
-    expect(shellReadIsOld(now - DESK_REFRESH_AFTER_MS, now)).toBe(true);
-    // Never read (no shell in the cache): old.
-    expect(shellReadIsOld(0, now)).toBe(true);
-  });
-
-  it('marks the move up done only when the brain answered it', () => {
-    for (const s of [200, 204, 400, 403]) expect(moveUpAnswered(s), String(s)).toBe(true);
-    // 401: the session expired, not an answer about the desk.
-    for (const s of [null, 401, 404, 409, 413, 429, 500, 502, 503]) {
-      expect(moveUpAnswered(s), String(s)).toBe(false);
-    }
+  it('shows a read only when nothing is on its way and it is not older than what it knows', async () => {
+    const { send, land } = sender();
+    const saver = createDeskSaver(send, hooks());
+    expect(saver.read(stateOf(desk('digital'), 2))).toBe(true);
+    // A change waits: a read (even a newer one) would undo it on screen.
+    saver.save(desk('analog'));
+    expect(saver.read(stateOf(desk('digital'), 3))).toBe(false);
+    void saver.flush();
+    expect(saver.read(stateOf(desk('digital'), 3))).toBe(false);
+    await land(0);
+    expect(saver.version).toBe(3);
+    // A read that left before the save landed answers the older version.
+    expect(saver.read(stateOf(desk('digital'), 2))).toBe(false);
+    expect(saver.version).toBe(3);
+    // Another device saved since: shown, and its version taken.
+    expect(saver.read(stateOf(desk('digital', 5), 4))).toBe(true);
+    expect(saver.version).toBe(4);
   });
 });

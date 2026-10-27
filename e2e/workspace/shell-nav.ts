@@ -42,10 +42,12 @@ export async function wholeNav(page: Page, role: 'admin' | 'member') {
   return nav;
 }
 
-/** Paths a login asks of any brain: the shell, the version, what /login asks
- *  and sign-in itself. */
+/** Paths a login asks of any brain: the shell, its own Desk, the version,
+ *  what /login asks and sign-in itself. */
 export const ANY_LOGIN = [
   /^\/api\/shell$/,
+  // The login's own Desk (GET and PUT), for every login.
+  /^\/api\/profile\/home-desk$/,
   /^\/api\/version$/,
   /^\/api\/appearance(\/|$)/,
   /^\/api\/auth\//,

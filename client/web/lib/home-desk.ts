@@ -358,7 +358,8 @@ export function parseDesk(raw: string | null): DeskPrefs | null {
   return deskFrom(data);
 }
 
-/** `parseDesk` for a value already parsed (the profile's, from the shell). */
+/** `parseDesk` for a value already parsed (the profile's, from GET
+ *  /api/profile/home-desk). */
 export function deskFrom(data: unknown): DeskPrefs | null {
   if (!data || typeof data !== 'object' || (data as { v?: unknown }).v !== 1) return null;
   const d = data as Record<string, unknown>;
@@ -452,56 +453,6 @@ export function deskToWire(desk: DeskPrefs): {
     icons: desk.icons,
     clock: desk.clock,
   };
-}
-
-/**
- * The desk to show on a brain that keeps it on the login's profile, and
- * whether to save it there now.
- *
- * The profile's desk wins whenever there is one (arranged on another device,
- * say), and this browser's copy is just retired. Only into an EMPTY profile
- * (`profile` null: never saved) does a desk this browser kept before the
- * desk roamed move up, and only once per brain and login: `migrated` says
- * this browser already moved (or tried to move) its desk up, so a stale local
- * copy is never offered again, whatever the profile says later. Neither: the
- * default desk, saved only when the person first changes it.
- */
-export function roamingDesk(
-  profile: unknown,
-  local: string | null,
-  kinds: readonly TreeKind[],
-  migrated = false,
-): { prefs: DeskPrefs; upload: boolean } {
-  const fromProfile = profile == null ? null : deskFrom(profile);
-  if (fromProfile) return { prefs: fromProfile, upload: false };
-  const fromHere = profile === null && !migrated ? parseDesk(local) : null;
-  if (fromHere) return { prefs: fromHere, upload: true };
-  return { prefs: defaultDesk(kinds), upload: false };
-}
-
-/**
- * Whether the desk is kept on the login's profile now. Once it was this
- * visit (`roamed`), it stays so: a later read of the shell that leaves the
- * desk out (the brain could not read the row that time) never turns this
- * browser's old copy back on. `local`: the brain refused a save this visit.
- */
-export function deskRoams(shellHasDesk: boolean, roamed: boolean, local: boolean): boolean {
-  return !local && (roamed || shellHasDesk);
-}
-
-/**
- * What a later read of the shell does to the desk on show, on a brain that
- * keeps it: `show` a desk read from the profile (arranged on another device,
- * say), or `keep` the one on show. Kept when the read leaves the desk out
- * (the brain could not read the row), when the profile has none (null: what
- * is on show is the default or a desk on its way up), and when it is one
- * this client cannot read.
- */
-export function deskFromRead(shell: object): { show: DeskPrefs } | 'keep' {
-  if (!('homeDesk' in shell)) return 'keep';
-  const raw = (shell as { homeDesk: unknown }).homeDesk;
-  const desk = raw == null ? null : deskFrom(raw);
-  return desk ? { show: desk } : 'keep';
 }
 
 // ── What a kind widget lists ───────────────────────────────────────────────

@@ -164,7 +164,7 @@ const PUBLIC = [
   /^\/api\/auth\/(mobile-)?logout$/,
 ];
 /** What the brain answers every signed-in login. */
-const EVERY_LOGIN = [/^\/api\/shell$/, /^\/api\/workspaces(\/|$)/];
+const EVERY_LOGIN = [/^\/api\/shell$/, /^\/api\/workspaces(\/|$)/, /^\/api\/profile\/home-desk$/];
 
 export type MockRequest = { method: string; path: string; query: string; role: Role | 'anon' };
 
@@ -193,6 +193,10 @@ export type MockWorkspaceApi = {
    *  never signals ready); false: the ticket is a 404 (no build), so the
    *  landing page falls back to Desk. */
   homeApps: Partial<Record<WorkspaceKey, { id: string; title: string; frame: boolean }>>;
+  /** Each login's Desk as GET /api/profile/home-desk answers it (none: null
+   *  and 0). PUT is compare-and-set on `version`, as on a brain: a spec sets
+   *  one here to play another device's save. */
+  desks: Partial<Record<Role, { homeDesk: unknown; version: number }>>;
   close: () => Promise<void>;
 };
 
@@ -216,6 +220,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     created: [],
     leftSince: {},
     homeApps: {},
+    desks: {},
     close: async () => undefined,
   };
 
@@ -624,6 +629,20 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
 
     if (EVERY_LOGIN.some((re) => re.test(path))) {
       if (path === '/api/shell') return json(res, 200, shell(role));
+      if (path === '/api/profile/home-desk') {
+        const stored = state.desks[role] ?? { homeDesk: null, version: 0 };
+        if (method === 'GET') return json(res, 200, stored);
+        if (method === 'PUT') {
+          const body = JSON.parse((await readBody(req)) || '{}') as {
+            homeDesk?: unknown;
+            version?: unknown;
+          };
+          if (body.version !== stored.version) return json(res, 409, stored);
+          const saved = { homeDesk: body.homeDesk, version: stored.version + 1 };
+          state.desks[role] = saved;
+          return json(res, 200, saved);
+        }
+      }
       return json(res, 404, { error: `not mocked: ${method} ${path}` });
     }
     // The routes a W6b, W7 or W8 brain retired (the client portal among
