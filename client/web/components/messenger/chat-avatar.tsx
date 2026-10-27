@@ -10,7 +10,7 @@ import { ProfilePhoto } from '@/components/profile-photo';
 import { initials } from '@/lib/messenger/format';
 import type { ChatFace, GroupLook } from '@/lib/messenger/faces';
 
-const PX = { xs: 24, sm: 32, md: 40 } as const;
+const PX = { xs: 24, sm: 32, md: 40, lg: 44 } as const;
 
 /**
  * The round avatar of a chat row, a header, a group member, a transcript
@@ -42,13 +42,17 @@ export function ChatAvatar({
   className?: string;
 }) {
   const px = PX[size];
-  const box =
-    size === 'xs' ? 'size-6 text-[10px]' : size === 'sm' ? 'size-8 text-[11px]' : 'size-10 text-xs';
+  const box = {
+    xs: 'size-6 text-[10px]',
+    sm: 'size-8 text-[11px]',
+    md: 'size-10 text-xs',
+    lg: 'size-11 text-xs',
+  }[size];
   const fallback = (
     <Avatar className={box}>
       <AvatarFallback className="bg-muted font-medium text-muted-foreground">
         {kind === 'group' ? (
-          <Users className={size === 'md' ? 'size-4' : 'size-3.5'} aria-hidden />
+          <Users className={size === 'md' || size === 'lg' ? 'size-4' : 'size-3.5'} aria-hidden />
         ) : (
           initials(name)
         )}

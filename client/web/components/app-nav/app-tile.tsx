@@ -43,6 +43,7 @@ const SIZES = {
   'face-xs': { tile: 'size-6 rounded-full text-xs', icon: 'size-3.5' },
   'face-sm': { tile: 'size-8 rounded-full text-base', icon: 'size-3.5' },
   'face-md': { tile: 'size-10 rounded-full text-lg', icon: 'size-4' },
+  'face-lg': { tile: 'size-11 rounded-full text-lg', icon: 'size-4' },
 } as const;
 
 /**

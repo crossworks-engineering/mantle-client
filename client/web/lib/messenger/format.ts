@@ -141,6 +141,19 @@ export function badgeCount(n: number): string {
   return n > 99 ? '99+' : String(n);
 }
 
+/** A row's unread pill, for people, groups and assistant threads alike:
+ *  none at 0, the count (99+ at most), grey when the chat is muted, and the
+ *  mention mark beside it while a mention of me is unread. */
+export type RowBadge = { text: string; label: string; muted: boolean; mention: boolean };
+
+export function rowBadge(
+  row: Pick<MessengerListRow, 'unread' | 'muted' | 'mention'>,
+): RowBadge | null {
+  const n = Number.isFinite(row.unread) ? Math.max(0, Math.floor(row.unread)) : 0;
+  if (n === 0) return null;
+  return { text: badgeCount(n), label: `${n} unread`, muted: row.muted, mention: row.mention };
+}
+
 /** The list search: the title, a participant's name or the last line. */
 export function rowMatches(
   row: Pick<MessengerListRow, 'title' | 'participants' | 'preview'>,

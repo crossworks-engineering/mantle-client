@@ -18,12 +18,15 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   (Files, Notes, Contacts): the dim column surface edge to edge, no card and
   no title (the nav says Chats), the search and New (+) on one row at the
   top, then the rows (rounded, the accent fill on the open one, no rule
-  between them). Each row has the avatar (see Avatars) with a green dot while
-  the other person is online, the name, the relative
-  time ("10 minutes", "Yesterday", "13 days"), the last line with a tick
-  when it is mine (one sent, two read) and "You:" in a group, a pin, a mute
-  and a mention mark, and the green unread badge (grey when muted). The
-  brain orders it: pinned first, then the newest.
+  between them). Each row is no taller than its 44 px avatar (see Avatars,
+  a green dot while the other person is online): the name, up to two lines
+  of the last message, and at the right the time with the marks and the
+  unread pill under it. The time reads "10 minutes", "Yesterday" or
+  "13 days"; the last message carries a tick when it is mine (one sent, two
+  read) and "You:" in a group; the marks are a pin, a mute and a mention
+  (while a mention of me is unread); the pill is green, grey when muted,
+  99+ at most (`rowBadge`), and an assistant row shows its unread replies
+  the same way. The brain orders the list: pinned first, then the newest.
 - **No chat open**: a centred empty state with Start new chat.
 - **New message** (`new-chat-pane.tsx`): New (+) and Start new chat open it
   in the chat pane, where the transcript goes. There is no dialog. At the

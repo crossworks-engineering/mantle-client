@@ -6,6 +6,7 @@ import type { MessengerListRow, MessengerParticipant } from './dto';
 import {
   agentIdOf,
   badgeCount,
+  rowBadge,
   directPeer,
   initials,
   listTime,
@@ -156,5 +157,33 @@ describe('row addresses', () => {
     expect(agentIdOf('c1')).toBeNull();
     expect(agentIdOf('agent:')).toBeNull();
     expect(agentIdOf(null)).toBeNull();
+  });
+});
+
+describe('rowBadge', () => {
+  const r = (unread: number, over: { muted?: boolean; mention?: boolean } = {}) => ({
+    unread,
+    muted: false,
+    mention: false,
+    ...over,
+  });
+  it('hides at 0', () => {
+    expect(rowBadge(r(0))).toBeNull();
+    expect(rowBadge(r(0, { mention: true }))).toBeNull();
+  });
+  it('shows the count, capped at 99+', () => {
+    expect(rowBadge(r(4))).toEqual({ text: '4', label: '4 unread', muted: false, mention: false });
+    expect(rowBadge(r(100))?.text).toBe('99+');
+    expect(rowBadge(r(100))?.label).toBe('100 unread');
+  });
+  it('carries muted and the mention mark', () => {
+    expect(rowBadge(r(2, { muted: true, mention: true }))).toMatchObject({
+      muted: true,
+      mention: true,
+    });
+  });
+  it('reads a broken count as none', () => {
+    expect(rowBadge(r(Number.NaN))).toBeNull();
+    expect(rowBadge(r(-3))).toBeNull();
   });
 });
