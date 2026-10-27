@@ -22,9 +22,9 @@ function useMinute(): Date {
 
 /**
  * One row of the chat list, on the item tree's row (rounded, the accent fill
- * when open, no rule between rows), no taller than its avatar: the avatar (a
- * green dot while the other person is online), the name and up to two
- * lines of the last message (a tick before it when it is mine: one sent, two
+ * when open, no rule between rows), its text no taller than its avatar: the
+ * avatar (a green dot while the other person is online), the name and up to
+ * two lines of the last message (a tick before it when it is mine: one sent, two
  * read), and at the right the time with the marks and the unread pill (green,
  * grey when muted; `rowBadge`) under it. Agent rows count the same way.
  */
@@ -57,7 +57,7 @@ export function ChatRow({
       aria-current={selected ? 'true' : undefined}
       data-testid="chat-row"
       className={cn(
-        'flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors',
+        'flex w-full items-start gap-3 rounded-md px-2 py-2 text-left transition-colors',
         selected ? 'bg-accent text-accent-foreground' : 'hover:bg-foreground/[0.06]',
       )}
     >
@@ -80,26 +80,27 @@ export function ChatRow({
         online={!!peer && online.has(peer.id)}
         size="lg"
       />
-      {/* The name, then up to two lines of the last message, tight: the
-          text is the avatar's height (16 + 2 x 14 = 44 px). */}
+      {/* The name, then up to two lines of the last message, tight: at most
+          the avatar's height (1rem + 2 x 0.875rem, 44 px at the default
+          size), top-aligned with the time whatever the preview's length. */}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium leading-4">{row.title}</span>
-        <span className="line-clamp-2 text-[13px] leading-[14px] text-muted-foreground">
+        <span className="line-clamp-2 text-[0.8125rem] leading-3.5 text-muted-foreground [overflow-wrap:anywhere]">
           {line?.mine ? (
             <Tick
               className={cn(
-                'mr-1 inline size-3.5 align-[-3px]',
+                'mr-1 inline size-3 align-[-2px]',
                 read ? 'text-success-ink' : 'text-muted-foreground',
               )}
               role="img"
               aria-label={read ? 'Read' : 'Sent'}
             />
           ) : null}
-          {line?.text ?? 'No messages yet'}
+          {line?.text || 'No messages yet'}
         </span>
       </span>
       {/* The time, and under it the marks and the unread pill. */}
-      <span className="flex shrink-0 flex-col items-end gap-1 self-start">
+      <span className="flex shrink-0 flex-col items-end gap-1">
         <span className="text-xs leading-4 text-muted-foreground">
           {listTime(row.lastMessageAt, now)}
         </span>
@@ -111,7 +112,8 @@ export function ChatRow({
               aria-label="Pinned"
             />
           ) : null}
-          {row.muted ? (
+          {/* A muted chat with unread says so in its grey pill. */}
+          {row.muted && !badge ? (
             <BellOff
               className="size-3.5 shrink-0 text-muted-foreground"
               role="img"
@@ -133,9 +135,9 @@ export function ChatRow({
                   ? 'bg-muted-foreground/30 text-foreground'
                   : 'bg-success text-success-foreground',
               )}
-              aria-label={badge.label}
             >
-              {badge.text}
+              <span aria-hidden>{badge.text}</span>
+              <span className="sr-only">{badge.label}</span>
             </span>
           ) : null}
         </span>

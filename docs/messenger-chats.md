@@ -18,13 +18,15 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   (Files, Notes, Contacts): the dim column surface edge to edge, no card and
   no title (the nav says Chats), the search and New (+) on one row at the
   top, then the rows (rounded, the accent fill on the open one, no rule
-  between them). Each row is no taller than its 44 px avatar (see Avatars,
-  a green dot while the other person is online): the name, up to two lines
-  of the last message, and at the right the time with the marks and the
-  unread pill under it. The time reads "10 minutes", "Yesterday" or
+  between them). Each row's text is no taller than its 44 px avatar (see
+  Avatars, a green dot while the other person is online): the name, up to
+  two lines of the last message (in rem, so it scales with the interface
+  size), and at the right the time with the marks and the unread pill under
+  it. The time reads "10 minutes", "Yesterday" or
   "13 days"; the last message carries a tick when it is mine (one sent, two
-  read) and "You:" in a group; the marks are a pin, a mute and a mention
-  (while a mention of me is unread); the pill is green, grey when muted,
+  read) and "You:" in a group; the marks are a pin, a mute (the grey pill
+  says it instead while there is unread) and a mention (while a mention of
+  me is unread); the pill is green, grey when muted,
   99+ at most (`rowBadge`), and an assistant row shows its unread replies
   the same way. The brain orders the list: pinned first, then the newest.
 - **No chat open**: a centred empty state with Start new chat.
@@ -155,13 +157,13 @@ it through the shared realtime singleton
 `components/messenger/messenger-live.tsx` turns each event into what the
 screen needs (`lib/messenger/live.ts`, `effectOf`):
 
-| Event | What happens |
-| --- | --- |
-| `message` new | the list and the count refresh; the open chat fetches after its top seq; a notice may pop |
-| `message` edit or delete, `reaction` | the open chat refetches that one seq |
-| `read` | the receipt of that login moves (two ticks) |
-| `typing` | "X is typing" for 5 seconds |
-| `participants`, `history`, my own clear or mute | the open chat loads again |
+| Event                                           | What happens                                                                              |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `message` new                                   | the list and the count refresh; the open chat fetches after its top seq; a notice may pop |
+| `message` edit or delete, `reaction`            | the open chat refetches that one seq                                                      |
+| `read`                                          | the receipt of that login moves (two ticks)                                               |
+| `typing`                                        | "X is typing" for 5 seconds                                                               |
+| `participants`, `history`, my own clear or mute | the open chat loads again                                                                 |
 
 **Seq is the order.** The open chat holds a window of messages sorted by seq
 (`lib/messenger/transcript.ts`). Seqs have no gaps inside what a login may

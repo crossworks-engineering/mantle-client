@@ -6,7 +6,6 @@ import type { MessengerListRow, MessengerParticipant } from './dto';
 import {
   agentIdOf,
   badgeCount,
-  rowBadge,
   directPeer,
   initials,
   listTime,
@@ -14,6 +13,7 @@ import {
   presenceLine,
   previewLine,
   rowAddress,
+  rowBadge,
   rowMatches,
   stampLabel,
 } from './format';
@@ -173,6 +173,7 @@ describe('rowBadge', () => {
   });
   it('shows the count, capped at 99+', () => {
     expect(rowBadge(r(4))).toEqual({ text: '4', label: '4 unread', muted: false, mention: false });
+    expect(rowBadge(r(99))?.text).toBe('99');
     expect(rowBadge(r(100))?.text).toBe('99+');
     expect(rowBadge(r(100))?.label).toBe('100 unread');
   });
@@ -185,5 +186,6 @@ describe('rowBadge', () => {
   it('reads a broken count as none', () => {
     expect(rowBadge(r(Number.NaN))).toBeNull();
     expect(rowBadge(r(-3))).toBeNull();
+    expect(rowBadge(r(Number.POSITIVE_INFINITY))).toBeNull();
   });
 });

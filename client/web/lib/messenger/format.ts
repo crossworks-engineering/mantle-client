@@ -141,11 +141,13 @@ export function badgeCount(n: number): string {
   return n > 99 ? '99+' : String(n);
 }
 
-/** A row's unread pill, for people, groups and assistant threads alike:
- *  none at 0, the count (99+ at most), grey when the chat is muted, and the
- *  mention mark beside it while a mention of me is unread. */
+/** A row's unread pill: its text, what a screen reader says, grey or not,
+ *  and the mention mark beside it. */
 export type RowBadge = { text: string; label: string; muted: boolean; mention: boolean };
 
+/** The pill for people, groups and assistant threads alike: none at 0 (or
+ *  a count that is not a finite number), the count (99+ at most), grey when
+ *  the chat is muted, and the mention mark while a mention of me is unread. */
 export function rowBadge(
   row: Pick<MessengerListRow, 'unread' | 'muted' | 'mention'>,
 ): RowBadge | null {
