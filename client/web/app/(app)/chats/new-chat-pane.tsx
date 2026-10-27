@@ -400,7 +400,7 @@ export function NewChatPane({
               aria-label={`Show: ${current.label}`}
               title="Who to show"
             >
-              <current.Icon aria-hidden />
+              <current.Icon className="size-4" aria-hidden />
               <span>{current.label}</span>
               <ChevronDown className="opacity-60" aria-hidden />
             </Button>
@@ -409,8 +409,8 @@ export function NewChatPane({
             <DropdownMenuLabel>Show</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={filter} onValueChange={(v) => setFilter(v as Filter)}>
               {FILTERS.map((f) => (
-                <DropdownMenuRadioItem key={f.id} value={f.id}>
-                  <f.Icon aria-hidden />
+                <DropdownMenuRadioItem key={f.id} value={f.id} className="gap-2">
+                  <f.Icon className="size-4 text-muted-foreground" aria-hidden />
                   {f.label}
                 </DropdownMenuRadioItem>
               ))}

@@ -38,9 +38,11 @@ const SIZES = {
   // switcher's face lines up with the login's face above it.
   avatar: { tile: 'size-7 rounded-full text-sm', icon: 'size-4' },
   // A chat group's face, the size of the people's avatars beside it.
+  // Its glyph matches the plain group avatar's, so a colour alone does not
+  // resize it.
   'face-xs': { tile: 'size-6 rounded-full text-xs', icon: 'size-3.5' },
-  'face-sm': { tile: 'size-8 rounded-full text-base', icon: 'size-4' },
-  'face-md': { tile: 'size-10 rounded-full text-lg', icon: 'size-5' },
+  'face-sm': { tile: 'size-8 rounded-full text-base', icon: 'size-3.5' },
+  'face-md': { tile: 'size-10 rounded-full text-lg', icon: 'size-4' },
 } as const;
 
 /**

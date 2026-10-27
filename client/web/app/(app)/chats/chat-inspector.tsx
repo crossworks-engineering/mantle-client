@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, UserPlus, X } from 'lucide-react';
+import { ApiError } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import {
@@ -39,7 +40,7 @@ import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useChatFaces } from '@/components/messenger/chat-faces';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerConversation } from '@/lib/messenger/dto';
-import { groupLook, keepsGroupLook, type GroupLook } from '@/lib/messenger/faces';
+import { groupLook, type GroupLook } from '@/lib/messenger/faces';
 
 type Confirm = {
   title: string;
@@ -116,12 +117,17 @@ export function ChatInspector({
   const saved = groupLook(conversation);
   const [look, setLook] = useState<GroupLook>(saved);
   const { icon: savedIcon, color: savedColor } = saved;
-  useEffect(() => setLook({ icon: savedIcon, color: savedColor }), [savedIcon, savedColor]);
-  const changeLook = async (l: AppLook) => {
-    if (!keepsGroupLook(conversation)) {
-      toast.error('This brain does not keep a group’s icon and colour yet.');
-      return;
-    }
+  // Picks go out one after another, in order, and the chat's answer only
+  // takes over once none is left in flight (no snap back between picks).
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
+  const lookQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const lookInFlight = useRef(0);
+  const lookFailed = useRef(false);
+  useEffect(() => {
+    if (lookInFlight.current === 0) setLook({ icon: savedIcon, color: savedColor });
+  }, [savedIcon, savedColor]);
+  const changeLook = (l: AppLook) => {
     const patch: { icon?: string | null; color?: string | null } = {};
     if (l.icon !== undefined) patch.icon = l.icon || null;
     if (l.color !== undefined) patch.color = l.color;
@@ -129,8 +135,30 @@ export function ChatInspector({
       icon: patch.icon !== undefined ? patch.icon : cur.icon,
       color: l.color !== undefined ? (l.color ?? null) : cur.color,
     }));
-    const ok = await act('look', () => messengerApi.update(id, patch));
-    if (!ok) setLook(saved);
+    lookInFlight.current += 1;
+    lookQueue.current = lookQueue.current.then(async () => {
+      try {
+        await messengerApi.update(id, patch);
+      } catch (err) {
+        lookFailed.current = true;
+        // A brain before the group look refuses a look-only patch.
+        toast.error(
+          err instanceof ApiError && err.status === 400
+            ? 'This brain does not keep a group’s icon and colour yet.'
+            : err instanceof Error
+              ? err.message
+              : 'That did not work',
+        );
+      } finally {
+        lookInFlight.current -= 1;
+        if (lookInFlight.current === 0) {
+          // The last pick settled: the chat's own answer is the truth now.
+          if (lookFailed.current) setLook(groupLook(conversationRef.current));
+          lookFailed.current = false;
+          refresh();
+        }
+      }
+    });
   };
 
   const rename = async () => {
@@ -175,12 +203,12 @@ export function ChatInspector({
             kind="group"
             label={title}
             align="center"
-            onChange={(l) => void changeLook(l)}
+            onChange={changeLook}
             trigger={
               <RowButton
                 aria-label="Change the group's icon and colour"
                 title="Change the group's icon and colour"
-                className="rounded-full focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex rounded-full"
               >
                 {avatar}
               </RowButton>

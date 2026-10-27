@@ -201,8 +201,11 @@ of those says otherwise.
   two-minute window).
 - A group's `icon` and `color` (on a list row, the chat, the create and the
   patch) are client-side additions too, agreed with the brain and not kept
-  yet. A brain before them drops them on create (the form then says so) and
-  refuses a look-only patch, so Details says so instead of sending it.
+  yet. The brain sends both on every group, null when unset: the form tells
+  a brain that keeps them from one that does not by the keys on the created
+  chat. A brain before them drops them on create (the form then says so)
+  and refuses a look-only patch with a 400, which Details turns into the same
+  message. Details sends picks one after another, in order.
 - `avatar` and `photoVersion` on a participant and a directory entry, and
   the messenger photo route, are client-side additions to the DTO copy,
   agreed with the brain and not served yet: until the brain ships them,

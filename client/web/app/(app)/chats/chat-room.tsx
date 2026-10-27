@@ -671,8 +671,9 @@ export function ChatRoom({
   );
   const peerOnline = !group && others.some((p) => online.has(p.id));
   const faceOf = useChatFaces();
-  // The group's icon and colour: the chat's own answer once it has one (a
-  // change in Details shows at once), else the list's row.
+  // The group's icon and colour: the chat's own answer once it has one, else
+  // the list's row. A change in Details shows here once the chat is fetched
+  // again (Details itself shows it at once).
   const look = group ? groupLook(conversation ?? row) : null;
   const peer = group ? null : (others.find((p) => p.kind === 'login') ?? null);
   /** A message's author in a group: the participant (an author who left
