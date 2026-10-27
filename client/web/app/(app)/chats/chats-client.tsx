@@ -2,9 +2,10 @@
 
 /**
  * /chats: the messenger (Messenger V1 Phase 2). A two-pane master-detail in
- * the shell: the list of chats on the left (a "Chats" card with New chat and
- * a search), the open chat on the right at its own address (`/chats/<id>`),
- * or a centred empty state while none is open. Live delivery is
+ * the shell: the list of chats on the left (the item tree's column: the
+ * search and New on one row, then the rows, edge to edge), the open chat on
+ * the right at its own address (`/chats/<id>`), the New message form in its
+ * place, or a centred empty state while none is open. Live delivery is
  * `MessengerLiveSync`, mounted once by the shell (components/messenger/
  * messenger-shell.tsx).
  *
@@ -13,7 +14,7 @@
  * dynamic import so the editor bundle stays off every other route.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageSquareText, Plus } from 'lucide-react';
 import { ApiError } from '@mantle/web-ui/api-fetch';
@@ -22,16 +23,17 @@ import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useItemAddress } from '@/components/layout/use-item-address';
 import { useZenMode } from '@/components/layout/zen-mode';
-import { ItemListEmpty, ItemListHeader } from '@/components/item-list/item-list-header';
 import { useListQuery } from '@/components/list-search';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import { rowMatches } from '@/lib/messenger/format';
 import { ChatRow } from './chat-row';
-import { ChatRoom } from './chat-room';
 import { AgentThread } from './agent-thread';
 import { agentIdOf, rowAddress } from '@/lib/messenger/format';
-import { NewChatDialog } from './new-chat-dialog';
+import { ChatRoom, type FirstMessage } from './chat-room';
+import { ColumnSearch } from './column-search';
+import { NewChatPane } from './new-chat-pane';
+import { useChatFaces } from '@/components/messenger/chat-faces';
 
 /** A slow safety net under the stream (which refreshes the list itself). */
 const LIST_REFRESH_MS = 60_000;
@@ -43,7 +45,14 @@ export function ChatsClient() {
   const address = useItemAddress('chats');
   const me = useShellWorkspaces()?.loginId ?? null;
   const { query, setQuery } = useListQuery();
-  const [creating, setCreating] = useState(false);
+  // The New message form fills the chat pane (no dialog); opening a chat
+  // from anywhere (a row, a toast, the address) closes it.
+  const [composing, setComposing] = useState(false);
+  const startNew = () => setComposing(true);
+  // The first message typed in the form, handed to the new chat's room to
+  // send through its own outbox (clock, Retry, the same clientMsgId).
+  const [firstMessage, setFirstMessage] = useState<FirstMessage | null>(null);
+  const faceOf = useChatFaces();
 
   const listQuery = useQuery({
     queryKey: messengerKeys.list,
@@ -64,9 +73,10 @@ export function ChatsClient() {
   const rows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
   const shown = useMemo(() => rows.filter((r) => rowMatches(r, query)), [rows, query]);
   const selectedId = address.id;
+  useEffect(() => setComposing(false), [selectedId]);
   const selectedRow = rows.find((r) => rowAddress(r) === selectedId) ?? null;
   const agentId = agentIdOf(selectedId);
-  // An assistant opened from New chat has no row until its thread has a
+  // An assistant opened from New message has no row until its thread has a
   // message: its slug comes from the directory then.
   const agentSlug =
     selectedRow?.agentSlug ??
@@ -94,102 +104,106 @@ export function ChatsClient() {
   }
 
   const list = (
-    <div className="flex h-full flex-col p-3">
-      <section
-        aria-label="Chats"
-        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card/70 shadow-sm"
-      >
-        <ItemListHeader
-          heading={
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold">Chats</h2>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="New chat"
-                title="New chat"
-                onClick={() => setCreating(true)}
-              >
-                <Plus />
-              </Button>
-            </div>
-          }
-          search={query}
-          onSearch={setQuery}
+    <aside aria-label="Chats" className="flex h-full min-h-0 flex-col bg-muted/20">
+      <div className="flex items-center gap-1.5 border-b border-border p-2">
+        <ColumnSearch
+          value={query}
+          onChange={setQuery}
           placeholder="Search chats…"
+          label="Search chats"
         />
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin" data-testid="chat-list">
-          {listQuery.isPending ? (
-            <div className="flex justify-center p-6">
-              <Spinner />
-            </div>
-          ) : shown.length === 0 ? (
-            <div className="p-3">
-              <ItemListEmpty>
-                {query.trim() ? 'No chats match' : 'No chats yet. Start one with New chat.'}
-              </ItemListEmpty>
-            </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {shown.map((row) => (
-                <li key={`${row.kind}:${row.id}`}>
-                  <ChatRow
-                    row={row}
-                    me={me}
-                    online={online}
-                    selected={rowAddress(row) === selectedId}
-                    onOpen={() => address.open(rowAddress(row))}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-    </div>
+        <Button size="sm" onClick={startNew} aria-label="New chat" title="New chat">
+          <Plus aria-hidden />
+        </Button>
+      </div>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-2 py-1"
+        data-testid="chat-list"
+      >
+        {listQuery.isPending ? (
+          <div className="flex justify-center p-6">
+            <Spinner />
+          </div>
+        ) : shown.length === 0 ? (
+          <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+            {query.trim() ? 'No chats match' : 'No chats yet. Start one with New chat.'}
+          </p>
+        ) : (
+          <ul className="space-y-px">
+            {shown.map((row) => (
+              <li key={`${row.kind}:${row.id}`}>
+                <ChatRow
+                  row={row}
+                  me={me}
+                  online={online}
+                  selected={!composing && rowAddress(row) === selectedId}
+                  faceOf={faceOf}
+                  onOpen={() => {
+                    setComposing(false);
+                    address.open(rowAddress(row));
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
   );
 
   return (
-    <>
-      <NewChatDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(id) => address.open(id)}
-      />
-      <MasterDetail
-        id="chats"
-        detailFills
-        listCollapsed={zen}
-        defaultListSize="380px"
-        list={list}
-        detail={
-          agentId ? (
-            agentSlug ? (
-              <AgentThread key={agentId} slug={agentSlug} />
-            ) : listQuery.isPending || directory.isPending ? (
-              <div className="flex h-full items-center justify-center">
-                <Spinner />
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-                This assistant is not available.
-              </div>
-            )
-          ) : selectedId ? (
-            <ChatRoom
-              key={selectedId}
-              id={selectedId}
-              row={selectedRow}
-              me={me}
-              online={online}
-              onGone={address.close}
-            />
+    <MasterDetail
+      id="chats"
+      detailFills
+      listCollapsed={zen}
+      defaultListSize="380px"
+      list={list}
+      detail={
+        composing ? (
+          <NewChatPane
+            directory={directory.data ?? null}
+            directoryError={directory.isError}
+            faceOf={faceOf}
+            me={me}
+            onOpen={(to) => {
+              setComposing(false);
+              address.open(to);
+            }}
+            onCreated={(c, first) => {
+              setFirstMessage(first ? { c, ...first } : null);
+              setComposing(false);
+              address.open(c);
+            }}
+            onCancel={() => setComposing(false)}
+          />
+        ) : agentId ? (
+          agentSlug ? (
+            <AgentThread key={agentId} slug={agentSlug} />
+          ) : listQuery.isPending || directory.isPending ? (
+            <div className="flex h-full items-center justify-center">
+              <Spinner />
+            </div>
           ) : (
-            <NoChatSelected onStart={() => setCreating(true)} />
+            <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+              This assistant is not available.
+            </div>
           )
-        }
-      />
-    </>
+        ) : selectedId ? (
+          <ChatRoom
+            key={selectedId}
+            id={selectedId}
+            row={selectedRow}
+            me={me}
+            online={online}
+            firstMessage={firstMessage?.c === selectedId ? firstMessage : null}
+            onFirstSent={() => setFirstMessage(null)}
+            onGone={address.close}
+          />
+        ) : (
+          <NoChatSelected onStart={startNew} />
+        )
+      }
+    />
   );
 }
 

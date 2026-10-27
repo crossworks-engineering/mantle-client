@@ -7,6 +7,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useReadByAll } from '@/components/messenger/messenger-live';
 import type { MessengerListRow } from '@/lib/messenger/dto';
+import type { ChatFace, FaceOf } from '@/lib/messenger/faces';
 import { badgeCount, directPeer, listTime, otherPeople, previewLine } from '@/lib/messenger/format';
 
 /** Re-render the relative times once a minute. */
@@ -20,8 +21,9 @@ function useMinute(): Date {
 }
 
 /**
- * One row of the chat list: the avatar (a green dot while the other person is
- * online), the name and the relative time, then the last line (a tick before
+ * One row of the chat list, on the item tree's row (rounded, the accent fill
+ * when open, no rule between rows): the avatar (a green dot while the other
+ * person is online), the name and the relative time, then the last line (a tick before
  * it when it is mine: one sent, two read) and the green unread badge.
  */
 export function ChatRow({
@@ -29,12 +31,14 @@ export function ChatRow({
   me,
   online,
   selected,
+  faceOf,
   onOpen,
 }: {
   row: MessengerListRow;
   me: string | null;
   online: ReadonlySet<string>;
   selected: boolean;
+  faceOf: (who: FaceOf) => ChatFace;
   onOpen: () => void;
 }) {
   const now = useMinute();
@@ -50,13 +54,25 @@ export function ChatRow({
       aria-current={selected ? 'true' : undefined}
       data-testid="chat-row"
       className={cn(
-        'flex w-full items-center gap-3 px-4 py-3 transition-colors',
-        selected ? 'bg-muted' : 'hover:bg-foreground/[0.04]',
+        'flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors',
+        selected ? 'bg-accent text-accent-foreground' : 'hover:bg-foreground/[0.06]',
       )}
     >
       <ChatAvatar
         name={row.title}
         kind={row.kind === 'group' ? 'group' : row.kind === 'agent' ? 'agent' : 'person'}
+        face={
+          row.kind === 'agent'
+            ? faceOf({ kind: 'agent', id: row.id, slug: row.agentSlug })
+            : peer
+              ? faceOf({
+                  kind: 'login',
+                  id: peer.id,
+                  avatar: peer.avatar,
+                  photoVersion: peer.photoVersion,
+                })
+              : null
+        }
         online={!!peer && online.has(peer.id)}
       />
       <span className="min-w-0 flex-1">

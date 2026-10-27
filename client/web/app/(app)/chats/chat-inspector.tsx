@@ -15,13 +15,6 @@ import { Pencil, UserPlus, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@mantle/web-ui/ui/dialog';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -39,8 +32,9 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { HeaderPill } from '@/components/layout/item-header';
-import { ItemListEmpty, ItemSearch } from '@/components/item-list/item-list-header';
+import { ItemSearch } from '@/components/item-list/item-list-header';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
+import { useChatFaces } from '@/components/messenger/chat-faces';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerConversation } from '@/lib/messenger/dto';
 
@@ -81,6 +75,7 @@ export function ChatInspector({
   const [name, setName] = useState(conversation.title ?? '');
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  const faceOf = useChatFaces();
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -119,10 +114,24 @@ export function ChatInspector({
     if (ok) setRenaming(false);
   };
 
+  const peer = group ? null : people.find((p) => p.id !== me && p.kind === 'login');
   return (
     <aside aria-label="Chat details" className="space-y-5 p-5" data-testid="chat-inspector">
       <div className="flex flex-col items-center gap-2 text-center">
-        <ChatAvatar name={title} kind={group ? 'group' : 'person'} />
+        <ChatAvatar
+          name={title}
+          kind={group ? 'group' : 'person'}
+          face={
+            peer
+              ? faceOf({
+                  kind: 'login',
+                  id: peer.id,
+                  avatar: peer.avatar,
+                  photoVersion: peer.photoVersion,
+                })
+              : null
+          }
+        />
         {renaming ? (
           <form
             className="flex w-full items-center gap-2"
@@ -206,18 +215,31 @@ export function ChatInspector({
           <h4 id="chat-people" className="text-sm font-semibold">
             People
           </h4>
-          {admin && !left ? (
+          {admin && !left && !adding ? (
             <Button variant="outline" size="xs" onClick={() => setAdding(true)}>
               <UserPlus /> Add
             </Button>
           ) : null}
         </div>
+        {admin && !left && adding ? (
+          <AddPeople
+            inChat={new Set(people.map((p) => p.id))}
+            onAdd={(ids) => act('add', () => messengerApi.addPeople(id, ids), 'Added')}
+            onDone={() => setAdding(false)}
+          />
+        ) : null}
         <ul className="space-y-1">
           {people.map((p) => (
             <li key={p.id} className="flex items-center gap-2 py-1" data-testid="chat-person">
               <ChatAvatar
                 name={p.name}
                 kind={p.kind === 'agent' ? 'agent' : 'person'}
+                face={faceOf({
+                  kind: p.kind,
+                  id: p.id,
+                  avatar: p.avatar,
+                  photoVersion: p.photoVersion,
+                })}
                 online={online.has(p.id)}
                 size="sm"
               />
@@ -335,15 +357,6 @@ export function ChatInspector({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {admin ? (
-        <AddPeopleDialog
-          open={adding}
-          onOpenChange={setAdding}
-          inChat={new Set(people.map((p) => p.id))}
-          onAdd={(ids) => act('add', () => messengerApi.addPeople(id, ids), 'Added')}
-        />
-      ) : null}
     </aside>
   );
 }
@@ -385,25 +398,28 @@ function SwitchRow({
 }
 
 /** Add people to a group: the directory, less who is in it already. */
-function AddPeopleDialog({
-  open,
-  onOpenChange,
+/**
+ * Add people, inline in the People section (no dialog in Chats): a search,
+ * the directory's people not in the chat yet, Add and Cancel. They read the
+ * group from now on, not what was said before.
+ */
+function AddPeople({
   inChat,
   onAdd,
+  onDone,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   inChat: ReadonlySet<string>;
   /** True when the people were added. */
   onAdd: (ids: string[]) => Promise<boolean>;
+  onDone: () => void;
 }) {
+  const faceOf = useChatFaces();
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(false);
   const directory = useQuery({
     queryKey: messengerKeys.directory,
     queryFn: () => messengerApi.directory(),
-    enabled: open,
   });
   const people = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -412,78 +428,80 @@ function AddPeopleDialog({
     );
   }, [directory.data, inChat, query]);
 
-  const close = (o: boolean) => {
-    onOpenChange(o);
-    if (!o) {
-      setChosen(new Set());
-      setQuery('');
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add people</DialogTitle>
-          <DialogDescription>
-            They read the group from now on, not what was said before.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          noValidate
-          className="space-y-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (chosen.size === 0) return;
-            setPending(true);
-            const ok = await onAdd([...chosen]);
-            setPending(false);
-            if (ok) close(false);
-          }}
-        >
-          <SearchNoSubmit value={query} onChange={setQuery} />
-          <div className="-mx-1 max-h-[45vh] min-h-20 overflow-y-auto px-1 scrollbar-thin">
-            {directory.isPending ? (
-              <div className="flex justify-center p-6">
-                <Spinner />
-              </div>
-            ) : people.length === 0 ? (
-              <ItemListEmpty>Nobody else to add.</ItemListEmpty>
-            ) : (
-              <ul className="space-y-0.5">
-                {people.map((p) => (
-                  <li key={p.id}>
-                    <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-foreground/[0.04]">
-                      <Checkbox
-                        checked={chosen.has(p.id)}
-                        onCheckedChange={(on) =>
-                          setChosen((cur) => {
-                            const next = new Set(cur);
-                            if (on) next.add(p.id);
-                            else next.delete(p.id);
-                            return next;
-                          })
-                        }
-                      />
-                      <ChatAvatar name={p.name} online={p.online} size="sm" />
-                      <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            )}
+    <form
+      noValidate
+      aria-label="Add people"
+      className="space-y-2 rounded-md bg-muted/40 p-2"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !e.defaultPrevented) {
+          e.preventDefault();
+          onDone();
+        }
+      }}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (chosen.size === 0) return;
+        setPending(true);
+        const ok = await onAdd([...chosen]);
+        setPending(false);
+        if (ok) onDone();
+      }}
+    >
+      <p className="px-1 text-xs text-muted-foreground">
+        They read the group from now on, not what was said before.
+      </p>
+      <SearchNoSubmit value={query} onChange={setQuery} />
+      <div className="max-h-64 overflow-y-auto scrollbar-thin">
+        {directory.isPending ? (
+          <div className="flex justify-center p-4">
+            <Spinner />
           </div>
-          <div className="flex justify-end gap-2 border-t border-border pt-3">
-            <Button type="button" variant="outline" onClick={() => close(false)}>
-              Cancel
-            </Button>
-            <SubmitButton pending={pending} disabled={chosen.size === 0}>
-              Add people
-            </SubmitButton>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+        ) : people.length === 0 ? (
+          <p className="px-1 py-3 text-sm text-muted-foreground">Nobody else to add.</p>
+        ) : (
+          <ul className="space-y-px">
+            {people.map((p) => (
+              <li key={p.id}>
+                <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-foreground/[0.06]">
+                  <Checkbox
+                    checked={chosen.has(p.id)}
+                    onCheckedChange={(on) =>
+                      setChosen((cur) => {
+                        const next = new Set(cur);
+                        if (on) next.add(p.id);
+                        else next.delete(p.id);
+                        return next;
+                      })
+                    }
+                  />
+                  <ChatAvatar
+                    name={p.name}
+                    face={faceOf({
+                      kind: 'login',
+                      id: p.id,
+                      avatar: p.avatar,
+                      photoVersion: p.photoVersion,
+                    })}
+                    online={p.online}
+                    size="sm"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={onDone}>
+          Cancel
+        </Button>
+        <SubmitButton size="sm" pending={pending} disabled={chosen.size === 0}>
+          Add people
+        </SubmitButton>
+      </div>
+    </form>
   );
 }
 

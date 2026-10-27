@@ -30,6 +30,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ItemHeader } from '@/components/layout/item-header';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
+import { useChatFaces } from '@/components/messenger/chat-faces';
 import {
   receipts,
   useMessengerBus,
@@ -94,11 +95,21 @@ const ROOM_WITH_INSPECTOR = 680;
 /** The read cursor goes at most this often. */
 const READ_DEBOUNCE_MS = 400;
 
+/** The first message of a chat just made in the New message form. */
+export type FirstMessage = {
+  c: string;
+  body: string;
+  mentions: MessengerMention[];
+  clientMsgId: string;
+};
+
 export function ChatRoom({
   id,
   row,
   me,
   online,
+  firstMessage = null,
+  onFirstSent,
   onGone,
 }: {
   id: string;
@@ -106,6 +117,10 @@ export function ChatRoom({
   row: MessengerListRow | null;
   me: string | null;
   online: ReadonlySet<string>;
+  /** Sent once the first page has landed, through the outbox (a refused
+   *  one offers Retry with the same clientMsgId). */
+  firstMessage?: FirstMessage | null;
+  onFirstSent?: () => void;
   /** The chat is not mine to read (left, removed, never in it). */
   onGone: () => void;
 }) {
@@ -482,6 +497,18 @@ export function ChatRoom({
     [id, queryClient, catchUp],
   );
 
+  // The New message form's first line goes out once the room holds its
+  // window, so it lands under what is already there.
+  const firstSent = useRef(false);
+  const onFirstSentRef = useRef(onFirstSent);
+  onFirstSentRef.current = onFirstSent;
+  useEffect(() => {
+    if (!loaded || !firstMessage || firstSent.current || firstMessage.c !== id) return;
+    firstSent.current = true;
+    onFirstSentRef.current?.();
+    void send(firstMessage.body, firstMessage.mentions, firstMessage.clientMsgId);
+  }, [loaded, firstMessage, id, send]);
+
   const lastTyping = useRef<number | null>(null);
   const onTyping = useCallback(() => {
     const now = Date.now();
@@ -614,6 +641,19 @@ export function ChatRoom({
     online,
   );
   const peerOnline = !group && others.some((p) => online.has(p.id));
+  const faceOf = useChatFaces();
+  const peer = group ? null : (others.find((p) => p.kind === 'login') ?? null);
+  /** A message's author in a group: the participant (an author who left
+   *  still has a row) and the face they chose. */
+  const authorFace = (m: MessengerMessage) => {
+    const p = people.find((x) => x.id === m.authorId);
+    return faceOf({
+      kind: m.authorKind === 'agent' ? 'agent' : 'login',
+      id: m.authorId,
+      avatar: p?.avatar,
+      photoVersion: p?.photoVersion,
+    });
+  };
   const left = conversation?.me.leftSeq != null;
   const isAdmin = group && !!conversation?.me.admin;
   const muted = conversation?.me.muted ?? row?.muted ?? false;
@@ -684,6 +724,16 @@ export function ChatRoom({
           <ChatAvatar
             name={title}
             kind={group ? 'group' : 'person'}
+            face={
+              peer
+                ? faceOf({
+                    kind: 'login',
+                    id: peer.id,
+                    avatar: peer.avatar,
+                    photoVersion: peer.photoVersion,
+                  })
+                : null
+            }
             online={peerOnline}
             size="sm"
           />
@@ -781,6 +831,20 @@ export function ChatRoom({
                           message={it.message}
                           mine={it.mine}
                           showAuthor={it.showAuthor}
+                          author={
+                            // Theirs in a group: the author's face beside the
+                            // first bubble of a run, the same gutter under it.
+                            group && !it.mine && it.message.authorKind !== 'system' ? (
+                              it.showAuthor ? (
+                                <ChatAvatar
+                                  name={it.message.authorName ?? 'Someone'}
+                                  kind={it.message.authorKind === 'agent' ? 'agent' : 'person'}
+                                  face={authorFace(it.message)}
+                                  size="sm"
+                                />
+                              ) : null
+                            ) : undefined
+                          }
                           read={it.mine && readByAll >= it.message.seq}
                           mentionNames={mentionNames}
                           actions={

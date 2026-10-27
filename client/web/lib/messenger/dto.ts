@@ -46,7 +46,18 @@ export type MessengerParticipant = {
   admin: boolean;
   /** ISO, or null while the participant is in the chat. */
   leftAt: string | null;
+  /** The generated avatar the login or agent chose; null = initials (an
+   *  agent: its slug's default). CLIENT-SIDE ADDITION, agreed with the
+   *  brain's coming field: optional, so a brain without it still works. */
+  avatar?: MessengerAvatar | null;
+  /** A login's uploaded photo's cache-buster (GET /api/messenger/photo/
+   *  :loginId?v=); null = none. Same addition. */
+  photoVersion?: string | null;
 };
+
+/** A chosen avatar, the shape /api/shell gives for my own (`dto/shell.ts`):
+ *  the brain's style, the seed and the builder's parts. */
+export type MessengerAvatar = { style: string; seed: string; parts: unknown };
 
 /** One row of GET /api/messenger/conversations. */
 export type MessengerListRow = {
@@ -178,6 +189,10 @@ export type MessengerDirectoryEntry = {
   online: boolean;
   /** An agent's slug (agents only). */
   slug?: string;
+  /** The chosen avatar and a login's photo (CLIENT-SIDE ADDITIONS, as on a
+   *  participant). */
+  avatar?: MessengerAvatar | null;
+  photoVersion?: string | null;
 };
 
 export type MessengerDirectoryResponse = { entries: MessengerDirectoryEntry[] };

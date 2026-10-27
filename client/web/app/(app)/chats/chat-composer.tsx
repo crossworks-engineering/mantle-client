@@ -8,6 +8,7 @@ import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { EmojiPicker } from '@/components/emoji-picker';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
+import { useChatFaces } from '@/components/messenger/chat-faces';
 import type { MessengerMention, MessengerParticipant } from '@/lib/messenger/dto';
 import {
   applyMention,
@@ -38,13 +39,24 @@ export function ChatComposer({
   onTyping,
   people = [],
   disabled = false,
+  canSend = true,
+  placeholder = 'Type a message…',
+  id = 'chat-composer-text',
 }: {
-  onSend: (body: string, mentions: MessengerMention[]) => void;
-  onTyping: () => void;
+  /** A promise keeps the text until it answers, and keeps it on false
+   *  (the New message form: nothing was created). */
+  onSend: (body: string, mentions: MessengerMention[]) => void | Promise<boolean>;
+  onTyping?: () => void;
   /** Who may be mentioned: the chat's other people. */
   people?: readonly MessengerParticipant[];
   disabled?: boolean;
+  /** Typing stays open; only Send waits (no one picked yet). */
+  canSend?: boolean;
+  placeholder?: string;
+  id?: string;
 }) {
+  const faceOf = useChatFaces();
+  const [sending, setSending] = useState(false);
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
   const [picked, setPicked] = useState<PickedMention[]>([]);
@@ -80,12 +92,20 @@ export function ChatComposer({
     });
   };
 
-  const submit = () => {
-    if (!body || disabled) return;
-    onSend(body, mentionsInBody(body, picked));
+  const clear = () => {
     setPicked([]);
     setDismissedAt(null);
     place('', 0);
+  };
+  const submit = () => {
+    if (!body || disabled || !canSend || sending || tooLong) return;
+    const out = onSend(body, mentionsInBody(body, picked));
+    if (!out) {
+      clear();
+      return;
+    }
+    setSending(true);
+    void out.then((ok) => ok && clear()).finally(() => setSending(false));
   };
 
   const pick = (p: MessengerParticipant) => {
@@ -156,18 +176,28 @@ export function ChatComposer({
                   i === active ? 'bg-muted' : 'hover:bg-foreground/[0.04]',
                 )}
               >
-                <ChatAvatar name={p.name} size="sm" />
+                <ChatAvatar
+                  name={p.name}
+                  kind={p.kind === 'agent' ? 'agent' : 'person'}
+                  face={faceOf({
+                    kind: p.kind,
+                    id: p.id,
+                    avatar: p.avatar,
+                    photoVersion: p.photoVersion,
+                  })}
+                  size="sm"
+                />
                 {p.name}
               </RowButton>
             </li>
           ))}
         </ul>
       ) : null}
-      <label htmlFor="chat-composer-text" className="sr-only">
+      <label htmlFor={id} className="sr-only">
         Message
       </label>
       <Textarea
-        id="chat-composer-text"
+        id={id}
         ref={area}
         rows={1}
         value={text}
@@ -184,11 +214,11 @@ export function ChatComposer({
           setCaret(at);
           setActive(0);
           grow();
-          if (e.target.value.trim()) onTyping();
+          if (e.target.value.trim()) onTyping?.();
         }}
         onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
         onKeyDown={onKeyDown}
-        placeholder="Type a message…"
+        placeholder={placeholder}
         aria-invalid={tooLong || undefined}
         role="combobox"
         aria-autocomplete="list"
@@ -244,7 +274,12 @@ export function ChatComposer({
               <AtSign />
             </Button>
           ) : null}
-          <Button type="button" size="sm" onClick={submit} disabled={!body || disabled}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={submit}
+            disabled={!body || disabled || !canSend || sending || tooLong}
+          >
             <SendHorizontal />
             Send
           </Button>

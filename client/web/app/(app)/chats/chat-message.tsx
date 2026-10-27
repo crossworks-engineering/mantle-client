@@ -33,9 +33,26 @@ import { sendableBody, type OutboxLine } from '@/lib/messenger/transcript';
 const BUBBLE = 'max-w-full rounded-2xl px-3.5 py-2';
 const THEIRS = 'border-transparent bg-muted text-foreground';
 
-function Row({ mine, seq, children }: { mine: boolean; seq?: number; children: ReactNode }) {
+function Row({
+  mine,
+  seq,
+  author,
+  children,
+}: {
+  mine: boolean;
+  seq?: number;
+  /** The author's face column: a face, null for the empty gutter under it,
+   *  undefined for none (a direct chat, mine). */
+  author?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className={cn('flex w-full', mine ? 'justify-end' : 'justify-start')} data-seq={seq}>
+    <div className={cn('flex w-full gap-2', mine ? 'justify-end' : 'justify-start')} data-seq={seq}>
+      {author !== undefined ? (
+        <div className="w-8 shrink-0 pt-6" aria-hidden>
+          {author}
+        </div>
+      ) : null}
       <div className={cn('flex max-w-[75%] flex-col', mine ? 'items-end' : 'items-start')}>
         {children}
       </div>
@@ -63,6 +80,7 @@ export function ChatMessage({
   message,
   mine,
   showAuthor,
+  author,
   read,
   mentionNames = [],
   actions,
@@ -71,6 +89,8 @@ export function ChatMessage({
   message: MessengerMessage;
   mine: boolean;
   showAuthor: boolean;
+  /** The author's face in a group (`Row`). */
+  author?: ReactNode;
   read: boolean;
   /** The chat's people, to draw "@Name" in the mention ink. */
   mentionNames?: readonly string[];
@@ -94,7 +114,7 @@ export function ChatMessage({
   const tools =
     actions && !deleted && !editing ? <MessageTools mine={mine} actions={actions} /> : null;
   return (
-    <Row mine={mine} seq={message.seq}>
+    <Row mine={mine} seq={message.seq} author={author}>
       {showAuthor ? (
         <span className="mb-0.5 mt-2 px-1 text-xs text-muted-foreground">
           {message.authorName ?? 'Someone'}

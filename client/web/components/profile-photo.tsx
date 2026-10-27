@@ -20,12 +20,16 @@ import { cn } from '@mantle/web-ui/lib/utils';
  * that bundle.
  */
 export function ProfilePhoto({
+  path = '/api/profile/photo',
   version,
   size,
   className,
   alt = '',
   fallback = null,
 }: {
+  /** The photo route: mine by default; the messenger serves another
+   *  login's at /api/messenger/photo/:loginId. */
+  path?: string;
   /** The sha8 cache-buster from the shell (`avatarPhotoVersion`). */
   version: string;
   size: number;
@@ -40,12 +44,12 @@ export function ProfilePhoto({
   // unsigned URL, which 401s and latches `failed`. Without this the photo
   // would stay stepped down to the fallback for the rest of the session even
   // though the token landed a moment later.
-  useEffect(() => setFailed(false), [version, toAsset]);
+  useEffect(() => setFailed(false), [path, version, toAsset]);
   if (failed) return <>{fallback}</>;
   return (
     // eslint-disable-next-line @next/next/no-img-element -- private, token-authed bytes; next/image can't optimize them
     <img
-      src={toAsset(`/api/profile/photo?v=${version}`)}
+      src={toAsset(`${path}?v=${encodeURIComponent(version)}`)}
       alt={alt}
       className={cn('shrink-0 rounded-full border object-cover', className)}
       style={{ width: size, height: size }}

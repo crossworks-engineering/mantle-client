@@ -14,21 +14,44 @@ contacts pattern: `app/(app)/chats/layout.tsx` renders `ChatsClient`, and a
 chat opens at its own address, `/chats/<conversation id>`, with the list
 still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
 
-- **The list** (`chat-row.tsx`): a "Chats" card with New chat and a search.
-  Each row has the avatar (initials; a group glyph; a bot for an assistant)
-  with a green dot while the other person is online, the name, the relative
+- **The list** (`chats-client.tsx`, `chat-row.tsx`): the item tree's column
+  (Files, Notes, Contacts): the dim column surface edge to edge, no card and
+  no title (the nav says Chats), the search and New (+) on one row at the
+  top, then the rows (rounded, the accent fill on the open one, no rule
+  between them). Each row has the avatar (see Avatars) with a green dot while
+  the other person is online, the name, the relative
   time ("10 minutes", "Yesterday", "13 days"), the last line with a tick
   when it is mine (one sent, two read) and "You:" in a group, a pin, a mute
   and a mention mark, and the green unread badge (grey when muted). The
   brain orders it: pinned first, then the newest.
 - **No chat open**: a centred empty state with Start new chat.
+- **New message** (`new-chat-pane.tsx`): New (+) and Start new chat open it
+  in the chat pane, where the transcript goes. There is no dialog. At the
+  top the filter (All, People, Agents, Groups) and a search, then the pick
+  list, then the composer, so the first message is written and sent in one
+  go:
+  - A person becomes the recipient ("To", with a remove button). Send makes
+    our direct chat (the brain answers an existing one), the pane turns
+    into the transcript, and the room sends the line through its outbox
+    (the clock, Retry with the same `clientMsgId`). Open chat goes there
+    without a message. The people are the logins that share a workspace
+    with me, online first.
+  - An agent opens its thread at once: it is the assistant's own thread,
+    not a messenger chat, and takes the first line in its own composer.
+  - Groups (or New group under All): a name and the members. Send creates
+    it with the line, Create group without one. I am its first admin; a
+    group of one ("message yourself") is allowed.
+  - Cancel in the header, or opening any chat, closes it.
 - **A chat open** (`chat-room.tsx`): the standard `ItemHeader` (avatar,
   name, "Online" or "Offline", or a group's head count; Details as a tool;
-  Mute and Pin in More), the transcript, and the composer.
+  Mute and Pin in More), the transcript and the composer. The pane has no
+  surface, border or rounded edge of its own: it sits flat on the shell's
+  background, as Pages and Files do.
 - **The transcript**: the last 20 messages on open; scrolling to the top
   loads 20 older ones and keeps the reader's place. Stamps between groups of
   messages, mine on the right in the primary fill, theirs on the left on the
-  muted surface with the author's name in a group, time and ticks under each
+  muted surface with the author's name and avatar in a group (beside the
+  first bubble of a run), time and ticks under each
   bubble, "edited", "This message was deleted" in italics, reaction chips
   (a chip toggles mine), system lines centred. A jump-to-latest button shows
   while scrolled up.
@@ -47,18 +70,35 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   and open state remembered. In a room narrower than 680 px it lies over the
   transcript instead, opens only from Details (taking the focus) and closes
   on Escape or when the room widens. The title (an admin renames a group), the
-  people with admin marks (an admin adds and removes them), Mute and Pin,
+  people with admin marks (an admin adds them inline, no dialog, and
+  removes them), Mute and Pin,
   Clear for me, Leave group, Delete history (admins). Every destructive one
   confirms.
-- **New chat** (`new-chat-dialog.tsx`): Person (the directory: the logins
-  that share a workspace with me, online first; picking one opens our direct
-  chat, the brain answers an existing one), assistants (open their thread),
-  and Group (a name and members; I am its first admin).
 - **Assistant rows** open the login's own thread with that assistant: the
   dock's `AssistantThreadClient` in its `embedded` shape (no window
   controls, read while it shows), behind a dynamic import so the editor
   bundle does not ride onto every route. The brain lists an assistant once
-  its thread has a message or it is pinned; New chat offers all of them.
+  its thread has a message or it is pinned; New message offers all of them.
+
+## Avatars
+
+Every face in Chats (the rows, the header, the inspector's people, the
+transcript's authors in a group, the mention picker, the New message list)
+is the avatar its owner chose in Appearance, drawn by `ChatAvatar` from
+`useChatFaces()` (`components/messenger/chat-faces.ts`, the rules in
+`lib/messenger/faces.ts`), with the rail's precedence:
+
+- **Me**: my uploaded photo (`/api/profile/photo` for a login with the
+  settings area, the route's owner; else the messenger's photo route), then
+  my generated avatar, then initials.
+- **An agent**: its chosen avatar from the agents list (`/api/agents`, read
+  only by a login with the assistants area), else one drawn from its slug,
+  the app's own default for an agent. Never initials.
+- **Another person**: the photo when the participant or the directory entry
+  carries `photoVersion` (`GET /api/messenger/photo/:loginId?v=`), else the
+  generated `avatar` it carries, else initials. A photo that fails to load
+  steps down to the next rung.
+- **A group**: the group glyph.
 
 ## Outside the screen
 
@@ -146,7 +186,12 @@ of those says otherwise.
 
 - There is no "last seen": the directory says online or not (the brain's
   two-minute window).
-- Other logins have no photo the client may load: avatars are initials.
+- `avatar` and `photoVersion` on a participant and a directory entry, and
+  the messenger photo route, are client-side additions to the DTO copy,
+  agreed with the brain and not served yet: until the brain ships them,
+  other people show initials. Both fields are optional, so a brain without
+  them still works. A login without the assistants area sees an agent's
+  slug avatar until the brain sends the agent's `avatar` there too.
 - The DTOs are a temporary copy (`lib/messenger/dto.ts`) of the brain's
   `dto/messenger.ts` until a client-types release ships them.
 - Out of scope here: attachments and voice notes (Phase 4), assistants
@@ -164,8 +209,9 @@ Unit tests, `pnpm test` (pure functions, no DOM):
   every 5 seconds once silent past the heartbeat, never while keep-alives
   arrive, and stops when the stream speaks).
 - `lib/messenger/format.test.ts`, `mentions.test.ts`, `notify.test.ts`,
-  `nav.test.ts`: the words and times, mentions, when a notice pops and where,
-  the rail count, the entry hiding on a 404.
+  `nav.test.ts`, `faces.test.ts`: the words and times, mentions, when a
+  notice pops and where, the rail count, the entry hiding on a 404, whose
+  avatar each face draws.
 - `packages/web-ui/src/event-stream-core.test.ts` and
   `components/realtime/use-realtime.test.ts`: keep-alives count as activity,
   every reconnect is a connect, and the shared stream hands both to each
