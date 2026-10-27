@@ -119,11 +119,11 @@ export function ChatInspector({
   const { icon: savedIcon, color: savedColor } = saved;
   // Picks go out one after another, in order, and the chat's answer only
   // takes over once none is left in flight (no snap back between picks).
-  const conversationRef = useRef(conversation);
-  conversationRef.current = conversation;
   const lookQueue = useRef<Promise<unknown>>(Promise.resolve());
   const lookInFlight = useRef(0);
-  const lookFailed = useRef(false);
+  // The first failure of a run of picks: one message at the end, not one
+  // per pick.
+  const lookError = useRef<string | null>(null);
   useEffect(() => {
     if (lookInFlight.current === 0) setLook({ icon: savedIcon, color: savedColor });
   }, [savedIcon, savedColor]);
@@ -136,29 +136,39 @@ export function ChatInspector({
       color: l.color !== undefined ? (l.color ?? null) : cur.color,
     }));
     lookInFlight.current += 1;
-    lookQueue.current = lookQueue.current.then(async () => {
+    const step = async () => {
       try {
-        await messengerApi.update(id, patch);
+        // After a refusal the rest of the run would be refused as well.
+        if (!lookError.current) await messengerApi.update(id, patch);
       } catch (err) {
-        lookFailed.current = true;
         // A brain before the group look refuses a look-only patch.
-        toast.error(
-          err instanceof ApiError && err.status === 400
+        lookError.current =
+          err instanceof ApiError && err.status === 400 && /nothing to change/i.test(err.message)
             ? 'This brain does not keep a group’s icon and colour yet.'
             : err instanceof Error
               ? err.message
-              : 'That did not work',
-        );
+              : 'That did not work';
       } finally {
         lookInFlight.current -= 1;
         if (lookInFlight.current === 0) {
-          // The last pick settled: the chat's own answer is the truth now.
-          if (lookFailed.current) setLook(groupLook(conversationRef.current));
-          lookFailed.current = false;
+          // The run settled: the chat's own answer is the truth now, read
+          // fresh (a change that landed mid-run was skipped above).
+          if (lookError.current) toast.error(lookError.current);
+          lookError.current = null;
           refresh();
+          void queryClient.refetchQueries({ queryKey: messengerKeys.conversation(id) }).then(() => {
+            if (lookInFlight.current > 0) return;
+            setLook(
+              groupLook(
+                queryClient.getQueryData<MessengerConversation>(messengerKeys.conversation(id)),
+              ),
+            );
+          });
         }
       }
-    });
+    };
+    // `step` never throws, and a rejection could not stop the chain either.
+    lookQueue.current = lookQueue.current.then(step, step);
   };
 
   const rename = async () => {
