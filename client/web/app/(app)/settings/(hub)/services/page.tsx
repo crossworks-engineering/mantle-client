@@ -3,7 +3,8 @@ import { ServicesClient } from './services-client';
 
 /**
  * /settings/services — start and stop the box's optional services
- * (sandboxes, media, the local embedder, the helpers). Data-free: ServicesClient reads GET /api/services and
+ * (sandboxes, the local embedder, the PDF-export helper). Data-free:
+ * ServicesClient reads GET /api/services and
  * follows a switch on GET /api/services/status; POST /api/services/:name
  * asks the box's updater to switch one (mantle docs/services.md).
  */
