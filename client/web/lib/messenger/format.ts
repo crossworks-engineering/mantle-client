@@ -169,3 +169,14 @@ export function presenceLine(
   if (!peer) return '';
   return online.has(peer.id) ? 'Online' : 'Offline';
 }
+
+/** The address of a list row under /chats: a conversation's id, or
+ *  `agent:<agent id>` for an assistant thread (the two id spaces apart). */
+export function rowAddress(row: Pick<MessengerListRow, 'kind' | 'id'>): string {
+  return row.kind === 'agent' ? `agent:${row.id}` : row.id;
+}
+
+/** The agent id in an address made by `rowAddress`, or null. */
+export function agentIdOf(address: string | null | undefined): string | null {
+  return address?.startsWith('agent:') ? address.slice('agent:'.length) || null : null;
+}

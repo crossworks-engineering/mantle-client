@@ -5,7 +5,12 @@
  * the shell: the list of chats on the left (a "Chats" card with New chat and
  * a search), the open chat on the right at its own address (`/chats/<id>`),
  * or a centred empty state while none is open. Live delivery is
- * `MessengerLiveSync` (components/messenger/messenger-live.tsx).
+ * `MessengerLiveSync`, mounted once by the shell (components/messenger/
+ * messenger-shell.tsx).
+ *
+ * An assistant thread is a row of the same list (kind `agent`); it opens
+ * at `/chats/agent:<agent id>` as the assistant's own thread, behind a
+ * dynamic import so the editor bundle stays off every other route.
  */
 
 import { useMemo, useState } from 'react';
@@ -20,11 +25,12 @@ import { useZenMode } from '@/components/layout/zen-mode';
 import { ItemListEmpty, ItemListHeader } from '@/components/item-list/item-list-header';
 import { useListQuery } from '@/components/list-search';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
-import { MessengerLiveSync } from '@/components/messenger/messenger-live';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import { rowMatches } from '@/lib/messenger/format';
 import { ChatRow } from './chat-row';
 import { ChatRoom } from './chat-room';
+import { AgentThread } from './agent-thread';
+import { agentIdOf, rowAddress } from '@/lib/messenger/format';
 import { NewChatDialog } from './new-chat-dialog';
 
 /** A slow safety net under the stream (which refreshes the list itself). */
@@ -54,14 +60,18 @@ export function ChatsClient() {
     [directory.data],
   );
 
-  // People chats and groups. Agent threads join the list in M3.
-  const rows = useMemo(
-    () => (listQuery.data ?? []).filter((r) => r.kind !== 'agent'),
-    [listQuery.data],
-  );
+  // People chats, groups and assistant threads, in the brain's order.
+  const rows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
   const shown = useMemo(() => rows.filter((r) => rowMatches(r, query)), [rows, query]);
   const selectedId = address.id;
-  const selectedRow = rows.find((r) => r.id === selectedId) ?? null;
+  const selectedRow = rows.find((r) => rowAddress(r) === selectedId) ?? null;
+  const agentId = agentIdOf(selectedId);
+  // An assistant opened from New chat has no row until its thread has a
+  // message: its slug comes from the directory then.
+  const agentSlug =
+    selectedRow?.agentSlug ??
+    (agentId ? (directory.data ?? []).find((e) => e.id === agentId)?.slug : undefined) ??
+    null;
 
   if (listQuery.isError && !listQuery.data) {
     const missing = listQuery.error instanceof ApiError && listQuery.error.status === 404;
@@ -127,8 +137,8 @@ export function ChatsClient() {
                     row={row}
                     me={me}
                     online={online}
-                    selected={row.id === selectedId}
-                    onOpen={() => address.open(row.id)}
+                    selected={rowAddress(row) === selectedId}
+                    onOpen={() => address.open(rowAddress(row))}
                   />
                 </li>
               ))}
@@ -141,7 +151,6 @@ export function ChatsClient() {
 
   return (
     <>
-      <MessengerLiveSync />
       <NewChatDialog
         open={creating}
         onOpenChange={setCreating}
@@ -154,7 +163,19 @@ export function ChatsClient() {
         defaultListSize="380px"
         list={list}
         detail={
-          selectedId ? (
+          agentId ? (
+            agentSlug ? (
+              <AgentThread key={agentId} slug={agentSlug} />
+            ) : listQuery.isPending || directory.isPending ? (
+              <div className="flex h-full items-center justify-center">
+                <Spinner />
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+                This assistant is not available.
+              </div>
+            )
+          ) : selectedId ? (
             <ChatRoom
               key={selectedId}
               id={selectedId}

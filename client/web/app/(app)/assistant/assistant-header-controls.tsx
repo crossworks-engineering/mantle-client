@@ -48,6 +48,7 @@ export function AssistantHeaderControls({
   onPreviousChats,
   onNewChat,
   onMinimise,
+  embedded = false,
 }: {
   agents: AssistantAgentOption[];
   selected: string;
@@ -58,6 +59,9 @@ export function AssistantHeaderControls({
   onPreviousChats: () => void;
   onNewChat: () => void;
   onMinimise: () => void;
+  /** Inside the Chats screen (Messenger V1 Phase 2): no window shapes, no
+   *  Minimise, no agent picker (the list picks the agent). */
+  embedded?: boolean;
 }) {
   const { display, setDisplay } = useAssistantDock();
   return (
@@ -79,7 +83,7 @@ export function AssistantHeaderControls({
             />
           </>
         )}
-        {switchableShapes(display).map((shape) => (
+        {(embedded ? [] : switchableShapes(display)).map((shape) => (
           <IconAction
             key={shape.value}
             icon={SHAPE_ICONS[shape.value]}
@@ -88,8 +92,8 @@ export function AssistantHeaderControls({
             onClick={() => setDisplay(shape.value)}
           />
         ))}
-        <IconAction icon={Minus} label="Minimise (Esc)" onClick={onMinimise} />
-        {agents.length > 0 && (
+        {embedded ? null : <IconAction icon={Minus} label="Minimise (Esc)" onClick={onMinimise} />}
+        {agents.length > 0 && !embedded && (
           <AgentSelect
             agents={agents}
             selected={selected}

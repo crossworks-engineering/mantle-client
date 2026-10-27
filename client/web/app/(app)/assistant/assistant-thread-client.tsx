@@ -64,7 +64,16 @@ const ASSIGNED_SEEN_KEY = 'mantle_assistant_assigned_seen';
  * reads from the URL/cookie), then renders the header + chat. The "..." menu's
  * agent picker switches the dock's agent, which re-keys this query.
  */
-export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
+export function AssistantThreadClient({
+  slugHint,
+  embedded = false,
+}: {
+  slugHint?: string;
+  /** Rendered in the Chats screen as an agent row's thread (Messenger V1
+   *  Phase 2), not in the dock: no dock controls, the slug is the row's,
+   *  and the thread is read while it shows. */
+  embedded?: boolean;
+}) {
   const {
     minimize,
     pinnedContext,
@@ -110,15 +119,15 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
   // threads (W7c): showing the live thread marks it read.
   useMarkThreadRead(
     threadQuery.data?.agent?.slug,
-    !adminUser && panel === 'open' && view.kind === 'live',
+    (embedded || (!adminUser && panel === 'open')) && view.kind === 'live',
   );
 
   useEffect(() => {
-    if (!assignedAt || !assignedSlug) return;
+    if (embedded || !assignedAt || !assignedSlug) return;
     if (window.localStorage.getItem(ASSIGNED_SEEN_KEY) === assignedAt) return;
     window.localStorage.setItem(ASSIGNED_SEEN_KEY, assignedAt);
     if (slugHint !== assignedSlug) setActiveAgentSlug(assignedSlug);
-  }, [assignedAt, assignedSlug, slugHint, setActiveAgentSlug]);
+  }, [embedded, assignedAt, assignedSlug, slugHint, setActiveAgentSlug]);
 
   if (threadQuery.isPending) {
     return (
@@ -175,10 +184,10 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
           in the other two shapes, which have nothing to move. `select-none`
           only while it can be dragged, so text stays selectable otherwise. */}
       <header
-        onPointerDown={startPopoutMove}
+        onPointerDown={embedded ? undefined : startPopoutMove}
         className={cn(
           'flex flex-wrap items-center justify-between gap-2 border-b border-border px-6 py-3',
-          display === 'popout' && 'cursor-grab select-none active:cursor-grabbing',
+          !embedded && display === 'popout' && 'cursor-grab select-none active:cursor-grabbing',
         )}
       >
         <div className="flex items-center gap-3">
@@ -247,6 +256,7 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
             }
             onNewChat={startNewChat}
             onMinimise={minimize}
+            embedded={embedded}
           />
         </div>
       </header>

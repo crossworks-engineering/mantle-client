@@ -27,6 +27,7 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { ItemListEmpty, ItemSearch } from '@/components/item-list/item-list-header';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
+import { rowAddress } from '@/lib/messenger/format';
 import type { MessengerDirectoryEntry } from '@/lib/messenger/dto';
 
 /**
@@ -43,7 +44,9 @@ export function NewChatDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: (id: string) => void;
+  /** Opens what was picked: a conversation id, or an assistant's
+   *  `agent:<id>` address. */
+  onCreated: (address: string) => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -64,6 +67,14 @@ export function NewChatDialog({
       .filter((e) => e.kind === 'login')
       .filter((e) => !q || e.name.toLowerCase().includes(q))
       .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
+  }, [directory.data, query]);
+  // The assistants I may chat with: their thread opens (it is not a
+  // messenger chat, nothing is created).
+  const assistants = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (directory.data ?? [])
+      .filter((e) => e.kind === 'agent')
+      .filter((e) => !q || e.name.toLowerCase().includes(q));
   }, [directory.data, query]);
 
   const reset = () => {
@@ -155,6 +166,30 @@ export function NewChatDialog({
           </TabsList>
           <TabsContent value="person" className="space-y-3">
             <ItemSearch value={query} onChange={setQuery} placeholder="Search people…" />
+            {assistants.length > 0 ? (
+              <div className="space-y-1">
+                <p className="px-2 text-xs font-medium text-muted-foreground">Assistants</p>
+                <ul className="space-y-0.5">
+                  {assistants.map((a) => (
+                    <li key={a.id}>
+                      <RowButton
+                        onClick={() => {
+                          close(false);
+                          onCreated(rowAddress({ kind: 'agent', id: a.id }));
+                        }}
+                        className="flex w-full items-center gap-3 rounded-md px-2 py-2 hover:bg-foreground/[0.04]"
+                      >
+                        <ChatAvatar name={a.name} kind="agent" size="sm" />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {a.name}
+                        </span>
+                      </RowButton>
+                    </li>
+                  ))}
+                </ul>
+                <p className="px-2 pt-2 text-xs font-medium text-muted-foreground">People</p>
+              </div>
+            ) : null}
             {list((p) => (
               <RowButton
                 onClick={() => void startDirect(p.id)}

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MessengerListRow, MessengerParticipant } from './dto';
 import {
+  agentIdOf,
   badgeCount,
   directPeer,
   initials,
@@ -11,6 +12,7 @@ import {
   otherPeople,
   presenceLine,
   previewLine,
+  rowAddress,
   rowMatches,
   stampLabel,
 } from './format';
@@ -143,5 +145,16 @@ describe('badgeCount', () => {
   it('caps at 99+', () => {
     expect(badgeCount(3)).toBe('3');
     expect(badgeCount(120)).toBe('99+');
+  });
+});
+
+describe('row addresses', () => {
+  it('keeps conversation ids and agent ids apart', () => {
+    expect(rowAddress(row())).toBe('c1');
+    expect(rowAddress(row({ kind: 'agent', id: 'a9' }))).toBe('agent:a9');
+    expect(agentIdOf('agent:a9')).toBe('a9');
+    expect(agentIdOf('c1')).toBeNull();
+    expect(agentIdOf('agent:')).toBeNull();
+    expect(agentIdOf(null)).toBeNull();
   });
 });

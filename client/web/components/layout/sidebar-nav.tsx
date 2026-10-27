@@ -22,6 +22,8 @@ import { favoriteItems, useNavFavorites } from '@/lib/nav-favorites';
 import { NAV_SCOPES, railGroups, useNavScope } from '@/lib/nav-scope';
 import { hasArea, navWithAreas } from '@/lib/workspaces';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
+import { useMessengerUnread } from '@/components/messenger/messenger-shell';
+import { withChats } from '@/lib/messenger/nav';
 import {
   NAV_GROUPS,
   type NavGroup as BaseNavGroup,
@@ -72,10 +74,21 @@ export function SidebarNav({
   // The Work / Settings / Admin choice is the settings area's (nav-scope.ts,
   // railGroups): a member or a client sees what it may open, flat.
   const scoped = hasArea(areas, 'settings');
-  const groups: NavGroup[] = navWithAreas(NAV_GROUPS, areas).map((g) => ({
+  // Chats (Messenger V1 Phase 2): shown once the brain answers its unread
+  // count (a brain before the messenger answers 404), with that count, the
+  // one sum of people, groups and assistant replies.
+  const messenger = useMessengerUnread();
+  const groups: NavGroup[] = withChats(
+    navWithAreas(NAV_GROUPS, areas),
+    messenger.available === 'yes',
+  ).map((g) => ({
     ...g,
     items: g.items.map((item) =>
-      item.href === '/pending' ? { ...item, badge: pendingApprovals } : item,
+      item.href === '/pending'
+        ? { ...item, badge: pendingApprovals }
+        : item.href === '/chats'
+          ? { ...item, badge: messenger.total }
+          : item,
     ),
   }));
 

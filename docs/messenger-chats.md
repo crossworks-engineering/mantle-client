@@ -1,0 +1,165 @@
+# Chats: the messenger window
+
+The Chats screen (`/chats`) is the web and desktop window of the brain's
+messenger: direct chats and groups between the logins of one brain, with the
+login's assistant threads in the same list. It is Messenger V1 Phase 2. The
+brain side (the store, the API, the stream, the MCP tools) is Phase 1 and is
+documented in the mantle repo's `docs/messenger.md`; this page covers the
+client.
+
+## What the screen does
+
+One screen, two panes (the `MasterDetail` scaffold, `detailFills`), the
+contacts pattern: `app/(app)/chats/layout.tsx` renders `ChatsClient`, and a
+chat opens at its own address, `/chats/<conversation id>`, with the list
+still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
+
+- **The list** (`chat-row.tsx`): a "Chats" card with New chat and a search.
+  Each row has the avatar (initials; a group glyph; a bot for an assistant)
+  with a green dot while the other person is online, the name, the relative
+  time ("10 minutes", "Yesterday", "13 days"), the last line with a tick
+  when it is mine (one sent, two read) and "You:" in a group, a pin, a mute
+  and a mention mark, and the green unread badge (grey when muted). The
+  brain orders it: pinned first, then the newest.
+- **No chat open**: a centred empty state with Start new chat.
+- **A chat open** (`chat-room.tsx`): the standard `ItemHeader` (avatar,
+  name, "Online" or "Offline", or a group's head count; Details as a tool;
+  Mute and Pin in More), the transcript, and the composer.
+- **The transcript**: the last 20 messages on open; scrolling to the top
+  loads 20 older ones and keeps the reader's place. Stamps between groups of
+  messages, mine on the right in the primary fill, theirs on the left on the
+  muted surface with the author's name in a group, time and ticks under each
+  bubble, "edited", "This message was deleted" in italics, reaction chips
+  (a chip toggles mine), system lines centred. A jump-to-latest button shows
+  while scrolled up.
+- **The composer** (`chat-composer.tsx`): the boxed composer surface (style
+  guide 6c). Enter sends, Shift+Enter starts a new line, an input method's
+  Enter never sends. An emoji button, an @ button and Send. Typing "@" opens
+  the mention picker (arrows, Enter or Tab, Escape); a send carries the
+  mentions still written in it. A send shows at once with a clock, and a
+  refused one (the 60 a minute limit, offline) offers Retry with the same
+  `clientMsgId`, so a retry never doubles a message.
+- **Message actions**: React (the emoji picker, chat set first), and on my
+  own messages Edit in place and Delete; a group admin may delete any
+  message. Delete confirms.
+- **The inspector** (`chat-inspector.tsx`, the "detail pane with an
+  inspector" pattern): a resizable column beside the transcript, its width
+  and open state remembered. The title (an admin renames a group), the
+  people with admin marks (an admin adds and removes them), Mute and Pin,
+  Clear for me, Leave group, Delete history (admins). Every destructive one
+  confirms.
+- **New chat** (`new-chat-dialog.tsx`): Person (the directory: the logins
+  that share a workspace with me, online first; picking one opens our direct
+  chat, the brain answers an existing one), assistants (open their thread),
+  and Group (a name and members; I am its first admin).
+- **Assistant rows** open the login's own thread with that assistant: the
+  dock's `AssistantThreadClient` in its `embedded` shape (no window
+  controls, read while it shows), behind a dynamic import so the editor
+  bundle does not ride onto every route. The brain lists an assistant once
+  its thread has a message or it is pinned; New chat offers all of them.
+
+## Outside the screen
+
+`components/messenger/messenger-shell.tsx`, mounted once by the shell:
+
+- **The rail count**: `GET /api/messenger/unread`, the brain's one sum of
+  people chats, groups and assistant replies, on the Chats nav entry.
+- **No messenger, no entry**: a brain before Phase 1 answers that route 404;
+  the Chats entry hides (`lib/messenger/nav.ts`) and nothing else runs.
+- **Toasts**: a new message in a chat that is not on screen pops a toast
+  with its author and first line; Open goes to the chat. Never for my own
+  message, never for a muted chat (it still counts), never for the chat the
+  reader is looking at.
+- **Desktop**: inside the desktop shell, while the window is hidden, the
+  notice goes to the OS instead (`mantleDesktop.notify`, a click opens the
+  chat), and the dock or taskbar badge follows the count
+  (`mantleDesktop.setBadge`).
+
+## Live delivery
+
+`GET /api/messenger/stream` sends ids and a seq, never text. The client reads
+it through the shared realtime singleton
+(`components/realtime/use-realtime.ts`, one connection per tab), and
+`components/messenger/messenger-live.tsx` turns each event into what the
+screen needs (`lib/messenger/live.ts`, `effectOf`):
+
+| Event | What happens |
+| --- | --- |
+| `message` new | the list and the count refresh; the open chat fetches after its top seq; a toast may pop |
+| `message` edit or delete, `reaction` | the open chat refetches that one seq |
+| `read` | the receipt of that login moves (two ticks) |
+| `typing` | "X is typing" for 5 seconds |
+| `participants`, `history`, my own clear or mute | the open chat loads again |
+
+**Seq is the order.** The open chat holds a window of messages sorted by seq
+(`lib/messenger/transcript.ts`). Seqs have no gaps inside what a login may
+read, so the catch-up asks for what is above the top of the unbroken run
+held (`contiguousTop`), not the highest seq: my own send can come back
+before the message under it. A refetched seq merges only inside the window
+(`refetchPlacement`). A catch-up page that starts above the next seq means
+the seqs between are gone (a history delete, a stint out of a group): the
+chat loads again (`seqsCutAbove`). Every page load bumps an epoch, and a
+catch-up, an older page or a refetch that a page load overtook is dropped.
+
+**The gap.** On every connect of the stream, on tab focus and when the tab
+becomes visible, the list refreshes and the open chat catches up.
+
+**The polling fallback.** The brain writes a keep-alive comment every 25
+seconds. A corporate proxy that buffers server-sent events swallows those and
+every event with them, and the stream looks open but says nothing. The
+reader reports every frame, keep-alives included (`eventStreamCore`'s
+`onActivity`); `SilenceWatchdog` checks every 5 seconds, and once nothing was
+heard for 35 seconds it refreshes the list and catches the open chat up every
+5 seconds, until the stream speaks again.
+
+**The read cursor** moves (`POST /c/:id/read`) only when the newest message
+is on screen (the transcript at its bottom) and the tab is visible, at most
+every 400 ms, never for my own newest message (a send moved my cursor
+already), never before the first page or behind a failed first load.
+
+**Typing** is sent at most once every 3 seconds while the composer has text.
+
+**Receipts.** The brain keeps no column of other logins' read cursors for me
+to read (a receipt is a stream event by design). Two ticks come from the
+`read` events heard while the tab is open, and from the transcript itself:
+a send moves its author's cursor, so a person has read up to their own
+newest message. After a reload, a message of mine reads as "sent" until one
+of those says otherwise.
+
+## Limits of this version
+
+- There is no "last seen": the directory says online or not (the brain's
+  two-minute window).
+- Other logins have no photo the client may load: avatars are initials.
+- The DTOs are a temporary copy (`lib/messenger/dto.ts`) of the brain's
+  `dto/messenger.ts` until a client-types release ships them.
+- Out of scope here: attachments and voice notes (Phase 4), assistants
+  answering in groups (Phase 3), the phone (Phase 5), calls.
+
+## Testing
+
+Unit tests, `pnpm test` (pure functions, no DOM):
+
+- `lib/messenger/transcript.test.ts`: the seq window, paging, the unbroken
+  run, refetch placement, the cut detection, the outbox, the rows drawn, the
+  read rules.
+- `lib/messenger/live.test.ts`: stream frames to effects, the gap on every
+  connect, and the polling fallback against a fake silent stream (it polls
+  every 5 seconds once silent past the heartbeat, never while keep-alives
+  arrive, and stops when the stream speaks).
+- `lib/messenger/format.test.ts`, `mentions.test.ts`, `notify.test.ts`,
+  `nav.test.ts`: the words and times, mentions, when a notice pops and where,
+  the rail count, the entry hiding on a 404.
+- `packages/web-ui/src/event-stream-core.test.ts` and
+  `components/realtime/use-realtime.test.ts`: keep-alives count as activity,
+  every reconnect is a connect, and the shared stream hands both to each
+  subscriber.
+
+By hand, two logins chatting live: run a throwaway brain on the messenger
+branch (never a real one for test data), point `pnpm dev:fe --port <port>`
+at it (`docs/db-less-dev.md`), and sign in a second login on a second origin
+(a second port: a production `next start` of the same tree works, since the
+two origins keep separate sessions). Check: a message moves the other side's
+row and badge with no reload; opening it turns the sender's tick to two;
+typing shows; scrolling up keeps the place; a muted chat counts but does
+not pop; a history delete clears the open chat on both sides.

@@ -48,6 +48,7 @@ import { TourProvider } from '@/components/tour/tour-provider';
 import { TourOverlay } from '@/components/tour/tour-overlay';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
+import { MessengerShell } from '@/components/messenger/messenger-shell';
 import { ProviderAlertBanner } from '@/components/needs-you/provider-alert-banner';
 import { PickMode } from '@/components/assistant/pick-mode';
 import { ZenModeContext } from '@/components/layout/zen-mode';
@@ -709,6 +710,9 @@ function ShellFrame({
             yet. */}
         {role === 'admin' || role === 'member' ? <AssistantPanel /> : null}
         {role === 'member' ? <AssistantUnreadSync /> : null}
+        {/* The messenger's one live connection, its toasts and the desktop
+            badge (Messenger V1 Phase 2); nothing on a brain without it. */}
+        {role === 'admin' || role === 'member' ? <MessengerShell /> : null}
         {/* Help reads the owner help route: an admin's in W5c. */}
         {role === 'admin' ? <HelpRail /> : null}
 
