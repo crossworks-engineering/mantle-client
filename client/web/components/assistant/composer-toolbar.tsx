@@ -12,7 +12,7 @@ import { Button } from '@mantle/web-ui/ui/button';
  * fit would have been gaming a rule whose whole point is that the number means
  * what `wc -l` says.
  *
- * Every control is `icon-xs` — 32px, the same square, so the row lines up,
+ * Every control is `icon-xs` (32px, the same square), so the row lines up,
  * and ghost, like the messenger composer's emoji and mention buttons.
  */
 export function ComposerToolbar({

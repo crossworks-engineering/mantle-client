@@ -24,12 +24,12 @@ import { LightboxImages } from '@/components/image-lightbox';
 import {
   ArrowDown,
   CornerDownLeft,
-  SendHorizontal,
   FileText,
   Highlighter,
   ListRestart,
   Loader2,
   MapPin,
+  SendHorizontal,
   Square,
   X,
 } from 'lucide-react';
@@ -1463,7 +1463,7 @@ export function AssistantClient({
                   it. The row sits under the text, so the text never runs
                   under a button. */}
               <div
-                className={`${COMPOSER_BOX} flex min-w-0 flex-1 flex-col rounded-md border-input ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2`}
+                className={`${COMPOSER_BOX} flex min-w-0 flex-1 flex-col rounded-md border-input ring-offset-background has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring has-[textarea:focus-visible]:ring-offset-2`}
               >
                 <Textarea
                   ref={textareaRef}
@@ -1507,11 +1507,11 @@ export function AssistantClient({
                   // can be typed (the premature-Enter flow); blocking mode keeps
                   // the old lock — it has no cancel primitive.
                   disabled={!agentReady || (sending && !streamingOn)}
-                  rows={2}
+                  rows={3}
                   // Only what is this composer's own; the rest is the kit's.
                   // The text fades out above the action row instead of
                   // meeting it at a hard edge.
-                  className="min-h-0 flex-1 resize-none border-0 pb-5 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.25rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
+                  className="min-h-0 flex-1 resize-none border-0 pb-5 [mask-image:linear-gradient(to_bottom,black_calc(100%-0.75rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
                   onKeyDown={(e) => {
                     // Decision table lives in lib/composer-keys (pure + tested):
                     // the chip claims Enter/ArrowRight STRICTLY when the draft is
@@ -1549,7 +1549,16 @@ export function AssistantClient({
                     }
                   }}
                 />
-                <div className="flex items-center gap-1 px-2 pb-2">
+                {/* Wraps in a narrow dock (Resend and Stop mid-turn); a click
+                    in its empty space goes to the text. */}
+                <div
+                  className="flex flex-wrap items-center gap-1 px-2 pb-2"
+                  onMouseDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    e.preventDefault();
+                    textareaRef.current?.focus();
+                  }}
+                >
                   <ComposerToolbar
                     agentReady={agentReady}
                     sending={sending}

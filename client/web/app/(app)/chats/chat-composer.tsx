@@ -28,8 +28,9 @@ const MENTION_ROWS = 6;
  * The composer under the transcript, on the boxed composer surface (style
  * guide 6c: bordered, `bg-card/70`, `shadow-sm`): the text area (fading out
  * above the row instead of a hard edge), then one action row inside the box,
- * the emoji and mention buttons at its left and Send at its right end. Enter sends, Shift+Enter starts
- * a new line; an input method's Enter (composing) never sends.
+ * the emoji and mention buttons at its left and Send at its right end.
+ * Enter sends, Shift+Enter starts a new line; an input method's Enter
+ * (composing) never sends.
  *
  * Typing "@" (or the @ button) opens the mention picker over the box: the
  * chat's other people, narrowed as the name is typed; arrows move, Enter or
@@ -83,7 +84,9 @@ export function ChatComposer({
     if (!el) return;
     el.style.height = 'auto';
     const line = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    el.style.height = `${Math.min(el.scrollHeight, line * MAX_ROWS + 16)}px`;
+    const cs = getComputedStyle(el);
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    el.style.height = `${Math.min(el.scrollHeight, line * MAX_ROWS + pad)}px`;
   };
 
   const place = (next: string, at: number) => {
@@ -236,11 +239,19 @@ export function ChatComposer({
             ? `chat-mention-${candidates[Math.min(active, candidates.length - 1)]!.id}`
             : undefined
         }
-        className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-4 pt-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-1rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-4 pt-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-0.75rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
       />
       {/* One action row under the text: the emoji and mention buttons at
           its left, the count and Send at its right end. */}
-      <div className="flex items-center gap-1 px-2 pb-2">
+      <div
+        className="flex items-center gap-1 px-2 pb-2"
+        // A click in the row's empty space goes to the text.
+        onMouseDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          e.preventDefault();
+          area.current?.focus();
+        }}
+      >
         <EmojiPicker
           set="chat"
           align="start"

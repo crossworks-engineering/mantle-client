@@ -8,6 +8,6 @@
 export const COMPOSER_BAND_GRADIENT =
   'bg-gradient-to-t from-primary/15 via-primary/5 to-background';
 
-/** The input box itself: comfortably tall, thick-framed. Flanking buttons
- *  stretch to match (items-stretch / self-stretch on the row). */
+/** The composer box itself: comfortably tall, thick-framed. It holds the
+ *  text and, under it, the action row (style guide 6c). */
 export const COMPOSER_BOX = 'min-h-24 border-[3px]';
