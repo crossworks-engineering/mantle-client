@@ -11,6 +11,7 @@ import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
 import { AccessSlot } from '@/components/share/access-slot';
 import { useDockActions } from '@/components/assistant/assistant-dock';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
+import { PresentChecksPanel } from './present-checks-panel';
 
 /** A canvas as GET /api/presents/:id answers it. */
 export type PresentDetail = {
@@ -41,6 +42,9 @@ function sizeLabel(size: PresentDetail['meta']['size']): string {
  * fourth from the right, drawn by ItemHeader), then the canvas running in its
  * sandbox, or its source, read only. The pencil is greyed: Present v1 is
  * agent driven, a canvas changes when Presenter changes it.
+ *
+ * Under it, for a traced P&ID only, the image checks the brain holds for
+ * its circuit (PresentChecksPanel), folded to one row.
  *
  * Kind tools: Full screen (the browser's Fullscreen API on the frame alone,
  * for presenting; a deck's arrow keys reach it there), Replay (a new frame
@@ -182,6 +186,9 @@ export function PresentView({
           />
         )}
       </div>
+      {/* A traced P&ID's image checks, outside the frame (hidden for any
+          other canvas). */}
+      <PresentChecksPanel presentId={present.id} rev={present.rev} />
     </div>
   );
 }
