@@ -18,6 +18,12 @@ describe('mentionAt', () => {
     expect(mentionAt('hi @', 4)).toEqual({ start: 3, query: '' });
   });
 
+  it('a picked name followed by its space is finished (Enter sends again)', () => {
+    expect(mentionAt('@Jason ', 7)).toBeNull();
+    expect(mentionAt('hi @Ann Lee ', 12)).toBeNull();
+    expect(mentionAt('@Ann L', 6)).toEqual({ start: 0, query: 'Ann L' });
+  });
+
   it('ignores an email address, a finished line and prose', () => {
     expect(mentionAt('mail ann@x.io', 13)).toBeNull();
     expect(mentionAt('@ann\nmore', 9)).toBeNull();

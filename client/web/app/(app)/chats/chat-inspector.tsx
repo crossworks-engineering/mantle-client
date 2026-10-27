@@ -90,14 +90,18 @@ export function ChatInspector({
     void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
   };
 
-  const act = async (key: string, run: () => Promise<unknown>, done?: string) => {
+  /** Run an action; true when it worked (a failure toasts and leaves the
+   *  form as it was). */
+  const act = async (key: string, run: () => Promise<unknown>, done?: string): Promise<boolean> => {
     setBusy(key);
     try {
       await run();
       refresh();
       if (done) toast.success(done);
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'That did not work');
+      return false;
     } finally {
       setBusy(null);
     }
@@ -110,9 +114,9 @@ export function ChatInspector({
       return;
     }
     setSaving(true);
-    await act('rename', () => messengerApi.update(id, { title: next }), 'Renamed');
+    const ok = await act('rename', () => messengerApi.update(id, { title: next }), 'Renamed');
     setSaving(false);
-    setRenaming(false);
+    if (ok) setRenaming(false);
   };
 
   return (
@@ -383,7 +387,8 @@ function AddPeopleDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   inChat: ReadonlySet<string>;
-  onAdd: (ids: string[]) => Promise<void>;
+  /** True when the people were added. */
+  onAdd: (ids: string[]) => Promise<boolean>;
 }) {
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<Set<string>>(new Set());
@@ -424,12 +429,12 @@ function AddPeopleDialog({
             e.preventDefault();
             if (chosen.size === 0) return;
             setPending(true);
-            await onAdd([...chosen]);
+            const ok = await onAdd([...chosen]);
             setPending(false);
-            close(false);
+            if (ok) close(false);
           }}
         >
-          <ItemSearch value={query} onChange={setQuery} placeholder="Search people…" />
+          <SearchNoSubmit value={query} onChange={setQuery} />
           <div className="-mx-1 max-h-[45vh] min-h-20 overflow-y-auto px-1 scrollbar-thin">
             {directory.isPending ? (
               <div className="flex justify-center p-6">
@@ -472,5 +477,24 @@ function AddPeopleDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The people search inside a form: Enter filters, it never submits. */
+export function SearchNoSubmit({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.preventDefault();
+      }}
+    >
+      <ItemSearch value={value} onChange={onChange} placeholder="Search people…" />
+    </div>
   );
 }

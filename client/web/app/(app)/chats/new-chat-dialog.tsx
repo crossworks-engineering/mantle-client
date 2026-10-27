@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ItemListEmpty, ItemSearch } from '@/components/item-list/item-list-header';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
+import { SearchNoSubmit } from './chat-inspector';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import { rowAddress } from '@/lib/messenger/format';
 import type { MessengerDirectoryEntry } from '@/lib/messenger/dto';
@@ -241,7 +242,7 @@ export function NewChatDialog({
                       : `${members.size} chosen, and you.`}
                   </FieldDescription>
                   <div className="space-y-2">
-                    <ItemSearch value={query} onChange={setQuery} placeholder="Search people…" />
+                    <SearchNoSubmit value={query} onChange={setQuery} />
                     {list((p) => (
                       <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-foreground/[0.04]">
                         <Checkbox

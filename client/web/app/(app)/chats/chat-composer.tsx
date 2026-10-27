@@ -84,6 +84,7 @@ export function ChatComposer({
     if (!body || disabled) return;
     onSend(body, mentionsInBody(body, picked));
     setPicked([]);
+    setDismissedAt(null);
     place('', 0);
   };
 
@@ -92,11 +93,14 @@ export function ChatComposer({
     const out = applyMention(text, typing.start, caret, p.name);
     setPicked((cur) => [...cur, { kind: p.kind, id: p.id, name: p.name }]);
     setActive(0);
+    // This "@" is done: the picker stays shut for it.
+    setDismissedAt(typing.start);
     place(out.text, out.caret);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (pickerOpen) {
+    // An input method's keys are its own while it composes.
+    if (pickerOpen && !e.nativeEvent.isComposing) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const step = e.key === 'ArrowDown' ? 1 : -1;
@@ -142,7 +146,7 @@ export function ChatComposer({
           className="absolute inset-x-2 bottom-full mb-1 space-y-0.5 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
           {candidates.map((p, i) => (
-            <li key={p.id} role="option" aria-selected={i === active}>
+            <li key={p.id} id={`chat-mention-${p.id}`} role="option" aria-selected={i === active}>
               <RowButton
                 tabIndex={-1}
                 onMouseDown={(e) => e.preventDefault()}
@@ -179,8 +183,15 @@ export function ChatComposer({
         onKeyDown={onKeyDown}
         placeholder="Type a message…"
         aria-invalid={tooLong || undefined}
+        role="combobox"
+        aria-autocomplete="list"
         aria-controls={pickerOpen ? 'chat-mention-list' : undefined}
         aria-expanded={pickerOpen}
+        aria-activedescendant={
+          pickerOpen
+            ? `chat-mention-${candidates[Math.min(active, candidates.length - 1)]!.id}`
+            : undefined
+        }
         className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-1 pt-3 focus-visible:ring-0 focus-visible:ring-offset-0"
       />
       <div className="flex items-center gap-1 px-2 pb-2">

@@ -21,6 +21,8 @@ export function mentionAt(text: string, caret: number): { start: number; query: 
   if (at > 0 && !/\s/.test(before[at - 1]!)) return null;
   const query = before.slice(at + 1);
   if (/[\n@]/.test(query) || query.length > 40) return null;
+  // A space typed after the name ends it ("@Ann " is written, not typed).
+  if (/\s$/.test(query)) return null;
   // Two words at most ("@Ann Lee"): a third space means it is prose now.
   if ((query.match(/ /g) ?? []).length > 1) return null;
   return { start: at, query };

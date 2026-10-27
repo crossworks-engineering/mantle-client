@@ -33,9 +33,9 @@ import { sendableBody, type OutboxLine } from '@/lib/messenger/transcript';
 const BUBBLE = 'max-w-full rounded-2xl px-3.5 py-2';
 const THEIRS = 'border-transparent bg-muted text-foreground';
 
-function Row({ mine, children }: { mine: boolean; children: ReactNode }) {
+function Row({ mine, seq, children }: { mine: boolean; seq?: number; children: ReactNode }) {
   return (
-    <div className={cn('flex w-full', mine ? 'justify-end' : 'justify-start')}>
+    <div className={cn('flex w-full', mine ? 'justify-end' : 'justify-start')} data-seq={seq}>
       <div className={cn('flex max-w-[75%] flex-col', mine ? 'items-end' : 'items-start')}>
         {children}
       </div>
@@ -80,7 +80,11 @@ export function ChatMessage({
 }) {
   if (message.authorKind === 'system') {
     return (
-      <p className="py-1 text-center text-xs text-muted-foreground" data-testid="chat-system">
+      <p
+        className="py-1 text-center text-xs text-muted-foreground"
+        data-testid="chat-system"
+        data-seq={message.seq}
+      >
         {message.body}
       </p>
     );
@@ -90,19 +94,19 @@ export function ChatMessage({
   const tools =
     actions && !deleted && !editing ? <MessageTools mine={mine} actions={actions} /> : null;
   return (
-    <Row mine={mine}>
+    <Row mine={mine} seq={message.seq}>
       {showAuthor ? (
         <span className="mb-0.5 mt-2 px-1 text-xs text-muted-foreground">
           {message.authorName ?? 'Someone'}
         </span>
       ) : null}
-      {editing ?? (
+      {(!deleted && editing) || (
         <div className={cn('group flex items-center gap-1', mine && 'flex-row-reverse')}>
           <ChatBubble
             role={mine ? 'user' : 'assistant'}
             className={cn(BUBBLE, !mine && THEIRS, deleted && 'opacity-80')}
           >
-            <span data-testid="chat-message" data-seq={message.seq}>
+            <span data-testid="chat-message">
               {deleted ? (
                 <em className="opacity-80">This message was deleted</em>
               ) : (
@@ -270,7 +274,7 @@ export function MessageEditor({
           Cancel
         </Button>
         <Button size="sm" onClick={save} disabled={!body}>
-          Save
+          Save edit
         </Button>
       </div>
     </div>
