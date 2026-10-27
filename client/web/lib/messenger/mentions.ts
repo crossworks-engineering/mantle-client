@@ -13,8 +13,10 @@ export type PickedMention = MessengerMention & { name: string };
 
 /** The mention being typed at the caret: where its "@" sits and what
  *  follows it, or null. An "@" counts at the start or after whitespace (not
- *  inside an email address), and a mention ends at a line break. */
+ *  inside an email address), and a mention ends at a line break. A caret
+ *  inside a word (a name already written) is not typing one. */
 export function mentionAt(text: string, caret: number): { start: number; query: string } | null {
+  if (caret < text.length && !/\s/.test(text[caret]!)) return null;
   const before = text.slice(0, caret);
   const at = before.lastIndexOf('@');
   if (at === -1) return null;
@@ -29,16 +31,18 @@ export function mentionAt(text: string, caret: number): { start: number; query: 
 }
 
 /** Write the picked name over the "@query" being typed. Returns the new
- *  text and where the caret goes. */
+ *  text and where the caret goes: past the space after the name, one already
+ *  there (a name picked again) or a new one. */
 export function applyMention(
   text: string,
   start: number,
   caret: number,
   name: string,
 ): { text: string; caret: number } {
-  const insert = `@${name} `;
-  const next = text.slice(0, start) + insert + text.slice(caret);
-  return { text: next, caret: start + insert.length };
+  const rest = text.slice(caret);
+  const insert = /^\s/.test(rest) ? `@${name}` : `@${name} `;
+  const next = text.slice(0, start) + insert + rest;
+  return { text: next, caret: start + `@${name} `.length };
 }
 
 /** The people to offer for a query: a name or a word of it starting with

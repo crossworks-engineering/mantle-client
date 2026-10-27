@@ -556,6 +556,10 @@ export function ChatRoom({
   // A narrow room's inspector lies over the transcript and the composer, so
   // it opens only when asked, is never remembered, and Escape closes it.
   const [overlayOpen, setOverlayOpen] = useState(false);
+  useEffect(() => {
+    if (!narrow) setOverlayOpen(false);
+  }, [narrow]);
+  const overlay = useRef<HTMLDivElement>(null);
   const detailsOpen = narrow ? overlayOpen : inspectorOpen;
   const toggleInspector = () => {
     if (narrow) {
@@ -656,6 +660,10 @@ export function ChatRoom({
   }, [roomShown]);
   const inspectorColumn = inspectorOpen && !!conversation && !narrow;
   const inspectorOverlay = overlayOpen && !!conversation && narrow;
+  // Focus moves into the overlay as it opens, so Escape reaches it.
+  useEffect(() => {
+    if (inspectorOverlay) overlay.current?.focus();
+  }, [inspectorOverlay]);
 
   if (conversationQuery.isError && !conversation) {
     const gone =
@@ -862,7 +870,11 @@ export function ChatRoom({
         </ResizablePanelGroup>
         {inspectorOverlay && conversation ? (
           <div
-            className="absolute inset-y-0 right-0 z-10 w-[min(320px,100%)] overflow-y-auto border-l border-border bg-background shadow-md scrollbar-thin"
+            ref={overlay}
+            tabIndex={-1}
+            role="region"
+            aria-label="Chat details"
+            className="absolute inset-y-0 right-0 z-10 w-[min(320px,100%)] overflow-y-auto border-l border-border bg-background shadow-md outline-none scrollbar-thin"
             onKeyDown={(e) => {
               // Not an Escape from a dialog it opened (a portal bubbles here).
               if (e.key !== 'Escape' || e.defaultPrevented) return;

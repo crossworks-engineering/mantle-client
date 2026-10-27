@@ -30,11 +30,23 @@ describe('mentionAt', () => {
     expect(mentionAt('@ann says hello there', 21)).toBeNull();
     expect(mentionAt('no mention', 10)).toBeNull();
   });
+
+  it('a caret inside a written name is not typing a mention', () => {
+    expect(mentionAt('hi @Jane how', 6)).toBeNull();
+    expect(mentionAt('hi @Ja how', 6)).toEqual({ start: 3, query: 'Ja' });
+  });
 });
 
 describe('applyMention', () => {
   it('writes the name over the query and moves the caret past it', () => {
     expect(applyMention('hi @an!', 3, 6, 'Ann Lee')).toEqual({ text: 'hi @Ann Lee !', caret: 12 });
+  });
+
+  it('a name picked again before its space does not double the space', () => {
+    expect(applyMention('hi @Jane how', 3, 8, 'Jane')).toEqual({
+      text: 'hi @Jane how',
+      caret: 9,
+    });
   });
 });
 

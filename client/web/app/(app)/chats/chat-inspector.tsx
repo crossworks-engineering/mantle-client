@@ -141,6 +141,13 @@ export function ChatInspector({
               maxLength={200}
               autoFocus
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                // Escape cancels the rename (and stops there, not closing
+                // the narrow overlay around it).
+                if (e.key !== 'Escape') return;
+                e.preventDefault();
+                setRenaming(false);
+              }}
             />
             <SubmitButton size="sm" pending={saving}>
               Save name

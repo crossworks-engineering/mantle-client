@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiEventStream, apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
@@ -51,15 +51,21 @@ export function useAssistantUnreadCount(enabled: boolean): number {
 export function AssistantUnreadSync() {
   const queryClient = useQueryClient();
   const visible = useDocumentVisible();
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => setDesktop(!!desktopShell()), []);
+  const live = visible || desktop;
+  const opened = useRef(false);
   useEffect(() => {
-    if (!visible && !desktopShell()) return;
-    void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+    if (!live) return;
+    // Back from the background: a reply may have landed while it was shut.
+    if (opened.current) void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+    opened.current = true;
     return apiEventStream(THREAD_STREAM_PATH, (data) => {
       if (pingChangesUnread(data)) {
         void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
       }
     });
-  }, [visible, queryClient]);
+  }, [live, queryClient]);
   return null;
 }
 

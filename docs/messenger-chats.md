@@ -45,7 +45,8 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
 - **The inspector** (`chat-inspector.tsx`, the "detail pane with an
   inspector" pattern): a resizable column beside the transcript, its width
   and open state remembered. In a room narrower than 680 px it lies over the
-  transcript instead, opens only from Details and closes on Escape. The title (an admin renames a group), the
+  transcript instead, opens only from Details (taking the focus) and closes
+  on Escape or when the room widens. The title (an admin renames a group), the
   people with admin marks (an admin adds and removes them), Mute and Pin,
   Clear for me, Leave group, Delete history (admins). Every destructive one
   confirms.
