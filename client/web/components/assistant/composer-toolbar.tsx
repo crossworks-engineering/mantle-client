@@ -2,7 +2,8 @@ import { Loader2, MapPin, Mic, MicOff, Paperclip, SquareDashedMousePointer } fro
 import { Button } from '@mantle/web-ui/ui/button';
 
 /**
- * The composer's left-hand control stack: attach, pick, share-location, mic.
+ * The composer's controls: attach, pick, share-location, mic, a row at the
+ * left of the action row along the bottom of the box (Send at its right).
  *
  * Lifted out of `assistant-client` when converting it off raw `<button>` —
  * kit components are more lines than the hand-rolled elements they replace,
@@ -11,8 +12,8 @@ import { Button } from '@mantle/web-ui/ui/button';
  * fit would have been gaming a rule whose whole point is that the number means
  * what `wc -l` says.
  *
- * Every control is `icon-xs` — 32px, the same square, so the stack lines up.
- * That is what the raw versions were approximating with `p-2`.
+ * Every control is `icon-xs` — 32px, the same square, so the row lines up,
+ * and ghost, like the messenger composer's emoji and mention buttons.
  */
 export function ComposerToolbar({
   agentReady,
@@ -40,13 +41,13 @@ export function ComposerToolbar({
   onStopRecording: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex items-center gap-1">
       {/* Attach picker — images + documents, one or several. Triggers the
                       hidden file input. The first file is read inline with the
                       message; further ones are uploaded and linked as context. */}
       {onAttachClick && (
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon-xs"
           onClick={() => onAttachClick()}
           disabled={!agentReady || sending}
@@ -61,7 +62,7 @@ export function ComposerToolbar({
                       files, pages, notes… as context for the next turn. */}
       {onPick && (
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon-xs"
           onClick={onPick}
           disabled={!agentReady || sending}
@@ -76,7 +77,7 @@ export function ComposerToolbar({
                       attaches a fresh browser geolocation fix so the assistant
                       knows where you are (directions, "what's nearby"). */}
       <Button
-        variant={shareLocation ? 'default' : 'outline'}
+        variant={shareLocation ? 'default' : 'ghost'}
         size="icon-xs"
         onClick={() => onToggleShareLocation()}
         disabled={!agentReady || sending}
@@ -106,7 +107,7 @@ export function ComposerToolbar({
         </Button>
       ) : (
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon-xs"
           onClick={onStartRecording}
           disabled={!agentReady || sending || transcribing}

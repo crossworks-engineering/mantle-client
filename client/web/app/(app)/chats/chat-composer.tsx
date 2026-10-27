@@ -26,8 +26,9 @@ const MENTION_ROWS = 6;
 
 /**
  * The composer under the transcript, on the boxed composer surface (style
- * guide 6c: bordered, `bg-card/70`, `shadow-sm`): the text area, then the
- * emoji button, the mention button and Send. Enter sends, Shift+Enter starts
+ * guide 6c: bordered, `bg-card/70`, `shadow-sm`): the text area (fading out
+ * above the row instead of a hard edge), then one action row inside the box,
+ * the emoji and mention buttons at its left and Send at its right end. Enter sends, Shift+Enter starts
  * a new line; an input method's Enter (composing) never sends.
  *
  * Typing "@" (or the @ button) opens the mention picker over the box: the
@@ -235,51 +236,53 @@ export function ChatComposer({
             ? `chat-mention-${candidates[Math.min(active, candidates.length - 1)]!.id}`
             : undefined
         }
-        className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-1 pt-3 focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-4 pt-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-1rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
       />
+      {/* One action row under the text: the emoji and mention buttons at
+          its left, the count and Send at its right end. */}
       <div className="flex items-center gap-1 px-2 pb-2">
-        <span
-          className={cn(
-            'ml-2 text-xs tabular-nums',
-            tooLong ? 'text-destructive-ink' : 'text-muted-foreground',
-            text.length < BODY_MAX - 500 && 'invisible',
-          )}
-          aria-live="polite"
-        >
-          {text.length} / {BODY_MAX}
-        </span>
-        <span className="ml-auto flex items-center gap-1">
-          <EmojiPicker
-            set="chat"
-            align="end"
-            onSelect={insert}
-            trigger={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Insert an emoji"
-                disabled={disabled}
-              >
-                <Smile />
-              </Button>
-            }
-          />
-          {people.length > 0 ? (
+        <EmojiPicker
+          set="chat"
+          align="start"
+          onSelect={insert}
+          trigger={
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="Mention someone"
+              aria-label="Insert an emoji"
               disabled={disabled}
-              onClick={() => {
-                setDismissedAt(null);
-                insert('@');
-              }}
             >
-              <AtSign />
+              <Smile />
             </Button>
-          ) : null}
+          }
+        />
+        {people.length > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Mention someone"
+            disabled={disabled}
+            onClick={() => {
+              setDismissedAt(null);
+              insert('@');
+            }}
+          >
+            <AtSign />
+          </Button>
+        ) : null}
+        <span className="ml-auto flex items-center gap-1">
+          <span
+            className={cn(
+              'mr-1 text-xs tabular-nums',
+              tooLong ? 'text-destructive-ink' : 'text-muted-foreground',
+              text.length < BODY_MAX - 500 && 'invisible',
+            )}
+            aria-live="polite"
+          >
+            {text.length} / {BODY_MAX}
+          </span>
           <Button
             type="button"
             size="sm"

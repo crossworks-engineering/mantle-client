@@ -450,6 +450,10 @@ arrangement) — do not hand-roll the string.
 - The read view takes the card treatment only if its content is _not_ already
   cards. Tasks does not box it, because the body and checklist are cards
   already and a wrapper would nest borders three deep.
+- A chat composer (the assistant's, the messenger's) is one box: the text,
+  fading out over its last line, then one action row inside the box under
+  it, its controls at the left and Send at the right end (room for more
+  beside it), so the text never runs under a button.
 
 ### 6d. Text boxes
 

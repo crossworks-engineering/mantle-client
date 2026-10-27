@@ -24,6 +24,7 @@ import { LightboxImages } from '@/components/image-lightbox';
 import {
   ArrowDown,
   CornerDownLeft,
+  SendHorizontal,
   FileText,
   Highlighter,
   ListRestart,
@@ -1456,158 +1457,175 @@ export function AssistantClient({
                   }}
                 />
               )}
-              <ComposerToolbar
-                agentReady={agentReady}
-                sending={sending}
-                onAttachClick={features.attachments ? () => fileInputRef.current?.click() : null}
-                onPick={features.pick ? startPicking : null}
-                shareLocation={shareLocation}
-                onToggleShareLocation={() => void toggleShareLocation()}
-                recording={recording}
-                transcribing={transcribing}
-                onStartRecording={startRecording}
-                onStopRecording={stopRecording}
-              />
-              <Textarea
-                ref={textareaRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                // Ctrl/Cmd+V of a copied file or a screenshot = the attach
-                // button. The decision (what is a file paste, what is a text
-                // paste that merely carries a picture) is in lib/composer-paste.
-                onPaste={(e) => {
-                  const d = decideComposerPaste(
-                    Array.from(e.clipboardData.types),
-                    Array.from(e.clipboardData.files),
-                  );
-                  if (d.kind === 'text') return;
-                  // Ours either way: without this a Finder paste also types the
-                  // file's name into the box.
-                  e.preventDefault();
-                  // Mid-turn the attach button is disabled too: a correction
-                  // resend carries text only.
-                  if (sending) return;
-                  if (!features.attachments) setError(TURN_REFUSAL_TEXT.textOnly);
-                  else if (d.kind === 'reject') setError(d.reason);
-                  else addFiles(d.files);
-                }}
-                placeholder={
-                  !agentReady
-                    ? adminUser
-                      ? 'Configure an assistant or responder agent first at /settings/agents.'
-                      : TURN_REFUSAL_TEXT.noAssistant
-                    : attachedFile
-                      ? 'Add a question about the attachment (optional) — Enter to send.'
-                      : recording
-                        ? 'Recording… press the stop button to transcribe.'
-                        : transcribing
-                          ? 'Transcribing your recording…'
-                          : replaceEligible
-                            ? 'Typed too soon? Add a correction — Enter stops and resends both; Esc clears.'
-                            : 'Message your assistant — Enter to send, Shift+Enter for newline.'
-                }
-                // In streaming mode the box stays live mid-turn so a correction
-                // can be typed (the premature-Enter flow); blocking mode keeps
-                // the old lock — it has no cancel primitive.
-                disabled={!agentReady || (sending && !streamingOn)}
-                rows={2}
-                // Only what is this composer's own; the rest is the kit's.
-                className={`${COMPOSER_BOX} flex-1 resize-none`}
-                onKeyDown={(e) => {
-                  // Decision table lives in lib/composer-keys (pure + tested):
-                  // the chip claims Enter/ArrowRight STRICTLY when the draft is
-                  // empty, so Enter on anything the user typed (including a
-                  // Stop-restored prompt) always sends their text.
-                  const action = composerKeyAction(e, draft, suggestion);
-                  if (action === 'send-suggestion' && suggestion) {
+              {/* The box, the messenger composer's shape: the text, then one
+                  action row inside it, the controls at its left and Send (or
+                  Stop mid-turn) at its right end, with room for more beside
+                  it. The row sits under the text, so the text never runs
+                  under a button. */}
+              <div
+                className={`${COMPOSER_BOX} flex min-w-0 flex-1 flex-col rounded-md border-input ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2`}
+              >
+                <Textarea
+                  ref={textareaRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  // Ctrl/Cmd+V of a copied file or a screenshot = the attach
+                  // button. The decision (what is a file paste, what is a text
+                  // paste that merely carries a picture) is in lib/composer-paste.
+                  onPaste={(e) => {
+                    const d = decideComposerPaste(
+                      Array.from(e.clipboardData.types),
+                      Array.from(e.clipboardData.files),
+                    );
+                    if (d.kind === 'text') return;
+                    // Ours either way: without this a Finder paste also types the
+                    // file's name into the box.
                     e.preventDefault();
-                    void submit(e, suggestion);
-                  } else if (action === 'edit-suggestion' && suggestion) {
-                    // Load the suggestion for editing: chip → draft, cursor to
-                    // the end (the textarea is already focused; the keystroke
-                    // landed here).
-                    e.preventDefault();
-                    const s = suggestion;
-                    dismissSuggestion();
-                    setDraft(s);
-                    requestAnimationFrame(() => {
-                      const el = textareaRef.current;
-                      if (el) el.setSelectionRange(el.value.length, el.value.length);
-                    });
-                  } else if (action === 'send-draft') {
-                    e.preventDefault();
-                    void submit(e);
-                    return;
+                    // Mid-turn the attach button is disabled too: a correction
+                    // resend carries text only.
+                    if (sending) return;
+                    if (!features.attachments) setError(TURN_REFUSAL_TEXT.textOnly);
+                    else if (d.kind === 'reject') setError(d.reason);
+                    else addFiles(d.files);
+                  }}
+                  placeholder={
+                    !agentReady
+                      ? adminUser
+                        ? 'Configure an assistant or responder agent first at /settings/agents.'
+                        : TURN_REFUSAL_TEXT.noAssistant
+                      : attachedFile
+                        ? 'Add a question about the attachment (optional) — Enter to send.'
+                        : recording
+                          ? 'Recording… press the stop button to transcribe.'
+                          : transcribing
+                            ? 'Transcribing your recording…'
+                            : replaceEligible
+                              ? 'Typed too soon? Add a correction — Enter stops and resends both; Esc clears.'
+                              : 'Message your assistant — Enter to send, Shift+Enter for newline.'
                   }
-                  // Opt out of a pending correction: Esc clears the draft.
-                  // stopPropagation keeps it from the panel's window-level
-                  // Esc-to-minimize; scoped to the replace affordance only, so
-                  // Esc behaves exactly as before everywhere else.
-                  if (e.key === 'Escape' && showReplace) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDraft('');
-                  }
-                }}
-              />
-              {sending && !liveStream ? (
-                // No Stop for a login that is not an Admin user (the cancel
-                // route is Admin-only): the reply lands in the thread.
-                <Button
-                  type="button"
-                  aria-label="Sending"
-                  title="Waiting for the reply"
-                  disabled
-                  className="h-auto w-12 self-stretch px-0"
-                >
-                  <Loader2 className="animate-spin" aria-hidden />
-                </Button>
-              ) : sending ? (
-                // Mid-turn the send slot holds a Stop button — and, when a
-                // correction has been typed (streaming mode), a "stop and
-                // resend" button beside it: one press supersedes the in-flight
-                // turn and sends original + correction as one combined turn.
-                <div className="flex shrink-0 gap-2 self-stretch">
-                  {showReplace && (
-                    <Button
-                      type="submit"
-                      aria-label="Stop and resend with this correction"
-                      title="Stop and resend with this correction (Enter) — Esc to discard it"
-                      className="h-auto w-12 px-0"
-                    >
-                      <ListRestart aria-hidden />
-                    </Button>
-                  )}
-                  <Button
-                    variant="destructive"
-                    onClick={stopTurn}
-                    aria-label="Stop"
-                    title="Stop generating"
-                    disabled={!activeTurnId || stopping}
-                    className="h-auto w-12 px-0"
-                  >
-                    {stopping ? (
-                      <Loader2 className="animate-spin" aria-hidden />
+                  // In streaming mode the box stays live mid-turn so a correction
+                  // can be typed (the premature-Enter flow); blocking mode keeps
+                  // the old lock — it has no cancel primitive.
+                  disabled={!agentReady || (sending && !streamingOn)}
+                  rows={2}
+                  // Only what is this composer's own; the rest is the kit's.
+                  // The text fades out above the action row instead of
+                  // meeting it at a hard edge.
+                  className="min-h-0 flex-1 resize-none border-0 pb-5 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.25rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
+                  onKeyDown={(e) => {
+                    // Decision table lives in lib/composer-keys (pure + tested):
+                    // the chip claims Enter/ArrowRight STRICTLY when the draft is
+                    // empty, so Enter on anything the user typed (including a
+                    // Stop-restored prompt) always sends their text.
+                    const action = composerKeyAction(e, draft, suggestion);
+                    if (action === 'send-suggestion' && suggestion) {
+                      e.preventDefault();
+                      void submit(e, suggestion);
+                    } else if (action === 'edit-suggestion' && suggestion) {
+                      // Load the suggestion for editing: chip → draft, cursor to
+                      // the end (the textarea is already focused; the keystroke
+                      // landed here).
+                      e.preventDefault();
+                      const s = suggestion;
+                      dismissSuggestion();
+                      setDraft(s);
+                      requestAnimationFrame(() => {
+                        const el = textareaRef.current;
+                        if (el) el.setSelectionRange(el.value.length, el.value.length);
+                      });
+                    } else if (action === 'send-draft') {
+                      e.preventDefault();
+                      void submit(e);
+                      return;
+                    }
+                    // Opt out of a pending correction: Esc clears the draft.
+                    // stopPropagation keeps it from the panel's window-level
+                    // Esc-to-minimize; scoped to the replace affordance only, so
+                    // Esc behaves exactly as before everywhere else.
+                    if (e.key === 'Escape' && showReplace) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDraft('');
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-1 px-2 pb-2">
+                  <ComposerToolbar
+                    agentReady={agentReady}
+                    sending={sending}
+                    onAttachClick={
+                      features.attachments ? () => fileInputRef.current?.click() : null
+                    }
+                    onPick={features.pick ? startPicking : null}
+                    shareLocation={shareLocation}
+                    onToggleShareLocation={() => void toggleShareLocation()}
+                    recording={recording}
+                    transcribing={transcribing}
+                    onStartRecording={startRecording}
+                    onStopRecording={stopRecording}
+                  />
+                  <span className="ml-auto flex items-center gap-1">
+                    {sending && !liveStream ? (
+                      // No Stop for a login that is not an Admin user (the cancel
+                      // route is Admin-only): the reply lands in the thread.
+                      <Button type="button" size="sm" title="Waiting for the reply" disabled>
+                        <Loader2 className="animate-spin" aria-hidden />
+                        Sending
+                      </Button>
+                    ) : sending ? (
+                      // Mid-turn the send slot holds a Stop button — and, when a
+                      // correction has been typed (streaming mode), a "stop and
+                      // resend" button beside it: one press supersedes the in-flight
+                      // turn and sends original + correction as one combined turn.
+                      <>
+                        {showReplace && (
+                          <Button
+                            type="submit"
+                            size="sm"
+                            aria-label="Stop and resend with this correction"
+                            title="Stop and resend with this correction (Enter) — Esc to discard it"
+                          >
+                            <ListRestart aria-hidden />
+                            Resend
+                          </Button>
+                        )}
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={stopTurn}
+                          title="Stop generating"
+                          disabled={!activeTurnId || stopping}
+                        >
+                          {stopping ? (
+                            <Loader2 className="animate-spin" aria-hidden />
+                          ) : (
+                            <Square className="size-3.5 fill-current" aria-hidden />
+                          )}
+                          Stop
+                        </Button>
+                      </>
                     ) : (
-                      <Square className="size-3.5 fill-current" aria-hidden />
+                      <Button
+                        type="submit"
+                        size="sm"
+                        title={
+                          linkedUploads.length > 0
+                            ? 'Waiting for attachments to finish…'
+                            : 'Send (Enter)'
+                        }
+                        disabled={
+                          !agentReady ||
+                          linkedUploads.length > 0 ||
+                          (!draft.trim() && !attachedFile)
+                        }
+                      >
+                        <SendHorizontal aria-hidden />
+                        Send
+                      </Button>
                     )}
-                  </Button>
+                  </span>
                 </div>
-              ) : (
-                <Button
-                  type="submit"
-                  aria-label="Send"
-                  title={
-                    linkedUploads.length > 0 ? 'Waiting for attachments to finish…' : 'Send (Enter)'
-                  }
-                  disabled={
-                    !agentReady || linkedUploads.length > 0 || (!draft.trim() && !attachedFile)
-                  }
-                  className="h-auto w-12 self-stretch px-0"
-                >
-                  <CornerDownLeft aria-hidden />
-                </Button>
-              )}
+              </div>
             </div>
             {error && <p className="text-xs text-destructive-ink">{error}</p>}
             {notice && (
