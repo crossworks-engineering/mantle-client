@@ -207,10 +207,9 @@ function savingFor(storageKey: string, loginId: string, qc: QueryClient): DeskSa
  * version last read or saved (lib/home-desk-saver); leaving the Desk, hiding
  * the tab or closing it saves what is still waiting. When another device
  * saved first, its desk is shown and one quiet toast says so. A save that
- * fails keeps its desk and goes again with the next change, on the way
- * out, or when the browser is back online. A profile that never had a desk
- * takes the one this browser kept before desk saving v2, once
- * (carriedDesk).
+ * fails keeps its desk and goes again with the next change or on the
+ * way out. A profile that never had a desk takes the one this browser kept
+ * before desk saving v2, once (carriedDesk).
  *
  * On a brain from before the desk's route the desk stays in this browser's
  * storage, per brain and per login. Null until the shell names the login
@@ -246,10 +245,6 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
     // Kept after the Desk is left: a save on the way out can lose or fail too.
     saving.conflict = () => toastRef.current.info('Your Desk changed on another device');
     saving.failed = () => toastRef.current.error('Could not save your desk');
-    // Back online: a save that failed goes again (no timer retries it).
-    const retry = () => saving.saver.retry();
-    window.addEventListener('online', retry);
-    return () => window.removeEventListener('online', retry);
   }, [saving]);
 
   const show = useCallback((desk: DeskPrefs) => {
@@ -296,7 +291,7 @@ export function useDeskPrefs(loginId: string | null, kinds: readonly TreeKind[] 
   // Every way out (leaving the Desk, the tab hidden or closed, the session
   // ending): what is still waiting is saved now, not dropped. The promise
   // lets a session switch wait for the save before the login changes.
-  useFlushOnLeave(() => saving?.saver.flush({ leaving: true }));
+  useFlushOnLeave(() => saving?.saver.flush());
 
   const update = useCallback(
     (fn: (p: DeskPrefs) => DeskPrefs) => {

@@ -8,24 +8,19 @@
  * page's life.
  *
  * - A change is saved SAVE_DELAY_MS after the last one: a drag or a resize is
- *   many changes and one save. `flush` sends what is waiting now.
+ *   many changes and one save. `flush` sends what is waiting now (leaving
+ *   the Desk, hiding or closing the tab); every save goes with keepalive
+ *   (desk-data `putDesk`), so one on its way outlives the page.
  * - One save in flight. A desk changed meanwhile waits, only the latest, and
- *   goes when the save in flight settles, with the version it answered. On
- *   the way out (`flush({ leaving: true })`) it goes at once instead, sent
- *   from the version the save in flight will make: the page may not live to
- *   hear that save's answer. Should that save not land, the brain answers
- *   the early one with a 409 naming an older version than it was sent with:
- *   the desk then waits again, to go from the version the brain holds.
- * - Each save carries the version of the last read or save that landed. A 409
- *   naming another desk means another device saved first: its desk and
- *   version are adopted (`onConflict`), what was waiting here is dropped,
- *   and nothing is retried. A 409 naming a desk this saver sent (a save that
- *   landed though its answer was lost) is this saver's own: its version is
- *   taken and the desk waiting, if any, goes from it.
+ *   goes when the save in flight settles, with the version it answered.
+ * - Each save carries the version of the last read or save that landed. A
+ *   409 means another device saved first: its desk and version are adopted
+ *   (`onConflict`), what was waiting here is dropped, and nothing is
+ *   retried.
  * - A save that fails on the way (offline, a 5xx, a 429) keeps its desk
- *   waiting, unless a newer change waits already: nothing is lost, and a read
- *   cannot replace it (`busy` stays true). It goes again with the next
- *   change, on `flush`, and on `retry` (the browser back online); nothing
+ *   waiting, unless a newer change waits already: nothing is lost, and a
+ *   read cannot replace it (`busy` stays true; a Desk opened again shows
+ *   `latest`). It goes again with the next change or on `flush`; nothing
  *   retries on a timer. `onFailed` is called once until a save lands again.
  * - 401 (the session is gone, or the desk is another login's): the saver
  *   stops for the visit. Any other refusal (a 400: a desk the brain will not
@@ -36,7 +31,7 @@
  *   that save replaced.
  */
 import type { HomeDeskState } from './contract/home-desk';
-import { deskToWire, type DeskPrefs } from './home-desk';
+import type { DeskPrefs } from './home-desk';
 
 /** How long the desk waits after the last change before saving it. */
 export const SAVE_DELAY_MS = 800;
@@ -59,13 +54,10 @@ export type DeskSaverHooks = {
 export type DeskSaver = {
   /** Wait SAVE_DELAY_MS for more changes, then send `desk`. */
   save: (desk: DeskPrefs) => void;
-  /** Send what is waiting now, if anything: after the save in flight, or
-   *  `leaving`, at once. Resolves when nothing is in flight or about to be
-   *  sent. Never rejects. */
-  flush: (opts?: { leaving?: boolean }) => Promise<void>;
-  /** A save failed and its desk waits: send it now (the browser is back
-   *  online). Nothing otherwise. */
-  retry: () => void;
+  /** Send what is waiting now, if anything (after the save in flight).
+   *  Resolves when nothing is in flight or about to be sent. Never
+   *  rejects. */
+  flush: () => Promise<void>;
   /** A read of the desk landed: whether to show it. True (and its version
    *  taken) when nothing is waiting or in flight and it is not older than
    *  the version known here. */
@@ -109,26 +101,8 @@ function passing(status: number | null): boolean {
   return status === null || status >= 500 || status === 429;
 }
 
-/** Deep equality of two JSON values, key order aside. */
-function sameJson(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const ka = Object.keys(a);
-  const rb = b as Record<string, unknown>;
-  return (
-    ka.length === Object.keys(b).length &&
-    ka.every((k) => k in rb && sameJson((a as Record<string, unknown>)[k], rb[k]))
-  );
-}
-
 /** A desk and the change it came from (later changes count higher). */
 type Change = { desk: DeskPrefs; seq: number };
-type Flight = Change & { version: number };
-
-/** Desks sent whose answer was lost, kept to tell this saver's own landed
- *  save in a later 409; the last few are plenty. */
-const UNSURE_MAX = 8;
 
 export function createDeskSaver(
   send: DeskSend,
@@ -140,12 +114,9 @@ export function createDeskSaver(
   // Changed and not landed: a change (its timer may be armed), or the desk
   // of a save that failed.
   let waiting: Change | null = null;
-  // `waiting` goes as soon as no save is in flight (flushed meanwhile).
+  // `waiting` goes as soon as the save in flight settles (flushed meanwhile).
   let sendWhenFree = false;
-  // `waiting` is the desk of a save that failed (`retry` sends it).
-  let failed = false;
-  const flights: Flight[] = [];
-  let unsure: DeskPrefs[] = [];
+  let inFlight: Change | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   let warned = false;
@@ -156,9 +127,10 @@ export function createDeskSaver(
     timer = null;
   };
 
-  /** A desk sent and not landed waits again, unless a newer change does. */
-  const keep = (f: Change) => {
-    if (!waiting || waiting.seq < f.seq) waiting = { desk: f.desk, seq: f.seq };
+  const drop = () => {
+    clearTimer();
+    waiting = null;
+    sendWhenFree = false;
   };
 
   const warn = () => {
@@ -167,84 +139,34 @@ export function createDeskSaver(
     hooks.onFailed();
   };
 
-  const idle = () => flights.length === 0 && !(sendWhenFree && waiting);
-
-  const settle = () => {
-    if (!stopped && waiting && sendWhenFree && flights.length === 0) sendWaiting(version);
-    if (!idle()) return;
-    const waiters = idleWaiters;
-    idleWaiters = [];
-    for (const fn of waiters) fn();
-  };
-
-  const landed = (state: HomeDeskState) => {
-    unsure = [];
-    warned = false;
-    // Two saves answered out of order: the older answer changes nothing.
-    if (state.version < version) return;
-    version = state.version;
-    hooks.onSaved?.(state);
-  };
-
-  const sendWaiting = (from: number) => {
-    const f: Flight = { ...waiting!, version: from };
+  const sendWaiting = () => {
+    const sent = waiting!;
     waiting = null;
     sendWhenFree = false;
-    failed = false;
-    flights.push(f);
-    send(f.desk, f.version).then(
+    inFlight = sent;
+    send(sent.desk, version).then(
       (state) => {
-        flights.splice(flights.indexOf(f), 1);
-        landed(state);
+        version = state.version;
+        warned = false;
+        hooks.onSaved?.(state);
         settle();
       },
       (err: unknown) => {
-        flights.splice(flights.indexOf(f), 1);
         const status = statusOf(err);
         const theirs = conflictState(err);
-        if (theirs && theirs.version < f.version) {
-          // Sent ahead of a save that did not land (yet): nobody else saved.
-          // The desk goes again from the version the brain holds.
-          keep(f);
-          sendWhenFree = true;
-        } else if (
-          theirs &&
-          [f.desk, ...unsure].some((d) => sameJson(theirs.homeDesk, deskToWire(d)))
-        ) {
-          // A save of ours landed though its answer was lost: its version is
-          // ours, and the desk changed since goes from it.
-          if (theirs.version > version) {
-            version = theirs.version;
-            hooks.onSaved?.(theirs);
-          }
-          unsure = [];
-          warned = false;
-          if (!sameJson(theirs.homeDesk, deskToWire(f.desk))) {
-            keep(f);
-            sendWhenFree = true;
-          }
-        } else if (theirs) {
+        if (theirs) {
           // The other device won: its desk stands, ours is not retried.
           version = theirs.version;
-          unsure = [];
-          clearTimer();
-          waiting = null;
-          sendWhenFree = false;
-          failed = false;
+          drop();
           hooks.onConflict(theirs);
         } else if (status === 401) {
           stopped = true;
-          clearTimer();
-          waiting = null;
-          sendWhenFree = false;
-        } else if (passing(status)) {
-          // It may have landed: a later 409 naming it is ours.
-          unsure = [...unsure, f.desk].slice(-UNSURE_MAX);
-          if (!waiting || waiting.seq <= f.seq) failed = true;
-          keep(f);
-          warn();
+          drop();
         } else {
-          // Refused (a 400): this desk is not kept, nothing sends it again.
+          // On the way (offline, a 5xx): the desk waits for the next change
+          // or flush, unless a newer change waits already. Refused (a 400):
+          // it is not kept.
+          if (passing(status) && (!waiting || waiting.seq < sent.seq)) waiting = sent;
           warn();
         }
         settle();
@@ -252,17 +174,22 @@ export function createDeskSaver(
     );
   };
 
-  const flush = (opts: { leaving?: boolean } = {}): Promise<void> => {
+  const settle = () => {
+    inFlight = null;
+    if (!stopped && waiting && sendWhenFree) sendWaiting();
+    if (inFlight) return;
+    const waiters = idleWaiters;
+    idleWaiters = [];
+    for (const fn of waiters) fn();
+  };
+
+  const flush = (): Promise<void> => {
     clearTimer();
     if (waiting && !stopped) {
-      if (flights.length === 0) sendWaiting(version);
-      else if (opts.leaving) {
-        // The page may go before the save in flight answers: send now, from
-        // the version that save makes.
-        sendWaiting(Math.max(...flights.map((f) => f.version)) + 1);
-      } else sendWhenFree = true;
+      if (inFlight) sendWhenFree = true;
+      else sendWaiting();
     }
-    if (idle()) return Promise.resolve();
+    if (!inFlight) return Promise.resolve();
     return new Promise((resolve) => idleWaiters.push(resolve));
   };
 
@@ -270,16 +197,12 @@ export function createDeskSaver(
     save(desk) {
       if (stopped) return;
       waiting = { desk, seq: ++seq };
-      failed = false;
       clearTimer();
       timer = setTimeout(() => void flush(), delayMs);
     },
     flush,
-    retry() {
-      if (failed) void flush();
-    },
     read(state) {
-      if (stopped || waiting || flights.length > 0 || state.version < version) return false;
+      if (stopped || waiting || inFlight || state.version < version) return false;
       version = state.version;
       return true;
     },
@@ -287,11 +210,10 @@ export function createDeskSaver(
       return version;
     },
     get busy() {
-      return waiting !== null || flights.length > 0;
+      return waiting !== null || inFlight !== null;
     },
     get latest() {
-      const newest = flights.reduce<Change | null>((a, f) => (a && a.seq > f.seq ? a : f), waiting);
-      return newest?.desk ?? null;
+      return (waiting ?? inFlight)?.desk ?? null;
     },
     get stopped() {
       return stopped;
