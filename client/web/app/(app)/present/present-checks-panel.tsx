@@ -31,6 +31,9 @@ const ANSWER: Record<PresentCheckItemDTO['answer'], { label: string; tone: strin
   unsure: { label: 'unsure', tone: 'border-muted-foreground/40 text-muted-foreground' },
 };
 
+/** The short note on the folded row (the brain's full note shows open). */
+const FOLDED_NOTE = 'Image checks help; they are not a guarantee.';
+
 /** "12 checked by image · 1 image says no · 2 unsure", the parts there are. */
 export function countsLine(c: PresentCircuitChecksDTO['counts']): string {
   const parts = [
@@ -49,8 +52,9 @@ export function countsLine(c: PresentCircuitChecksDTO['counts']): string {
  * show the drawing only. Hidden for any canvas the brain says is not a
  * traced P&ID, and folded by default: one row with the counts.
  *
- * Image checks help; they are not a guarantee: the brain's note says so
- * under the header, word for word. Crops are ordinary files, loaded and
+ * Image checks help; they are not a guarantee: the folded row says so
+ * (FOLDED_NOTE, and its tooltip on a narrow screen), and the brain's note
+ * says so word for word once open. Crops are ordinary files, loaded and
  * opened with the reader's own rights.
  */
 export function PresentChecksPanel({ presentId, rev }: { presentId: string; rev: number }) {
@@ -78,11 +82,13 @@ export function PresentChecksPanel({ presentId, rev }: { presentId: string; rev:
       <RowButton
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        title={FOLDED_NOTE}
         className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.04]"
       >
         <ScanSearch className="size-3.5 shrink-0" aria-hidden />
         <span className="font-medium text-foreground">Image checks</span>
         <span className="min-w-0 truncate">{summary}</span>
+        <span className="hidden min-w-0 shrink truncate md:inline">· {FOLDED_NOTE}</span>
         <ChevronRight
           className={cn('ml-auto size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
           aria-hidden
@@ -95,7 +101,7 @@ export function PresentChecksPanel({ presentId, rev }: { presentId: string; rev:
             <CircuitChecks key={c.circuit} circuit={c} />
           ))}
           {checks.limits.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+            <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
               {checks.limits.map((l) => (
                 <li key={l}>{l}</li>
               ))}
@@ -120,7 +126,7 @@ function CircuitChecks({ circuit }: { circuit: PresentCircuitChecksDTO }) {
         <CheckRow key={`${it.tableId}:${it.checkedAt}:${i}`} item={it} />
       ))}
       {circuit.more ? (
-        <li className="px-3 py-2 text-[11px] text-muted-foreground">
+        <li className="px-3 py-2 text-xs text-muted-foreground">
           {circuit.more} more in the drawing tables&apos; Checks tabs.
         </li>
       ) : null}
@@ -128,30 +134,55 @@ function CircuitChecks({ circuit }: { circuit: PresentCircuitChecksDTO }) {
   );
 }
 
-function CheckRow({ item }: { item: PresentCheckItemDTO }) {
+/** A crop's thumbnail, linked to the file. A crop the reader may not open
+ *  (not shared with them, or gone) says so in place of a broken image. */
+function CropThumb({ id, label }: { id: string; label: string }) {
   const toAsset = useAssetUrl();
+  const [failed, setFailed] = useState(false);
+  const box = 'block size-16 overflow-hidden rounded-md border border-border bg-muted/30';
+  if (failed)
+    return (
+      <span
+        className={cn(
+          box,
+          'flex items-center p-1 text-center text-xs leading-tight text-muted-foreground',
+        )}
+      >
+        crop not shared with you
+      </span>
+    );
+  return (
+    <a
+      href={toAsset(`/api/files/files/${id}?raw=1`)}
+      target="_blank"
+      rel="noreferrer"
+      className={box}
+      aria-label={label}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={toAsset(`/api/files/files/${id}?thumb=1`)}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="size-full object-cover"
+      />
+    </a>
+  );
+}
+
+function CheckRow({ item }: { item: PresentCheckItemDTO }) {
   const answer = ANSWER[item.answer];
   const when = new Date(item.checkedAt);
   return (
     <li className="flex gap-3 px-3 py-2">
       <div className="flex shrink-0 gap-1">
         {item.crops.slice(0, 2).map((id, i) => (
-          <a
+          <CropThumb
             key={id}
-            href={toAsset(`/api/files/files/${id}?raw=1`)}
-            target="_blank"
-            rel="noreferrer"
-            className="block size-16 overflow-hidden rounded-md border border-border bg-muted/30"
-            aria-label={`Open crop ${i + 1} of the ${KIND[item.kind]} check`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={toAsset(`/api/files/files/${id}?thumb=1`)}
-              alt=""
-              loading="lazy"
-              className="size-full object-cover"
-            />
-          </a>
+            id={id}
+            label={`Open crop ${i + 1} of the ${KIND[item.kind]} check`}
+          />
         ))}
       </div>
       <div className="min-w-0 flex-1 space-y-1 text-xs">
@@ -175,7 +206,7 @@ function CheckRow({ item }: { item: PresentCheckItemDTO }) {
           </p>
         )}
         {item.reason && <p className="text-muted-foreground">{item.reason}</p>}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {item.model}
           {Number.isNaN(when.getTime()) ? '' : ` · ${when.toLocaleString()}`}
         </p>
