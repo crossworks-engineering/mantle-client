@@ -5,9 +5,9 @@
  * "A detail pane with an inspector"): everything ABOUT the chat, never its
  * messages. The title (an admin renames a group), the group's info (what it
  * is for and its rules; an admin writes it, everyone reads it), the people
- * with their admin marks (an admin adds and removes them), my mute and my pin, and the
- * ends: clear for me, leave a group, delete a group's history for everyone
- * (admins). Every destructive one confirms.
+ * with their admin marks (an admin adds and removes them), my mute and my
+ * pin, and the ends: clear for me, leave a group, delete a group's history
+ * for everyone (admins). Every destructive one confirms.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -218,12 +218,15 @@ export function ChatInspector({
     }
     const held = conversation.info ?? null;
     if (held !== infoWas.current) {
-      // Someone else changed it while this form was open: say so once;
-      // the next Save writes over it knowingly.
+      // Someone else changed it while this form was open: say so once,
+      // with what it says now; the next Save writes over it knowingly.
       infoWas.current = held;
+      const now = held ? (held.split('\n').find((l) => l.trim()) ?? '').trim() : '';
       toast.push({
         kind: 'info',
-        message: 'The info was changed meanwhile. Save again to replace it.',
+        message: now
+          ? `The info was changed meanwhile and now starts "${now.length > 80 ? `${now.slice(0, 79)}…` : now}". Save again to replace it.`
+          : 'The info was cleared meanwhile. Save again to write it.',
       });
       return;
     }
@@ -375,7 +378,7 @@ export function ChatInspector({
                   ref={infoButton}
                   variant="outline"
                   size="xs"
-                  aria-label={info ? 'Edit the group’s info' : 'Add the group’s info'}
+                  aria-label={info ? "Edit the group's info" : "Add the group's info"}
                   onClick={() => {
                     setInfoText(conversation.info ?? '');
                     infoWas.current = conversation.info ?? null;
@@ -392,10 +395,11 @@ export function ChatInspector({
                 noValidate
                 onKeyDown={(e) => {
                   // Escape anywhere on the form cancels the edit (and stops
-                  // there, not closing the narrow overlay around it).
+                  // there, not closing the narrow overlay around it); not
+                  // while a save runs, so a failed one keeps the text.
                   if (e.key === 'Escape' && !e.defaultPrevented) {
                     e.preventDefault();
-                    doneInfo();
+                    if (!savingInfo) doneInfo();
                   }
                 }}
                 onSubmit={(e) => {
@@ -411,7 +415,13 @@ export function ChatInspector({
                   readOnly={savingInfo}
                 />
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={doneInfo}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={savingInfo}
+                    onClick={doneInfo}
+                  >
                     Cancel
                   </Button>
                   <SubmitButton

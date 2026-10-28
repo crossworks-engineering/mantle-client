@@ -61,8 +61,8 @@ const FILTERS: { id: Filter; label: string; Icon: typeof User }[] = [
  *   own session draft, when it has none), sent from there.
  * - Groups: New group, its icon and colour (the folders' look popup), a
  *   name, its info (what it is for and its rules, 2000 characters) and its
- *   members; Send creates it with the line, Create group without one. I am its first admin; a group of one
- *   ("message yourself") is allowed.
+ *   members; Send creates it with the line, Create group without one. I am
+ *   its first admin; a group of one ("message yourself") is allowed.
  */
 export function NewChatPane({
   directory,
