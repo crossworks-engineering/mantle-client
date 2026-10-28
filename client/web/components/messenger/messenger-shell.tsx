@@ -36,6 +36,7 @@ import {
   railCount,
   shouldPop,
 } from '@/lib/messenger/notify';
+import { CallUnloadGuard } from '@/components/calls/call-store';
 import { MessengerLiveSync, useMessengerBus } from './messenger-live';
 
 /** A slow safety net: the stream refreshes the count on every event. */
@@ -91,6 +92,7 @@ export function MessengerShell() {
       <MessengerLiveSync enabled={live} />
       {live ? <MessengerNotices /> : null}
       <AssistantReadFollower />
+      <CallUnloadGuard />
     </>
   );
 }

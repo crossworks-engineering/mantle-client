@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDefaultLayout } from 'react-resizable-panels';
-import { ArrowDown, Bell, BellOff, PanelRight, Pin, PinOff } from 'lucide-react';
+import { ArrowDown, Bell, BellOff, PanelRight, Phone, PhoneOff, Pin, PinOff } from 'lucide-react';
 import { ApiError } from '@mantle/web-ui/api-fetch';
 import {
   AlertDialog,
@@ -28,7 +28,9 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@mantle/web-ui/ui/resizable';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { ItemHeader } from '@/components/layout/item-header';
+import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
+import { callSession, useCallState } from '@/components/calls/call-store';
+import { useCallsCapabilities } from '@/components/calls/use-calls-capabilities';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useChatFaces } from '@/components/messenger/chat-faces';
 import {
@@ -693,6 +695,36 @@ export function ChatRoom({
   const pinned = row?.favourite ?? false;
   const mentionNames = useMemo(() => people.map((p) => p.name), [people]);
 
+  // The Call button (calls plan P1): only when the brain says calls are on,
+  // and never once I have left. Start the chat's call or join the open one;
+  // while this tab is in THIS chat's call the same slot leaves it.
+  const { calls: callsOn } = useCallsCapabilities();
+  const call = useCallState();
+  const inThisCall =
+    (call.phase === 'live' || call.phase === 'joining') && call.conversationId === id;
+  const callTool: HeaderTool | null =
+    callsOn && !left
+      ? inThisCall
+        ? {
+            key: 'call',
+            label: call.phase === 'joining' ? 'Joining the call' : 'Leave the call',
+            icon: <PhoneOff />,
+            pressed: true,
+            disabled: call.phase === 'joining',
+            onSelect: () => void callSession().leave(null),
+          }
+        : {
+            key: 'call',
+            label: 'Call',
+            icon: <Phone />,
+            onSelect: () =>
+              void callSession().startOrJoin(id, {
+                title,
+                admin: group ? isAdmin : true,
+              }),
+          }
+      : null;
+
   // Say a newly arrived message from someone else, once (the transcript
   // itself is not a live region: an older page would be read out whole).
   const [announce, setAnnounce] = useState('');
@@ -779,6 +811,7 @@ export function ChatRoom({
           </span>
         }
         tools={[
+          ...(callTool ? [callTool] : []),
           {
             key: 'details',
             label: detailsOpen ? 'Hide details' : 'Details',
