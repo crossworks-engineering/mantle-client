@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useRef, type ComponentProps, type ReactNode } from 'react';
+import { Fragment, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { requestTreeMove, type TreeMoveRequest } from '@/components/item-tree/tree-move-request';
@@ -30,12 +30,17 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@mantle/web-ui/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
 import { TagPill } from '@mantle/web-ui/tag-pill';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { FocusToggle } from './focus-toggle';
 import { useHeaderOverflow } from './header-overflow';
 import { useZenMode } from './zen-mode';
+
+/** How long a closing menu takes to hand focus back to its trigger: a
+ *  popover opened before that would take the focus move as a click outside
+ *  and close. */
+export const MENU_CLOSED_MS = 250;
 
 /** One choice of a tool that has several (Download: Markdown, Word, PDF). */
 export type HeaderToolChoice = {
@@ -45,8 +50,11 @@ export type HeaderToolChoice = {
   /** A link (a download is a plain anchor), or… */
   href?: string;
   download?: boolean;
-  /** …an action. */
+  /** …an action, or… */
   onSelect?: () => void;
+  /** …a small panel of its own under the tool's button (Download: the PDF's
+   *  print options), opened once the menu has closed; `close` shuts it. */
+  panel?: (close: () => void) => ReactNode;
 };
 
 /** A kind's own tool in the header: an icon button while it fits, a More
@@ -222,7 +230,7 @@ export function ItemHeader({
   const openSlot = (slot: 'access' | 'info') =>
     setTimeout(() => {
       fixedRef.current?.querySelector<HTMLElement>(`[data-slot="${slot}"] button`)?.click();
-    }, 250);
+    }, MENU_CLOSED_MS);
   const moreGroups: MoreEntry[][] = [
     [
       ...(edit && !edit.disabled
@@ -495,19 +503,59 @@ function EditButton({ edit }: { edit: HeaderEdit }) {
   );
 }
 
+/**
+ * A choice's panel, as a popover under the button that held the menu (the
+ * `PopoverAnchor`): the tool's own icon inline, More once folded. One open
+ * at a time; the choice names it after the menu has closed (see
+ * `MENU_CLOSED_MS`).
+ */
+function useChoicePanel(choices: HeaderToolChoice[]) {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const open = choices.find((c) => c.key === openKey && c.panel) ?? null;
+  const close = () => setOpenKey(null);
+  const show = (key: string) => setTimeout(() => setOpenKey(key), MENU_CLOSED_MS);
+  return { open, close, show };
+}
+
+function ChoicePanel({
+  open,
+  close,
+  children,
+}: {
+  open: HeaderToolChoice | null;
+  close: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Popover open={open !== null} onOpenChange={(o) => !o && close()}>
+      {children}
+      {open?.panel ? (
+        <PopoverContent align="end" className="w-80" aria-label={open.label}>
+          {open.panel(close)}
+        </PopoverContent>
+      ) : null}
+    </Popover>
+  );
+}
+
 function InlineTool({ tool }: { tool: HeaderTool }) {
+  const panel = useChoicePanel(tool.choices ?? []);
   if (tool.choices) {
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <HeaderIconButton label={tool.label}>{tool.icon}</HeaderIconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {tool.choices.map((c) => (
-            <ChoiceItem key={c.key} choice={c} />
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <ChoicePanel open={panel.open} close={panel.close}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <PopoverAnchor asChild>
+              <HeaderIconButton label={tool.label}>{tool.icon}</HeaderIconButton>
+            </PopoverAnchor>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {tool.choices.map((c) => (
+              <ChoiceItem key={c.key} choice={c} onPanel={panel.show} />
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </ChoicePanel>
     );
   }
   if (tool.href) {
@@ -532,7 +580,21 @@ function InlineTool({ tool }: { tool: HeaderTool }) {
   );
 }
 
-function ChoiceItem({ choice }: { choice: HeaderToolChoice }) {
+function ChoiceItem({
+  choice,
+  onPanel,
+}: {
+  choice: HeaderToolChoice;
+  onPanel: (key: string) => void;
+}) {
+  if (choice.panel) {
+    return (
+      <DropdownMenuItem onSelect={() => onPanel(choice.key)}>
+        {choice.icon}
+        {choice.label}…
+      </DropdownMenuItem>
+    );
+  }
   if (choice.href) {
     return (
       <DropdownMenuItem asChild>
@@ -567,28 +629,35 @@ type MoreEntry = { key: string; label: string; icon?: ReactNode; danger?: boolea
  */
 function MoreMenu({ groups }: { groups: MoreEntry[][] }) {
   const shown = groups.filter((g) => g.length > 0);
+  const panel = useChoicePanel(
+    groups.flatMap((g) => g.flatMap((e) => (e.kind === 'tool' ? (e.tool.choices ?? []) : []))),
+  );
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <HeaderIconButton label="More" tooltip="Every action for this item">
-          <MoreHorizontal />
-        </HeaderIconButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-56">
-        {shown.map((group, gi) => (
-          <Fragment key={gi}>
-            {gi > 0 ? <DropdownMenuSeparator /> : null}
-            {group.map((e) => (
-              <MoreItem key={e.key} entry={e} />
-            ))}
-          </Fragment>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <ChoicePanel open={panel.open} close={panel.close}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <PopoverAnchor asChild>
+            <HeaderIconButton label="More" tooltip="Every action for this item">
+              <MoreHorizontal />
+            </HeaderIconButton>
+          </PopoverAnchor>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-56">
+          {shown.map((group, gi) => (
+            <Fragment key={gi}>
+              {gi > 0 ? <DropdownMenuSeparator /> : null}
+              {group.map((e) => (
+                <MoreItem key={e.key} entry={e} onPanel={panel.show} />
+              ))}
+            </Fragment>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </ChoicePanel>
   );
 }
 
-function MoreItem({ entry: e }: { entry: MoreEntry }) {
+function MoreItem({ entry: e, onPanel }: { entry: MoreEntry; onPanel: (key: string) => void }) {
   const cls = e.danger ? 'text-destructive-ink focus:text-destructive-ink' : undefined;
   if (e.kind === 'link') {
     return (
@@ -618,7 +687,7 @@ function MoreItem({ entry: e }: { entry: MoreEntry }) {
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent>
           {t.choices.map((c) => (
-            <ChoiceItem key={c.key} choice={c} />
+            <ChoiceItem key={c.key} choice={c} onPanel={onPanel} />
           ))}
         </DropdownMenuSubContent>
       </DropdownMenuSub>
