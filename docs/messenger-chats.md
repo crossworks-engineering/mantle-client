@@ -124,6 +124,36 @@ never sees it.
 - **Nothing is shown when `via` is null**, and a system line (someone
   added, a rename, a call line) never shows it.
 
+## Group info
+
+A group carries `info` (mantle migration 0343, `MessengerConversation.info`,
+plan section 24): free text, at most 2000 characters, that says what the
+group is for and its rules. The brain stores and shows it and never runs
+it; an agent in the group reads it from `messenger_open` as the group's
+rules. Only a group has it; a direct chat never does.
+
+- **The form** (`components/messenger/group-info-field.tsx`): on the New
+  message form's group shape and in a group's details, a textarea under the
+  group's name, labelled "Info", with the placeholder "What this group is
+  for and its rules" and a counter against the 2000. The text goes out
+  trimmed; nothing sends null (a patch with null clears it). On the New
+  message form it rides on the create. In Details an admin (still in the
+  group) gets Add or Edit beside the Info heading; the form saves on Save
+  info, Escape or Cancel drops it, and a save that changes nothing just
+  closes. Everyone else reads it.
+- **The panel** (`chat-inspector.tsx`): the Info section sits at the top of
+  Details, under the title and the head count, as plain text with its line
+  breaks kept. Nothing in it is rendered as markdown and no link is made
+  clickable.
+- **The brain's answer is the truth.** The form shows what was typed until
+  the brain answers; the chat it sends back replaces the one held, so the
+  panel shows what the brain kept. A brain before 0343 drops the field: the
+  New message form says so once the group is created (as it does for the
+  look), and Details turns the "nothing to change" refusal of an info-only
+  patch into the same message. Nothing is kept on the client.
+- The pure rules (`lib/messenger/group-info.ts`): the limit, the trim, the
+  counter, who edits, what shows, whether the brain keeps it.
+
 ## Avatars
 
 Every face in Chats (the rows, the header, the inspector's people, the
@@ -252,9 +282,9 @@ of those says otherwise.
   slug avatar until the brain sends the agent's `avatar` there too.
 - The DTOs come from `@mantle/client-types` (`dto/messenger`, 0.400.14).
   `lib/messenger/dto.ts` re-exports them and keeps a local copy of only the
-  fields the next brain release adds (a person's avatar and photo, a group's
-  icon and colour, the patch body, the people gate's card); that copy goes
-  once the release after 0.400.14 ships them.
+  fields the next brain releases add (a person's avatar and photo, a group's
+  icon and colour, the patch body, the people gate's card, a group's info
+  and the preview's `via`); that copy goes once client-types ships them.
 - Out of scope here: attachments and voice notes (Phase 4), assistants
   answering in groups (Phase 3), the phone (Phase 5), calls.
 
@@ -270,9 +300,11 @@ Unit tests, `pnpm test` (pure functions, no DOM):
   every 5 seconds once silent past the heartbeat, never while keep-alives
   arrive, and stops when the stream speaks).
 - `lib/messenger/format.test.ts`, `mentions.test.ts`, `notify.test.ts`,
-  `nav.test.ts`, `faces.test.ts`: the words and times, mentions, when a
-  notice pops and where, the rail count, the entry hiding on a 404, whose
-  avatar each face draws, a group's look.
+  `nav.test.ts`, `faces.test.ts`, `group-info.test.ts`: the words and
+  times (the via chip and the preview with it), mentions, when a notice
+  pops, where and with which words, the rail count, the entry hiding on a
+  404, whose avatar each face draws, a group's look, a group's info (the
+  trim, the counter, who edits, what shows).
 - `packages/web-ui/src/event-stream-core.test.ts` and
   `components/realtime/use-realtime.test.ts`: keep-alives count as activity,
   every reconnect is a connect, and the shared stream hands both to each

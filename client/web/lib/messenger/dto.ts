@@ -10,6 +10,10 @@
  * The preview's `via` (plan section 24) is asked of the brain, not built
  * yet: the row shows "via" only once it is sent.
  *
+ * LOCAL COPY (group info): `info` on a conversation, the create body and
+ * the patch body (plan section 24, mantle migration 0343, task f6f2e5f4)
+ * goes once client-types ships it. A brain before 0343 drops it.
+ *
  * LOCAL COPY (calls): the call types at the end (`MessengerEvent`,
  * `MessengerCapabilities`, `MessengerCallIce`, `MessengerCallJoinResponse`,
  * the call rows) and the `event` field on a message are copied from the
@@ -74,11 +78,22 @@ export type MessengerListRow = Omit<BaseListRow, 'participants' | 'preview'> &
 
 export type MessengerListResponse = { rows: MessengerListRow[] };
 
-export type MessengerConversation = Omit<BaseConversation, 'participants'> &
-  GroupLookFields & { participants: MessengerParticipant[] };
+/** A group's info: what it is for and its rules, free text up to 2000
+ *  characters (migration 0343); null when none, absent on a brain before
+ *  it. Groups only. Agents read it too. */
+type GroupInfoField = { info?: string | null };
 
-/** POST /api/messenger/conversations; a brain before the look drops it. */
-export type MessengerCreateRequest = BaseCreateRequest & { icon?: string; color?: string };
+export type MessengerConversation = Omit<BaseConversation, 'participants'> &
+  GroupLookFields &
+  GroupInfoField & { participants: MessengerParticipant[] };
+
+/** POST /api/messenger/conversations; a brain before the look drops the
+ *  look, one before 0343 drops the info. */
+export type MessengerCreateRequest = BaseCreateRequest & {
+  icon?: string;
+  color?: string;
+  info?: string | null;
+};
 
 export type MessengerCreateResponse = {
   conversation: MessengerConversation;
@@ -86,12 +101,13 @@ export type MessengerCreateResponse = {
   created: boolean;
 };
 
-/** PATCH /api/messenger/c/:id: a group's title and look (its admins), my
- *  own mute. */
+/** PATCH /api/messenger/c/:id: a group's title, look and info (its
+ *  admins; null clears the info), my own mute. */
 export type MessengerPatchRequest = {
   title?: string | null;
   icon?: string | null;
   color?: string | null;
+  info?: string | null;
   muted?: boolean;
 };
 

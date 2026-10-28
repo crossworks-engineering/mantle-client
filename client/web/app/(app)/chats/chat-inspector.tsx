@@ -3,8 +3,9 @@
 /**
  * A chat's details, as an inspector beside the transcript (style guide 8,
  * "A detail pane with an inspector"): everything ABOUT the chat, never its
- * messages. The title (an admin renames a group), the people with their
- * admin marks (an admin adds and removes them), my mute and my pin, and the
+ * messages. The title (an admin renames a group), the group's info (what it
+ * is for and its rules; an admin writes it, everyone reads it), the people
+ * with their admin marks (an admin adds and removes them), my mute and my pin, and the
  * ends: clear for me, leave a group, delete a group's history for everyone
  * (admins). Every destructive one confirms.
  */
@@ -37,10 +38,18 @@ import { HeaderPill } from '@/components/layout/item-header';
 import { ItemSearch } from '@/components/item-list/item-list-header';
 import { AppLookPicker, type AppLook } from '@/components/app-nav/app-look-picker';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
+import { GroupInfoField } from '@/components/messenger/group-info-field';
 import { useChatFaces } from '@/components/messenger/chat-faces';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerConversation } from '@/lib/messenger/dto';
 import { groupLook, type GroupLook } from '@/lib/messenger/faces';
+import {
+  canEditInfo,
+  infoChanged,
+  infoShown,
+  infoToSend,
+  keepsGroupInfo,
+} from '@/lib/messenger/group-info';
 
 type Confirm = {
   title: string;
@@ -79,6 +88,15 @@ export function ChatInspector({
   const [name, setName] = useState(conversation.title ?? '');
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  // The group's info: its text on the form while an admin edits it.
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [infoText, setInfoText] = useState('');
+  const [savingInfo, setSavingInfo] = useState(false);
+  const infoButton = useRef<HTMLButtonElement>(null);
+  const doneInfo = () => {
+    setEditingInfo(false);
+    requestAnimationFrame(() => infoButton.current?.focus());
+  };
   // The Add button gives way to the form and takes the focus back after it.
   const addButton = useRef<HTMLButtonElement>(null);
   const doneAdding = () => {
@@ -183,6 +201,44 @@ export function ChatInspector({
     if (ok) setRenaming(false);
   };
 
+  /**
+   * Save the info. The brain's answer is the truth: the chat it sends back
+   * replaces the one held, so the details show what it kept (a brain before
+   * 0343 keeps nothing and says so once). The form stays until then.
+   */
+  const saveInfo = async () => {
+    if (!infoChanged(conversation.info, infoText)) {
+      doneInfo();
+      return;
+    }
+    const sent = infoToSend(infoText);
+    setSavingInfo(true);
+    const ok = await act('info', async () => {
+      let fresh: MessengerConversation;
+      try {
+        fresh = await messengerApi.update(id, { info: sent });
+      } catch (err) {
+        // A brain before 0343 drops the key and finds nothing to change.
+        if (
+          err instanceof ApiError &&
+          err.status === 400 &&
+          /nothing to change/i.test(err.message)
+        ) {
+          throw new Error('This brain does not keep a group’s info yet.', { cause: err });
+        }
+        throw err;
+      }
+      queryClient.setQueryData(messengerKeys.conversation(id), fresh);
+      if (sent && !keepsGroupInfo(fresh)) {
+        toast.push({ kind: 'info', message: 'This brain does not keep a group’s info yet.' });
+      }
+    });
+    setSavingInfo(false);
+    if (ok) doneInfo();
+  };
+  const infoEditable = canEditInfo(conversation);
+  const info = infoShown(conversation);
+
   const peer = group ? null : people.find((p) => p.id !== me && p.kind === 'login');
   const avatar = (
     <ChatAvatar
@@ -281,6 +337,82 @@ export function ChatInspector({
             : 'Direct chat'}
         </p>
       </div>
+
+      {group ? (
+        <>
+          <Separator />
+
+          {/* What the group is for and its rules, at the top under the
+              title: plain text, line breaks kept, never rendered as
+              markdown or links. An admin edits it in place. */}
+          <section aria-labelledby="chat-info" className="space-y-2" data-testid="chat-info">
+            <div className="flex items-center justify-between gap-2">
+              <h4 id="chat-info" className="text-sm font-semibold">
+                Info
+              </h4>
+              {infoEditable && !editingInfo ? (
+                <Button
+                  ref={infoButton}
+                  variant="outline"
+                  size="xs"
+                  onClick={() => {
+                    setInfoText(conversation.info ?? '');
+                    setEditingInfo(true);
+                  }}
+                >
+                  <Pencil /> {info ? 'Edit' : 'Add'}
+                </Button>
+              ) : null}
+            </div>
+            {infoEditable && editingInfo ? (
+              <form
+                className="space-y-2"
+                noValidate
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void saveInfo();
+                }}
+              >
+                <GroupInfoField
+                  id="chat-info-text"
+                  value={infoText}
+                  onChange={setInfoText}
+                  autoFocus
+                  disabled={savingInfo}
+                  onKeyDown={(e) => {
+                    // Escape cancels the edit (and stops there, not closing
+                    // the narrow overlay around it).
+                    if (e.key !== 'Escape') return;
+                    e.preventDefault();
+                    doneInfo();
+                  }}
+                />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={doneInfo}>
+                    Cancel
+                  </Button>
+                  <SubmitButton size="sm" pending={savingInfo}>
+                    Save info
+                  </SubmitButton>
+                </div>
+              </form>
+            ) : info ? (
+              <p
+                className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"
+                data-testid="chat-info-text"
+              >
+                {info}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {infoEditable
+                  ? 'What this group is for and its rules. Agents in the group read it too.'
+                  : 'Nothing yet.'}
+              </p>
+            )}
+          </section>
+        </>
+      ) : null}
 
       <Separator />
 

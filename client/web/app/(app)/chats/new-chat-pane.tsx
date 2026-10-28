@@ -22,10 +22,12 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { ItemHeader } from '@/components/layout/item-header';
 import { AppLookPicker } from '@/components/app-nav/app-look-picker';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
+import { GroupInfoField } from '@/components/messenger/group-info-field';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerDirectoryEntry, MessengerMention } from '@/lib/messenger/dto';
 import { keepsGroupLook, type ChatFace, type FaceOf, type GroupLook } from '@/lib/messenger/faces';
 import { rowAddress } from '@/lib/messenger/format';
+import { infoToSend, keepsGroupInfo } from '@/lib/messenger/group-info';
 import { newClientMsgId } from '@/lib/messenger/transcript';
 import { draftStorageKey } from '@/app/(app)/assistant/assistant-thread-state';
 import { ChatComposer } from './chat-composer';
@@ -53,8 +55,8 @@ const FILTERS: { id: Filter; label: string; Icon: typeof User }[] = [
  *   a messenger chat: a line typed here becomes that composer's draft (its
  *   own session draft, when it has none), sent from there.
  * - Groups: New group, its icon and colour (the folders' look popup), a
- *   name and its members; Send creates it with the line, Create group
- *   without one. I am its first admin; a group of one
+ *   name, its info (what it is for and its rules, 2000 characters) and its
+ *   members; Send creates it with the line, Create group without one. I am its first admin; a group of one
  *   ("message yourself") is allowed.
  */
 export function NewChatPane({
@@ -90,6 +92,7 @@ export function NewChatPane({
   const [titleError, setTitleError] = useState<string | null>(null);
   const [members, setMembers] = useState<Set<string>>(new Set());
   const [look, setLook] = useState<GroupLook>({ icon: null, color: null });
+  const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
   const draft = useRef('');
   // Closed (Cancel, a row opened) while a create was in flight: the chat
@@ -143,12 +146,14 @@ export function NewChatPane({
         document.getElementById('new-group-title')?.focus();
         return false;
       }
+      const text = infoToSend(info);
       request = {
         kind: 'group',
         participants: [...members],
         title: name,
         ...(look.icon ? { icon: look.icon } : {}),
         ...(look.color ? { color: look.color } : {}),
+        ...(text ? { info: text } : {}),
       };
     } else {
       if (!to) return false;
@@ -159,13 +164,19 @@ export function NewChatPane({
       const out = await messengerApi.create(request);
       void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
       if (!alive.current) return false;
-      // A brain before the group look drops it: say so rather than lose it
-      // without a word.
-      if (grouping && (look.icon || look.color) && !keepsGroupLook(out.conversation)) {
-        toast.push({
-          kind: 'info',
-          message: 'Group created. This brain does not keep a group’s icon and colour yet.',
-        });
+      // A brain before the group look, or before its info, drops it: say
+      // so rather than lose it without a word.
+      if (grouping) {
+        const dropped = [
+          (look.icon || look.color) && !keepsGroupLook(out.conversation) ? 'icon and colour' : null,
+          'info' in request && !keepsGroupInfo(out.conversation) ? 'info' : null,
+        ].filter((d): d is string => d !== null);
+        if (dropped.length > 0) {
+          toast.push({
+            kind: 'info',
+            message: `Group created. This brain does not keep a group’s ${dropped.join(' or ')} yet.`,
+          });
+        }
       }
       onCreated(out.conversation.id, line ? { ...line, clientMsgId: newClientMsgId() } : null);
       // Still busy: the form is leaving for the chat, and a second send
@@ -331,6 +342,9 @@ export function NewChatPane({
         </div>
         <FieldError id="new-group-title-error">{titleError}</FieldError>
       </Field>
+      {/* What the group is for and its rules: everyone in it reads it in
+          Details, an agent in it reads it too. */}
+      <GroupInfoField id="new-group-info" value={info} onChange={setInfo} />
       <section aria-labelledby="new-group-members" className="space-y-1">
         <h3 id="new-group-members" className="text-sm font-medium">
           Members
