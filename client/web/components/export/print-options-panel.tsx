@@ -135,7 +135,6 @@ export function PrintOptionsPanel({ nodeId, onClose }: { nodeId: string; onClose
           </FieldLabel>
           <ToggleGroup
             type="single"
-            size="sm"
             variant="outline"
             value={options.landscape ? 'landscape' : 'portrait'}
             onValueChange={(v) => v && patch({ landscape: v === 'landscape' })}
@@ -159,20 +158,23 @@ export function PrintOptionsPanel({ nodeId, onClose }: { nodeId: string; onClose
             size="2xs"
             onClick={toggleSides}
             aria-expanded={sidesShown}
-            aria-controls="print-margin-sides"
           >
             {sidesShown ? 'One value' : 'Each side'}
           </Button>
         </div>
         {sidesShown ? (
-          <div id="print-margin-sides" className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             {SIDES.map((s) => (
               <div key={s} className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">{SIDE_LABELS[s]}</span>
+                <FieldLabel
+                  htmlFor={`print-margin-${s}`}
+                  className="text-xs font-normal text-muted-foreground"
+                >
+                  {SIDE_LABELS[s]}
+                </FieldLabel>
                 <MmInput
                   key={seed}
                   id={`print-margin-${s}`}
-                  label={`${SIDE_LABELS[s]} margin in millimetres`}
                   value={options.margins[s]}
                   onChange={(raw) => setMargin(s, raw)}
                 />
@@ -183,7 +185,6 @@ export function PrintOptionsPanel({ nodeId, onClose }: { nodeId: string; onClose
           <MmInput
             key={seed}
             id="print-margin"
-            label="Margin on every side in millimetres"
             value={options.margins.top}
             onChange={(raw) => setMargin('all', raw)}
           />
@@ -236,15 +237,14 @@ export function PrintOptionsPanel({ nodeId, onClose }: { nodeId: string; onClose
   );
 }
 
-/** A millimetre field: free while typed, pinned to 0..60 on the way out. */
+/** A millimetre field: free while typed, pinned to 0..60 on the way out.
+ *  Named by its label (`htmlFor`). */
 function MmInput({
   id,
-  label,
   value,
   onChange,
 }: {
   id: string;
-  label: string;
   value: number;
   onChange: (raw: string) => void;
 }) {
@@ -257,7 +257,6 @@ function MmInput({
       min={0}
       max={MAX_MARGIN_MM}
       step={1}
-      aria-label={label}
       defaultValue={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={(e) => {
