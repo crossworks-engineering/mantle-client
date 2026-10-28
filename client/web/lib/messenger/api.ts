@@ -12,6 +12,7 @@ import type {
   MessengerDirectoryResponse,
   MessengerListResponse,
   MessengerMessagesResponse,
+  MessengerPatchRequest,
   MessengerSendRequest,
   MessengerSendResponse,
   MessengerUnreadResponse,
@@ -47,10 +48,7 @@ export const messengerApi = {
   create: (body: MessengerCreateRequest) =>
     apiSend<MessengerCreateResponse>(`${BASE}/conversations`, 'POST', body),
   /** A group's title and look (admins) and my mute. */
-  update: (
-    id: string,
-    body: { title?: string | null; muted?: boolean; icon?: string | null; color?: string | null },
-  ) =>
+  update: (id: string, body: MessengerPatchRequest) =>
     apiSend<{ conversation: MessengerConversation }>(one(id), 'PATCH', body).then(
       (r) => r.conversation,
     ),

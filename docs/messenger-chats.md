@@ -217,8 +217,11 @@ of those says otherwise.
   other people show initials. Both fields are optional, so a brain without
   them still works. A login without the assistants area sees an agent's
   slug avatar until the brain sends the agent's `avatar` there too.
-- The DTOs are a temporary copy (`lib/messenger/dto.ts`) of the brain's
-  `dto/messenger.ts` until a client-types release ships them.
+- The DTOs come from `@mantle/client-types` (`dto/messenger`, 0.400.14).
+  `lib/messenger/dto.ts` re-exports them and keeps a local copy of only the
+  fields the next brain release adds (a person's avatar and photo, a group's
+  icon and colour, the patch body, the people gate's card); that copy goes
+  once the release after 0.400.14 ships them.
 - Out of scope here: attachments and voice notes (Phase 4), assistants
   answering in groups (Phase 3), the phone (Phase 5), calls.
 
