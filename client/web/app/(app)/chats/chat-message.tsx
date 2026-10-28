@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import {
   AlertCircle,
+  Bot,
   Check,
   CheckCheck,
   Clock,
@@ -25,7 +26,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { ChatBubble } from '@/components/chat-bubble';
 import { EmojiPicker } from '@/components/emoji-picker';
 import type { MessengerMessage } from '@/lib/messenger/dto';
-import { bubbleTime } from '@/lib/messenger/format';
+import { bubbleTime, viaChip } from '@/lib/messenger/format';
 import { callLine } from '@/lib/calls/ring';
 import { splitMentions } from '@/lib/messenger/mentions';
 import { sendableBody, type OutboxLine } from '@/lib/messenger/transcript';
@@ -72,8 +73,8 @@ export type MessageActions = {
 };
 
 /**
- * One message of the transcript: the author's name above it in a group, the
- * bubble, then its time, an "edited" mark and, on mine, the ticks (one sent,
+ * One message of the transcript: the author's name above it in a group (and
+ * on any line sent through a credential, with the "via" chip), the bubble, then its time, an "edited" mark and, on mine, the ticks (one sent,
  * two read by everyone else), and the reactions under it (a chip toggles
  * mine). Its actions sit beside the bubble, shown on hover and on keyboard
  * focus: React (the emoji picker) and More (Edit, Delete).
@@ -139,11 +140,25 @@ export function ChatMessage({
   const Tick = read ? CheckCheck : Check;
   const tools =
     actions && !deleted && !editing ? <MessageTools mine={mine} actions={actions} /> : null;
+  // A line sent through a credential on the author's account is marked on
+  // every bubble, mine included, so the name line shows for it even inside
+  // a run and in a direct chat.
+  const via = viaChip(message);
   return (
     <Row mine={mine} seq={message.seq} author={author}>
-      {showAuthor ? (
-        <span className="mb-0.5 mt-2 px-1 text-xs text-muted-foreground">
-          {message.authorName ?? 'Someone'}
+      {showAuthor || via ? (
+        <span className="mb-0.5 mt-2 flex items-center gap-1 px-1 text-xs text-muted-foreground">
+          <span>{message.authorName ?? 'Someone'}</span>
+          {via ? (
+            <span
+              className="inline-flex items-center gap-0.5"
+              title={via.title}
+              data-testid="chat-via"
+            >
+              <Bot className="size-3 shrink-0" aria-hidden />
+              {via.text}
+            </span>
+          ) : null}
         </span>
       ) : null}
       {(!deleted && editing) || (

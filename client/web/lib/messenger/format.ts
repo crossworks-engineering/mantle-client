@@ -2,7 +2,7 @@
  * The words and times the chat screen shows (Messenger V1 Phase 2), the pure
  * half. Pinned by format.test.ts.
  */
-import type { MessengerListRow, MessengerParticipant } from './dto';
+import type { MessengerListRow, MessengerMessage, MessengerParticipant } from './dto';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -123,13 +123,60 @@ export function previewLine(
   const me = myName(row.participants, myLoginId);
   const mine = p.authorKind === 'login' && !!me && p.authorName === me;
   const text = p.text === '' ? 'This message was deleted' : p.text.replace(/\s+/g, ' ').trim();
+  const via = p.authorKind === 'system' ? null : viaLabel(p.via);
   if (row.kind === 'group') {
-    if (mine) return { mine, text: `You: ${text}` };
+    if (mine) return { mine, text: `${authorVia('You', via)}: ${text}` };
     if (p.authorName && p.authorKind !== 'system') {
-      return { mine, text: `${firstName(p.authorName)}: ${text}` };
+      return { mine, text: `${authorVia(firstName(p.authorName), via)}: ${text}` };
     }
+  } else if (via && (mine || p.authorName)) {
+    // A direct chat names nobody, except on a line sent through a
+    // credential: who, and through what, is the point of the mark.
+    return { mine, text: `${authorVia(mine ? 'You' : firstName(p.authorName!), via)}: ${text}` };
   }
   return { mine, text };
+}
+
+/** The credential's label, or null for a browser session's line (null,
+ *  absent on a brain before it, or blank). */
+export function viaLabel(via: string | null | undefined): string | null {
+  const label = via?.trim();
+  return label ? label : null;
+}
+
+/** An author as a preview or a notice names them: "Ann via Claude Code"
+ *  for a line sent through a credential, "Ann" otherwise. */
+export function authorVia(name: string, via: string | null | undefined): string {
+  const label = viaLabel(via);
+  return label ? `${name} via ${label}` : name;
+}
+
+/** The chip beside an author's name in the transcript (plan section 24). */
+export type ViaChip = {
+  /** "via <label>". */
+  text: string;
+  /** The tooltip: what the label is. */
+  title: string;
+};
+
+/**
+ * The mark on a line sent through a credential on the author's account (an
+ * OAuth client such as a coding agent, an API key, a peer): "via <label>"
+ * with a bot icon, the tooltip saying what that is. Null for a browser
+ * session's line (`via` null) and for a system line, which never carries
+ * one. My own lines through a credential show it too, so a person sees
+ * what their agent said.
+ */
+export function viaChip(
+  m: Pick<MessengerMessage, 'authorKind' | 'authorName'> & { via?: string | null },
+): ViaChip | null {
+  const label = viaLabel(m.via);
+  if (!label || m.authorKind === 'system') return null;
+  const name = m.authorName ?? 'Someone';
+  return {
+    text: `via ${label}`,
+    title: `Sent through ${label}, an external agent or key on ${name}’s account`,
+  };
 }
 
 function firstName(name: string): string {

@@ -96,6 +96,34 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   bundle does not ride onto every route. The brain lists an assistant once
   its thread has a message or it is pinned; New message offers all of them.
 
+## Lines from an agent
+
+Every message carries `via` (Messenger V1 Phase 1, `MessengerMessage.via`):
+the name of the credential it was sent through, set by the brain from the
+call itself and never by the client. An OAuth client such as a coding agent
+("Claude Code"), an API key or a peer gives its name; a browser session
+gives null. The brain also keeps `via_ref` for `messenger_wait`; the client
+never sees it.
+
+- **The transcript** (`chat-message.tsx`, `viaChip` in
+  `lib/messenger/format.ts`): a line whose `via` is set shows the author's
+  name, then "via <label>" in the muted style with a small bot icon. The
+  chip's tooltip reads "Sent through <label>, an external agent or key on
+  <name>'s account". The name line shows for it even inside a run of
+  bubbles, in a direct chat, and on my own lines (so a person sees what
+  their agent said on their account). The screen reader's announcement of
+  a new line reads the same way.
+- **The list row** (`previewLine`): "Ann via Claude Code: <first line>",
+  "You via <label>: ..." for mine; in a direct chat too, where the preview
+  otherwise names nobody. This needs `via` on the row's preview
+  (`MessengerPreview`), a client-side addition to the DTO copy the brain
+  does not send yet: until it does, the row reads as it did.
+- **The notices** (`noticeText` in `lib/messenger/notify.ts`): the toast
+  and the desktop's OS notice read "Ann via Claude Code: <first line>"
+  ("Ann via Claude Code in Design crew: ..." for a group).
+- **Nothing is shown when `via` is null**, and a system line (someone
+  added, a rename, a call line) never shows it.
+
 ## Avatars
 
 Every face in Chats (the rows, the header, the inspector's people, the

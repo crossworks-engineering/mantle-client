@@ -7,6 +7,8 @@
  * LOCAL COPY: everything below the re-exports goes once the brain release
  * after 0.400.14 (mantle branches messenger-avatars and people-gate) ships
  * it in client-types. All of it is optional, so a brain without it works.
+ * The preview's `via` (plan section 24) is asked of the brain, not built
+ * yet: the row shows "via" only once it is sent.
  *
  * LOCAL COPY (calls): the call types at the end (`MessengerEvent`,
  * `MessengerCapabilities`, `MessengerCallIce`, `MessengerCallJoinResponse`,
@@ -23,6 +25,7 @@ import type {
   MessengerMessage as BaseMessage,
   MessengerMessagesResponse as BaseMessagesResponse,
   MessengerParticipant as BaseParticipant,
+  MessengerPreview as BasePreview,
 } from '@mantle/client-types/dto/messenger';
 
 export type {
@@ -32,7 +35,6 @@ export type {
   MessengerMention,
   MessengerMessageStatus,
   MessengerParticipantKind,
-  MessengerPreview,
   MessengerReaction,
   MessengerRowKind,
   MessengerSendRequest,
@@ -62,8 +64,13 @@ type GroupLookFields = {
 
 export type MessengerParticipant = BaseParticipant & Face;
 
-export type MessengerListRow = Omit<BaseListRow, 'participants'> &
-  GroupLookFields & { participants: MessengerParticipant[] };
+/** A row's last line, with the credential it was sent through (the
+ *  message's own `via`, plan section 24): the brain's row does not carry it
+ *  yet; absent or null, the preview names the author alone. */
+export type MessengerPreview = BasePreview & { via?: string | null };
+
+export type MessengerListRow = Omit<BaseListRow, 'participants' | 'preview'> &
+  GroupLookFields & { participants: MessengerParticipant[]; preview: MessengerPreview | null };
 
 export type MessengerListResponse = { rows: MessengerListRow[] };
 

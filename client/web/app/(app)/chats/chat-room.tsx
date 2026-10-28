@@ -47,7 +47,7 @@ import type {
   MessengerMention,
   MessengerMessage,
 } from '@/lib/messenger/dto';
-import { otherPeople, presenceLine, stampLabel } from '@/lib/messenger/format';
+import { authorVia, otherPeople, presenceLine, stampLabel } from '@/lib/messenger/format';
 import { groupLook } from '@/lib/messenger/faces';
 import { shouldSendTyping, typingLine } from '@/lib/messenger/live';
 import {
@@ -777,7 +777,7 @@ export function ChatRoom({
     if (top <= announced.current) return;
     announced.current = top;
     const m = theirs[theirs.length - 1]!;
-    setAnnounce(`${m.authorName ?? 'Someone'}: ${m.body.slice(0, 200)}`);
+    setAnnounce(`${authorVia(m.authorName ?? 'Someone', m.via)}: ${m.body.slice(0, 200)}`);
   }, [loaded, t.messages, me]);
 
   // An edit open on a message that was deleted meanwhile closes.

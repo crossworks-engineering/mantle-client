@@ -68,6 +68,21 @@ describe('noticeText', () => {
     );
     expect(noticeText({ authorName: null, body: 'x'.repeat(300) }, null).body).toHaveLength(120);
   });
+
+  it('names the credential a line came through, never on a system line', () => {
+    const viaAnn = {
+      authorName: 'Ann',
+      body: 'Done',
+      authorKind: 'login' as const,
+      via: 'Claude Code',
+    };
+    expect(noticeText(viaAnn, null)).toEqual({ title: 'Ann via Claude Code', body: 'Done' });
+    expect(noticeText(viaAnn, 'Design crew').title).toBe('Ann via Claude Code in Design crew');
+    expect(noticeText({ ...viaAnn, via: null }, null).title).toBe('Ann');
+    expect(noticeText({ ...viaAnn, authorKind: 'system', authorName: null }, null).title).toBe(
+      'Someone',
+    );
+  });
 });
 
 describe('noticeRoute', () => {

@@ -6,6 +6,7 @@
  * notify.test.ts.
  */
 import type { MessengerMessage, MessengerUnreadResponse } from './dto';
+import { authorVia } from './format';
 
 /**
  * Whether this tab keeps the messenger's stream open. The brain allows a
@@ -66,12 +67,18 @@ export function shouldPop(s: {
 /** The longest first line a notice carries. */
 export const NOTICE_LINE_MAX = 120;
 
-/** A notice's words: the author (and the group), then the first line. */
+/** A notice's words: the author ("Ann via Claude Code" for a line sent
+ *  through a credential; never on a system line), the group, then the
+ *  first line. */
 export function noticeText(
-  message: Pick<MessengerMessage, 'authorName' | 'body'>,
+  message: Pick<MessengerMessage, 'authorName' | 'body'> &
+    Partial<Pick<MessengerMessage, 'authorKind' | 'via'>>,
   groupTitle: string | null,
 ): { title: string; body: string } {
-  const author = message.authorName ?? 'Someone';
+  const author = authorVia(
+    message.authorName ?? 'Someone',
+    message.authorKind === 'system' ? null : message.via,
+  );
   const first = (message.body.split('\n').find((l) => l.trim()) ?? '').trim();
   const body = first.length > NOTICE_LINE_MAX ? `${first.slice(0, NOTICE_LINE_MAX - 1)}…` : first;
   return { title: groupTitle ? `${author} in ${groupTitle}` : author, body };

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { MessengerListRow, MessengerParticipant } from './dto';
 import {
   agentIdOf,
+  authorVia,
   badgeCount,
   directPeer,
   initials,
@@ -16,6 +17,8 @@ import {
   rowBadge,
   rowMatches,
   stampLabel,
+  viaChip,
+  viaLabel,
 } from './format';
 
 const NOW = new Date(2026, 9, 27, 15, 0, 0);
@@ -117,6 +120,41 @@ describe('previewLine', () => {
     const r = row({ preview: { authorName: 'Ann Lee', text: 'a\n\n b', authorKind: 'login' } });
     expect(previewLine(r, 'me')?.text).toBe('a b');
   });
+
+  it('names who sent a line through a credential, and through what', () => {
+    const viaAnn = {
+      authorName: 'Ann Lee',
+      text: 'Done',
+      authorKind: 'login' as const,
+      via: 'Claude Code',
+    };
+    expect(previewLine(row({ preview: viaAnn }), 'me')?.text).toBe('Ann via Claude Code: Done');
+    expect(previewLine(row({ kind: 'group', preview: viaAnn }), 'me')?.text).toBe(
+      'Ann via Claude Code: Done',
+    );
+    const mine = row({
+      kind: 'group',
+      preview: { authorName: 'Jo Me', text: 'Ok', authorKind: 'login', via: 'My key' },
+    });
+    expect(previewLine(mine, 'me')).toEqual({ mine: true, text: 'You via My key: Ok' });
+    expect(previewLine(row({ ...mine, kind: 'direct' }), 'me')?.text).toBe('You via My key: Ok');
+  });
+
+  it('shows no "via" for a browser session or a system line', () => {
+    const none = row({
+      preview: { authorName: 'Ann Lee', text: 'Hi', authorKind: 'login', via: null },
+    });
+    expect(previewLine(none, 'me')?.text).toBe('Hi');
+    const blank = row({
+      preview: { authorName: 'Ann Lee', text: 'Hi', authorKind: 'login', via: '  ' },
+    });
+    expect(previewLine(blank, 'me')?.text).toBe('Hi');
+    const sys = row({
+      kind: 'group',
+      preview: { authorName: null, text: 'Ann added Bo', authorKind: 'system', via: 'Claude Code' },
+    });
+    expect(previewLine(sys, 'me')?.text).toBe('Ann added Bo');
+  });
 });
 
 describe('rowMatches', () => {
@@ -188,5 +226,34 @@ describe('rowBadge', () => {
     expect(rowBadge(r(Number.NaN))).toBeNull();
     expect(rowBadge(r(-3))).toBeNull();
     expect(rowBadge(r(Number.POSITIVE_INFINITY))).toBeNull();
+  });
+});
+
+describe('viaChip', () => {
+  const line = { authorKind: 'login' as const, authorName: 'Ann Lee', via: 'Claude Code' };
+  it('marks a line sent through a credential, mine included', () => {
+    expect(viaChip(line)).toEqual({
+      text: 'via Claude Code',
+      title: 'Sent through Claude Code, an external agent or key on Ann Lee’s account',
+    });
+    expect(viaChip({ ...line, authorName: null })?.title).toContain('on Someone’s account');
+    expect(viaChip({ ...line, via: 'API key' })?.text).toBe('via API key');
+  });
+
+  it('shows nothing for a browser session, a blank label or a system line', () => {
+    expect(viaChip({ ...line, via: null })).toBeNull();
+    expect(viaChip({ ...line, via: undefined })).toBeNull();
+    expect(viaChip({ ...line, via: ' ' })).toBeNull();
+    expect(viaChip({ ...line, authorKind: 'system', authorName: null })).toBeNull();
+  });
+});
+
+describe('authorVia and viaLabel', () => {
+  it('reads "Name via Label", or the name alone', () => {
+    expect(authorVia('Ann', 'Claude Code')).toBe('Ann via Claude Code');
+    expect(authorVia('Ann', ' Peer ')).toBe('Ann via Peer');
+    expect(authorVia('Ann', null)).toBe('Ann');
+    expect(authorVia('Ann', undefined)).toBe('Ann');
+    expect(viaLabel('')).toBeNull();
   });
 });
