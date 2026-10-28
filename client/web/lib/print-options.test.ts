@@ -61,6 +61,9 @@ describe('printQuery', () => {
   it('sends only the sides that differ', () => {
     expect(printQuery(withMargins({ top: 30 }))).toBe('&margin_top=30');
     expect(printQuery(withMargins({ right: 0, left: 5 }))).toBe('&margin_right=0&margin_left=5');
+    expect(printQuery(withMargins({ top: 1, right: 2, bottom: 3, left: 4 }))).toBe(
+      '&margin_top=1&margin_right=2&margin_bottom=3&margin_left=4',
+    );
   });
 
   it('clamps a margin to 0..60 and rounds it', () => {
@@ -143,5 +146,16 @@ describe('normalise and storage', () => {
     expect(decodePrintOptions('{')).toBeNull();
     expect(decodePrintOptions('"a4"')).toBeNull();
     expect(decodePrintOptions('null')).toBeNull();
+    // An array is an object with none of the fields: the defaults, not junk.
+    expect(decodePrintOptions('[]')).toEqual(DEFAULT_PRINT_OPTIONS);
+  });
+
+  it('an older or partial stored shape fills in the defaults', () => {
+    expect(decodePrintOptions('{"paper":"a3"}')).toEqual(withOpts({ paper: 'a3' }));
+    expect(decodePrintOptions('{"margins":{"top":4}}')).toEqual(withMargins({ top: 4 }));
+    // A flag is a boolean; the string "true" is not a choice anyone made.
+    expect(decodePrintOptions('{"landscape":"true","pageNumbers":1}')).toEqual(
+      DEFAULT_PRINT_OPTIONS,
+    );
   });
 });

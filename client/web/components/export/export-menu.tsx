@@ -1,8 +1,6 @@
 'use client';
 
-import { useState } from 'react';
 import {
-  ChevronDown,
   Download,
   FileImage,
   FileText,
@@ -13,19 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
-import { Button } from '@mantle/web-ui/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from '@mantle/web-ui/ui/dropdown-menu';
-import { Popover, PopoverAnchor, PopoverContent } from '@mantle/web-ui/ui/popover';
-import {
-  MENU_CLOSED_MS,
-  type HeaderTool,
-  type HeaderToolChoice,
-} from '@/components/layout/item-header';
+import type { HeaderTool, HeaderToolChoice } from '@/components/layout/item-header';
 import { exportPath } from '@/lib/print-options';
 import { PrintOptionsPanel } from './print-options-panel';
 
@@ -64,8 +50,10 @@ const ITEMS: Record<'page' | 'table' | 'draw', ExportItem[]> = {
 };
 
 /**
- * The same choices as an item header tool (item header contract): a Download
+ * The Download tool of an item header (item header contract): a Download
  * icon with its menu while it fits, a Download sub-menu in More once folded.
+ * The one way the choices are offered; a detail header has no download
+ * button of its own.
  */
 export function useExportTool(
   nodeId: string,
@@ -93,61 +81,4 @@ export function useExportTool(
           },
     ),
   };
-}
-
-/**
- * Download a content node in a chosen format. `kind` selects the menu: `page`
- * (Markdown / Word / PDF), `table` (Excel / Markdown table / CSV) or `draw`
- * (SVG / PDF of the committed snapshot). Replaces the single-format
- * ExportButton on a detail header.
- */
-export function ExportMenu({
-  nodeId,
-  kind = 'page',
-}: {
-  nodeId: string;
-  kind?: 'page' | 'table' | 'draw';
-}) {
-  const toAsset = useAssetUrl();
-  const [options, setOptions] = useState(false);
-  return (
-    <Popover open={options} onOpenChange={setOptions}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <PopoverAnchor asChild>
-            <Button size="sm" variant="ghost" title="Download">
-              <Download />
-              <span className="hidden sm:inline">Download</span>
-              <ChevronDown className="opacity-60" />
-            </Button>
-          </PopoverAnchor>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {ITEMS[kind].map(({ format, label, Icon }) =>
-            format === 'pdf' ? (
-              // Once the menu has closed and handed focus back, else the
-              // popover reads the focus move as a click outside.
-              <DropdownMenuItem
-                key={format}
-                onSelect={() => setTimeout(() => setOptions(true), MENU_CLOSED_MS)}
-              >
-                <Icon />
-                {label}…
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem key={format} asChild>
-                <a href={toAsset(exportPath(nodeId, format))} download>
-                  <Icon />
-                  {label}
-                </a>
-              </DropdownMenuItem>
-            ),
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <PopoverContent align="end" className="w-80" aria-label="PDF options">
-        <PrintOptionsPanel nodeId={nodeId} onClose={() => setOptions(false)} />
-      </PopoverContent>
-    </Popover>
-  );
 }

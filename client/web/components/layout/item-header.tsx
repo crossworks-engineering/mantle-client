@@ -530,7 +530,7 @@ function ChoicePanel({
     <Popover open={open !== null} onOpenChange={(o) => !o && close()}>
       {children}
       {open?.panel ? (
-        <PopoverContent align="end" className="w-80" aria-label={open.label}>
+        <PopoverContent align="end" className="w-80" aria-label={`${open.label} options`}>
           {open.panel(close)}
         </PopoverContent>
       ) : null}
