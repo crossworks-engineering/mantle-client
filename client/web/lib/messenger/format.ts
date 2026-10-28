@@ -129,10 +129,11 @@ export function previewLine(
     if (p.authorName && p.authorKind !== 'system') {
       return { mine, text: `${authorVia(firstName(p.authorName), via)}: ${text}` };
     }
-  } else if (via && (mine || p.authorName)) {
+  } else if (via) {
     // A direct chat names nobody, except on a line sent through a
     // credential: who, and through what, is the point of the mark.
-    return { mine, text: `${authorVia(mine ? 'You' : firstName(p.authorName!), via)}: ${text}` };
+    const who = mine ? 'You' : firstName(p.authorName ?? 'Someone');
+    return { mine, text: `${authorVia(who, via)}: ${text}` };
   }
   return { mine, text };
 }

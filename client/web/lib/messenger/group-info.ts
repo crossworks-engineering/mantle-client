@@ -16,10 +16,27 @@ export function infoToSend(text: string): string | null {
   return t ? t : null;
 }
 
-/** The counter under the field: "123 / 2000", and whether it is past the
- *  limit (the field caps typing, but a paste can land past it). */
-export function infoCounter(text: string): { text: string; over: boolean } {
-  return { text: `${text.length} / ${INFO_MAX}`, over: text.length > INFO_MAX };
+/** How close to the cap the counter starts to speak (aria-live). */
+export const INFO_NEAR = 200;
+
+/** The counter under the field: "123 / 2000"; `near` once within reach of
+ *  the limit (the counter is spoken from there, not on every key); `over`
+ *  past it (the field caps typing by UTF-16 units as the brain counts, so
+ *  only a browser that caps by code points lets a text past it; Save and
+ *  Create then wait). */
+export function infoCounter(text: string): { text: string; near: boolean; over: boolean } {
+  const n = text.length;
+  return { text: `${n} / ${INFO_MAX}`, near: n >= INFO_MAX - INFO_NEAR, over: n > INFO_MAX };
+}
+
+/** What the New message form says once a brain before the look or the
+ *  info dropped it on the create: "icon and colour", "info", or both. */
+export function droppedOnCreate(dropped: { look: boolean; info: boolean }): string | null {
+  const parts = [dropped.look ? 'icon and colour' : null, dropped.info ? 'info' : null].filter(
+    (d): d is string => d !== null,
+  );
+  if (parts.length === 0) return null;
+  return `Group created. This brain does not keep a group’s ${parts.join(' or ')} yet.`;
 }
 
 /** Who edits the info: an admin of a group, still in it. Everyone else

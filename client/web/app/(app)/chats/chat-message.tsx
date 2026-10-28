@@ -74,7 +74,8 @@ export type MessageActions = {
 
 /**
  * One message of the transcript: the author's name above it in a group (and
- * on any line sent through a credential, with the "via" chip), the bubble, then its time, an "edited" mark and, on mine, the ticks (one sent,
+ * on any line sent through a credential, with the "via" chip), the
+ * bubble, then its time, an "edited" mark and, on mine, the ticks (one sent,
  * two read by everyone else), and the reactions under it (a chip toggles
  * mine). Its actions sit beside the bubble, shown on hover and on keyboard
  * focus: React (the emoji picker) and More (Edit, Delete).
@@ -157,6 +158,8 @@ export function ChatMessage({
             >
               <Bot className="size-3 shrink-0" aria-hidden />
               {via.text}
+              {/* The tooltip's words for a reader that never hovers. */}
+              <span className="sr-only">, {via.title}</span>
             </span>
           ) : null}
         </span>

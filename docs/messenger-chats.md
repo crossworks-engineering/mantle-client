@@ -109,10 +109,11 @@ never sees it.
   `lib/messenger/format.ts`): a line whose `via` is set shows the author's
   name, then "via <label>" in the muted style with a small bot icon. The
   chip's tooltip reads "Sent through <label>, an external agent or key on
-  <name>'s account". The name line shows for it even inside a run of
-  bubbles, in a direct chat, and on my own lines (so a person sees what
-  their agent said on their account). The screen reader's announcement of
-  a new line reads the same way.
+  <name>’s account" (the same words sit in the chip for a screen reader).
+  The name line shows for it even inside a run of bubbles, in a direct
+  chat, and on my own lines (so a person sees what their agent said on
+  their account). The screen reader's announcement of a new line reads
+  the same way.
 - **The list row** (`previewLine`): "Ann via Claude Code: <first line>",
   "You via <label>: ..." for mine; in a direct chat too, where the preview
   otherwise names nobody. This needs `via` on the row's preview
@@ -135,12 +136,14 @@ rules. Only a group has it; a direct chat never does.
 - **The form** (`components/messenger/group-info-field.tsx`): on the New
   message form's group shape and in a group's details, a textarea under the
   group's name, labelled "Info", with the placeholder "What this group is
-  for and its rules" and a counter against the 2000. The text goes out
-  trimmed; nothing sends null (a patch with null clears it). On the New
-  message form it rides on the create. In Details an admin (still in the
-  group) gets Add or Edit beside the Info heading; the form saves on Save
-  info, Escape or Cancel drops it, and a save that changes nothing just
-  closes. Everyone else reads it.
+  for and its rules" and a counter against the 2000 (spoken only near the
+  cap). The text goes out trimmed: the create leaves an empty one out,
+  Details sends null to clear. On the New message form it rides on the
+  create. In Details an admin (still in the group) gets Add or Edit beside
+  the Info heading; the form saves on Save info, Escape or Cancel drops
+  it, a save that changes nothing just closes, and a change another admin
+  made while the form was open is said once before a second Save writes
+  over it. Everyone else reads it.
 - **The panel** (`chat-inspector.tsx`): the Info section sits at the top of
   Details, under the title and the head count, as plain text with its line
   breaks kept. Nothing in it is rendered as markdown and no link is made

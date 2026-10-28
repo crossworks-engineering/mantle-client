@@ -27,7 +27,12 @@ import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerDirectoryEntry, MessengerMention } from '@/lib/messenger/dto';
 import { keepsGroupLook, type ChatFace, type FaceOf, type GroupLook } from '@/lib/messenger/faces';
 import { rowAddress } from '@/lib/messenger/format';
-import { infoToSend, keepsGroupInfo } from '@/lib/messenger/group-info';
+import {
+  droppedOnCreate,
+  infoCounter,
+  infoToSend,
+  keepsGroupInfo,
+} from '@/lib/messenger/group-info';
 import { newClientMsgId } from '@/lib/messenger/transcript';
 import { draftStorageKey } from '@/app/(app)/assistant/assistant-thread-state';
 import { ChatComposer } from './chat-composer';
@@ -167,16 +172,11 @@ export function NewChatPane({
       // A brain before the group look, or before its info, drops it: say
       // so rather than lose it without a word.
       if (grouping) {
-        const dropped = [
-          (look.icon || look.color) && !keepsGroupLook(out.conversation) ? 'icon and colour' : null,
-          'info' in request && !keepsGroupInfo(out.conversation) ? 'info' : null,
-        ].filter((d): d is string => d !== null);
-        if (dropped.length > 0) {
-          toast.push({
-            kind: 'info',
-            message: `Group created. This brain does not keep a group’s ${dropped.join(' or ')} yet.`,
-          });
-        }
+        const dropped = droppedOnCreate({
+          look: !!(look.icon || look.color) && !keepsGroupLook(out.conversation),
+          info: 'info' in request && !keepsGroupInfo(out.conversation),
+        });
+        if (dropped) toast.push({ kind: 'info', message: dropped });
       }
       onCreated(out.conversation.id, line ? { ...line, clientMsgId: newClientMsgId() } : null);
       // Still busy: the form is leaving for the chat, and a second send
@@ -387,7 +387,9 @@ export function NewChatPane({
     </div>
   );
 
-  const ready = grouping ? !!title.trim() : !!to;
+  // A group waits while its info is past the cap (the counter says so).
+  const infoOver = grouping && infoCounter(info).over;
+  const ready = grouping ? !!title.trim() && !infoOver : !!to;
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="new-chat">
@@ -448,7 +450,7 @@ export function NewChatPane({
                 variant="outline"
                 size="sm"
                 className="ml-auto"
-                disabled={busy}
+                disabled={busy || infoOver}
                 onClick={() => void create(null)}
               >
                 Create group

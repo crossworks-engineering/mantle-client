@@ -3,10 +3,10 @@
 /**
  * The group info field (plan section 24), shared by the New message form
  * and a group's details: a textarea under the group's name, "Info", with
- * the counter against the brain's 2000 characters. The text is sent
- * trimmed; nothing sends null.
+ * the counter against the brain's 2000 characters (spoken only near the
+ * cap, as the composer's is). The text is sent trimmed: the create leaves
+ * an empty one out, Details sends null to clear.
  */
-import type { KeyboardEvent } from 'react';
 import { Field, FieldLabel } from '@mantle/web-ui/ui/field';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -19,15 +19,14 @@ export function GroupInfoField({
   value,
   onChange,
   autoFocus,
-  disabled,
-  onKeyDown,
+  readOnly,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
-  disabled?: boolean;
-  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
+  /** While a save runs: the text stays, the focus too. */
+  readOnly?: boolean;
 }) {
   const counter = infoCounter(value);
   return (
@@ -39,21 +38,20 @@ export function GroupInfoField({
         rows={4}
         maxLength={INFO_MAX}
         autoFocus={autoFocus}
-        disabled={disabled}
+        readOnly={readOnly}
         placeholder={INFO_PLACEHOLDER}
         aria-describedby={`${id}-count`}
         aria-invalid={counter.over || undefined}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
         className="min-h-20 resize-y"
       />
       <span
         id={`${id}-count`}
         className={cn(
-          'self-end text-xs tabular-nums',
+          'text-right text-xs tabular-nums',
           counter.over ? 'text-destructive-ink' : 'text-muted-foreground',
         )}
-        aria-live="polite"
+        aria-live={counter.near ? 'polite' : 'off'}
       >
         {counter.text}
       </span>

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   INFO_MAX,
   canEditInfo,
+  droppedOnCreate,
   infoChanged,
   infoCounter,
   infoShown,
@@ -25,9 +26,26 @@ describe('infoToSend', () => {
 describe('infoCounter', () => {
   it('counts against the limit', () => {
     expect(INFO_MAX).toBe(2000);
-    expect(infoCounter('')).toEqual({ text: '0 / 2000', over: false });
-    expect(infoCounter('x'.repeat(2000))).toEqual({ text: '2000 / 2000', over: false });
-    expect(infoCounter('x'.repeat(2001))).toEqual({ text: '2001 / 2000', over: true });
+    expect(infoCounter('')).toEqual({ text: '0 / 2000', near: false, over: false });
+    expect(infoCounter('x'.repeat(1799)).near).toBe(false);
+    expect(infoCounter('x'.repeat(1800)).near).toBe(true);
+    expect(infoCounter('x'.repeat(2000))).toEqual({ text: '2000 / 2000', near: true, over: false });
+    expect(infoCounter('x'.repeat(2001))).toEqual({ text: '2001 / 2000', near: true, over: true });
+  });
+});
+
+describe('droppedOnCreate', () => {
+  it('says what a brain before it dropped, nothing when it kept all', () => {
+    expect(droppedOnCreate({ look: false, info: false })).toBeNull();
+    expect(droppedOnCreate({ look: true, info: false })).toBe(
+      'Group created. This brain does not keep a group’s icon and colour yet.',
+    );
+    expect(droppedOnCreate({ look: false, info: true })).toBe(
+      'Group created. This brain does not keep a group’s info yet.',
+    );
+    expect(droppedOnCreate({ look: true, info: true })).toBe(
+      'Group created. This brain does not keep a group’s icon and colour or info yet.',
+    );
   });
 });
 
@@ -66,6 +84,7 @@ describe('infoChanged', () => {
     expect(infoChanged(null, '')).toBe(false);
     expect(infoChanged(undefined, '  ')).toBe(false);
     expect(infoChanged('Rules', '')).toBe(true);
+    expect(infoChanged('Rules', '  ')).toBe(true);
     expect(infoChanged(null, 'Rules')).toBe(true);
   });
 });

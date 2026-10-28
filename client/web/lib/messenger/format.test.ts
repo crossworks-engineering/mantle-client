@@ -138,6 +138,10 @@ describe('previewLine', () => {
     });
     expect(previewLine(mine, 'me')).toEqual({ mine: true, text: 'You via My key: Ok' });
     expect(previewLine(row({ ...mine, kind: 'direct' }), 'me')?.text).toBe('You via My key: Ok');
+    const nameless = row({
+      preview: { authorName: null, text: 'Hi', authorKind: 'login', via: 'Peer' },
+    });
+    expect(previewLine(nameless, 'me')?.text).toBe('Someone via Peer: Hi');
   });
 
   it('shows no "via" for a browser session or a system line', () => {

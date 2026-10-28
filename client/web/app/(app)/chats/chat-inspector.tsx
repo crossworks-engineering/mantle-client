@@ -46,6 +46,7 @@ import { groupLook, type GroupLook } from '@/lib/messenger/faces';
 import {
   canEditInfo,
   infoChanged,
+  infoCounter,
   infoShown,
   infoToSend,
   keepsGroupInfo,
@@ -91,6 +92,9 @@ export function ChatInspector({
   // The group's info: its text on the form while an admin edits it.
   const [editingInfo, setEditingInfo] = useState(false);
   const [infoText, setInfoText] = useState('');
+  // The info as it was when the form opened: a change by another admin
+  // meanwhile is said before it is written over.
+  const infoWas = useRef<string | null>(null);
   const [savingInfo, setSavingInfo] = useState(false);
   const infoButton = useRef<HTMLButtonElement>(null);
   const doneInfo = () => {
@@ -207,8 +211,20 @@ export function ChatInspector({
    * 0343 keeps nothing and says so once). The form stays until then.
    */
   const saveInfo = async () => {
+    if (infoCounter(infoText).over) return;
     if (!infoChanged(conversation.info, infoText)) {
       doneInfo();
+      return;
+    }
+    const held = conversation.info ?? null;
+    if (held !== infoWas.current) {
+      // Someone else changed it while this form was open: say so once;
+      // the next Save writes over it knowingly.
+      infoWas.current = held;
+      toast.push({
+        kind: 'info',
+        message: 'The info was changed meanwhile. Save again to replace it.',
+      });
       return;
     }
     const sent = infoToSend(infoText);
@@ -238,6 +254,10 @@ export function ChatInspector({
   };
   const infoEditable = canEditInfo(conversation);
   const info = infoShown(conversation);
+  // Demoted or left while editing: the form goes, and stays gone.
+  useEffect(() => {
+    if (!infoEditable) setEditingInfo(false);
+  }, [infoEditable]);
 
   const peer = group ? null : people.find((p) => p.id !== me && p.kind === 'login');
   const avatar = (
@@ -355,8 +375,10 @@ export function ChatInspector({
                   ref={infoButton}
                   variant="outline"
                   size="xs"
+                  aria-label={info ? 'Edit the group’s info' : 'Add the group’s info'}
                   onClick={() => {
                     setInfoText(conversation.info ?? '');
+                    infoWas.current = conversation.info ?? null;
                     setEditingInfo(true);
                   }}
                 >
@@ -368,6 +390,14 @@ export function ChatInspector({
               <form
                 className="space-y-2"
                 noValidate
+                onKeyDown={(e) => {
+                  // Escape anywhere on the form cancels the edit (and stops
+                  // there, not closing the narrow overlay around it).
+                  if (e.key === 'Escape' && !e.defaultPrevented) {
+                    e.preventDefault();
+                    doneInfo();
+                  }
+                }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   void saveInfo();
@@ -378,20 +408,17 @@ export function ChatInspector({
                   value={infoText}
                   onChange={setInfoText}
                   autoFocus
-                  disabled={savingInfo}
-                  onKeyDown={(e) => {
-                    // Escape cancels the edit (and stops there, not closing
-                    // the narrow overlay around it).
-                    if (e.key !== 'Escape') return;
-                    e.preventDefault();
-                    doneInfo();
-                  }}
+                  readOnly={savingInfo}
                 />
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={doneInfo}>
                     Cancel
                   </Button>
-                  <SubmitButton size="sm" pending={savingInfo}>
+                  <SubmitButton
+                    size="sm"
+                    pending={savingInfo}
+                    disabled={infoCounter(infoText).over}
+                  >
                     Save info
                   </SubmitButton>
                 </div>
