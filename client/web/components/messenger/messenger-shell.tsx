@@ -16,6 +16,8 @@
  *   window is hidden, and keeps the desktop shell's badge on the count. A
  *   muted chat counts and never pops; a chat the list does not know yet
  *   does not pop either.
+ * - `CallRinger` (components/calls) rings a "call started" line the same
+ *   way, and `CallUnloadGuard` leaves a call when the tab goes.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
@@ -36,6 +38,7 @@ import {
   railCount,
   shouldPop,
 } from '@/lib/messenger/notify';
+import { CallRinger } from '@/components/calls/call-ringer';
 import { CallUnloadGuard } from '@/components/calls/call-store';
 import { MessengerLiveSync, useMessengerBus } from './messenger-live';
 
@@ -91,6 +94,7 @@ export function MessengerShell() {
     <>
       <MessengerLiveSync enabled={live} />
       {live ? <MessengerNotices /> : null}
+      {live ? <CallRinger /> : null}
       <AssistantReadFollower />
       <CallUnloadGuard />
     </>

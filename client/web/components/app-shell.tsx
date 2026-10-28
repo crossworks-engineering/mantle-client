@@ -49,6 +49,7 @@ import { TourOverlay } from '@/components/tour/tour-overlay';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { MessengerShell } from '@/components/messenger/messenger-shell';
+import { RingCard } from '@/components/calls/ring-card';
 import { ProviderAlertBanner } from '@/components/needs-you/provider-alert-banner';
 import { PickMode } from '@/components/assistant/pick-mode';
 import { ZenModeContext } from '@/components/layout/zen-mode';
@@ -739,6 +740,8 @@ function ShellFrame({
             across route changes. pointer-events-none lets clicks fall through the
             gaps; the dock re-enables its own. */}
         <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
+          {/* The incoming call rings here too (Messenger calls P1). */}
+          {role === 'admin' || role === 'member' ? <RingCard /> : null}
           <UploadDock />
         </div>
       </div>
