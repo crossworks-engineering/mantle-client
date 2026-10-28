@@ -115,7 +115,7 @@ export class RingBook {
   private readonly last = new Map<string, number>();
   private readonly handled = new Set<string>();
   /** Released lines, for the next list to offer again. */
-  private readonly retry = new Map<string, number>();
+  private readonly retry = new Set<string>();
   private baseline = false;
 
   constructor(private readonly keep = 200) {}
@@ -137,7 +137,10 @@ export class RingBook {
       }
     }
     this.baseline = true;
-    for (const [c, seq] of this.retry) out.push({ c, seq });
+    for (const key of this.retry) {
+      const i = key.lastIndexOf(':');
+      out.push({ c: key.slice(0, i), seq: Number(key.slice(i + 1)) });
+    }
     this.retry.clear();
     return out;
   }
@@ -162,7 +165,8 @@ export class RingBook {
    *  chat yet): the next list offers the line again. */
   release(c: string, seq: number): void {
     this.handled.delete(`${c}:${seq}`);
-    this.retry.set(c, Math.max(seq, this.retry.get(c) ?? 0));
+    this.retry.add(`${c}:${seq}`);
+    if (this.retry.size > this.keep) this.retry.delete(this.retry.values().next().value!);
   }
 }
 

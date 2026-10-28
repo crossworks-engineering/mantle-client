@@ -28,6 +28,23 @@ export type RoomHandlers = {
   audioBlocked: (blocked: boolean) => void;
 };
 
+/** A connect refused because the brain's own act closed the room for
+ *  this tab (a swap to another device mid-handshake): carries the drop. */
+export class RoomConnectError extends Error {
+  constructor(
+    message: string,
+    readonly drop: RoomDropReason,
+  ) {
+    super(message);
+    this.name = 'RoomConnectError';
+  }
+}
+
+/** The drop a connect rejection names, or null for an ordinary failure. */
+export function dropOfConnectError(err: unknown): RoomDropReason | null {
+  return err instanceof RoomConnectError ? err.drop : null;
+}
+
 export type RoomPort = {
   connect: (
     url: string,
@@ -99,8 +116,23 @@ export const livekitRoom: RoomFactory = async () => {
   };
 
   return {
-    connect: (url, token, opts) =>
-      room.connect(url, token, opts.rtcConfig ? { rtcConfig: opts.rtcConfig } : {}),
+    connect: async (url, token, opts) => {
+      try {
+        await room.connect(url, token, opts.rtcConfig ? { rtcConfig: opts.rtcConfig } : {});
+      } catch (err) {
+        // The server asked this tab to leave mid-handshake (another device
+        // took the login over, an admin's remove, the room gone): the brain
+        // did that itself, and the session must not send it a leave.
+        if (
+          err instanceof lk.ConnectionError &&
+          err.reason === lk.ConnectionErrorReason.LeaveRequest
+        ) {
+          const drop = dropReason(err.context);
+          if (drop !== 'other') throw new RoomConnectError(err.message, drop);
+        }
+        throw err;
+      }
+    },
     disconnect: async () => {
       await room.disconnect(true);
       for (const el of audioEls.values()) {

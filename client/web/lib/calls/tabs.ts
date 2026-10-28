@@ -19,6 +19,14 @@ export function parsePeerEvent(data: unknown): CallPeerEvent | null {
   if (e.kind === 'mine' && typeof e.callId === 'string' && e.callId) {
     return { kind: 'mine', callId: e.callId };
   }
+  if (
+    e.kind === 'pending' &&
+    typeof e.conversationId === 'string' &&
+    e.conversationId &&
+    typeof e.on === 'boolean'
+  ) {
+    return { kind: 'pending', conversationId: e.conversationId, on: e.on };
+  }
   return null;
 }
 

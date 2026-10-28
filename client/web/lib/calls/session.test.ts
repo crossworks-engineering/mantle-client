@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { MessengerCallJoinResponse } from '@/lib/messenger/dto';
-import type { RoomHandlers, RoomPerson, RoomPort } from './room';
+import { RoomConnectError, type RoomHandlers, type RoomPerson, type RoomPort } from './room';
 import {
   CallSession,
   IDLE,
@@ -231,9 +231,10 @@ describe('reduce', () => {
     const r = reduce(IDLE, { type: 'incoming', ring });
     expect(reduce(r, { type: 'notice', notice: 'x' })).toBe(r);
     expect(reduce(IDLE, { type: 'notice', notice: 'x' })).toEqual({ ...IDLE, notice: 'x' });
-    const t = reduce(r, { type: 'trouble', trouble: 'y' });
-    expect(t.trouble).toBe('y');
-    expect(reduce(t, { type: 'trouble', trouble: 'y' })).toBe(t);
+    const y = { text: 'y', level: 'error' as const };
+    const t = reduce(r, { type: 'trouble', trouble: y });
+    expect(t.trouble).toEqual(y);
+    expect(reduce(t, { type: 'trouble', trouble: { ...y } })).toBe(t);
     expect(reduce(t, { type: 'trouble', trouble: null }).trouble).toBeNull();
   });
   it('the chat corrects the rights, once', () => {
@@ -557,7 +558,16 @@ describe('CallSession: in the call', () => {
     swapped.s.unloadNow((c) => sentB.push(c));
     expect(sentB).toEqual([]);
   });
-  it('a connect that fails because another device took over mid-handshake owes no leave', async () => {
+  it('a connect refused because another device took over mid-handshake owes no leave', async () => {
+    // The rejection names the drop; the room never says disconnected.
+    const room = fakeRoom();
+    room.port.connect = () => Promise.reject(new RoomConnectError('taken over', 'duplicate'));
+    const { s, api } = session({ room });
+    await s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    expect(api.leave).not.toHaveBeenCalled();
+    expect(s.snapshot()).toMatchObject({ phase: 'idle', notice: 'The call could not be started.' });
+  });
+  it("a connect that fails after the room reported the brain's drop owes no leave either", async () => {
     const room = fakeRoom();
     let fail!: () => void;
     room.port.connect = () =>
@@ -573,6 +583,18 @@ describe('CallSession: in the call', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(api.leave).not.toHaveBeenCalled();
     expect(s.snapshot().phase).toBe('idle');
+  });
+  it('a tab that went during its start request still closes the stay the brain opened', async () => {
+    let resolve!: (j: MessengerCallJoinResponse) => void;
+    const { s, api } = session({
+      start: () => new Promise<MessengerCallJoinResponse>((r) => (resolve = r)),
+    });
+    const joining = s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    await new Promise((r) => setTimeout(r, 0));
+    s.unloadNow(() => {});
+    resolve(join());
+    await joining;
+    expect(api.leave).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -649,8 +671,12 @@ describe('CallSession: the ring', () => {
     s.incoming(ring);
     await s.answer('Ann Lee', { admin: false, group: false });
     expect(api.start).not.toHaveBeenCalled();
-    expect(s.snapshot()).toMatchObject({ phase: 'ringing', trouble: NOT_REACHED });
+    expect(s.snapshot()).toMatchObject({
+      phase: 'ringing',
+      trouble: { text: NOT_REACHED, level: 'error' },
+    });
     s.clearTrouble();
+    // The ring runs out when it would have, not later.
     clock.advance(RING_MS);
     expect(s.snapshot().phase).toBe('idle');
     // Not remembered as ended: it may ring again.
@@ -664,7 +690,7 @@ describe('CallSession: the ring', () => {
     expect(s.snapshot().notice).toBe('The call ended.');
     api.openCall.mockRejectedValueOnce(new Error('offline'));
     expect(await s.joinOpen('c1', { title: 'Ann', admin: false, group: false })).toBe(false);
-    expect(s.snapshot().trouble).toBe(NOT_REACHED);
+    expect(s.snapshot().trouble).toEqual({ text: NOT_REACHED, level: 'error' });
     api.openCall.mockResolvedValueOnce('call1');
     expect(await s.joinOpen('c1', { title: 'Ann', admin: false, group: false })).toBe(true);
     expect(s.snapshot().phase).toBe('live');
@@ -680,7 +706,7 @@ describe('CallSession: the ring', () => {
     const heard: unknown[] = [];
     s.onPeer((e) => heard.push(e));
     await s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
-    expect(heard).toEqual([{ kind: 'mine', callId: 'call1' }]);
+    expect(heard).toContainEqual({ kind: 'mine', callId: 'call1' });
     await s.leave(null);
     expect(s.isMine('c1', 'call1')).toBe(true);
     s.incoming(ring);
@@ -711,6 +737,33 @@ describe('CallSession: the ring', () => {
     s.incoming(ring);
     s.fromPeer({ kind: 'mine', callId: 'call1' });
     expect(s.snapshot().phase).toBe('idle');
+  });
+  it('a start in flight in a peer tab makes the chat mine until it settles', async () => {
+    const { s } = session();
+    const heard: unknown[] = [];
+    s.onPeer((e) => heard.push(e));
+    s.fromPeer({ kind: 'pending', conversationId: 'c1', on: true });
+    expect(s.isPending('c1')).toBe(true);
+    s.incoming(ring);
+    expect(s.snapshot().phase).toBe('idle');
+    s.fromPeer({ kind: 'pending', conversationId: 'c1', on: false });
+    expect(s.isPending('c1')).toBe(false);
+    // And this tab tells its peers the same, both ways.
+    await s.startOrJoin('c2', { title: 'Ben', admin: false, group: false });
+    expect(heard).toEqual([
+      { kind: 'pending', conversationId: 'c2', on: true },
+      { kind: 'mine', callId: 'call1' },
+      { kind: 'pending', conversationId: 'c2', on: false },
+    ]);
+  });
+  it('joining from a ring (Join on a line) ends that ring in every tab', async () => {
+    const { s } = session();
+    const heard: unknown[] = [];
+    s.onPeer((e) => heard.push(e));
+    s.incoming(ring);
+    await s.startOrJoin('c2', { title: 'Ben', admin: false, group: false });
+    expect(heard[0]).toEqual({ kind: 'ring_stop', callId: 'call1' });
+    expect(s.snapshot()).toMatchObject({ phase: 'live', conversationId: 'c2' });
   });
   it('answered or declined in another tab stops the ring here, and tells the others', () => {
     const { s } = session();

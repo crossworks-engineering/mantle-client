@@ -14,7 +14,7 @@
  */
 import type { MessengerCallJoinResponse } from '@/lib/messenger/dto';
 import { connectOptionsFor } from './ice';
-import type { RoomFactory, RoomPerson, RoomPort } from './room';
+import { dropOfConnectError, type RoomFactory, type RoomPerson, type RoomPort } from './room';
 
 export type CallPhase = 'idle' | 'ringing' | 'joining' | 'live' | 'ending';
 
@@ -31,10 +31,13 @@ const ENDED_KEEP = 100;
 const MINE_KEEP = 50;
 
 /** What one tab of a login tells its other tabs (tabs.ts carries it):
- *  the ring for a call stopped here (answered, declined), and a call this
- *  login started here (so no tab rings for it). */
+ *  the ring for a call stopped here (answered, declined); a call this
+ *  login started or joined here (so no tab rings for it); a start in
+ *  flight for a chat here (its line may land before the call is named). */
 export type CallPeerEvent =
-  { kind: 'ring_stop'; callId: string } | { kind: 'mine'; callId: string };
+  | { kind: 'ring_stop'; callId: string }
+  | { kind: 'mine'; callId: string }
+  | { kind: 'pending'; conversationId: string; on: boolean };
 
 export type CallRing = {
   conversationId: string;
@@ -69,7 +72,7 @@ export type CallState = {
   notice: string | null;
   /** A line to say at once, whatever the phase (a refused end, a brain not
    *  reached); cleared once said. */
-  trouble: string | null;
+  trouble: { text: string; level: 'info' | 'error' } | null;
   /** My rights in this chat's call: end it (a group's admin, either person
    *  of a direct chat) and, in a group only, drop people from it. */
   admin: boolean;
@@ -109,7 +112,7 @@ export type CallAction =
   | { type: 'admin'; admin: boolean; group: boolean }
   /** Something to say while idle (a ring that found its call ended). */
   | { type: 'notice'; notice: string }
-  | { type: 'trouble'; trouble: string | null }
+  | { type: 'trouble'; trouble: CallState['trouble'] }
   | { type: 'clear_notice' };
 
 /** Joining or in the room: the phases a room event may change. */
@@ -164,7 +167,9 @@ export function reduce(s: CallState, a: CallAction): CallState {
     case 'notice':
       return s.phase === 'idle' ? { ...s, notice: a.notice } : s;
     case 'trouble':
-      return s.trouble === a.trouble ? s : { ...s, trouble: a.trouble };
+      return s.trouble?.text === a.trouble?.text && s.trouble?.level === a.trouble?.level
+        ? s
+        : { ...s, trouble: a.trouble };
     case 'clear_notice':
       return s.notice === null ? s : { ...s, notice: null };
   }
@@ -273,14 +278,17 @@ export class CallSession {
   private leaving: Promise<void> | null = null;
   /** Calls the brain said ended, so a start line handled late never rings. */
   private readonly ended = new Set<string>();
-  /** Calls this login started (this tab, or another tab over the tabs
-   *  channel): its own "call started" line never rings, even when the join
-   *  fell over right after. Keyed by the call, so a call-back in the same
-   *  chat rings as it should. */
+  /** Calls this login started or joined (this tab, or another tab over
+   *  the tabs channel): its own "call started" line never rings, even when
+   *  the join fell over right after. Keyed by the call, so a call-back in
+   *  the same chat rings as it should. */
   private readonly mine = new Set<string>();
-  /** The chats whose start request is in flight: the line may land before
-   *  the brain's answer names the call. */
+  /** The chats whose start request is in flight, here or in another tab:
+   *  the line may land before the brain's answer names the call. */
   private readonly startPending = new Set<string>();
+  private readonly peerPending = new Set<string>();
+  /** When the ring runs out (ms since the epoch), to re-arm it. */
+  private ringDeadline = 0;
   /** Whether the leave in flight owes the brain its POST (not after a
    *  removal, a swap or a closed room). */
   private leaveOwed = false;
@@ -324,7 +332,12 @@ export class CallSession {
   /** This login started that call (here or in another tab), or is starting
    *  one in that chat right now: its line is not a ring. */
   isMine(conversationId: string, callId: string): boolean {
-    return this.mine.has(callId) || this.startPending.has(conversationId);
+    return this.mine.has(callId) || this.isPending(conversationId);
+  }
+
+  /** A start for that chat is in flight, here or in another tab. */
+  isPending(conversationId: string): boolean {
+    return this.startPending.has(conversationId) || this.peerPending.has(conversationId);
   }
 
   /** The brain already said this call ended. */
@@ -338,12 +351,18 @@ export class CallSession {
     const before = this.state.phase;
     this.dispatch({ type: 'incoming', ring });
     if (before === 'idle' && this.state.phase === 'ringing') {
-      this.clearRingTimer();
-      this.ringTimer = this.clock.setTimeout(
-        () => this.dispatch({ type: 'ring_stop', reason: 'timeout' }),
-        RING_MS,
-      );
+      this.ringDeadline = this.clock.now() + RING_MS;
+      this.armRingTimer();
     }
+  }
+
+  private armRingTimer(): void {
+    this.clearRingTimer();
+    const left = Math.max(0, this.ringDeadline - this.clock.now());
+    this.ringTimer = this.clock.setTimeout(
+      () => this.dispatch({ type: 'ring_stop', reason: 'timeout' }),
+      left,
+    );
   }
 
   decline(): void {
@@ -415,6 +434,18 @@ export class CallSession {
           this.dispatch({ type: 'ring_stop', reason: 'answered' });
         }
         return;
+      case 'pending':
+        if (e.on) this.peerPending.add(e.conversationId);
+        else this.peerPending.delete(e.conversationId);
+        if (
+          e.on &&
+          this.state.phase === 'ringing' &&
+          this.state.ring?.conversationId === e.conversationId
+        ) {
+          this.clearRingTimer();
+          this.dispatch({ type: 'ring_stop', reason: 'answered' });
+        }
+        return;
     }
   }
 
@@ -429,15 +460,18 @@ export class CallSession {
   async answer(title: string, opts: { admin: boolean; group: boolean }): Promise<void> {
     const ring = this.state.ring;
     if (this.state.phase !== 'ringing' || !ring) return;
+    // The tap holds the ring while the brain is asked (a timer that fired
+    // mid-check would close the card with no answer and no word).
+    this.clearRingTimer();
     const open = await this.openCallOf(ring.conversationId);
-    // The ring went on meanwhile (its timer, an end line, another tab).
+    // The ring went on meanwhile (an end line, another tab).
     if (this.state.phase !== 'ringing' || this.state.ring !== ring) return;
     if (open === 'unknown') {
-      // Nothing is decided: the ring stays, with its timer.
-      this.dispatch({ type: 'trouble', trouble: NOT_REACHED });
+      // Nothing is decided: the ring stays, for the time it had left.
+      this.dispatch({ type: 'trouble', trouble: { text: NOT_REACHED, level: 'error' } });
+      this.armRingTimer();
       return;
     }
-    this.clearRingTimer();
     this.tellPeers({ kind: 'ring_stop', callId: ring.callId });
     if (open === null) {
       this.rememberEnded(ring.callId);
@@ -463,12 +497,12 @@ export class CallSession {
   ): Promise<boolean> {
     const open = await this.openCallOf(conversationId);
     if (open === 'unknown') {
-      this.dispatch({ type: 'trouble', trouble: NOT_REACHED });
+      this.dispatch({ type: 'trouble', trouble: { text: NOT_REACHED, level: 'error' } });
       return false;
     }
     if (open === null) {
       if (this.state.phase === 'idle') this.dispatch({ type: 'notice', notice: 'The call ended.' });
-      else this.dispatch({ type: 'trouble', trouble: 'The call ended.' });
+      else this.dispatch({ type: 'trouble', trouble: { text: 'The call ended.', level: 'info' } });
       return false;
     }
     await this.startOrJoin(conversationId, opts);
@@ -495,6 +529,11 @@ export class CallSession {
     }
     if (s.phase === 'live' || s.phase === 'joining' || s.phase === 'ending') {
       await this.leave(null);
+    }
+    // Joining from a ring (Answer, or Join on a line while another chat
+    // rings): that ring is over in every tab.
+    if (this.state.phase === 'ringing' && this.state.ring) {
+      this.tellPeers({ kind: 'ring_stop', callId: this.state.ring.callId });
     }
     this.clearRingTimer();
     this.dispatch({
@@ -530,6 +569,7 @@ export class CallSession {
     // The chat is "pending" until the answer names the call, then the call
     // is remembered as mine, here and in the other tabs.
     this.startPending.add(conversationId);
+    this.tellPeers({ kind: 'pending', conversationId, on: true });
     try {
       const join = await this.deps.api.start(conversationId, this.deps.device);
       started = true;
@@ -538,8 +578,12 @@ export class CallSession {
         this.tellPeers({ kind: 'mine', callId: join.callId });
       }
       // Left while the brain was answering: nothing to connect. The leave
-      // in flight sends the brain its POST once this settles.
-      if (!this.stillJoining(conversationId)) return;
+      // in flight sends the brain its POST once this settles; a tab that
+      // went (unloadNow) has no leave in flight, so this sends it.
+      if (!this.stillJoining(conversationId)) {
+        if (!this.leaving) await this.deps.api.leave(conversationId).catch(() => {});
+        return;
+      }
       room = await this.deps.room();
       if (!this.stillJoining(conversationId)) {
         await room.disconnect().catch(() => {});
@@ -571,13 +615,16 @@ export class CallSession {
       const own = this.stillJoining(conversationId);
       if (room) await this.teardownRoom(room);
       if (own) this.dispatch({ type: 'join_failed', notice: joinFailureNotice(err) });
-      // The brain had opened my stay: close it, unless the room dropped by
-      // the brain's own act (a swap to another device mid-handshake).
-      if (own && started && leaveAfterDrop(this.droppedReason)) {
+      // The brain had opened my stay: close it, unless the connect was
+      // refused by the brain's own act (a swap to another device
+      // mid-handshake: the rejection names it, or the room said so first).
+      const drop = dropOfConnectError(err) ?? this.droppedReason;
+      if (own && started && leaveAfterDrop(drop)) {
         await this.deps.api.leave(conversationId).catch(() => {});
       }
     } finally {
       this.startPending.delete(conversationId);
+      this.tellPeers({ kind: 'pending', conversationId, on: false });
     }
   }
 

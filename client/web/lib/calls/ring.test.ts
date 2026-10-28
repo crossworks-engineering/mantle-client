@@ -219,6 +219,19 @@ describe('RingBook', () => {
     expect(b.moved([row('a', 6)])).toEqual([{ c: 'a', seq: 6 }]);
     expect(b.moved([row('a', 6)])).toEqual([]);
   });
+  it('two lines of one chat given back both come back, once each', () => {
+    const b = new RingBook();
+    b.moved([]);
+    b.claim('a', 1);
+    b.claim('a', 2);
+    b.release('a', 1);
+    b.release('a', 2);
+    b.release('a', 2);
+    expect(b.moved([])).toEqual([
+      { c: 'a', seq: 1 },
+      { c: 'a', seq: 2 },
+    ]);
+  });
   it('forgets the oldest claims past its size', () => {
     const b = new RingBook(2);
     b.claim('a', 1);

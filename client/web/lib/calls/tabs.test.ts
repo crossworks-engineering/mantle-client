@@ -11,6 +11,12 @@ describe('parsePeerEvent', () => {
     expect(parsePeerEvent({ kind: 'mine', callId: 'x' })).toEqual({ kind: 'mine', callId: 'x' });
     expect(parsePeerEvent({ kind: 'ring_stop' })).toBeNull();
     expect(parsePeerEvent({ kind: 'mine', callId: 7 })).toBeNull();
+    expect(parsePeerEvent({ kind: 'pending', conversationId: 'c', on: true })).toEqual({
+      kind: 'pending',
+      conversationId: 'c',
+      on: true,
+    });
+    expect(parsePeerEvent({ kind: 'pending', conversationId: 'c' })).toBeNull();
     expect(parsePeerEvent({ kind: 'other' })).toBeNull();
     expect(parsePeerEvent('ring_stop')).toBeNull();
     expect(parsePeerEvent(null)).toBeNull();

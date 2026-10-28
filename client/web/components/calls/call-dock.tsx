@@ -70,7 +70,8 @@ export function CallDock() {
   // Something to say at once, whatever the phase (a brain not reached).
   useEffect(() => {
     if (!call.trouble) return;
-    toast.error(call.trouble);
+    if (call.trouble.level === 'error') toast.error(call.trouble.text);
+    else toast.info(call.trouble.text);
     callSession().clearTrouble();
   }, [call.trouble, toast]);
 

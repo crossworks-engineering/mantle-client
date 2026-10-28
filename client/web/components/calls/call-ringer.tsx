@@ -56,9 +56,11 @@ export function CallRinger() {
   const handleOne = useCallback(
     async (c: string, seq: number, rows: MessengerListRow[], live: boolean) => {
       if (!book.current.claim(c, seq)) return;
-      const row = rows.find((r) => r.id === c && r.kind !== 'agent');
+      const row = rows.find((r) => r.id === c);
+      // An assistant thread has no calls.
+      if (row?.kind === 'agent') return;
       if (!row) {
-        // A chat newer than the list: the next list knows it.
+        // A chat newer than the list: the next list (after a gap) knows it.
         book.current.release(c, seq);
         return;
       }
@@ -83,7 +85,7 @@ export function CallRinger() {
         session.hasEnded(event.callId) ||
         isMine({
           mineCall: session.isMine(c, event.callId),
-          startPending: session.isMine(c, event.callId),
+          startPending: session.isPending(c),
           myName: row.participants.find((p) => p.id === meRef.current)?.name ?? null,
           callerName,
         });
