@@ -33,24 +33,89 @@ export function callEventOf(m: EventLine | null | undefined): MessengerEvent | n
 }
 
 /**
+ * A line found after a gap may be this old and still ring: a ring's time
+ * with room for a clock that runs a little ahead of the brain's.
+ */
+export const GAP_RING_AGE_MS = RING_MS + 15_000;
+
+/**
  * Whether a line rings here: a "call started" line, in a chat that is not
- * muted, while this tab is not in a call or ringing already (`busy`; the
- * caller's own tab is joining, so its own line never rings), and not older
- * than a ring lasts (a line found in a gap after a reconnect is history).
- * The chat being on screen does not matter: a ring is answered, not read.
+ * muted, not my own call (`mine`: the line names me, or this login started
+ * it lately), while this tab is not in a call or ringing already (`busy`),
+ * and, for a line found in a gap rather than heard live, not older than a
+ * ring lasts (history after a reconnect). The chat being on screen does
+ * not matter: a ring is answered, not read.
  */
 export function shouldRing(s: {
   message: Pick<MessengerMessage, 'authorKind' | 'event' | 'deletedAt' | 'createdAt'>;
   muted: boolean;
+  mine: boolean;
   busy: boolean;
+  /** Heard on the stream now (true), or found in a gap (false). */
+  live: boolean;
   now: number;
 }): boolean {
-  if (s.muted || s.busy || s.message.deletedAt) return false;
+  if (s.muted || s.mine || s.busy || s.message.deletedAt) return false;
   const e = callEventOf(s.message);
   if (!e || e.type !== 'call_started') return false;
+  if (s.live) return true;
   const at = new Date(s.message.createdAt).getTime();
   if (!Number.isFinite(at)) return false;
-  return s.now - at < RING_MS;
+  return s.now - at < GAP_RING_AGE_MS;
+}
+
+/**
+ * The bookkeeping of the ringer, free of React: which line each chat was
+ * last seen at (a gap carries no event, so the list says what moved), and
+ * which lines were handled, so one seq is handled once across the event
+ * path and the gap path, and a fetch that failed can be tried again.
+ */
+export class RingBook {
+  private readonly last = new Map<string, number>();
+  private readonly handled = new Set<string>();
+  private baseline = false;
+
+  constructor(private readonly keep = 200) {}
+
+  /** The lines a fresh list says moved since the last one: none from the
+   *  first list (what is already there is history, not a ring). */
+  moved(rows: readonly { id: string; kind: string; lastSeq: number | null }[]): {
+    c: string;
+    seq: number;
+  }[] {
+    const out: { c: string; seq: number }[] = [];
+    for (const r of rows) {
+      if (r.kind === 'agent' || r.lastSeq === null) continue;
+      const was = this.last.get(r.id) ?? 0;
+      if (r.lastSeq > was) {
+        this.last.set(r.id, r.lastSeq);
+        if (this.baseline) out.push({ c: r.id, seq: r.lastSeq });
+      }
+    }
+    this.baseline = true;
+    return out;
+  }
+
+  /** An event named this seq: the list knows it now. */
+  heard(c: string, seq: number): void {
+    if (seq > (this.last.get(c) ?? 0)) this.last.set(c, seq);
+  }
+
+  /** Claim a line: true once, false while it is claimed. */
+  claim(c: string, seq: number): boolean {
+    const key = `${c}:${seq}`;
+    if (this.handled.has(key)) return false;
+    this.handled.add(key);
+    if (this.handled.size > this.keep) {
+      this.handled.delete(this.handled.values().next().value!);
+    }
+    return true;
+  }
+
+  /** The claim is given back (the fetch failed): the gap path may retry. */
+  release(c: string, seq: number): void {
+    this.handled.delete(`${c}:${seq}`);
+  }
 }
 
 /**

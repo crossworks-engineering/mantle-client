@@ -24,7 +24,7 @@ import {
   brainRequestFilter,
   brainWindowRequestFilter,
   frameNavigationAllowed,
-  mediaPermissionAllowed,
+  permissionAllowed,
   rewriteBrainWindowRequest,
 } from './brain-fence';
 import { createVault, type Vault } from './vault';
@@ -306,14 +306,14 @@ function fenceBrainSession(
   });
 
   // The microphone, for a call (calls P1): audio only, for the app's own
-  // page. Nothing else asked for a device before; every other permission
-  // keeps Electron's default answer. Both halves, as Electron asks: the
-  // check (the page's query) and the request (the prompt).
+  // page; every other permission keeps the answer it had before a handler
+  // was set (granted). Both halves, as Electron asks: the check (the
+  // page's query) and the request (the prompt).
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
-    callback(mediaPermissionAllowed(permission, details, origins));
+    callback(permissionAllowed(permission, details, rendererOrigin));
   });
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) =>
-    mediaPermissionAllowed(
+    permissionAllowed(
       permission,
       {
         requestingUrl: details.requestingUrl ?? requestingOrigin,
@@ -322,7 +322,7 @@ function fenceBrainSession(
         // a whole): audio is what a call wants.
         mediaTypes: details.mediaType ? [details.mediaType] : ['audio'],
       },
-      origins,
+      rendererOrigin,
     ),
   );
 

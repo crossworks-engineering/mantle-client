@@ -7,7 +7,7 @@ import {
   brainRequestFilter,
   brainWindowRequestFilter,
   frameNavigationAllowed,
-  mediaPermissionAllowed,
+  permissionAllowed,
   rewriteBrainWindowRequest,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
@@ -200,46 +200,52 @@ describe('frameNavigationAllowed', () => {
   });
 });
 
-describe('mediaPermissionAllowed', () => {
-  const origins = { brain: 'https://brain.example', renderer: 'http://127.0.0.1:51234' };
+describe('permissionAllowed', () => {
+  const renderer = 'http://127.0.0.1:51234';
   const main = { requestingUrl: 'http://127.0.0.1:51234/chats/abc', isMainFrame: true };
-  it('allows the microphone for the app page on the renderer or brain origin', () => {
-    expect(mediaPermissionAllowed('media', { ...main, mediaTypes: ['audio'] }, origins)).toBe(true);
-    expect(
-      mediaPermissionAllowed(
-        'media',
-        { ...main, requestingUrl: 'https://brain.example/chats/abc', mediaTypes: ['audio'] },
-        origins,
-      ),
-    ).toBe(true);
+  it('allows the microphone for the app page on the renderer origin', () => {
+    expect(permissionAllowed('media', { ...main, mediaTypes: ['audio'] }, renderer)).toBe(true);
   });
-  it('refuses video, a sub-frame, another origin, and every other permission', () => {
-    expect(
-      mediaPermissionAllowed('media', { ...main, mediaTypes: ['audio', 'video'] }, origins),
-    ).toBe(false);
-    expect(mediaPermissionAllowed('media', { ...main, mediaTypes: ['video'] }, origins)).toBe(
+  it('refuses video, no kind, a sub-frame, another origin and the brain origin', () => {
+    expect(permissionAllowed('media', { ...main, mediaTypes: ['audio', 'video'] }, renderer)).toBe(
       false,
     );
-    expect(mediaPermissionAllowed('media', { ...main, mediaTypes: [] }, origins)).toBe(false);
-    expect(mediaPermissionAllowed('media', main, origins)).toBe(false);
+    expect(permissionAllowed('media', { ...main, mediaTypes: ['video'] }, renderer)).toBe(false);
+    expect(permissionAllowed('media', { ...main, mediaTypes: ['unknown'] }, renderer)).toBe(false);
+    expect(permissionAllowed('media', { ...main, mediaTypes: [] }, renderer)).toBe(false);
+    expect(permissionAllowed('media', main, renderer)).toBe(false);
     expect(
-      mediaPermissionAllowed(
-        'media',
-        { ...main, isMainFrame: false, mediaTypes: ['audio'] },
-        origins,
-      ),
+      permissionAllowed('media', { ...main, isMainFrame: false, mediaTypes: ['audio'] }, renderer),
     ).toBe(false);
     expect(
-      mediaPermissionAllowed(
+      permissionAllowed(
         'media',
         { ...main, requestingUrl: 'https://evil.example/', mediaTypes: ['audio'] },
-        origins,
+        renderer,
       ),
     ).toBe(false);
-    expect(mediaPermissionAllowed('media', { mediaTypes: ['audio'] }, origins)).toBe(false);
     expect(
-      mediaPermissionAllowed('display-capture', { ...main, mediaTypes: ['audio'] }, origins),
+      permissionAllowed(
+        'media',
+        { ...main, requestingUrl: 'https://brain.example/chats/abc', mediaTypes: ['audio'] },
+        renderer,
+      ),
     ).toBe(false);
-    expect(mediaPermissionAllowed('geolocation', main, origins)).toBe(false);
+    expect(permissionAllowed('media', { mediaTypes: ['audio'] }, renderer)).toBe(false);
+  });
+  it('every other permission keeps the answer it had before: granted', () => {
+    for (const p of [
+      'fullscreen',
+      'clipboard-sanitized-write',
+      'clipboard-read',
+      'fileSystem',
+      'geolocation',
+      'pointerLock',
+      'notifications',
+      'display-capture',
+    ]) {
+      expect(permissionAllowed(p, main, renderer)).toBe(true);
+      expect(permissionAllowed(p, { ...main, isMainFrame: false }, renderer)).toBe(true);
+    }
   });
 });

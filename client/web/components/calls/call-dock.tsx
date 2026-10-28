@@ -14,6 +14,16 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Mic, MicOff, Phone, PhoneOff, UserX, Volume2 } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@mantle/web-ui/ui/alert-dialog';
 import { Button } from '@mantle/web-ui/ui/button';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -31,6 +41,7 @@ export function CallDock() {
   const router = useRouter();
   const toast = useToast();
   const [collapsed, setCollapsed] = useState(false);
+  const [ending, setEnding] = useState(false);
   const me = useShellWorkspaces()?.loginId ?? null;
   const faceOf = useChatFaces();
   const inCall = call.phase === 'joining' || call.phase === 'live' || call.phase === 'ending';
@@ -72,6 +83,14 @@ export function CallDock() {
         ? 'Leaving the call'
         : call.title;
   const href = `/chats/${encodeURIComponent(id)}`;
+  // End for all: a group's admin, either person of a direct chat. Remove:
+  // a group's admin only (a direct chat has nobody to drop).
+  const canEnd = call.admin && live;
+  const canRemove = call.admin && call.group;
+  const endForAll = () =>
+    void callSession()
+      .end()
+      .catch(() => toast.error('The call could not be ended'));
 
   return (
     <div
@@ -83,7 +102,7 @@ export function CallDock() {
       <RowButton
         onClick={() => setCollapsed((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
-        aria-label={collapsed ? 'Expand the call' : 'Collapse the call'}
+        aria-label={`${collapsed ? 'Expand' : 'Collapse'} the call: ${heading}`}
         aria-expanded={!collapsed}
       >
         <Phone
@@ -129,7 +148,7 @@ export function CallDock() {
               const participant = conversation?.participants.find(
                 (x) => x.id === (p.loginId ?? p.agentId),
               );
-              const canRemove = call.admin && !p.me && !!p.loginId && p.loginId !== me;
+              const removable = canRemove && !p.me && !!p.loginId && p.loginId !== me;
               return (
                 <li key={p.identity} className="flex items-center gap-2 px-3 py-1.5 text-sm">
                   <ChatAvatar
@@ -156,7 +175,7 @@ export function CallDock() {
                       aria-label="Muted"
                     />
                   ) : null}
-                  {canRemove ? (
+                  {removable ? (
                     <Button
                       size="icon-2xs"
                       variant="ghost"
@@ -190,11 +209,11 @@ export function CallDock() {
               Open chat
             </Button>
             <span className="flex-1" />
-            {call.admin && live ? (
+            {canEnd ? (
               <Button
                 size="sm"
-                variant="ghost"
-                onClick={() => void callSession().end()}
+                variant="destructive"
+                onClick={() => setEnding(true)}
                 title="End the call for everyone"
               >
                 End for all
@@ -202,7 +221,7 @@ export function CallDock() {
             ) : null}
             <Button
               size="sm"
-              variant="destructive"
+              variant="outline"
               disabled={call.phase === 'ending'}
               onClick={() => void callSession().leave(null)}
             >
@@ -211,6 +230,28 @@ export function CallDock() {
           </div>
         </>
       ) : null}
+      <AlertDialog open={ending} onOpenChange={(o) => !o && setEnding(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>End the call for everyone?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Everyone in the call is disconnected. Leave instead to go while the others stay.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setEnding(false);
+                endForAll();
+              }}
+            >
+              End for all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -220,7 +261,8 @@ function Elapsed({ since }: { since: number | null }) {
   const now = useNow(1000);
   if (!since || !now) return null;
   return (
-    <span className="shrink-0 tabular-nums text-xs text-muted-foreground" aria-label="Call time">
+    <span className="shrink-0 tabular-nums text-xs text-muted-foreground" role="timer">
+      <span className="sr-only">Call time </span>
       {durationLabel(Math.floor((now - since) / 1000))}
     </span>
   );

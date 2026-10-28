@@ -123,9 +123,10 @@ export function ChatMessage({
         {call ? call.text : message.body}
         {call && callAction ? (
           <Button
-            size="sm"
+            size="2xs"
             variant="outline"
-            className="ml-1 h-6 px-2 text-xs"
+            className="ml-1"
+            aria-label={`${callAction.label} the call`}
             onClick={callAction.onClick}
           >
             {callAction.label}

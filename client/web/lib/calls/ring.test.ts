@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { RING_MS } from './session';
 import {
+  GAP_RING_AGE_MS,
+  RingBook,
   callEventOf,
   callLine,
   callerNameOf,
@@ -51,12 +53,20 @@ describe('callEventOf', () => {
 });
 
 describe('shouldRing', () => {
-  const base = { message: started, muted: false, busy: false, now: 11_000 };
-  it('rings a fresh call started line', () => {
+  const base = {
+    message: started,
+    muted: false,
+    mine: false,
+    busy: false,
+    live: true,
+    now: 11_000,
+  };
+  it('rings a call started line heard live', () => {
     expect(shouldRing(base)).toBe(true);
   });
-  it('never a muted chat, never while busy, never a deleted line', () => {
+  it('never a muted chat, never my own call, never while busy, never a deleted line', () => {
     expect(shouldRing({ ...base, muted: true })).toBe(false);
+    expect(shouldRing({ ...base, mine: true })).toBe(false);
     expect(shouldRing({ ...base, busy: true })).toBe(false);
     expect(shouldRing({ ...base, message: { ...started, deletedAt: '2026-10-28' } })).toBe(false);
   });
@@ -73,10 +83,14 @@ describe('shouldRing', () => {
     expect(shouldRing({ ...base, message: { ...started, authorKind: 'login' } })).toBe(false);
     expect(shouldRing({ ...base, message: { ...started, event: null } })).toBe(false);
   });
-  it('a line older than a ring lasts is history, not a ring', () => {
-    expect(shouldRing({ ...base, now: 10_000 + RING_MS - 1 })).toBe(true);
-    expect(shouldRing({ ...base, now: 10_000 + RING_MS })).toBe(false);
-    expect(shouldRing({ ...base, message: { ...started, createdAt: 'never' } })).toBe(false);
+  it('a line found in a gap rings only while young; one heard live is new by definition', () => {
+    const gap = { ...base, live: false };
+    expect(shouldRing({ ...gap, now: 10_000 + GAP_RING_AGE_MS - 1 })).toBe(true);
+    expect(shouldRing({ ...gap, now: 10_000 + GAP_RING_AGE_MS })).toBe(false);
+    expect(shouldRing({ ...gap, message: { ...started, createdAt: 'never' } })).toBe(false);
+    // A clock that runs ahead of the brain's does not lose a live ring.
+    expect(shouldRing({ ...base, now: 10_000 + RING_MS * 10 })).toBe(true);
+    expect(GAP_RING_AGE_MS).toBeGreaterThan(RING_MS);
   });
 });
 
@@ -160,5 +174,45 @@ describe('openCallSeq', () => {
   it('a start older than the cap with no end is history', () => {
     expect(openCallSeq([start(2, 0)], 240 * 60_000 - 1)).toBe(2);
     expect(openCallSeq([start(2, 0)], 240 * 60_000)).toBeNull();
+  });
+});
+
+describe('RingBook', () => {
+  const row = (id: string, lastSeq: number | null, kind = 'direct') => ({ id, lastSeq, kind });
+  it('the first list is the baseline: nothing moved', () => {
+    const b = new RingBook();
+    expect(b.moved([row('a', 5), row('b', 2)])).toEqual([]);
+    expect(b.moved([row('a', 6), row('b', 2), row('c', 1)])).toEqual([
+      { c: 'a', seq: 6 },
+      { c: 'c', seq: 1 },
+    ]);
+    expect(b.moved([row('a', 6)])).toEqual([]);
+  });
+  it('an agent row and a chat with no line never move', () => {
+    const b = new RingBook();
+    b.moved([]);
+    expect(b.moved([row('x', 3, 'agent'), row('y', null)])).toEqual([]);
+  });
+  it('a line heard on the stream is known to the list', () => {
+    const b = new RingBook();
+    b.moved([row('a', 5)]);
+    b.heard('a', 7);
+    expect(b.moved([row('a', 7)])).toEqual([]);
+    b.heard('a', 2);
+    expect(b.moved([row('a', 8)])).toEqual([{ c: 'a', seq: 8 }]);
+  });
+  it('a line is claimed once; a released claim can be taken again', () => {
+    const b = new RingBook();
+    expect(b.claim('a', 1)).toBe(true);
+    expect(b.claim('a', 1)).toBe(false);
+    b.release('a', 1);
+    expect(b.claim('a', 1)).toBe(true);
+  });
+  it('forgets the oldest claims past its size', () => {
+    const b = new RingBook(2);
+    b.claim('a', 1);
+    b.claim('a', 2);
+    b.claim('a', 3);
+    expect(b.claim('a', 1)).toBe(true);
   });
 });

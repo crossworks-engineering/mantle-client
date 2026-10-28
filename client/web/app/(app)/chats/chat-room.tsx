@@ -703,6 +703,9 @@ export function ChatRoom({
   const call = useCallState();
   const inThisCall =
     (call.phase === 'live' || call.phase === 'joining') && call.conversationId === id;
+  const inAnotherCall = !inThisCall && call.phase !== 'idle' && call.phase !== 'ringing';
+  // P1 calls people: a direct chat with an agent has nobody to call.
+  const hasPerson = group || others.some((p) => p.kind === 'login');
   // The "call started" line of a call still open in the loaded window
   // offers Join (the header's Call does the same) while this tab is not in it.
   const joinSeq = useMemo(
@@ -710,27 +713,43 @@ export function ChatRoom({
     [callsOn, left, inThisCall, t.messages],
   );
   const callTool: HeaderTool | null =
-    callsOn && !left
+    callsOn && !left && hasPerson
       ? inThisCall
         ? {
             key: 'call',
-            label: call.phase === 'joining' ? 'Joining the call' : 'Leave the call',
+            label: call.phase === 'joining' ? 'Cancel the call' : 'Leave the call',
             icon: <PhoneOff />,
-            pressed: true,
-            disabled: call.phase === 'joining',
             onSelect: () => void callSession().leave(null),
           }
-        : {
-            key: 'call',
-            label: 'Call',
-            icon: <Phone />,
-            onSelect: () =>
-              void callSession().startOrJoin(id, {
-                title,
-                admin: group ? isAdmin : true,
-              }),
-          }
+        : inAnotherCall
+          ? {
+              key: 'call',
+              label: 'In another call: leave it first',
+              icon: <Phone />,
+              disabled: true,
+            }
+          : {
+              key: 'call',
+              label: 'Call',
+              icon: <Phone />,
+              onSelect: () =>
+                void callSession().startOrJoin(id, {
+                  title,
+                  // A direct chat's two people may both end it; a group's
+                  // admin only (the dock reads the chat and corrects this).
+                  admin: group ? isAdmin : !!(conversation ?? row),
+                  group,
+                }),
+            }
       : null;
+  // Join on a start line: only if the brain says the call is still open
+  // (the window may hold the line long after the call closed).
+  const joinOpenCall = () =>
+    void callSession()
+      .joinOpen(id, { title, admin: group ? isAdmin : !!(conversation ?? row), group })
+      .then((joined) => {
+        if (!joined) toast.info('The call ended.');
+      });
 
   // Say a newly arrived message from someone else, once (the transcript
   // itself is not a live region: an older page would be read out whole).
@@ -911,8 +930,8 @@ export function ChatRoom({
                             ) : undefined
                           }
                           callAction={
-                            joinSeq === it.message.seq && callTool?.onSelect
-                              ? { label: 'Join', onClick: callTool.onSelect }
+                            joinSeq === it.message.seq && callTool && !inAnotherCall
+                              ? { label: 'Join', onClick: joinOpenCall }
                               : null
                           }
                           author={

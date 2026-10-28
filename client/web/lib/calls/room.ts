@@ -37,8 +37,6 @@ export type RoomPort = {
   disconnect: () => Promise<void>;
   setMicrophoneEnabled: (on: boolean) => Promise<void>;
   startAudio: () => Promise<void>;
-  /** A fresh token for a reconnect from scratch (optional on the port). */
-  updateToken?: (token: string) => void;
   people: () => RoomPerson[];
   on: (handlers: RoomHandlers) => () => void;
 };
@@ -65,6 +63,10 @@ export const livekitRoom: RoomFactory = async () => {
     audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     // Audio is attached by hand below, to one element per track.
     webAudioMix: false,
+    // The session leaves on pagehide (CallUnloadGuard) with the keepalive
+    // leave; LiveKit's own beforeunload disconnect would end the call even
+    // when the reader picks Stay on a leave guard's prompt.
+    disconnectOnPageLeave: false,
   });
   const audioEls = new Map<string, HTMLMediaElement>();
 
@@ -101,7 +103,10 @@ export const livekitRoom: RoomFactory = async () => {
       room.connect(url, token, opts.rtcConfig ? { rtcConfig: opts.rtcConfig } : {}),
     disconnect: async () => {
       await room.disconnect(true);
-      for (const el of audioEls.values()) el.remove();
+      for (const el of audioEls.values()) {
+        el.srcObject = null;
+        el.remove();
+      }
       audioEls.clear();
     },
     setMicrophoneEnabled: async (on) => {

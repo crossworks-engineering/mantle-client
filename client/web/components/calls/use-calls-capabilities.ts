@@ -19,7 +19,11 @@ export function useCallsCapabilities(): { calls: boolean } {
     queryKey: callsKeys.capabilities,
     queryFn: callsApi.capabilities,
     staleTime: CAPABILITIES_FRESH_MS,
-    refetchInterval: CAPABILITIES_FRESH_MS,
+    // A brain before calls (404) is asked once per load, not every minute.
+    refetchInterval: (query) =>
+      (query.state.error as { status?: number } | null)?.status === 404
+        ? false
+        : CAPABILITIES_FRESH_MS,
     retry: (n, err) => (err as { status?: number } | null)?.status !== 404 && n < 2,
   });
   return { calls: callsOn({ data: q.data, error: q.error }) };

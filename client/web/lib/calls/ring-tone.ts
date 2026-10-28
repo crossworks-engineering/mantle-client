@@ -32,7 +32,13 @@ export function startRingTone(): RingTone {
     };
     const ring = () => {
       if (!ctx) return;
-      if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+      // Held by the autoplay rule: ask once more and schedule nothing (a
+      // suspended clock does not move, and the tones would pile up for the
+      // first click to play all at once).
+      if (ctx.state !== 'running') {
+        void ctx.resume().catch(() => {});
+        return;
+      }
       const t = ctx.currentTime + 0.01;
       beep(t, 660);
       beep(t + 0.42, 880);

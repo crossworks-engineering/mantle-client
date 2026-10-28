@@ -5,13 +5,15 @@
  * the dock, the ring card and the chat header read: `useCallState()` for
  * the state, `callSession()` for the verbs. Made once per tab, like the
  * messenger's receipts; a call survives every route change because the
- * session lives here, not in a screen.
+ * session lives here, not in a screen. The login's other tabs are wired
+ * in over the tabs channel (lib/calls/tabs.ts).
  */
 import { useEffect, useSyncExternalStore } from 'react';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 import { callsApi, leaveOnUnload } from '@/lib/calls/api';
 import { livekitRoom } from '@/lib/calls/room';
 import { CallSession, IDLE, type CallState } from '@/lib/calls/session';
+import { connectTabs } from '@/lib/calls/tabs';
 
 let session: CallSession | null = null;
 
@@ -21,6 +23,11 @@ export function callSession(): CallSession {
     session = new CallSession({
       api: {
         start: (id, device) => callsApi.start(id, { device }),
+        openCall: (id) =>
+          callsApi.history(id, { limit: 1 }).then((r) => {
+            const latest = r.calls[0];
+            return latest && latest.endedAt === null ? latest.id : null;
+          }),
         token: callsApi.token,
         leave: callsApi.leave,
         end: callsApi.end,
@@ -29,6 +36,7 @@ export function callSession(): CallSession {
       room: livekitRoom,
       device: desktopShell() ? 'desktop' : 'web',
     });
+    connectTabs(session);
   }
   return session;
 }

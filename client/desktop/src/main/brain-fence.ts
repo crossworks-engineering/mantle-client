@@ -128,20 +128,23 @@ export function frameNavigationAllowed(
 }
 
 /**
- * Whether a page in a brain window may use the microphone (calls P1, plan
- * section 10): a `media` request for audio only, from the app's own main
- * frame on the renderer origin (the embedded UI server) or the brain origin.
- * Video is not asked for in P1 and is refused; a sandboxed app or canvas
- * frame (a sub-frame) never gets a device; every other permission keeps
- * Electron's default answer (the caller passes those through). Pure, so it
- * is tested without Electron.
+ * The answer to a page's permission request or check in a brain window.
+ * Before calls, no handler was set and Electron granted everything, which
+ * the app relies on (the clipboard, fullscreen for a presentation, the
+ * assistant's location, Excalidraw's file save): every permission but
+ * `media` keeps that answer. A `media` request (calls P1, plan section
+ * 10) is granted for audio only, from the app's own main frame on the
+ * renderer origin (the embedded UI server; the main frame never leaves
+ * it). Video is not asked for in P1 and is refused; a sandboxed app or
+ * canvas frame (a sub-frame) never gets a device. Pure, so it is tested
+ * without Electron.
  */
-export function mediaPermissionAllowed(
+export function permissionAllowed(
   permission: string,
   details: { requestingUrl?: string; isMainFrame?: boolean; mediaTypes?: readonly string[] },
-  origins: { brain: string; renderer: string },
+  rendererOrigin: string,
 ): boolean {
-  if (permission !== 'media') return false;
+  if (permission !== 'media') return true;
   if (details.isMainFrame === false) return false;
   const types = details.mediaTypes ?? [];
   if (types.length === 0 || types.some((t) => t !== 'audio')) return false;
@@ -151,5 +154,5 @@ export function mediaPermissionAllowed(
   } catch {
     return false;
   }
-  return from.origin === origins.renderer || from.origin === origins.brain;
+  return from.origin === rendererOrigin;
 }

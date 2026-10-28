@@ -28,7 +28,9 @@ describe('buildRuntimeCsp', () => {
     const policy = buildRuntimeCsp({ brainOrigin });
     // The exfiltration control: an injected script must not be able to post
     // the bearer anywhere but here.
-    expect(directive(policy, 'connect-src')).toBe(`connect-src 'self' ${brainOrigin}`);
+    expect(directive(policy, 'connect-src')).toBe(
+      `connect-src 'self' ${brainOrigin} wss://brain.example`,
+    );
     // No form targets the brain since the team portal's SSO post went.
     expect(directive(policy, 'form-action')).toBe("form-action 'self'");
     expect(directive(policy, 'img-src')).toContain(brainOrigin);
@@ -49,7 +51,9 @@ describe('buildRuntimeCsp', () => {
 
   it('tolerates a trailing slash on the origin', () => {
     const policy = buildRuntimeCsp({ brainOrigin: 'https://brain.example/' });
-    expect(directive(policy, 'connect-src')).toBe("connect-src 'self' https://brain.example");
+    expect(directive(policy, 'connect-src')).toBe(
+      "connect-src 'self' https://brain.example wss://brain.example",
+    );
   });
 
   it('lets the email pane load remote images, which a srcdoc iframe inherits', () => {

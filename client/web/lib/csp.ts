@@ -85,12 +85,21 @@ export type RuntimeCspOptions = {
   /** The brain's origin, e.g. `https://brain.example`. Empty for a same-origin
    *  deployment, where `'self'` already covers it. */
   brainOrigin: string;
-  /** Dev servers need `ws:` for HMR. Nothing in app code opens a WebSocket —
-   *  the live streams are SSE over http — so that is its only reason. */
+  /** Dev servers need `ws:` for HMR. The live streams are SSE over http;
+   *  the one WebSocket app code opens is a call's signalling (wss on the
+   *  brain's host, behind its /livekit path), named below. */
   dev?: boolean;
 };
 
 const clean = (origin: string) => origin.trim().replace(/\/+$/, '');
+
+/** `https://brain.example` -> `wss://brain.example` (http -> ws); '' stays ''. */
+export function websocketTwin(origin: string): string {
+  const o = clean(origin);
+  if (o.startsWith('https://')) return `wss://${o.slice(8)}`;
+  if (o.startsWith('http://')) return `ws://${o.slice(7)}`;
+  return '';
+}
 
 /** Join sources, dropping empties, so an absent brain origin leaves no gap. */
 const list = (...sources: string[]) => sources.filter(Boolean).join(' ');
@@ -129,7 +138,10 @@ export function buildRuntimeCsp({ brainOrigin, dev = false }: RuntimeCspOptions)
     "font-src 'self' data:",
     // THE control: the directive that makes the bearer-in-localStorage posture
     // defensible.
-    `connect-src ${list("'self'", brain, dev ? 'ws: wss:' : '')}`,
+    // A call signals over wss on the brain (calls P1, lib/calls/room.ts): the
+    // brain's websocket twin, named so no browser has to upgrade the scheme
+    // itself. Same-origin: 'self' covers wss on this host in CSP3.
+    `connect-src ${list("'self'", brain, websocketTwin(brain), dev ? 'ws: wss:' : '')}`,
     // 'self' only. The brain was here for ONE form, the retired team portal's
     // cross-origin POST to <brain>/api/team/sso (member logins Phase 6); no
     // form in this app targets the brain now, so none may.
