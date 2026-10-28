@@ -65,20 +65,64 @@ export function shouldRing(s: {
 }
 
 /**
+ * Whether a "call started" line is this login's own: the session knows the
+ * calls it started (here or in a sibling tab) and the chats whose start is
+ * in flight; failing that, the line names the caller, and a name that is
+ * mine is mine. The name is a fallback only (two people may share one):
+ * exact once the brain's event carries the caller's id.
+ */
+export function isMine(s: {
+  mineCall: boolean;
+  startPending: boolean;
+  myName: string | null;
+  callerName: string;
+}): boolean {
+  return s.mineCall || s.startPending || (s.myName !== null && s.myName === s.callerName);
+}
+
+/**
+ * One queue per key: the lines of a chat are handled in the order they
+ * came, so an end right after a start is seen before the start rings. A
+ * step that throws does not stop the next.
+ */
+export class Chains {
+  private readonly tails = new Map<string, Promise<void>>();
+
+  run(key: string, step: () => Promise<void>): Promise<void> {
+    const prev = this.tails.get(key) ?? Promise.resolve();
+    const next = prev.then(step).catch(() => {});
+    this.tails.set(key, next);
+    void next.then(() => {
+      if (this.tails.get(key) === next) this.tails.delete(key);
+    });
+    return next;
+  }
+
+  /** The queues still running. */
+  get size(): number {
+    return this.tails.size;
+  }
+}
+
+/**
  * The bookkeeping of the ringer, free of React: which line each chat was
  * last seen at (a gap carries no event, so the list says what moved), and
  * which lines were handled, so one seq is handled once across the event
- * path and the gap path, and a fetch that failed can be tried again.
+ * path and the gap path, and a fetch that failed is tried again by the
+ * next list.
  */
 export class RingBook {
   private readonly last = new Map<string, number>();
   private readonly handled = new Set<string>();
+  /** Released lines, for the next list to offer again. */
+  private readonly retry = new Map<string, number>();
   private baseline = false;
 
   constructor(private readonly keep = 200) {}
 
-  /** The lines a fresh list says moved since the last one: none from the
-   *  first list (what is already there is history, not a ring). */
+  /** The lines a fresh list says moved since the last one (none from the
+   *  first list: what is already there is history, not a ring), and the
+   *  lines given back since. */
   moved(rows: readonly { id: string; kind: string; lastSeq: number | null }[]): {
     c: string;
     seq: number;
@@ -93,6 +137,8 @@ export class RingBook {
       }
     }
     this.baseline = true;
+    for (const [c, seq] of this.retry) out.push({ c, seq });
+    this.retry.clear();
     return out;
   }
 
@@ -112,9 +158,11 @@ export class RingBook {
     return true;
   }
 
-  /** The claim is given back (the fetch failed): the gap path may retry. */
+  /** The claim is given back (the fetch failed, the list did not know the
+   *  chat yet): the next list offers the line again. */
   release(c: string, seq: number): void {
     this.handled.delete(`${c}:${seq}`);
+    this.retry.set(c, Math.max(seq, this.retry.get(c) ?? 0));
   }
 }
 

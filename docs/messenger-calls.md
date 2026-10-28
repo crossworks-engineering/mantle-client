@@ -36,8 +36,9 @@ The phone app is a later phase.
   the card still there. A muted chat never rings. Decline sends nothing (the
   brain has no decline in P1): the ring stops, in every tab of the login.
   Answer first asks the brain whether the call is still open
-  (`GET .../calls?limit=1`), then joins; a ring that outlived its call says
-  "The call ended." instead of starting a new one.
+  (`GET .../calls?limit=1`), then joins what is open; a ring that outlived
+  its call says "The call ended." instead of starting a new one, and a brain
+  that could not be asked keeps the ring and says so.
 - **The dock** (`components/calls/call-dock.tsx`): one card in the dock
   stack beside the uploads, mounted once by the app shell, so a call
   survives every route change. The chat's name and the running time; who is
@@ -68,8 +69,8 @@ The phone app is a later phase.
   devices: a second join swaps the device server-side, and the old one sees
   its room drop. The login's tabs on one origin share a `BroadcastChannel`
   (`lib/calls/tabs.ts`): answered or declined in one stops the ring in the
-  rest, and a call started in one is "mine" in the rest, so none of them
-  rings for it.
+  rest, and a call started in one is mine in the rest (by its call id, so a
+  call-back in the same chat still rings), so none of them rings for it.
 - **The token.** A token is an hour's; the client asks for a fresh one five
   minutes before (`POST .../call/token`), which re-checks that the login is
   still in the chat (403: it leaves; 404: the call ended). LiveKit refreshes
@@ -144,8 +145,10 @@ RTC configuration from the same connect options).
   in P5; ringing proper (CallKit, ConnectionService) with it.
 - Presence "in a call": rides the presence step of the messenger plan.
 - The caller's identity on the `call_started` event: the line names the
-  caller by name only, so the client tells its own call apart by what it
-  started itself (this tab, its sibling tabs) and by the name on the line.
+  caller by name only, so the client tells its own call apart by the calls
+  it started itself (this tab, its sibling tabs, by call id) and, failing
+  that, by the name on the line (two people with one name would miss each
+  other's rings).
   A `by` field on the event is the brain-side follow-up that makes this
   exact.
 

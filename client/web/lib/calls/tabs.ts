@@ -1,9 +1,9 @@
 /**
  * The other tabs of this login, same origin (a BroadcastChannel): answered
  * or declined in one tab stops the ring in the rest, and a call started in
- * one tab is "mine" in the rest, so none of them rings for it. Best effort:
+ * one tab is mine in the rest, so none of them rings for it. Best effort:
  * a browser without the channel has every tab ring on its own, as before.
- * The desktop's windows are one origin too (the embedded UI server).
+ * The desktop's windows of one brain share the channel (one partition).
  */
 import type { CallPeerEvent, CallSession } from './session';
 
@@ -16,14 +16,8 @@ export function parsePeerEvent(data: unknown): CallPeerEvent | null {
   if (e.kind === 'ring_stop' && typeof e.callId === 'string' && e.callId) {
     return { kind: 'ring_stop', callId: e.callId };
   }
-  if (
-    e.kind === 'started' &&
-    typeof e.conversationId === 'string' &&
-    e.conversationId &&
-    typeof e.at === 'number' &&
-    Number.isFinite(e.at)
-  ) {
-    return { kind: 'started', conversationId: e.conversationId, at: e.at };
+  if (e.kind === 'mine' && typeof e.callId === 'string' && e.callId) {
+    return { kind: 'mine', callId: e.callId };
   }
   return null;
 }

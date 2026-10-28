@@ -702,7 +702,7 @@ export function ChatRoom({
   const { calls: callsOn } = useCallsCapabilities();
   const call = useCallState();
   const inThisCall =
-    (call.phase === 'live' || call.phase === 'joining') && call.conversationId === id;
+    call.phase !== 'idle' && call.phase !== 'ringing' && call.conversationId === id;
   const inAnotherCall = !inThisCall && call.phase !== 'idle' && call.phase !== 'ringing';
   // P1 calls people: a direct chat with an agent has nobody to call.
   const hasPerson = group || others.some((p) => p.kind === 'login');
@@ -717,8 +717,14 @@ export function ChatRoom({
       ? inThisCall
         ? {
             key: 'call',
-            label: call.phase === 'joining' ? 'Cancel the call' : 'Leave the call',
+            label:
+              call.phase === 'joining'
+                ? 'Cancel the call'
+                : call.phase === 'ending'
+                  ? 'Leaving the call'
+                  : 'Leave the call',
             icon: <PhoneOff />,
+            disabled: call.phase === 'ending',
             onSelect: () => void callSession().leave(null),
           }
         : inAnotherCall
@@ -744,12 +750,13 @@ export function ChatRoom({
       : null;
   // Join on a start line: only if the brain says the call is still open
   // (the window may hold the line long after the call closed).
+  // (The session says why when there was none to join: the dock's toast.)
   const joinOpenCall = () =>
-    void callSession()
-      .joinOpen(id, { title, admin: group ? isAdmin : !!(conversation ?? row), group })
-      .then((joined) => {
-        if (!joined) toast.info('The call ended.');
-      });
+    void callSession().joinOpen(id, {
+      title,
+      admin: group ? isAdmin : !!(conversation ?? row),
+      group,
+    });
 
   // Say a newly arrived message from someone else, once (the transcript
   // itself is not a live region: an older page would be read out whole).

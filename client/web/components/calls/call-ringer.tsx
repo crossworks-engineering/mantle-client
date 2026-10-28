@@ -20,7 +20,15 @@ import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerListRow } from '@/lib/messenger/dto';
 import { noticeRoute } from '@/lib/messenger/notify';
-import { RingBook, callEventOf, callerNameOf, ringText, shouldRing } from '@/lib/calls/ring';
+import {
+  Chains,
+  RingBook,
+  callEventOf,
+  callerNameOf,
+  isMine,
+  ringText,
+  shouldRing,
+} from '@/lib/calls/ring';
 import { callSession } from './call-store';
 
 /** The list a ring decides on may be this old (an event marks it stale). */
@@ -32,8 +40,8 @@ export function CallRinger() {
   const meRef = useRef(me);
   meRef.current = me;
   const book = useRef(new RingBook());
-  /** One chain per chat: its lines in order. */
-  const chains = useRef(new Map<string, Promise<void>>());
+  /** One queue per chat: its lines in order. */
+  const chains = useRef(new Chains());
 
   const freshList = useCallback(
     () =>
@@ -49,7 +57,11 @@ export function CallRinger() {
     async (c: string, seq: number, rows: MessengerListRow[], live: boolean) => {
       if (!book.current.claim(c, seq)) return;
       const row = rows.find((r) => r.id === c && r.kind !== 'agent');
-      if (!row) return;
+      if (!row) {
+        // A chat newer than the list: the next list knows it.
+        book.current.release(c, seq);
+        return;
+      }
       let message;
       try {
         const page = await messengerApi.messages(c, { afterSeq: seq - 1, limit: 1 });
@@ -67,9 +79,14 @@ export function CallRinger() {
         return;
       }
       const callerName = callerNameOf(message);
-      const myName = row.participants.find((p) => p.id === meRef.current)?.name ?? null;
       const mine =
-        session.startedRecently(c) || session.hasEnded(event.callId) || myName === callerName;
+        session.hasEnded(event.callId) ||
+        isMine({
+          mineCall: session.isMine(c, event.callId),
+          startPending: session.isMine(c, event.callId),
+          myName: row.participants.find((p) => p.id === meRef.current)?.name ?? null,
+          callerName,
+        });
       const busy = session.snapshot().phase !== 'idle';
       if (!shouldRing({ message, muted: row.muted, mine, busy, live, now: Date.now() })) return;
       const groupTitle = row.kind === 'group' ? row.title : null;
@@ -102,12 +119,7 @@ export function CallRinger() {
 
   const handle = useCallback(
     (c: string, seq: number, rows: MessengerListRow[], live: boolean) => {
-      const prev = chains.current.get(c) ?? Promise.resolve();
-      const next = prev.then(() => handleOne(c, seq, rows, live)).catch(() => {});
-      chains.current.set(c, next);
-      void next.then(() => {
-        if (chains.current.get(c) === next) chains.current.delete(c);
-      });
+      void chains.current.run(c, () => handleOne(c, seq, rows, live));
     },
     [handleOne],
   );
@@ -158,7 +170,8 @@ export function CallRinger() {
     void freshList()
       .then((rows) => handle(c, newSeq, rows, true))
       .catch(() => {
-        /* a ring is best effort; the chat shows the line */
+        // The list could not be fetched: the next list offers the line.
+        book.current.release(c, newSeq);
       });
   });
 

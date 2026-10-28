@@ -23,10 +23,15 @@ import { callSession, useCallState } from './call-store';
 
 export function RingCard() {
   const { phase, ring } = useCallState();
+  const ringing = phase === 'ringing' && !!ring;
   return (
     <>
-      <RingSound ringing={phase === 'ringing'} />
-      {phase === 'ringing' && ring ? <RingCardBody ring={ring} /> : null}
+      {/* The live region stays mounted, so a reader hears the change. */}
+      <p role="status" className="sr-only">
+        {ringing ? ringText(ring.callerName, ring.groupTitle).title : ''}
+      </p>
+      <RingSound ringing={ringing} />
+      {ringing ? <RingCardBody ring={ring} /> : null}
     </>
   );
 }
@@ -38,9 +43,9 @@ function RingCardBody({ ring }: { ring: CallRing }) {
   const caller = row?.participants.find((p) => p.kind === 'login' && p.name === ring.callerName);
   const text = ringText(ring.callerName, ring.groupTitle);
   const answer = () =>
-    void callSession().answer(row?.title ?? ring.callerName, {
+    void callSession().answer(row?.title ?? ring.groupTitle ?? ring.callerName, {
       admin: false,
-      group: row?.kind === 'group',
+      group: ring.groupTitle !== null,
     });
   return (
     <div
@@ -55,9 +60,6 @@ function RingCardBody({ ring }: { ring: CallRing }) {
         }
       }}
     >
-      <p role="status" className="sr-only">
-        {text.title}
-      </p>
       <div className="flex items-center gap-3 px-3 py-3">
         {ring.groupTitle ? (
           <ChatAvatar name={ring.groupTitle} kind="group" look={groupLook(row)} size="md" />

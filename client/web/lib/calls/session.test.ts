@@ -10,6 +10,7 @@ import {
   IDLE,
   RING_MS,
   TOKEN_REFRESH_AHEAD_MS,
+  NOT_REACHED,
   TOKEN_REFRESH_MIN_MS,
   disconnectNotice,
   joinFailureNotice,
@@ -224,7 +225,25 @@ describe('reduce', () => {
     expect(reduce(IDLE, { type: 'mic_blocked' })).toBe(IDLE);
     expect(reduce(IDLE, { type: 'muted', muted: true })).toBe(IDLE);
     expect(reduce(IDLE, { type: 'audio_blocked', blocked: true })).toBe(IDLE);
-    expect(reduce(IDLE, { type: 'admin', admin: true })).toBe(IDLE);
+    expect(reduce(IDLE, { type: 'admin', admin: true, group: true })).toBe(IDLE);
+  });
+  it('a notice is for idle; trouble is for any phase, said once', () => {
+    const r = reduce(IDLE, { type: 'incoming', ring });
+    expect(reduce(r, { type: 'notice', notice: 'x' })).toBe(r);
+    expect(reduce(IDLE, { type: 'notice', notice: 'x' })).toEqual({ ...IDLE, notice: 'x' });
+    const t = reduce(r, { type: 'trouble', trouble: 'y' });
+    expect(t.trouble).toBe('y');
+    expect(reduce(t, { type: 'trouble', trouble: 'y' })).toBe(t);
+    expect(reduce(t, { type: 'trouble', trouble: null }).trouble).toBeNull();
+  });
+  it('the chat corrects the rights, once', () => {
+    const live = reduce(
+      reduce(IDLE, { type: 'join', conversationId: 'c1', title: '', admin: false, group: false }),
+      { type: 'joined', callId: 'x', at: 1 },
+    );
+    const a = reduce(live, { type: 'admin', admin: true, group: true });
+    expect(a).toMatchObject({ admin: true, group: true });
+    expect(reduce(a, { type: 'admin', admin: true, group: true })).toBe(a);
   });
 });
 
@@ -289,7 +308,7 @@ describe('CallSession: join', () => {
     expect(api.start).toHaveBeenLastCalledWith('c2', 'web');
     expect(s.snapshot()).toMatchObject({ phase: 'live', conversationId: 'c2' });
   });
-  it('leaving while the brain is still answering connects nothing', async () => {
+  it('leaving while the brain is still answering connects nothing, and leaves once', async () => {
     let resolve!: (j: MessengerCallJoinResponse) => void;
     const room = fakeRoom();
     const { s, api } = session({
@@ -301,8 +320,18 @@ describe('CallSession: join', () => {
     resolve(join());
     await Promise.all([joining, leaving]);
     expect(room.calls.connect).toBeUndefined();
+    expect(api.leave).toHaveBeenCalledTimes(1);
     expect(api.leave).toHaveBeenCalledWith('c1');
     expect(s.snapshot().phase).toBe('idle');
+  });
+  it('a second Leave joins the one in flight', async () => {
+    const { s, api } = session();
+    await s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    const a = s.leave(null);
+    const b = s.leave(null);
+    expect(b).toBe(a);
+    await Promise.all([a, b]);
+    expect(api.leave).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -514,6 +543,37 @@ describe('CallSession: in the call', () => {
     expect(room.calls.disconnects).toBe(1);
     expect(s.snapshot().phase).toBe('idle');
   });
+  it('unloadNow during a leave in flight sends the keepalive only when the brain is owed one', async () => {
+    const owed = session();
+    await owed.s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    const sentA: string[] = [];
+    void owed.s.leave(null);
+    owed.s.unloadNow((c) => sentA.push(c));
+    expect(sentA).toEqual(['c1']);
+    const swapped = session();
+    await swapped.s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    const sentB: string[] = [];
+    void swapped.s.leave('swapped', { tellBrain: false });
+    swapped.s.unloadNow((c) => sentB.push(c));
+    expect(sentB).toEqual([]);
+  });
+  it('a connect that fails because another device took over mid-handshake owes no leave', async () => {
+    const room = fakeRoom();
+    let fail!: () => void;
+    room.port.connect = () =>
+      new Promise<void>((_, reject) => {
+        fail = () => reject(new Error('dropped'));
+      });
+    const { s, api } = session({ room });
+    const joining = s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    await new Promise((r) => setTimeout(r, 0));
+    room.fire().disconnected('duplicate');
+    fail();
+    await joining;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.leave).not.toHaveBeenCalled();
+    expect(s.snapshot().phase).toBe('idle');
+  });
 });
 
 describe('CallSession: the ring', () => {
@@ -560,19 +620,51 @@ describe('CallSession: the ring', () => {
   });
   it('answer on a call that ended meanwhile starts nothing', async () => {
     const { s, api } = session({ openCall: async () => null });
+    const heard: unknown[] = [];
+    s.onPeer((e) => heard.push(e));
     s.incoming(ring);
     await s.answer('Ann Lee', { admin: false, group: false });
     expect(api.start).not.toHaveBeenCalled();
     expect(s.snapshot()).toMatchObject({ phase: 'idle', notice: 'The call ended.' });
+    expect(heard).toEqual([{ kind: 'ring_stop', callId: 'call1' }]);
     // And the same call never rings again here.
     s.incoming(ring);
     expect(s.snapshot().phase).toBe('idle');
+  });
+  it('answer when a newer call is open in the chat joins that one', async () => {
+    const { s, api } = session({ openCall: async () => 'call2' });
+    s.incoming(ring);
+    await s.answer('Ann Lee', { admin: false, group: false });
+    expect(api.start).toHaveBeenCalledWith('c1', 'web');
+    expect(s.snapshot().phase).toBe('live');
+  });
+  it('answer when the brain could not be asked keeps the ring, with its timer, and says so', async () => {
+    const clock = fakeClock();
+    const { s, api } = session({
+      clock,
+      openCall: async () => {
+        throw new Error('offline');
+      },
+    });
+    s.incoming(ring);
+    await s.answer('Ann Lee', { admin: false, group: false });
+    expect(api.start).not.toHaveBeenCalled();
+    expect(s.snapshot()).toMatchObject({ phase: 'ringing', trouble: NOT_REACHED });
+    s.clearTrouble();
+    clock.advance(RING_MS);
+    expect(s.snapshot().phase).toBe('idle');
+    // Not remembered as ended: it may ring again.
+    s.incoming(ring);
+    expect(s.snapshot().phase).toBe('ringing');
   });
   it('joinOpen joins only an open call', async () => {
     const { s, api } = session({ openCall: async () => null });
     expect(await s.joinOpen('c1', { title: 'Ann', admin: false, group: false })).toBe(false);
     expect(api.start).not.toHaveBeenCalled();
     expect(s.snapshot().notice).toBe('The call ended.');
+    api.openCall.mockRejectedValueOnce(new Error('offline'));
+    expect(await s.joinOpen('c1', { title: 'Ann', admin: false, group: false })).toBe(false);
+    expect(s.snapshot().trouble).toBe(NOT_REACHED);
     api.openCall.mockResolvedValueOnce('call1');
     expect(await s.joinOpen('c1', { title: 'Ann', admin: false, group: false })).toBe(true);
     expect(s.snapshot().phase).toBe('live');
@@ -583,18 +675,41 @@ describe('CallSession: the ring', () => {
     s.incoming(ring);
     expect(s.snapshot().phase).toBe('idle');
   });
-  it('my own call never rings my other tabs: started here, or started in a peer tab', async () => {
-    const clock = fakeClock();
-    const { s } = session({ clock });
+  it('my own call never rings my tabs, by its id: started here, or in a peer tab', async () => {
+    const { s } = session();
+    const heard: unknown[] = [];
+    s.onPeer((e) => heard.push(e));
     await s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    expect(heard).toEqual([{ kind: 'mine', callId: 'call1' }]);
     await s.leave(null);
-    expect(s.startedRecently('c1')).toBe(true);
+    expect(s.isMine('c1', 'call1')).toBe(true);
     s.incoming(ring);
     expect(s.snapshot().phase).toBe('idle');
-    clock.advance(RING_MS);
-    expect(s.startedRecently('c1')).toBe(false);
-    s.fromPeer({ kind: 'started', conversationId: 'c2', at: clock.clock.now() });
+    // A call-back in the same chat right after is a ring.
+    s.incoming({ ...ring, callId: 'call-back' });
+    expect(s.snapshot().phase).toBe('ringing');
+    s.decline();
+    s.fromPeer({ kind: 'mine', callId: 'call2' });
     s.incoming({ ...ring, conversationId: 'c2', callId: 'call2' });
+    expect(s.snapshot().phase).toBe('idle');
+  });
+  it('while my start is in flight the chat is mine; the line that lands then is no ring', async () => {
+    let resolve!: (j: MessengerCallJoinResponse) => void;
+    const { s } = session({
+      start: () => new Promise<MessengerCallJoinResponse>((r) => (resolve = r)),
+    });
+    const joining = s.startOrJoin('c1', { title: 'Ann', admin: false, group: false });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(s.isMine('c1', 'whatever')).toBe(true);
+    resolve(join());
+    await joining;
+    expect(s.isMine('c1', 'whatever')).toBe(false);
+    expect(s.isMine('c1', 'call1')).toBe(true);
+  });
+  it('a call started in a peer tab stops the ring for it here', () => {
+    const { s } = session();
+    s.incoming(ring);
+    s.fromPeer({ kind: 'mine', callId: 'call1' });
     expect(s.snapshot().phase).toBe('idle');
   });
   it('answered or declined in another tab stops the ring here, and tells the others', () => {

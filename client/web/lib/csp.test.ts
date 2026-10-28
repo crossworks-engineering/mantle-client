@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CSP_ENFORCED_STATIC, buildRuntimeCsp } from './csp';
+import { CSP_ENFORCED_STATIC, buildRuntimeCsp, websocketTwin } from './csp';
 
 const directive = (policy: string, name: string) =>
   policy
@@ -76,5 +76,14 @@ describe('buildRuntimeCsp', () => {
     // This half is destined for <meta http-equiv>, where frame-ancestors has no
     // effect — it stays in the header set instead.
     expect(directive(buildRuntimeCsp({ brainOrigin }), 'frame-ancestors')).toBeUndefined();
+  });
+});
+
+describe('websocketTwin', () => {
+  it('names the socket twin of the brain origin, and nothing for none', () => {
+    expect(websocketTwin('https://brain.example')).toBe('wss://brain.example');
+    expect(websocketTwin('http://localhost:3000/')).toBe('ws://localhost:3000');
+    expect(websocketTwin('')).toBe('');
+    expect(websocketTwin('brain.example')).toBe('');
   });
 });

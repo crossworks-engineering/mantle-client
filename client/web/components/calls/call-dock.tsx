@@ -57,7 +57,8 @@ export function CallDock() {
   }).data;
   useEffect(() => {
     if (!conversation || conversation.id !== id) return;
-    callSession().setAdmin(conversation.kind === 'group' ? conversation.me.admin : true);
+    const group = conversation.kind === 'group';
+    callSession().setRights({ admin: group ? conversation.me.admin : true, group });
   }, [conversation, id]);
 
   // What ended the last call, said once (a removed person, a cut line).
@@ -66,6 +67,12 @@ export function CallDock() {
     toast.info(call.notice);
     callSession().clearNotice();
   }, [call.phase, call.notice, toast]);
+  // Something to say at once, whatever the phase (a brain not reached).
+  useEffect(() => {
+    if (!call.trouble) return;
+    toast.error(call.trouble);
+    callSession().clearTrouble();
+  }, [call.trouble, toast]);
 
   if (!inCall || !id) return null;
 
