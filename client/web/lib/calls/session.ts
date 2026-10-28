@@ -407,7 +407,7 @@ export class CallSession {
       for (const fn of this.listeners) fn();
       return;
     }
-        await this.startOrJoin(ring.conversationId, { title, ...opts });
+    await this.startOrJoin(ring.conversationId, { title, ...opts });
   }
 
   /**

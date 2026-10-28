@@ -118,6 +118,11 @@ is the avatar its owner chose in Appearance, drawn by `ChatAvatar` from
   a folder's look), else the group glyph. It shows on the row, the header,
   Details, the New message form and beside a group's system lines.
 
+## Calls
+
+A chat's voice call (the Call button in the header, the ring, the call
+dock, the call lines in the transcript) is its own page: `docs/messenger-calls.md`.
+
 ## Outside the screen
 
 `components/messenger/messenger-shell.tsx`, mounted once by the shell:

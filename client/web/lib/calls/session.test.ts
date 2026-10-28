@@ -540,7 +540,7 @@ describe('CallSession: the ring', () => {
     s.incoming(ring);
     s.remoteEnded('c1', 'call1');
     expect(s.snapshot().phase).toBe('idle');
-        // A later call of the same chat rings again (call1 is remembered as ended).
+    // A later call of the same chat rings again (call1 is remembered as ended).
     s.incoming({ ...ring, callId: 'call2' });
     s.remoteEnded('c1', 'another');
     expect(s.snapshot().phase).toBe('ringing');
