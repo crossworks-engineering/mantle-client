@@ -7,6 +7,7 @@ import {
   brainRequestFilter,
   brainWindowRequestFilter,
   frameNavigationAllowed,
+  mediaPermissionAllowed,
   rewriteBrainWindowRequest,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
@@ -196,5 +197,49 @@ describe('frameNavigationAllowed', () => {
       frameNavigationAllowed('https://www.youtube.com/embed/x', 'https://evil.example/', brain),
     ).toBe(true);
     expect(frameNavigationAllowed('', canvas, brain)).toBe(true);
+  });
+});
+
+describe('mediaPermissionAllowed', () => {
+  const origins = { brain: 'https://brain.example', renderer: 'http://127.0.0.1:51234' };
+  const main = { requestingUrl: 'http://127.0.0.1:51234/chats/abc', isMainFrame: true };
+  it('allows the microphone for the app page on the renderer or brain origin', () => {
+    expect(mediaPermissionAllowed('media', { ...main, mediaTypes: ['audio'] }, origins)).toBe(true);
+    expect(
+      mediaPermissionAllowed(
+        'media',
+        { ...main, requestingUrl: 'https://brain.example/chats/abc', mediaTypes: ['audio'] },
+        origins,
+      ),
+    ).toBe(true);
+  });
+  it('refuses video, a sub-frame, another origin, and every other permission', () => {
+    expect(
+      mediaPermissionAllowed('media', { ...main, mediaTypes: ['audio', 'video'] }, origins),
+    ).toBe(false);
+    expect(mediaPermissionAllowed('media', { ...main, mediaTypes: ['video'] }, origins)).toBe(
+      false,
+    );
+    expect(mediaPermissionAllowed('media', { ...main, mediaTypes: [] }, origins)).toBe(false);
+    expect(mediaPermissionAllowed('media', main, origins)).toBe(false);
+    expect(
+      mediaPermissionAllowed(
+        'media',
+        { ...main, isMainFrame: false, mediaTypes: ['audio'] },
+        origins,
+      ),
+    ).toBe(false);
+    expect(
+      mediaPermissionAllowed(
+        'media',
+        { ...main, requestingUrl: 'https://evil.example/', mediaTypes: ['audio'] },
+        origins,
+      ),
+    ).toBe(false);
+    expect(mediaPermissionAllowed('media', { mediaTypes: ['audio'] }, origins)).toBe(false);
+    expect(
+      mediaPermissionAllowed('display-capture', { ...main, mediaTypes: ['audio'] }, origins),
+    ).toBe(false);
+    expect(mediaPermissionAllowed('geolocation', main, origins)).toBe(false);
   });
 });

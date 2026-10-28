@@ -8,6 +8,7 @@ import {
   Clock,
   MoreHorizontal,
   Pencil,
+  Phone,
   SmilePlus,
   Trash2,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import { ChatBubble } from '@/components/chat-bubble';
 import { EmojiPicker } from '@/components/emoji-picker';
 import type { MessengerMessage } from '@/lib/messenger/dto';
 import { bubbleTime } from '@/lib/messenger/format';
+import { callLine } from '@/lib/calls/ring';
 import { splitMentions } from '@/lib/messenger/mentions';
 import { sendableBody, type OutboxLine } from '@/lib/messenger/transcript';
 
@@ -82,6 +84,7 @@ export function ChatMessage({
   showAuthor,
   author,
   systemMark,
+  callAction,
   read,
   mentionNames = [],
   actions,
@@ -94,6 +97,8 @@ export function ChatMessage({
   author?: ReactNode;
   /** A system line's mark in a group: the group's own face. */
   systemMark?: ReactNode;
+  /** On a "call started" line whose call is still open: Join. */
+  callAction?: { label: string; onClick: () => void } | null;
   read: boolean;
   /** The chat's people, to draw "@Name" in the mention ink. */
   mentionNames?: readonly string[];
@@ -102,14 +107,30 @@ export function ChatMessage({
   editing?: ReactNode;
 }) {
   if (message.authorKind === 'system') {
+    const call = callLine(message);
     return (
       <p
         className="flex items-center justify-center gap-1.5 py-1 text-center text-xs text-muted-foreground"
         data-testid="chat-system"
         data-seq={message.seq}
+        data-call={call?.kind}
       >
-        {systemMark ? <span aria-hidden>{systemMark}</span> : null}
-        {message.body}
+        {call ? (
+          <Phone className="size-3.5 shrink-0" aria-hidden />
+        ) : systemMark ? (
+          <span aria-hidden>{systemMark}</span>
+        ) : null}
+        {call ? call.text : message.body}
+        {call && callAction ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-1 h-6 px-2 text-xs"
+            onClick={callAction.onClick}
+          >
+            {callAction.label}
+          </Button>
+        ) : null}
       </p>
     );
   }

@@ -107,3 +107,29 @@ export function callLine(
       e.type === 'call_cap' ? `Call ended at the time limit (${tail}).` : `Call ended (${tail}).`,
   };
 }
+
+/**
+ * The "call started" line a reader may still join: the newest call line of
+ * the loaded window is a start (no end line after it), and it is younger
+ * than the brain's cap allows (a very old start with no end in the window
+ * is history the window does not show the end of). Its seq, or null.
+ */
+export function openCallSeq(
+  messages: readonly Pick<MessengerMessage, 'authorKind' | 'event' | 'seq' | 'createdAt'>[],
+  now: number,
+  maxAgeMs: number = OPEN_CALL_MAX_AGE_MS,
+): number | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]!;
+    const e = callEventOf(m);
+    if (!e) continue;
+    if (e.type !== 'call_started') return null;
+    const at = new Date(m.createdAt).getTime();
+    return Number.isFinite(at) && now - at < maxAgeMs ? m.seq : null;
+  }
+  return null;
+}
+
+/** A start line older than this with no end in the window is not offered
+ *  for joining (the brain's default cap is 240 minutes). */
+export const OPEN_CALL_MAX_AGE_MS = 240 * 60_000;

@@ -31,6 +31,7 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
 import { callSession, useCallState } from '@/components/calls/call-store';
 import { useCallsCapabilities } from '@/components/calls/use-calls-capabilities';
+import { openCallSeq } from '@/lib/calls/ring';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useChatFaces } from '@/components/messenger/chat-faces';
 import {
@@ -702,6 +703,12 @@ export function ChatRoom({
   const call = useCallState();
   const inThisCall =
     (call.phase === 'live' || call.phase === 'joining') && call.conversationId === id;
+  // The "call started" line of a call still open in the loaded window
+  // offers Join (the header's Call does the same) while this tab is not in it.
+  const joinSeq = useMemo(
+    () => (callsOn && !left && !inThisCall ? openCallSeq(t.messages, Date.now()) : null),
+    [callsOn, left, inThisCall, t.messages],
+  );
   const callTool: HeaderTool | null =
     callsOn && !left
       ? inThisCall
@@ -902,6 +909,11 @@ export function ChatRoom({
                             group ? (
                               <ChatAvatar name={title} kind="group" look={look} size="xs" />
                             ) : undefined
+                          }
+                          callAction={
+                            joinSeq === it.message.seq && callTool?.onSelect
+                              ? { label: 'Join', onClick: callTool.onSelect }
+                              : null
                           }
                           author={
                             // Theirs in a group: the author's face beside the

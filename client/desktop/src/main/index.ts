@@ -24,6 +24,7 @@ import {
   brainRequestFilter,
   brainWindowRequestFilter,
   frameNavigationAllowed,
+  mediaPermissionAllowed,
   rewriteBrainWindowRequest,
 } from './brain-fence';
 import { createVault, type Vault } from './vault';
@@ -303,6 +304,27 @@ function fenceBrainSession(
     responseHeaders['Access-Control-Expose-Headers'] = ['*'];
     callback({ responseHeaders });
   });
+
+  // The microphone, for a call (calls P1): audio only, for the app's own
+  // page. Nothing else asked for a device before; every other permission
+  // keeps Electron's default answer. Both halves, as Electron asks: the
+  // check (the page's query) and the request (the prompt).
+  ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    callback(mediaPermissionAllowed(permission, details, origins));
+  });
+  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) =>
+    mediaPermissionAllowed(
+      permission,
+      {
+        requestingUrl: details.requestingUrl ?? requestingOrigin,
+        isMainFrame: details.isMainFrame,
+        // A check names one kind, or none (the page asked about media as
+        // a whole): audio is what a call wants.
+        mediaTypes: details.mediaType ? [details.mediaType] : ['audio'],
+      },
+      origins,
+    ),
+  );
 
   // No /env.js rewrite. It was redirected to a data: URL so the server's
   // first-brain env could not win over the preload's, and Chromium refuses a

@@ -6,6 +6,7 @@ import {
   callLine,
   callerNameOf,
   durationLabel,
+  openCallSeq,
   peopleLabel,
   ringText,
   shouldRing,
@@ -126,5 +127,38 @@ describe('the call lines', () => {
       }),
     ).toEqual({ kind: 'call_cap', text: 'Call ended at the time limit (4 h, 1 person).' });
     expect(callLine({ authorKind: 'system', body: 'Ann added Ben.', event: null })).toBeNull();
+  });
+});
+
+describe('openCallSeq', () => {
+  const at = (ms: number) => new Date(ms).toISOString();
+  const start = (seq: number, ms: number) => ({
+    authorKind: 'system' as const,
+    event: { type: 'call_started' as const, callId: `c${seq}` },
+    seq,
+    createdAt: at(ms),
+  });
+  const end = (seq: number, ms: number) => ({
+    authorKind: 'system' as const,
+    event: { type: 'call_ended' as const, callId: 'x', seconds: 1, participants: 1 },
+    seq,
+    createdAt: at(ms),
+  });
+  const text = (seq: number) => ({
+    authorKind: 'login' as const,
+    event: null,
+    seq,
+    createdAt: at(0),
+  });
+  it('is the newest start with no end after it', () => {
+    expect(openCallSeq([text(1), start(2, 1000), text(3)], 5000)).toBe(2);
+    expect(openCallSeq([start(2, 1000), end(3, 2000)], 5000)).toBeNull();
+    expect(openCallSeq([start(2, 1000), end(3, 2000), start(4, 3000)], 5000)).toBe(4);
+    expect(openCallSeq([text(1)], 5000)).toBeNull();
+    expect(openCallSeq([], 5000)).toBeNull();
+  });
+  it('a start older than the cap with no end is history', () => {
+    expect(openCallSeq([start(2, 0)], 240 * 60_000 - 1)).toBe(2);
+    expect(openCallSeq([start(2, 0)], 240 * 60_000)).toBeNull();
   });
 });
