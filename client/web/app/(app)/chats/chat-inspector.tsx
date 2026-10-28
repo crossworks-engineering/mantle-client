@@ -221,11 +221,12 @@ export function ChatInspector({
       // Someone else changed it while this form was open: say so once,
       // with what it says now; the next Save writes over it knowingly.
       infoWas.current = held;
-      const now = held ? (held.split('\n').find((l) => l.trim()) ?? '').trim() : '';
+      const now = [...(held ? (held.split('\n').find((l) => l.trim()) ?? '').trim() : '')];
+      const quote = now.length > 80 ? `${now.slice(0, 79).join('')}…` : now.join('');
       toast.push({
         kind: 'info',
-        message: now
-          ? `The info was changed meanwhile and now starts "${now.length > 80 ? `${now.slice(0, 79)}…` : now}". Save again to replace it.`
+        message: quote
+          ? `The info was changed meanwhile and now starts "${quote}". Save again to replace it.`
           : 'The info was cleared meanwhile. Save again to write it.',
       });
       return;
