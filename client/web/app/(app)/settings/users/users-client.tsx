@@ -434,7 +434,7 @@ function UserDetail({
   const [saving, setSaving] = useState(false);
   const name = user.displayName || user.email;
   const describes = user.description !== undefined;
-  const descriptionLength = description.trim().length;
+  const descriptionLength = Array.from(description.trim()).length;
   const descriptionOver = descriptionLength > PERSON_DESCRIPTION_MAX;
   const descriptionChanged = describes && description.trim() !== (user.description ?? '');
 

@@ -9,6 +9,7 @@ import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { PERSON_DESCRIPTION_MAX } from '@/lib/messenger/dto';
+import { useViewerLogin } from '@/components/workspaces/use-shell-workspaces';
 
 /**
  * Who I am to the team, on my person card ("Developer", "Project manager",
@@ -17,27 +18,35 @@ import { PERSON_DESCRIPTION_MAX } from '@/lib/messenger/dto';
  * login and agent that may see me reads it, which is how an agent asked to
  * message "the developer" finds who that is. Empty clears it.
  *
+ * The save names the login it was written as (`loginId`, from the shell):
+ * the brain refuses it for any other (403 `login-mismatch`), so a tab left
+ * on one login never writes another's card. The brain keeps one line of
+ * visible text (newlines become spaces); the field shows what it kept.
+ *
  * Sits inside the profile <form>, so its button is type="button" and Enter
  * in the box makes a new line, never a profile save.
  */
 export function ProfileDescriptionControl({ initial }: { initial: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const loginId = useViewerLogin()?.loginId;
   const [value, setValue] = useState(initial);
   const [saved, setSaved] = useState(initial);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const length = value.trim().length;
+  // Code points, as the brain counts: an emoji is one.
+  const length = Array.from(value.trim()).length;
   const over = length > PERSON_DESCRIPTION_MAX;
   const changed = value.trim() !== saved.trim();
 
   const save = async () => {
-    if (pending || over || !changed) return;
+    if (pending || over || !changed || !loginId) return;
     setPending(true);
     setError(null);
     try {
       const res = await apiSend<{ description: string | null }>('/api/profile/description', 'PUT', {
         description: value.trim() || null,
+        loginId,
       });
       const next = res.description ?? '';
       setValue(next);
@@ -48,9 +57,11 @@ export function ProfileDescriptionControl({ initial }: { initial: string }) {
       setError(
         err instanceof ApiError && err.status === 404
           ? 'This brain does not keep a description yet. It comes with its next update.'
-          : err instanceof Error
-            ? err.message
-            : String(err),
+          : err instanceof ApiError && err.status === 403
+            ? 'This tab is signed in as someone else now. Reload to edit your own description.'
+            : err instanceof Error
+              ? err.message
+              : String(err),
       );
     } finally {
       setPending(false);
@@ -89,7 +100,7 @@ export function ProfileDescriptionControl({ initial }: { initial: string }) {
         type="button"
         size="sm"
         variant="outline"
-        disabled={pending || over || !changed}
+        disabled={pending || over || !changed || !loginId}
         onClick={() => void save()}
       >
         {pending ? 'Saving…' : 'Save description'}
