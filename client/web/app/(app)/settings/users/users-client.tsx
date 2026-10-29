@@ -44,6 +44,8 @@ import {
   AlertDialogTrigger,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
 import {
@@ -58,6 +60,7 @@ import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { PERSON_DESCRIPTION_MAX } from '@/lib/messenger/dto';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { signOutActive } from '@mantle/web-ui/session-switch';
@@ -99,6 +102,10 @@ type UserRow = {
   role: string;
   contactId: string | null;
   disabledAt: string | null;
+  /** Who the person is to the team, on their card (everyone on the brain
+   *  reads it, agents included); null: none set. Absent: a brain before
+   *  descriptions, so the field is not shown. */
+  description?: string | null;
 };
 
 /** One option in the "copy from" picker. */
@@ -423,15 +430,26 @@ function UserDetail({
 }) {
   const toast = useToast();
   const [displayName, setDisplayName] = useState(user.displayName ?? '');
+  const [description, setDescription] = useState(user.description ?? '');
   const [saving, setSaving] = useState(false);
   const name = user.displayName || user.email;
+  const describes = user.description !== undefined;
+  const descriptionLength = description.trim().length;
+  const descriptionOver = descriptionLength > PERSON_DESCRIPTION_MAX;
+  const descriptionChanged = describes && description.trim() !== (user.description ?? '');
 
   const saveDisplayName = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (descriptionOver) {
+      toast.error(`Keep the description to ${PERSON_DESCRIPTION_MAX} characters.`);
+      return;
+    }
     setSaving(true);
     try {
       await apiSend(`/api/users/${user.id}`, 'PATCH', {
         displayName: displayName.trim() || null,
+        // Only when changed: the same body on a brain before descriptions.
+        ...(descriptionChanged ? { description: description.trim() || null } : {}),
       });
       onChanged();
       toast.success('User saved');
@@ -510,6 +528,27 @@ function UserDetail({
               How this person appears in the app. Changing it doesn&apos;t affect their login.
             </FieldHint>
           </Field>
+          {describes && (
+            <Field>
+              <FieldLabel htmlFor="person-description">Description</FieldLabel>
+              <Textarea
+                id="person-description"
+                value={description}
+                rows={2}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. Developer, Project manager, Jason's wife"
+                aria-describedby={hintId('person-description')}
+                aria-invalid={descriptionOver || undefined}
+              />
+              <FieldHint id="person-description">
+                Who this person is to the team: a job title, a role or a relationship. Everyone on
+                this brain reads it on their card, agents included, so they know whom to message.{' '}
+                <span className={cn('tabular-nums', descriptionOver && 'text-destructive-ink')}>
+                  {descriptionLength}/{PERSON_DESCRIPTION_MAX}
+                </span>
+              </FieldHint>
+            </Field>
+          )}
           <SubmitButton pending={saving}>Save user</SubmitButton>
         </form>
 

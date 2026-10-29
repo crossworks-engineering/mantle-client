@@ -20,6 +20,13 @@
  * mantle branch feat/calls-p1-server (`dto/calls.ts`, `dto/messenger.ts`).
  * They go once that brain release ships them in client-types; `event` is
  * optional here so a brain before it still fits.
+ *
+ * LOCAL COPY (description): a login's `description` on a participant, a
+ * directory entry and a person card, and PERSON_DESCRIPTION_MAX, are copied
+ * from the mantle branch feat/user-description (`dto/people.ts`,
+ * `dto/messenger.ts`, `person-description.ts`). They go once that brain
+ * release ships them in client-types; optional here, so a brain before it
+ * shows no description.
  */
 import type {
   MessengerConversation as BaseConversation,
@@ -59,6 +66,16 @@ type Face = {
   photoVersion?: string | null;
 };
 
+/** Who a login is to the team ("Developer", "Jason's wife"), as they or an
+ *  admin wrote it: their card's description, open to every login and agent
+ *  that may see the card. null or absent: none set (or a brain before it).
+ *  A participant carries it on one conversation's view only. */
+type DescriptionField = { description?: string | null };
+
+/** The most characters of a description, after trimming (the brain refuses
+ *  more). */
+export const PERSON_DESCRIPTION_MAX = 500;
+
 /** A group's icon (an emoji, or `lucide:<name>`) and colour (an AppTint
  *  name), as a folder's. The brain sends both, null when unset. */
 type GroupLookFields = {
@@ -66,7 +83,7 @@ type GroupLookFields = {
   color?: string | null;
 };
 
-export type MessengerParticipant = BaseParticipant & Face;
+export type MessengerParticipant = BaseParticipant & Face & DescriptionField;
 
 /** A row's last line, with the credential it was sent through (the
  *  message's own `via`, plan section 24): the brain's row does not carry it
@@ -111,7 +128,7 @@ export type MessengerPatchRequest = {
   muted?: boolean;
 };
 
-export type MessengerDirectoryEntry = BaseDirectoryEntry & Face;
+export type MessengerDirectoryEntry = BaseDirectoryEntry & Face & DescriptionField;
 
 export type MessengerDirectoryResponse = { entries: MessengerDirectoryEntry[] };
 
@@ -120,6 +137,9 @@ export type PersonCard = {
   /** The login id. */
   id: string;
   name: string;
+  /** Who the person is to the team; null: none set; absent on a brain
+   *  before it. */
+  description?: string | null;
   /** null: the client draws initials. */
   avatar: MessengerAvatar | null;
   /** The photo's version (GET /api/people/:id/photo?v=); null: none. */
