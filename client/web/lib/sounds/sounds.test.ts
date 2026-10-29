@@ -5,7 +5,7 @@ import { SOUND_CATALOG, SOUND_RECIPES, soundLength, type SoundKind } from './rec
 
 const KINDS = Object.keys(SOUND_RECIPES) as SoundKind[];
 /** The two that may run long: they are meant to be noticed. */
-const LONG: SoundKind[] = ['attention', 'ring'];
+const LONG: SoundKind[] = ['attention', 'ring', 'ringback'];
 
 describe('sound recipes', () => {
   it('keeps every short sound under 400 ms', () => {

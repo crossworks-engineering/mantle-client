@@ -41,6 +41,7 @@ import {
 import { play } from '@/lib/sounds/play';
 import { CallRinger } from '@/components/calls/call-ringer';
 import { CallUnloadGuard } from '@/components/calls/call-store';
+import { CallSounds } from '@/components/calls/call-sounds';
 import { MessengerLiveSync, useMessengerBus } from './messenger-live';
 
 /** A slow safety net: the stream refreshes the count on every event. */
@@ -98,6 +99,7 @@ export function MessengerShell() {
       {live ? <CallRinger /> : null}
       <AssistantReadFollower />
       <CallUnloadGuard />
+      <CallSounds />
     </>
   );
 }

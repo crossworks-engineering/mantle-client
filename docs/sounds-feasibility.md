@@ -2,9 +2,10 @@
 
 **Verdict: feasible, and it belongs in the frontend.** Sound is played by the
 device in front of the person, so the engine, the palette and the event wiring
-all live in mantle-client (`client/web`). The brain only needs one small,
-optional piece: a per-login preference field so the on/off choice roams between
-browsers and devices. The prototype on this branch works with no backend change.
+all live in mantle-client (`client/web`). The brain needs one small piece: a
+per-login preference so the on/off choice follows the person between browsers
+and devices. That piece is now built (mantle branch `feat/profile-sounds`), and
+the client falls back to the browser's copy on a brain without it.
 
 ## Where it belongs
 
@@ -15,21 +16,23 @@ browsers and devices. The prototype on this branch works with no backend change.
   client: the messenger stream, the call ringer, the assistant turn stream, the
   realtime stream (`pending_tool_call`, `run`, `task`, provider alerts). The
   brain does not need to emit anything new.
-- **The preference: the brain, eventually.** `PUT /api/profile` validates with
-  `z.object`, which strips unknown keys, so a `sounds` field sent today is
-  silently dropped. The prototype keeps the preference in `localStorage`
-  (`mantle_sounds_v1`: `{ enabled, volume }`), synced across tabs. That is
-  per-browser, so it does not follow the user to another device.
+- **The preference: the brain.** `PUT /api/profile` validates with
+  `z.object`, which strips unknown keys, so the sound choice has its own route,
+  like `navFavorites`:
 
-  To roam it, mantle needs a per-login `sounds` preference, the same shape as
-  `navFavorites`: a `PUT /api/profile/sounds { enabled, volume }` route (or two
-  optional keys on the profile `Body`), a field on `ProfilePreferences` in
-  `@mantle/client-types`, and the value in `GET /api/profile`. That is about
-  30 lines in mantle plus a client-types release. **Not done: it needs your go-ahead.**
+  - mantle `feat/profile-sounds`: `GET/PUT /api/profile/sounds`
+    (`{ sounds: { enabled, volume } }`, `null` until first saved), a personal
+    `sounds` field on `ProfilePreferences` (`SoundPreference` in
+    `@mantle/client-types`), and `projectSounds` (volume clamped to 0..1). Open
+    to every login, the same policy as the Desk.
+  - mantle-client: `lib/sounds/sync.ts`. The app shell pulls the brain's copy
+    once per page load. The Sounds settings push after each change. The browser
+    keeps the last copy seen (`localStorage` `mantle_sounds_v1`), so a sound can
+    play before the brain answers. On a brain without the route (404) it stays
+    browser-only and sends nothing more for that visit.
 
-  Recommendation: roam `enabled` and `volume`, and let a device still mute
-  itself locally (a laptop in a meeting while the phone stays loud). So keep the
-  local copy as an override, with the brain's value as the default.
+  Last write wins: it is one person's switch. A per-device override, so a laptop
+  can stay quiet while the phone rings, is not built. Add it if it is missed.
 
 ## Platform rules
 
@@ -64,7 +67,7 @@ browsers and devices. The prototype on this branch works with no backend change.
 
 ## Why synthesis, not audio files
 
-- **Size:** the whole engine plus all 14 sounds is **4.9 KB minified**. No
+- **Size:** the whole engine plus all 15 sounds is about **5 KB minified**. No
   assets, no fetch, no CSP or caching concerns.
 - **One family by construction:** every sound uses one scale (A major
   pentatonic, E5 to C#7), sine or triangle only, one envelope (6 ms attack,
@@ -92,10 +95,11 @@ browsers and devices. The prototype on this branch works with no backend change.
 | reply | 380 ms | C#6 settling to A5 | **assistant finished its reply (wired)** |
 | complete | 395 ms | A5, C#6, E6, A6 arpeggio | task, run or export done |
 | ring | 990 ms | two E6/A6 bell pairs, repeated every 2.5 s | **incoming call (wired)** |
-| join | 320 ms | A5 then E6, a fifth up | joined a call, someone came in |
-| leave | 360 ms | A5 then E5, down, quieter | someone left, call ended |
+| ringback | 900 ms | one low E5/A5 dyad, no bell, repeated every 3 s | **your call ringing the other side (wired)** |
+| join | 320 ms | A5 then E6, a fifth up | **call answered, someone came in (wired)** |
+| leave | 360 ms | A5 then E5, down, quieter | **hung up, someone left, call ended (wired)** |
 
-All except attention and ring are under 400 ms. `sounds.test.ts` enforces the
+All except attention, ring and ringback are under 400 ms. `sounds.test.ts` enforces the
 lengths and caps every note's level at 0.2.
 
 ## Events in the app, and where to hook them
@@ -109,6 +113,11 @@ Wired in this prototype:
   change it had its own `AudioContext` and two plain beeps.
 - **Assistant reply finished / failed:** `use-turn-stream.ts` on the `done` and
   `error` events → `reply` / `danger`.
+- **Calling out, answered, hang-up:** `components/calls/call-sounds.tsx`,
+  mounted by the messenger shell, reads the call state's changes. `ringback`
+  plays while a call I started waits alone in the room (for at most the ring's
+  45 s, and never again once anyone has answered). `join` plays when someone
+  comes in, and `leave` when someone goes or the call ends for me.
 
 Found, not wired (each is a one-line `play()` at a place that already exists):
 
@@ -116,8 +125,6 @@ Found, not wired (each is a one-line `play()` at a place that already exists):
   line names me → `mention` instead of `message`.
 - **Tool call waiting for approval:** `pending_tool_call` realtime event
   (`use-pending-questions.ts`, `sidebar-nav.tsx`) → `attention`.
-- **Call joined / left / ended:** call session `joined` / `left` /
-  `call_ended` → `join` / `leave`.
 - **Mic or speaker blocked:** call `mic_blocked` / `audio_blocked` → `warning`.
 - **Run or task finished:** `active-runs-strip.tsx` (`run`), `tasks-client.tsx`
   (`task`) → `complete`, only for runs or tasks the login started.
@@ -149,9 +156,11 @@ Found, not wired (each is a one-line `play()` at a place that already exists):
 
 ## Next steps
 
-1. Go-ahead for the mantle preference field (`sounds` on the login's profile),
-   then read it in `prefs.ts` with the local value as an override.
-2. Wire the "found, not wired" events above, in order: approval waiting,
-   mention, call join/leave, run/task done.
+1. Land mantle `feat/profile-sounds` (its database sweeps run on CI or the
+   workstation), release it, then bump `@mantle/client-types` here when the
+   client wants the shared `SoundPreference` type. The client keeps its own copy
+   of the type until then.
+2. Wire the "found, not wired" events above, in this order: approval waiting,
+   mention, run or task done.
 3. Electron `autoplayPolicy` for the desktop window.
 4. Render the recipes to `.wav` for mantle-mobile.

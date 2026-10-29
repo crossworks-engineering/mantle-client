@@ -19,6 +19,7 @@ export type SoundKind =
   | 'reply'
   | 'complete'
   | 'ring'
+  | 'ringback'
   | 'join'
   | 'leave';
 
@@ -109,6 +110,13 @@ export const SOUND_RECIPES: Record<SoundKind, Note[]> = {
     { at: 0.5, hz: E6, dur: 0.18, gain: 0.14, bell: true },
     { at: 0.65, hz: A6, dur: 0.34, gain: 0.14, bell: true },
   ],
+  // What the caller hears while it rings the other side: one low, warm dyad
+  // (E5 under A5), no bell, so it can never be taken for an incoming ring.
+  // The caller repeats it (components/calls/call-sounds.tsx).
+  ringback: [
+    { at: 0, hz: E5, dur: 0.9, gain: 0.07 },
+    { at: 0, hz: A5, dur: 0.9, gain: 0.06 },
+  ],
   // Up a fifth: connected.
   join: [
     { at: 0, hz: A5, dur: 0.14, gain: 0.13 },
@@ -142,6 +150,11 @@ export const SOUND_CATALOG: { kind: SoundKind; label: string; use: string }[] = 
   { kind: 'reply', label: 'Reply', use: 'The assistant finished its reply' },
   { kind: 'complete', label: 'Complete', use: 'A task, run or export is done' },
   { kind: 'ring', label: 'Ring', use: 'An incoming call (repeats while it rings)' },
+  {
+    kind: 'ringback',
+    label: 'Ringback',
+    use: 'Your call ringing the other side, until someone answers',
+  },
   { kind: 'join', label: 'Join', use: 'You joined a call, someone came in' },
-  { kind: 'leave', label: 'Leave', use: 'Someone left, the call ended' },
+  { kind: 'leave', label: 'Leave', use: 'You hung up, someone left, the call ended' },
 ];
