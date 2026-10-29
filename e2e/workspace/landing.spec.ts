@@ -7,7 +7,7 @@ import {
   startMockWorkspaceApi,
   type MockWorkspaceApi,
 } from './mock-workspace-api';
-import { wholeNav } from './shell-nav';
+import { scopedNav } from './shell-nav';
 
 /**
  * Each workspace's landing page (dev-brain task d78e7bde): Home shows the
@@ -77,9 +77,11 @@ test('an Admin user switches at Desk: the landing page follows the pick', async 
 
 test('the Dashboard is in the menu, and opens on its own screen', async ({ page }) => {
   await signIn(page, 'admin');
-  const nav = await wholeNav(page, 'admin');
-  await expect(nav.getByRole('link', { name: 'Desk', exact: true })).toBeVisible();
-  await nav.getByRole('link', { name: 'Dashboard', exact: true }).click();
+  const work = await scopedNav(page, 'Work');
+  await expect(work.getByRole('link', { name: 'Desk', exact: true })).toBeVisible();
+  // The Dashboard is a System row, so the Admin scope holds it.
+  const admin = await scopedNav(page, 'Admin');
+  await admin.getByRole('link', { name: 'Dashboard', exact: true }).click();
   await expect(page).toHaveURL((u) => u.pathname === '/dashboard');
   await expect(page.getByRole('main').getByRole('link', { name: 'Operator view' })).toBeVisible();
 });

@@ -23,22 +23,44 @@ export const ADMIN_ROWS = [
   'Secrets',
 ] as const;
 
+export const NAV_SCOPES = ['Work', 'Settings', 'Admin'] as const;
+
 /**
- * The rail's nav, opened to every row the login may see. An admin picks the
- * Admin scope (the whole menu, components/layout/sidebar-nav.tsx). A member
- * holds no settings area: it gets no Work / Settings / Admin choice at all,
- * and its rows are all there, flat.
+ * An admin's rail, narrowed to one scope (lib/nav-scope.ts). The three are
+ * slices: Admin shows the admin features only, so no one scope is the whole
+ * menu and a row is looked for under the scope that holds it.
  */
-export async function wholeNav(page: Page, role: 'admin' | 'member') {
+export async function scopedNav(page: Page, scope: (typeof NAV_SCOPES)[number]) {
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  const radio = nav.getByRole('radio', { name: scope, exact: true });
+  await radio.click();
+  await expect(radio).toHaveAttribute('aria-checked', 'true');
+  return nav;
+}
+
+/** Which of `names` an admin's rail shows under any of the three scopes. */
+export async function rowsInAnyScope(page: Page, names: readonly string[]): Promise<Set<string>> {
+  const seen = new Set<string>();
+  for (const scope of NAV_SCOPES) {
+    const nav = await scopedNav(page, scope);
+    for (const name of names) {
+      if ((await nav.getByRole('link', { name, exact: true }).count()) > 0) seen.add(name);
+    }
+  }
+  return seen;
+}
+
+/**
+ * The rail's nav, opened to every row a member may see. A member holds no
+ * settings area: it gets no Work / Settings / Admin choice at all, and its
+ * rows are all there, flat.
+ */
+export async function wholeNav(page: Page) {
   const nav = page.getByRole('navigation', { name: 'Primary' });
   const scopes = nav.getByRole('group', { name: 'How much of the menu to show' });
-  if (role === 'admin') {
-    await nav.getByRole('radio', { name: 'Admin', exact: true }).click();
-  } else {
-    await expect(nav.getByRole('link', { name: 'Pages', exact: true })).toBeVisible();
-    await expect(scopes).toHaveCount(0);
-    await expect(nav.getByRole('radio')).toHaveCount(0);
-  }
+  await expect(nav.getByRole('link', { name: 'Pages', exact: true })).toBeVisible();
+  await expect(scopes).toHaveCount(0);
+  await expect(nav.getByRole('radio')).toHaveCount(0);
   return nav;
 }
 
