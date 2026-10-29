@@ -672,7 +672,9 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           };
           const { enabled, volume } = body.sounds ?? {};
           if (typeof enabled !== 'boolean' || typeof volume !== 'number') {
-            return json(res, 400, { error: 'sounds ({ enabled: boolean, volume: number }) required' });
+            return json(res, 400, {
+              error: 'sounds ({ enabled: boolean, volume: number }) required',
+            });
           }
           if (body.loginId !== LOGINS[role].loginId) {
             return json(res, 403, {
