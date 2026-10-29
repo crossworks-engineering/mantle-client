@@ -14,10 +14,13 @@ import type { NavGroup } from '@mantle/web-ui/layout/nav-items';
  *  - `settings` what you configure to make the brain do its job — the agents,
  *               the tools they can reach, the accounts they read, and who you
  *               are. Not the machine's plumbing.
- *  - `admin`    everything, exactly as before this existed.
+ *  - `admin`    what is left: the machine's plumbing and the System group.
+ *               Not everything: Jason asked for the admin features only, so
+ *               it repeats nothing Work or Settings already shows.
  *
  * Three SLICES, not three nesting levels: `settings` does not also show
- * Workspace, or it would be `admin` with extra steps. Anything reached often
+ * Workspace, and `admin` shows neither, or each would be the next one with
+ * extra steps. The three together are the whole list. Anything reached often
  * enough for that to chafe wants a star instead — Favorites renders in every
  * scope, which is what stops the narrowing from ever being a trap.
  */
@@ -86,13 +89,20 @@ const SETTINGS_HREFS = new Set([
  *
  * Empty groups are dropped rather than rendered as a bare heading, so a scope
  * never shows a label with nothing under it.
+ *
+ * `admin` is the complement of the other two rather than a list of its own, so
+ * a screen nobody classified (a new settings row, say) lands in `admin` and is
+ * never out of reach in every scope.
  */
 export function scopeGroups<G extends NavGroup>(groups: G[], scope: NavScope): G[] {
-  if (scope === 'admin') return groups;
   return groups
     .map((group) => {
       if (scope === 'work') {
         return WORK_GROUPS.has(group.label) ? group : { ...group, items: [] };
+      }
+      if (scope === 'admin') {
+        if (WORK_GROUPS.has(group.label)) return { ...group, items: [] };
+        return { ...group, items: group.items.filter((i) => !SETTINGS_HREFS.has(i.href)) };
       }
       return { ...group, items: group.items.filter((i) => SETTINGS_HREFS.has(i.href)) };
     })
@@ -106,9 +116,15 @@ export function scopeGroups<G extends NavGroup>(groups: G[], scope: NavScope): G
  * (the settings area). A login without it (a member, a client) may open a
  * few screens only, so it gets them all, flat, and no choice to make: a
  * choice between near-empty slices only hides screens it may use.
+ *
+ * A `null` scope (not read from storage yet, see useNavScope) shows them all.
  */
-export function railGroups<G extends NavGroup>(groups: G[], scope: NavScope, scoped: boolean): G[] {
-  return scoped ? scopeGroups(groups, scope) : groups;
+export function railGroups<G extends NavGroup>(
+  groups: G[],
+  scope: NavScope | null,
+  scoped: boolean,
+): G[] {
+  return scoped && scope ? scopeGroups(groups, scope) : groups;
 }
 
 function isScope(v: unknown): v is NavScope {
@@ -118,19 +134,20 @@ function isScope(v: unknown): v is NavScope {
 /**
  * The chosen scope, remembered per browser.
  *
- * ⚠ Starts at `admin` on the server and on first paint, and adopts the stored
- * choice on mount. That order is deliberate in both directions: the server has
- * no localStorage, so seeding from it would be a hydration mismatch — and of
- * the three, `admin` is the only safe thing to render before we know, because
- * it shows everything. Starting at `work` would blink most of the menu out of
- * existence on every single load for anyone who had chosen otherwise.
+ * ⚠ Starts at `null` — no scope, the whole list — on the server and on first
+ * paint, and adopts the stored choice on mount. That order is deliberate in
+ * both directions: the server has no localStorage, so seeding from it would be
+ * a hydration mismatch — and the whole list is the only safe thing to render
+ * before we know. Starting at any one slice would blink the other two out of
+ * existence on every single load for anyone who had chosen otherwise. (That
+ * used to be `admin`, when `admin` still meant everything.)
  *
  * The DEFAULT for someone who has never chosen is `work`, applied on mount. It
  * is the scope the feature exists for, and the control sits directly above the
  * list, labelled, so a narrowed menu explains itself.
  */
-export function useNavScope(): { scope: NavScope; setScope: (s: NavScope) => void } {
-  const [scope, setScopeState] = useState<NavScope>('admin');
+export function useNavScope(): { scope: NavScope | null; setScope: (s: NavScope) => void } {
+  const [scope, setScopeState] = useState<NavScope | null>(null);
 
   useEffect(() => {
     try {

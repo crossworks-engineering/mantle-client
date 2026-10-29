@@ -19,7 +19,7 @@ import {
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { activeNavHref } from '@/lib/nav-active';
 import { favoriteItems, useNavFavorites } from '@/lib/nav-favorites';
-import { NAV_SCOPES, railGroups, useNavScope } from '@/lib/nav-scope';
+import { NAV_SCOPES, railGroups, useNavScope, type NavScope } from '@/lib/nav-scope';
 import { hasArea, navWithAreas } from '@/lib/workspaces';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { useMessengerUnread } from '@/components/messenger/messenger-shell';
@@ -298,8 +298,8 @@ export function SidebarNav({
                 type="single"
                 variant="outline"
                 size="sm"
-                value={scope}
-                onValueChange={(v) => v && setScope(v as typeof scope)}
+                value={scope ?? ''}
+                onValueChange={(v) => v && setScope(v as NavScope)}
                 aria-label="How much of the menu to show"
                 className="mt-2 grid w-full grid-cols-3"
               >

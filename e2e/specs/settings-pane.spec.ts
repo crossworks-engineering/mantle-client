@@ -384,27 +384,36 @@ test.describe('settings pane', () => {
     // connect` is still Local network — and `/settings` itself lands on
     // Profile, so Profile is what lights.
     //
-    // Admin scope, because the default Work scope hides the Settings group
-    // entirely and a row that is not rendered cannot light. Nothing is starred
-    // in this fresh context; a starred screen lights TWICE by design, once
-    // pinned and once in its home group, and that is not what this measures.
+    // Each row under the scope that shows it, because the default Work scope
+    // hides the Settings group entirely and a row that is not rendered cannot
+    // light: Profile and Agents are Settings rows, Local network is Admin's.
+    // Nothing is starred in this fresh context; a starred screen lights TWICE
+    // by design, once pinned and once in its home group, and that is not what
+    // this measures.
     await ownerPage.setViewportSize({ width: 1600, height: 1100 });
     await ownerPage.goto('/settings/profile');
     const rail = ownerPage.locator('nav[aria-label="Primary"]');
     await expect(rail).toBeVisible();
-    await rail.getByRole('radio', { name: 'Admin' }).click();
 
-    for (const [path, expected] of [
-      ['/settings/profile', 'Profile'],
-      ['/settings/agents', 'Agents'],
-      ['/settings/network/connect', 'Local network'],
-      ['/settings', 'Profile'],
+    for (const [scope, rows] of [
+      [
+        'Settings',
+        [
+          ['/settings/profile', 'Profile'],
+          ['/settings/agents', 'Agents'],
+          ['/settings', 'Profile'],
+        ],
+      ],
+      ['Admin', [['/settings/network/connect', 'Local network']]],
     ] as const) {
-      await ownerPage.goto(path);
-      await expect(rail).toBeVisible();
-      const lit = rail.locator('a[aria-current="page"]');
-      await expect(lit, `${path} lit more than one row`).toHaveCount(1);
-      await expect(lit).toContainText(expected);
+      await rail.getByRole('radio', { name: scope }).click();
+      for (const [path, expected] of rows) {
+        await ownerPage.goto(path);
+        await expect(rail).toBeVisible();
+        const lit = rail.locator('a[aria-current="page"]');
+        await expect(lit, `${path} lit more than one row`).toHaveCount(1);
+        await expect(lit).toContainText(expected);
+      }
     }
   });
 });

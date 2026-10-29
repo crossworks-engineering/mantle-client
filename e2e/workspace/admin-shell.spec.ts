@@ -6,7 +6,7 @@ import {
   startMockWorkspaceApi,
   type MockWorkspaceApi,
 } from './mock-workspace-api';
-import { ADMIN_ROWS, GONE_ROUTE, WORK_ROWS, wholeNav } from './shell-nav';
+import { ADMIN_ROWS, GONE_ROUTE, WORK_ROWS, rowsInAnyScope, scopedNav } from './shell-nav';
 
 /**
  * An admin in the one shell (phase W5c): every area, so the full nav with
@@ -29,11 +29,10 @@ test.afterEach(async () => {
 
 test('the full nav, the owner Pages screen and Settings > Users', async ({ page }) => {
   await signIn(page, 'admin');
-  const nav = await wholeNav(page, 'admin');
-  for (const name of [...WORK_ROWS, ...ADMIN_ROWS, 'Workspaces']) {
-    await expect(nav.getByRole('link', { name, exact: true }), name).toBeVisible();
-  }
+  const rows = [...WORK_ROWS, ...ADMIN_ROWS, 'Workspaces'];
+  expect([...(await rowsInAnyScope(page, rows))].sort()).toEqual([...rows].sort());
 
+  const nav = await scopedNav(page, 'Work');
   await nav.getByRole('link', { name: 'Pages', exact: true }).click();
   // Home lists the newest pages too (task d78e7bde): be on Pages first.
   await expect(page).toHaveURL((u) => u.pathname === '/pages');
@@ -44,7 +43,9 @@ test('the full nav, the owner Pages screen and Settings > Users', async ({ page 
   }
   expect(api.asked('admin')).toContain('GET /api/tree/pages');
 
-  await nav.getByRole('link', { name: 'Users', exact: true }).click();
+  // Users is plumbing, so the Admin scope holds it.
+  const admin = await scopedNav(page, 'Admin');
+  await admin.getByRole('link', { name: 'Users', exact: true }).click();
   await expect(page).toHaveURL((u) => u.pathname === '/settings/users');
   await expect(main.getByText(LOGINS.member.name).first()).toBeVisible();
   // No sign-in by email code and no client login (W8).

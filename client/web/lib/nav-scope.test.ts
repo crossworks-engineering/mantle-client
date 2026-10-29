@@ -17,10 +17,41 @@ const names = (groups: NavGroup[]) => groups.flatMap((g) => g.items).map((i) => 
 const labels = (groups: NavGroup[]) => groups.map((g) => g.label);
 
 describe('admin', () => {
-  it('is exactly the list, untouched', () => {
-    // The pre-existing behaviour has to survive intact: admin is not a filter
-    // that happens to pass everything, it is the same array.
-    expect(scopeGroups(NAV_GROUPS, 'admin')).toBe(NAV_GROUPS);
+  const admin = scopeGroups(NAV_GROUPS, 'admin');
+  const shown = names(admin);
+
+  it('carries the plumbing and the System group', () => {
+    expect(shown).toEqual(
+      expect.arrayContaining(['Backups', 'Updates', 'Audit log', 'Peers', 'Users', 'Debug']),
+    );
+    const system = NAV_GROUPS.find((g) => g.label === 'System');
+    expect(admin.find((g) => g.label === 'System')).toEqual(system);
+  });
+
+  it('shows the admin features only — nothing Work or Settings already shows', () => {
+    const elsewhere = new Set([
+      ...names(scopeGroups(NAV_GROUPS, 'work')),
+      ...names(scopeGroups(NAV_GROUPS, 'settings')),
+    ]);
+    for (const name of shown) expect(elsewhere.has(name)).toBe(false);
+    expect(shown).not.toContain('Pages');
+    expect(shown).not.toContain('Agents');
+  });
+
+  it('with Work and Settings, covers the whole list, so no screen is out of reach', () => {
+    const all = new Set(names(NAV_GROUPS));
+    const covered = new Set([
+      ...shown,
+      ...names(scopeGroups(NAV_GROUPS, 'work')),
+      ...names(scopeGroups(NAV_GROUPS, 'settings')),
+    ]);
+    expect(covered).toEqual(all);
+  });
+
+  it('shows no group heading with nothing under it', () => {
+    expect(labels(admin)).not.toContain('Workspace');
+    expect(labels(admin)).not.toContain('Review');
+    for (const group of admin) expect(group.items.length).toBeGreaterThan(0);
   });
 });
 
@@ -112,6 +143,10 @@ describe('the rail (W5c: one shell for every login)', () => {
     for (const scope of scopes) {
       expect(railGroups(NAV_GROUPS, scope, true)).toEqual(scopeGroups(NAV_GROUPS, scope));
     }
+  });
+
+  it('before the stored scope is read, shows every screen', () => {
+    expect(railGroups(NAV_GROUPS, null, true)).toBe(NAV_GROUPS);
   });
 
   it('a login without the settings area gets every screen it may open, flat, whatever the stored scope', () => {
