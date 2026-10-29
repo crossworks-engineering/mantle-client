@@ -664,6 +664,20 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     if (path === '/api/telegram/my-chats' || path === '/api/telegram/moderated-chats') {
       return json(res, 200, { chats: [] });
     }
+    // The messenger, open to every login: nothing unread, no chats, nobody
+    // to chat with, and a stream that stays quiet.
+    if (method === 'GET' && path === '/api/messenger/unread') {
+      return json(res, 200, { total: 0, messenger: 0, agents: 0 });
+    }
+    if (method === 'GET' && path === '/api/messenger/conversations') {
+      return json(res, 200, { rows: [] });
+    }
+    if (method === 'GET' && path === '/api/messenger/directory') {
+      return json(res, 200, { entries: [] });
+    }
+    if (method === 'GET' && path === '/api/messenger/stream') {
+      return send(res, 200, 'text/event-stream', ':\n\n');
+    }
     // The brain's gates (W6b): a member keeps its own /api/member/* routes; a
     // member uses the owner routes the brain opened to it; an
     // admin every owner route.
