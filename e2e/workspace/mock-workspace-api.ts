@@ -164,7 +164,12 @@ const PUBLIC = [
   /^\/api\/auth\/(mobile-)?logout$/,
 ];
 /** What the brain answers every signed-in login. */
-const EVERY_LOGIN = [/^\/api\/shell$/, /^\/api\/workspaces(\/|$)/, /^\/api\/profile\/home-desk$/];
+const EVERY_LOGIN = [
+  /^\/api\/shell$/,
+  /^\/api\/workspaces(\/|$)/,
+  /^\/api\/profile\/home-desk$/,
+  /^\/api\/profile\/sounds$/,
+];
 
 export type MockRequest = { method: string; path: string; query: string; role: Role | 'anon' };
 
@@ -650,6 +655,10 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           state.desks[role] = saved;
           return json(res, 200, saved);
         }
+      }
+      if (path === '/api/profile/sounds') {
+        // The login's sound choice: none stored, so the client keeps its default.
+        if (method === 'GET') return json(res, 200, { sounds: null });
       }
       return json(res, 404, { error: `not mocked: ${method} ${path}` });
     }

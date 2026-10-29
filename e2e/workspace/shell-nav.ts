@@ -70,6 +70,8 @@ export const ANY_LOGIN = [
   /^\/api\/shell$/,
   // The login's own Desk (GET and PUT), for every login.
   /^\/api\/profile\/home-desk$/,
+  // The login's own sound choice (GET and PUT), for every login.
+  /^\/api\/profile\/sounds$/,
   /^\/api\/version$/,
   /^\/api\/appearance(\/|$)/,
   /^\/api\/auth\//,

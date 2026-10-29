@@ -153,10 +153,7 @@ export function ChatsClient() {
           <Plus aria-hidden />
         </Button>
       </div>
-      <div
-        className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-2"
-        data-testid="chat-list"
-      >
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-2" data-testid="chat-list">
         {listQuery.isPending ? (
           <div className="flex justify-center p-6">
             <Spinner />
