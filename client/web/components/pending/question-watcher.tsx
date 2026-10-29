@@ -3,12 +3,15 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { useDockActions } from '@/components/assistant/assistant-dock';
+import { freshKeys } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
 import { usePendingQuestions, usePendingQuestionsSync } from './use-pending-questions';
 import { questionPreview, RUN_BUDGET_SLUG } from './types';
 
 /**
  * Headless. Announces a NEW blocked-run question with a toast that opens the
- * assistant, where the questionnaire is waiting.
+ * assistant, where the questionnaire is waiting. Sounds `attention` for every
+ * new row that waits, a question or a tool call to approve.
  *
  * A background run that parks on `ask_human` is invisible by nature — the
  * operator isn't watching /runs. The server side of this (the `pending_created`
@@ -33,11 +36,25 @@ export function PendingQuestionWatcher() {
   // The single app-wide live subscription for the shared pending query —
   // every other consumer (the button flash, the panel strip) reads its cache.
   usePendingQuestionsSync();
-  const { questions, hasLoaded } = usePendingQuestions();
+  const { questions, open, hasLoaded } = usePendingQuestions();
   const toast = useToast();
   const { openAssistant } = useDockActions();
 
   const seen = useRef<Set<string> | null>(null);
+  const seenOpen = useRef<Set<string> | null>(null);
+
+  // The `attention` sound for anything new that waits on me: a question or a
+  // tool call held for approval, one chime for the batch. Seeded on the
+  // first load like the toasts below; never mine to echo (an agent made it).
+  useEffect(() => {
+    if (!hasLoaded) return;
+    const next = freshKeys(
+      seenOpen.current,
+      open.map((r) => r.id),
+    );
+    seenOpen.current = next.seen;
+    if (next.fresh.length > 0) play('attention');
+  }, [open, hasLoaded]);
 
   useEffect(() => {
     if (!hasLoaded) return; // no real data yet (still fetching, or errored)

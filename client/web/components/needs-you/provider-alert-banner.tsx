@@ -6,15 +6,32 @@
  * for admins only. Live through GET /api/embedding/recover and the brain's
  * live event when an outage opens or closes. Renders NOTHING while all
  * works. Clicking opens the settings page with the fix. In the collapsed
- * icon rail the label hides and the icon stays.
+ * icon rail the label hides and the icon stays. An outage that opens while
+ * the app is open sounds `notification` once.
  */
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import { alertHeadline, alertHref, alertImpact, alertTitle } from '@/lib/provider-alerts';
-import { useProviderAlerts } from './use-provider-alerts';
+import { freshKeys } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
+import { useProviderAlertsState } from './use-provider-alerts';
+
+/** The outages already heard, for the tab: shared by every banner, so one
+ *  that mounts twice (or again) never sounds an outage twice. Null until
+ *  the first answer, which seeds it. */
+let heard: Set<string> | null = null;
 
 export function ProviderAlertBanner({ onNavigate }: { onNavigate?: () => void }) {
-  const alerts = useProviderAlerts();
+  const { alerts, loaded } = useProviderAlertsState();
+  const keys = alerts.map((a) => `${a.subject}:${a.since}`).join('|');
+  useEffect(() => {
+    // The first answer seeds: an outage already open at load stays quiet.
+    if (!loaded) return;
+    const next = freshKeys(heard, keys ? keys.split('|') : []);
+    heard = next.seen;
+    if (next.fresh.length > 0) play('notification');
+  }, [keys, loaded]);
   const first = alerts[0];
   if (!first) return null;
   const label = alerts.length > 1 ? 'Embeddings and extraction are failing' : alertTitle(first);

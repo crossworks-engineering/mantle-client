@@ -7,11 +7,12 @@
  * `runs_changed` realtime channel, and keeps a poll behind it (5s while work
  * is in flight, 60s idle) to cover an SSE reconnect gap. Renders NOTHING when
  * there are no active runs — zero visual cost on brains that don't use runs
- * (dark or not).
+ * (dark or not). A run that leaves the list sounds how it ended: `complete`
+ * when done, `danger` when failed, nothing when cancelled.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -27,6 +28,8 @@ import {
   AlertDialogTrigger,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { goneIds, runEndSound } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
 
 type ActiveRun = {
   id: string;
@@ -111,6 +114,26 @@ export function ActiveRunsStrip() {
   useRealtime(['run'], () => {
     void queryClient.invalidateQueries({ queryKey: ['runs'] });
   });
+
+  // The runs seen running, so one that drops out of the list is asked once
+  // how it ended. Null until the first list: what ended before the page
+  // opened makes no sound.
+  const known = useRef<string[] | null>(null);
+  const data = query.data;
+  useEffect(() => {
+    if (!data) return;
+    const now = data.active.map((r) => r.id);
+    const gone = known.current ? goneIds(known.current, now) : [];
+    known.current = now;
+    for (const id of gone) {
+      void apiFetch<{ run: { status: string } }>(`/api/runs/${id}`)
+        .then(({ run }) => {
+          const kind = runEndSound(run?.status);
+          if (kind) play(kind);
+        })
+        .catch(() => {});
+    }
+  }, [data]);
 
   const active = query.data?.active ?? [];
   if (active.length === 0) return null; // nothing running/paused → render nothing

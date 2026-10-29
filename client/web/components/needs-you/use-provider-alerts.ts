@@ -20,6 +20,12 @@ const RECHECK_MS = 5 * 60_000;
  * member or a client (the brain refuses them), and on a brain before 0230.
  */
 export function useProviderAlerts(): ProviderAlert[] {
+  return useProviderAlertsState().alerts;
+}
+
+/** The same, with whether an answer has come (`loaded`): empty before it
+ *  is not "no outage" yet. */
+export function useProviderAlertsState(): { alerts: ProviderAlert[]; loaded: boolean } {
   const queryClient = useQueryClient();
   useRealtime([PROVIDER_ALERTS_REALTIME_TYPE], () => {
     void queryClient.invalidateQueries({ queryKey: PROVIDER_ALERTS_KEY });
@@ -37,5 +43,5 @@ export function useProviderAlerts(): ProviderAlert[] {
     refetchInterval: RECHECK_MS,
     refetchOnWindowFocus: true,
   });
-  return q.data ?? [];
+  return { alerts: q.data ?? [], loaded: q.isSuccess };
 }

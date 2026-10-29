@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useRealtime } from '@/components/realtime/use-realtime';
+import { play } from '@/lib/sounds/play';
 import { isQuestionRow, type Decide, type PendingRow } from './types';
 
 /** The app-wide open-questions slice. Distinct from `['pending']`, which
@@ -63,10 +64,13 @@ export function usePendingQuestions({ enabled = true }: { enabled?: boolean } = 
   const invalidate = useCallback(() => invalidatePending(queryClient), [queryClient]);
 
   const rows = query.data?.pending ?? [];
-  const questions = rows.filter((r) => r.status === 'pending' && isQuestionRow(r));
+  const open = rows.filter((r) => r.status === 'pending');
+  const questions = open.filter(isQuestionRow);
 
   return {
     questions,
+    /** Every open row: the questions and the tool calls waiting for approval. */
+    open,
     count: questions.length,
     /** True only once real data has arrived. NOT `!isPending`: react-query's
      *  `isPending` is `status === 'pending'`, so a fetch that ERRORS with no
@@ -108,8 +112,11 @@ export function useDecidePending(onSettled?: () => void | Promise<void>) {
           ...(payload?.answer ? { answer: payload.answer } : {}),
           ...(payload?.answers?.length ? { answers: payload.answers } : {}),
         });
+        // The small confirm: decided. A refused decision is `danger`.
+        play('action');
         await onSettled?.();
       } catch (e) {
+        play('danger');
         setError(e instanceof ApiError ? e.message : 'decision failed');
       } finally {
         setBusyId(null);

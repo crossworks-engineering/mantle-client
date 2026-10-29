@@ -38,6 +38,7 @@ import {
   railCount,
   shouldPop,
 } from '@/lib/messenger/notify';
+import { chatLineSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
 import { CallRinger } from '@/components/calls/call-ringer';
 import { CallUnloadGuard } from '@/components/calls/call-store';
@@ -168,7 +169,8 @@ function MessengerNotices() {
         shell.notify({ title: text.title, body: text.body, path: href });
         return;
       }
-      play('message');
+      // A line that names me chimes as a mention instead.
+      play(chatLineSound(message, me));
       toast.push({
         kind: 'info',
         message: text.body ? `${text.title}: ${text.body}` : text.title,
