@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { shellProbeFailure } from '@/lib/shell-probe';
+import { installSoundUnlock } from '@/lib/sounds/play';
 import { goesToOnboarding, hasArea, shellAreasOf, shellRoleOf } from '@/lib/workspaces';
 import { CreateWorkspaceSync } from '@/components/workspaces/create-workspace-sync';
 import type { Shell } from '@mantle/client-types';
@@ -293,6 +294,9 @@ function ShellFrame({
   useEffect(() => {
     clearOldRescues();
   }, []);
+  // A browser holds sound back until the page's first click or key press:
+  // that gesture readies it, so a chime later can play (lib/sounds/play.ts).
+  useEffect(() => installSoundUnlock(), []);
   const loginKey = loginKeyFor(shell);
   // The route before this one, for the workspace sections' "open the last
   // item" restore (lib/last-opened.ts): back to a section's list from one of
