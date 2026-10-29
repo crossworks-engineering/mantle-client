@@ -355,6 +355,12 @@ export function ChatInspector({
             ) : null}
           </div>
         )}
+        {peer?.description ? (
+          // Who the other person is to the team (their card's description).
+          <p className="text-sm text-muted-foreground" data-testid="chat-peer-description">
+            {peer.description}
+          </p>
+        ) : null}
         <p className="text-xs text-muted-foreground">
           {group
             ? `Group, ${people.length} ${people.length === 1 ? 'member' : 'members'}`
@@ -508,9 +514,16 @@ export function ChatInspector({
                 online={online.has(p.id)}
                 size="sm"
               />
-              <span className="min-w-0 flex-1 truncate text-sm">
-                {p.name}
-                {p.id === me ? <span className="text-muted-foreground"> (you)</span> : null}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm">
+                  {p.name}
+                  {p.id === me ? <span className="text-muted-foreground"> (you)</span> : null}
+                </span>
+                {p.description ? (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {p.description}
+                  </span>
+                ) : null}
               </span>
               {group && p.admin ? <HeaderPill>admin</HeaderPill> : null}
               {admin && !left && p.id !== me && p.kind === 'login' ? (
@@ -755,7 +768,14 @@ function AddPeople({
                     online={p.online}
                     size="sm"
                   />
-                  <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">{p.name}</span>
+                    {p.description ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {p.description}
+                      </span>
+                    ) : null}
+                  </span>
                 </label>
               </li>
             ))}

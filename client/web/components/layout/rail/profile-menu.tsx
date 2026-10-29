@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import {
   ChevronsUpDown,
   Dices,
+  IdCard,
   KeyRound,
   LogOut,
   MonitorOff,
@@ -54,6 +55,7 @@ import { hasArea } from '@/lib/workspaces';
 import { useViewerAreas } from '@/components/workspaces/use-shell-workspaces';
 import { useShellRole } from '@/components/layout/shell-role';
 import { MemberPasswordDialog } from '@/components/member/member-password-dialog';
+import { MemberDescriptionDialog } from '@/components/member/member-description-dialog';
 import { EVERYWHERE_CONFIRM_TEXT, signOutEverywhere } from '@/lib/sign-out-everywhere';
 
 export type ProfileIdentity = {
@@ -134,6 +136,7 @@ export function ProfileMenu({
   const [busy, setBusy] = useState(false);
   const [everywhereOpen, setEverywhereOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const toast = useToast();
   // The Profile screen, its photo route and Manage logins are the
   // settings area's (phase W5c: one shell for every login). A brain that
@@ -284,6 +287,13 @@ export function ProfileMenu({
             </Link>
           </DropdownMenuItem>
         ) : null}
+        {/* The Profile screen holds the description; a login without it
+            (a member) edits its own here. */}
+        {!manages ? (
+          <DropdownMenuItem onSelect={() => setDescriptionOpen(true)} className="cursor-pointer">
+            <IdCard className="size-4" /> Your description
+          </DropdownMenuItem>
+        ) : null}
         {member ? (
           <DropdownMenuItem onSelect={() => setPasswordOpen(true)} className="cursor-pointer">
             <KeyRound className="size-4" /> Change password
@@ -391,6 +401,9 @@ export function ProfileMenu({
       {/* Beside the menu content, not inside it: the dialog outlives the
           menu closing. The menu root renders no element of its own. */}
       {member ? <MemberPasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} /> : null}
+      {!manages ? (
+        <MemberDescriptionDialog open={descriptionOpen} onOpenChange={setDescriptionOpen} />
+      ) : null}
       <AlertDialog open={everywhereOpen} onOpenChange={(o) => !busy && setEverywhereOpen(o)}>
         <AlertDialogContent>
           <AlertDialogHeader>

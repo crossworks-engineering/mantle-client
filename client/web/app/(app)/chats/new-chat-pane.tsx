@@ -111,7 +111,9 @@ export function NewChatPane({
   }, []);
 
   const q = query.trim().toLowerCase();
-  const matches = (e: MessengerDirectoryEntry) => !q || e.name.toLowerCase().includes(q);
+  // The name or who the person is ("developer"), as the brain's search.
+  const matches = (e: MessengerDirectoryEntry) =>
+    !q || e.name.toLowerCase().includes(q) || !!e.description?.toLowerCase().includes(q);
   const people = useMemo(
     () =>
       (directory ?? [])
@@ -232,7 +234,12 @@ export function NewChatPane({
             online={e.kind === 'login' && e.online}
             size="sm"
           />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.name}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{e.name}</span>
+            {e.description ? (
+              <span className="block truncate text-xs text-muted-foreground">{e.description}</span>
+            ) : null}
+          </span>
           {chosen ? (
             <Check className="size-4 shrink-0" aria-hidden />
           ) : e.kind === 'login' && e.online ? (
@@ -377,7 +384,14 @@ export function NewChatPane({
                     }
                   />
                   <ChatAvatar name={p.name} face={face(p)} online={p.online} size="sm" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">{p.name}</span>
+                    {p.description ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {p.description}
+                      </span>
+                    ) : null}
+                  </span>
                 </label>
               </li>
             ))}

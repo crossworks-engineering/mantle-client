@@ -39,6 +39,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import Link from 'next/link';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 import { ProfilePhotoControl } from '@/components/profile-photo-control';
+import { ProfileDescriptionControl } from '@/components/profile-description-control';
 import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
 import { agentInitials } from '@/lib/agent-color';
 import { PurposeFieldNote } from '@/components/purpose-field-note';
@@ -300,6 +301,12 @@ function ProfileForm({ data }: { data: ProfileData }) {
           &mdash; press Randomize to get one.
         </p>
       </section>
+
+      <ProfileDescriptionControl
+        // The brain's client-types before the description lack the key:
+        // absent reads as none set.
+        initial={(defaults as ProfilePreferences & { description?: string }).description ?? ''}
+      />
 
       <section className="space-y-4">
         <div className="space-y-1.5">
