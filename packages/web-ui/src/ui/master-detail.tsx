@@ -237,7 +237,12 @@ export function MasterDetail({
       // `listFills`: the group hands it whatever is left.
       defaultSize={detailFills ? undefined : defaultDetailSize}
       minSize={detailFills ? undefined : minDetailSize}
-      maxSize={detailFills ? undefined : maxDetailSize}
+      // No cap while the list is collapsed. The shell widens the group as
+      // focus mode hides its chrome; a capped detail cannot take that width,
+      // and the group hands it to the collapsed list instead, which then
+      // shows at its minimum in focus mode and collapses again as the chrome
+      // comes back.
+      maxSize={detailFills || listCollapsed ? undefined : maxDetailSize}
     >
       <div className="relative h-full min-h-0 overflow-y-auto scrollbar-thin">{detail}</div>
     </ResizablePanel>
