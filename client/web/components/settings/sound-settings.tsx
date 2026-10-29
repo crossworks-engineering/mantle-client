@@ -22,6 +22,7 @@ import {
 } from '@/lib/sounds/prefs';
 import { SOUND_CATALOG, soundLength, type SoundKind } from '@/lib/sounds/recipes';
 import { pushSoundPrefs } from '@/lib/sounds/sync';
+import { useViewerLogin } from '@/components/workspaces/use-shell-workspaces';
 
 export function useSoundPrefs() {
   return useSyncExternalStore(subscribeSoundPrefs, getSoundPrefs, serverSoundPrefs);
@@ -29,6 +30,8 @@ export function useSoundPrefs() {
 
 export function SoundSettings() {
   const prefs = useSoundPrefs();
+  // The login this tab shows: the save names it (lib/sounds/sync.ts).
+  const loginId = useViewerLogin()?.loginId;
 
   const playAll = () => {
     let at = 0;
@@ -48,7 +51,7 @@ export function SoundSettings() {
             checked={prefs.enabled}
             onCheckedChange={(enabled) => {
               setSoundPrefs({ enabled });
-              pushSoundPrefs();
+              pushSoundPrefs(loginId);
               if (enabled) play('action', { force: true });
             }}
           />
@@ -73,7 +76,7 @@ export function SoundSettings() {
           disabled={!prefs.enabled}
           onValueChange={([v]) => setSoundPrefs({ volume: (v ?? 0) / 100 })}
           onValueCommit={() => {
-            pushSoundPrefs();
+            pushSoundPrefs(loginId);
             play('notification', { force: true });
           }}
         />

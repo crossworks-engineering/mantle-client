@@ -203,6 +203,10 @@ export type MockWorkspaceApi = {
    *  naming another login is the brain's 401: a spec sets one here to play
    *  another device's save. */
   desks: Partial<Record<Role, { homeDesk: unknown; version: number }>>;
+  /** Each login's sound choice as GET /api/profile/sounds answers it (none:
+   *  null, so the client keeps its default). PUT stores it, and a body naming
+   *  another login, or none, is the brain's 403 login-mismatch, as the Desk's. */
+  sounds: Partial<Record<Role, { enabled: boolean; volume: number }>>;
   close: () => Promise<void>;
 };
 
@@ -227,6 +231,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     leftSince: {},
     homeApps: {},
     desks: {},
+    sounds: {},
     close: async () => undefined,
   };
 
@@ -657,8 +662,27 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         }
       }
       if (path === '/api/profile/sounds') {
-        // The login's sound choice: none stored, so the client keeps its default.
-        if (method === 'GET') return json(res, 200, { sounds: null });
+        // The login's sound choice: none stored until a PUT, so the client
+        // keeps its default.
+        if (method === 'GET') return json(res, 200, { sounds: state.sounds[role] ?? null });
+        if (method === 'PUT') {
+          const body = JSON.parse((await readBody(req)) || '{}') as {
+            sounds?: { enabled?: unknown; volume?: unknown };
+            loginId?: unknown;
+          };
+          const { enabled, volume } = body.sounds ?? {};
+          if (typeof enabled !== 'boolean' || typeof volume !== 'number') {
+            return json(res, 400, { error: 'sounds ({ enabled: boolean, volume: number }) required' });
+          }
+          if (body.loginId !== LOGINS[role].loginId) {
+            return json(res, 403, {
+              error: 'loginId is not the login of this session',
+              code: 'login-mismatch',
+            });
+          }
+          state.sounds[role] = { enabled, volume: Math.min(1, Math.max(0, volume)) };
+          return json(res, 200, { sounds: state.sounds[role] });
+        }
       }
       return json(res, 404, { error: `not mocked: ${method} ${path}` });
     }
