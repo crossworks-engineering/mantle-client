@@ -40,6 +40,23 @@ async function withApp(
   }
 }
 
+/** Give the app a published build: an app is shared (the Access slot is a
+ *  button) only once it has one. A new app has no source, so it gets a
+ *  one-file draft, then publish builds it. */
+async function publish(ownerApi: APIRequestContext, id: string) {
+  const draft = await ownerApi.put(`/api/apps/${id}/draft`, {
+    data: {
+      entry: 'App.tsx',
+      files: { 'App.tsx': 'export default function App() { return <p>E2E</p>; }\n' },
+    },
+  });
+  expect(draft.status(), 'could not save the draft').toBeLessThan(300);
+  const published = await ownerApi.post(`/api/apps/${id}/publish`);
+  expect(published.status(), 'could not publish').toBeLessThan(300);
+  const { app } = (await published.json()) as { app: { hasBuild?: boolean } };
+  expect(app.hasBuild, 'the app did not publish').toBe(true);
+}
+
 /** Switch an app's view (Builder, Code, History, Activity). They are picked
  *  from the header's View menu, not a tab bar, since v0.6.217. */
 async function openView(page: Page, view: string) {
@@ -284,9 +301,9 @@ test.describe('apps', () => {
       await dialog.getByLabel('Name').fill(appName);
       await dialog.getByRole('button', { name: 'Create app' }).click();
 
-      // The app's own screen opens next.
-      await ownerPage.waitForURL(/\/apps\/[0-9a-f-]{36}$/);
-      appId = ownerPage.url().split('/apps/')[1]!;
+      // The app's own screen opens next, in its editor.
+      await ownerPage.waitForURL(/\/apps\/[0-9a-f-]{36}\?edit=1$/);
+      appId = new URL(ownerPage.url()).pathname.split('/apps/')[1]!;
 
       // And it is filed in the folder.
       await expect
@@ -332,7 +349,7 @@ test.describe('apps', () => {
       const detail = ownerPage.locator('[data-testid="detail"]');
       await openFromTree(ownerPage, app.title, detail.getByRole('heading', { name: app.title }));
       await detail.getByRole('link', { name: 'Open app' }).click();
-      await ownerPage.waitForURL(new RegExp(`/apps/${app.id}$`));
+      await ownerPage.waitForURL(new RegExp(`/apps/${app.id}\\?edit=1$`));
       await expect(ownerPage.getByRole('button', { name: /^View:/ })).toBeVisible();
       await expect(ownerPage.getByText('Something went wrong')).toHaveCount(0);
     });
@@ -390,6 +407,7 @@ test.describe('apps', () => {
     ownerPage,
   }) => {
     await withApp(ownerApi, async (app) => {
+      await publish(ownerApi, app.id);
       await ownerPage.setViewportSize({ width: 1600, height: 900 });
 
       await ownerPage.goto(`/apps?id=${app.id}`);

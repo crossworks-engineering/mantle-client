@@ -254,13 +254,13 @@ test.describe('ported master-detail screens', () => {
     ownerPage,
   }) => {
     // `MasterDetail`'s list panel is `collapsible` ONLY for screens that pass
-    // `listCollapsed` (today just /apps, for focus mode). Setting it for
+    // `listCollapsed` (the item screens, for focus mode). Setting it for
     // everyone would be a one-word change with a real cost: `collapsible` also
-    // means "collapse when dragged below minSize", so every list here could be
-    // dragged out of existence. /contacts never opts in, so its drag must stop
+    // means "collapse when dragged below minSize", so every list could be
+    // dragged out of existence. /models never opts in, so its drag must stop
     // at the minimum instead.
     await ownerPage.setViewportSize({ width: 1600, height: 900 });
-    await ownerPage.goto('/contacts');
+    await ownerPage.goto('/models');
     const list = ownerPage.locator('[data-testid="list"]');
     await expect(list).toBeVisible();
 

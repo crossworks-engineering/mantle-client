@@ -154,10 +154,16 @@ test.describe('contact shares', () => {
       await expect(pill.getByRole('link', { name: `${marker} app` })).toBeVisible();
       await visitorPage.screenshot({ path: `${ARTIFACTS_DIR}contact-shares-menu.png` });
 
-      // 5. A write: refused without Can write, runs with it.
+      // 5. A write: refused without Can write, runs with it. A share writes
+      // rows only, never the schema, so the owner makes the table.
+      await json(
+        await ownerApi.post(`/api/apps/${app.id}/db-broker`, {
+          data: { op: 'exec', sql: 'create table if not exists e2e_cs (x text)' },
+        }),
+      );
       const exec = () =>
         visitorPage.request.post(`${serverURL}/s/${appToken}/db-broker`, {
-          data: { op: 'exec', sql: 'create table if not exists e2e_cs (x text)' },
+          data: { op: 'exec', sql: "insert into e2e_cs (x) values ('a')" },
         });
       const refused = await exec();
       expect(refused.status()).toBe(403);

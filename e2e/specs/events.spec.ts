@@ -107,7 +107,7 @@ test.describe('events', () => {
     await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}events-validation.png` });
   });
 
-  test('detail header: long title truncates, actions stay in the pane, delete is last', async ({
+  test('detail header: long title truncates, actions stay in the pane, edit after delete', async ({
     ownerApi,
     ownerPage,
   }) => {
@@ -122,18 +122,17 @@ test.describe('events', () => {
       await openFromTree(ownerPage, marker, heading);
 
       const clipped = await heading
-        .locator('span')
-        .first()
+        .getByText(title, { exact: true })
         .evaluate((el) => el.scrollWidth > el.clientWidth);
       expect(clipped, 'the title should truncate, not push the actions out').toBeTruthy();
 
       const paneBox = (await detail.boundingBox())!;
-      const edit = detail.getByRole('button', { name: 'Edit' });
+      const edit = detail.getByRole('button', { name: 'Edit event' });
       // Icon-only and aria-labelled, per §8 — the old one carried a "Delete"
       // text label, which is the idiom being retired.
       const del = detail.getByRole('button', { name: 'Delete event' });
       for (const [name, button] of [
-        ['Edit', edit],
+        ['Edit event', edit],
         ['Delete event', del],
       ] as const) {
         const box = (await button.boundingBox())!;
@@ -142,12 +141,15 @@ test.describe('events', () => {
         );
       }
       await expect(del).toHaveText('');
-      // Least destructive to most: delete is to the right of edit.
-      expect((await del.boundingBox())!.x).toBeGreaterThan((await edit.boundingBox())!.x);
+      // The item header's fixed slots: Delete, then Edit, then More.
+      expect((await edit.boundingBox())!.x).toBeGreaterThan((await del.boundingBox())!.x);
 
-      // Editing opens the same boxed composer as create, not a bare form.
+      // Editing opens the same boxed composer as create, not a bare form,
+      // under the same header, pencil pressed.
       await edit.click();
-      await expect(detail.getByRole('heading', { name: 'Edit event' })).toBeVisible();
+      await expect(
+        detail.getByRole('button', { name: 'Done editing: discard unsaved' }),
+      ).toHaveAttribute('aria-pressed', 'true');
       await expect(detail.locator('[data-slot="form-shell"]').first()).toBeVisible();
       await detail.getByRole('button', { name: 'Cancel' }).click();
       await expect(heading).toBeVisible();

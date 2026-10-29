@@ -40,7 +40,7 @@ test.describe('field primitives', () => {
       await ownerPage.goto(`/tasks?selected=${task.id}`);
 
       const input = ownerPage.getByRole('textbox', { name: 'Search tasks' });
-      await ownerPage.getByRole('button', { name: 'Edit', exact: true }).click();
+      await ownerPage.getByRole('button', { name: 'Edit task', exact: true }).click();
       const textarea = ownerPage.getByPlaceholder(/Anything to remember about this task/);
       await expect(input).toBeVisible();
       await expect(textarea).toBeVisible();

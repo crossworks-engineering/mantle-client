@@ -42,7 +42,9 @@ function creates(collection: string, key: string, data: (title: string) => objec
     expect(res.status(), `could not create the ${collection} fixture`).toBeLessThan(300);
     const body = (await res.json()) as Record<string, { id?: string } | string | undefined>;
     const row = body[key];
-    const id = (typeof row === 'object' ? row?.id : undefined) ?? (body.id as string | undefined);
+    const id =
+      (typeof row === 'object' ? row?.id : undefined) ??
+      ((body.id ?? body[`${key}Id`]) as string | undefined);
     expect(id, `no id in the ${collection} answer`).toBeTruthy();
     return {
       id: id!,
@@ -169,7 +171,9 @@ async function checkHeader(page: Page, kind: Kind, title: string | null) {
     timeout: 30_000,
   });
   const header = headerOf(page, kind);
-  if (title) await expect(header.getByRole('heading')).toContainText(title);
+  // The accessible name, not the text: a kind whose title is a rename box
+  // (a table) holds it as the box's value.
+  if (title) await expect(header.getByRole('heading')).toHaveAccessibleName(new RegExp(title));
 
   const box = await header.boundingBox();
   expect(box, 'the header has no box').not.toBeNull();

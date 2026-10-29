@@ -66,17 +66,12 @@ test.describe('settings → peers', () => {
   test('one toast for two controls becomes one message per control', async ({ ownerPage }) => {
     await ownerPage.setViewportSize({ width: 1600, height: 900 });
     await ownerPage.goto('/settings/peers');
-    // The screen opens on "create" when there are no peers; click New otherwise.
+    // "Link a brain" opens the create form, whether or not peers exist.
     const nameField = ownerPage.locator('#peer-name');
-    if ((await nameField.count()) === 0) {
-      await ownerPage
-        .getByRole('button', { name: /Add peer|New/i })
-        .first()
-        .click();
-    }
+    await ownerPage.getByRole('button', { name: 'Link a brain' }).click();
     await expect(nameField).toBeVisible();
 
-    await ownerPage.getByRole('button', { name: /^Add peer$/i }).click();
+    await ownerPage.getByRole('button', { name: /^Add brain$/i }).click();
 
     for (const id of ['peer-name', 'peer-url']) {
       const control = ownerPage.locator(`#${id}`);

@@ -150,17 +150,21 @@ test.describe('tasks', () => {
       const heading = detail.getByRole('heading', { name: title });
       await openFromTree(ownerPage, marker, heading);
 
-      // Truncated, not wrapped: one line, clipped.
-      const clipped = await heading.evaluate(
-        (el) => el.scrollWidth > el.clientWidth && el.getClientRects().length === 1,
-      );
+      // Truncated, not wrapped: one line, clipped by the title's own box, the
+      // text or a wrapper of it inside the heading.
+      const clipped = await heading.getByText(title, { exact: true }).evaluate((el) => {
+        for (let n: Element | null = el; n && n.tagName !== 'H2'; n = n.parentElement) {
+          if (n.scrollWidth > n.clientWidth && n.getClientRects().length === 1) return true;
+        }
+        return false;
+      });
       expect(clipped, 'the title should truncate on one line').toBeTruthy();
 
       // Every action still inside the pane, and on the title's row.
       const paneBox = (await detail.boundingBox())!;
       const headingBox = (await heading.boundingBox())!;
-      for (const name of ['Edit', 'Archive task', 'Delete task']) {
-        const button = detail.getByRole('button', { name });
+      for (const name of ['Edit task', 'Archive', 'Delete task']) {
+        const button = detail.getByRole('button', { name, exact: true });
         await expect(button).toBeVisible();
         const box = (await button.boundingBox())!;
         expect(box.x + box.width, `${name} overflows the detail pane`).toBeLessThanOrEqual(
@@ -198,7 +202,7 @@ test.describe('tasks', () => {
       await ownerPage.goto('/tasks');
       const detail = ownerPage.locator('[data-testid="detail"]');
       await openFromTree(ownerPage, marker, detail.getByRole('heading', { name: title }));
-      await detail.getByRole('button', { name: 'Archive task' }).click();
+      await detail.getByRole('button', { name: 'Archive', exact: true }).click();
 
       // Gone from the tree (which holds no archived tasks), and the API
       // stamped it.
@@ -233,7 +237,7 @@ test.describe('tasks', () => {
       await card(ownerPage, title).click();
       const archivedDetail = ownerPage.locator('[data-testid="detail"]');
       await expect(archivedDetail.getByRole('heading', { name: title })).toBeVisible();
-      await archivedDetail.getByRole('button', { name: 'Restore task from archive' }).click();
+      await archivedDetail.getByRole('button', { name: 'Restore from archive' }).click();
       await expect(card(ownerPage, title)).toBeHidden();
       await expect.poll(async () => (await readTask(ownerApi, task.id)).archivedAt).toBeNull();
 

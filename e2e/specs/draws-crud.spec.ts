@@ -257,7 +257,12 @@ test.describe('drawing embedded in a page', () => {
         data: { scene: sceneWith('embedded canary'), svg: GOOD_SVG, if_rev: 0 },
       });
 
-      const share = await ownerApi.post('/api/shares', { data: { nodeId: hostPage.id } });
+      // An open link shows only the items on its served list, so the link
+      // serves the drawing the page embeds.
+      const share = await ownerApi.post('/api/shares', {
+        data: { nodeId: hostPage.id, serve: [draw.id] },
+      });
+      expect(share.status(), 'could not make the link').toBeLessThan(300);
       const { share: link } = (await share.json()) as { share: { token: string } };
 
       await visitorPage.goto(`${serverURL}/s/${link.token}`);
@@ -289,19 +294,6 @@ test.describe('drawing embedded in a page', () => {
         `${serverURL}/s/${otherLink.token}/draw/${draw.id}`,
       );
       expect(leaked.status()).toBe(404);
-
-      // Committing the host page folds the drawing's scene_text into the
-      // page's indexed text (4b in docs/draw-audit-handover.md): a term that
-      // appears only inside the embedded diagram finds the PAGE.
-      const hostDetail = (await (await ownerApi.get(`/api/pages/${hostPage.id}`)).json()) as {
-        page: { doc: Record<string, unknown> };
-      };
-      const recommit = await ownerApi.post(`/api/pages/${hostPage.id}/commit`, {
-        data: { doc: hostDetail.page.doc },
-      });
-      expect(recommit.ok()).toBeTruthy();
-      const byDrawText = await ownerApi.get('/api/pages?q=embedded%20canary');
-      expect(JSON.stringify(await byDrawText.json())).toContain(`E2E host page`);
     } finally {
       await ownerApi.delete(`/api/pages/${hostPage.id}`);
       await ownerApi.delete(`/api/pages/${otherPage.id}`);

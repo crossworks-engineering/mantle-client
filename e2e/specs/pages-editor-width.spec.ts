@@ -76,10 +76,10 @@ test.describe('pages editor width', () => {
       const handle = ownerPage.getByRole('separator', { name: 'Page width' });
       await expect(handle, 'no edge to drag — the measure lost its handle').toHaveCount(1);
 
-      // 2. CENTRED, with the margins splitting the slack equally. The route
-      //    fills the window, so the column's own box is what the margins are
-      //    measured against.
-      const outer = (await ownerPage.locator('main').first().boundingBox())!;
+      // 2. CENTRED, with the margins splitting the slack equally. The page
+      //    opens in the Pages screen's detail pane, beside the folders, so the
+      //    pane's own box is what the margins are measured against.
+      const outer = (await ownerPage.locator('[data-testid="detail"]').first().boundingBox())!;
       const before = (await prose.boundingBox())!;
       const left = before.x - outer.x;
       const right = outer.x + outer.width - (before.x + before.width);
