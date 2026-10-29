@@ -7,8 +7,14 @@
  *   on its way. `null` (never saved) keeps this browser's.
  * - `pushSoundPrefs` (the Sounds settings, after a change) sends this
  *   browser's copy. Last write wins: it is one person's switch.
+ * - The save names the login it was made as (`loginId`, from the shell), as
+ *   the Desk's and the description's do: the brain refuses it for any other
+ *   (403 `login-mismatch`), so a tab left on one login never writes another's
+ *   sounds after the browser switched logins. On that 403 nothing more is
+ *   sent this visit. With no login known yet, nothing is sent.
  * - A brain before the route answers 404: the preference stays in this
- *   browser, and nothing more is sent this visit.
+ *   browser, and nothing more is sent this visit. A brain before the login
+ *   check ignores the extra field.
  *
  * Best effort: a failed read or save leaves this browser's copy as it is.
  */
@@ -19,7 +25,8 @@ export const SOUNDS_PATH = '/api/profile/sounds';
 
 type SoundsBody = { sounds: SoundPrefs | null };
 
-/** False once the brain said it has no such route (404). */
+/** False once the brain said it has no such route (404), or that this tab's
+ *  login is not the session's any more (403). */
 let roams = true;
 
 const statusOf = (err: unknown): number | undefined =>
@@ -35,10 +42,13 @@ export async function pullSoundPrefs(): Promise<void> {
   }
 }
 
-export function pushSoundPrefs(): void {
-  if (!roams) return;
+export function pushSoundPrefs(loginId: string | null | undefined): void {
+  if (!roams || !loginId) return;
   const { enabled, volume } = getSoundPrefs();
-  void apiSend<SoundsBody>(SOUNDS_PATH, 'PUT', { sounds: { enabled, volume } }).catch((err) => {
-    if (statusOf(err) === 404) roams = false;
-  });
+  void apiSend<SoundsBody>(SOUNDS_PATH, 'PUT', { sounds: { enabled, volume }, loginId }).catch(
+    (err) => {
+      const status = statusOf(err);
+      if (status === 404 || status === 403) roams = false;
+    },
+  );
 }
