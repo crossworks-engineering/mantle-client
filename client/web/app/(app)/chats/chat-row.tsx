@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AtSign, BellOff, Check, CheckCheck, Pin } from 'lucide-react';
-import { RowButton } from '@mantle/web-ui/ui/row-button';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useReadByAll } from '@/components/messenger/messenger-live';
@@ -21,8 +21,10 @@ function useMinute(): Date {
 }
 
 /**
- * One row of the chat list, on the item tree's row (rounded, the accent fill
- * when open, no rule between rows), its text no taller than its avatar: the
+ * One row of the chat list, a `ListCard` like every other master-detail list
+ * (settings/peers): the soft tint and primary ring when open, so the muted
+ * preview stays readable, never the tree's full accent fill. Its text is no
+ * taller than its avatar: the
  * avatar (a green dot while the other person is online), the name and up to
  * two lines of the last message (a tick before it when it is mine: one sent, two
  * read), and at the right the time with the marks and the unread pill (green,
@@ -52,14 +54,12 @@ export function ChatRow({
   const Tick = read ? CheckCheck : Check;
   const badge = rowBadge(row);
   return (
-    <RowButton
+    <ListCard
       onClick={onOpen}
+      selected={selected}
       aria-current={selected ? 'true' : undefined}
       data-testid="chat-row"
-      className={cn(
-        'flex w-full items-start gap-3 rounded-md px-2 py-2 text-left transition-colors',
-        selected ? 'bg-accent text-accent-foreground' : 'hover:bg-foreground/[0.06]',
-      )}
+      className="flex items-start gap-3"
     >
       <ChatAvatar
         name={row.title}
@@ -142,6 +142,6 @@ export function ChatRow({
           ) : null}
         </span>
       </span>
-    </RowButton>
+    </ListCard>
   );
 }

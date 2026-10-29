@@ -154,7 +154,7 @@ export function ChatsClient() {
         </Button>
       </div>
       <div
-        className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-2 py-1"
+        className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-2"
         data-testid="chat-list"
       >
         {listQuery.isPending ? (
@@ -166,7 +166,7 @@ export function ChatsClient() {
             {query.trim() ? 'No chats match' : 'No chats yet. Start one with New chat.'}
           </p>
         ) : (
-          <ul className="space-y-px">
+          <ul className="space-y-1.5">
             {shown.map((row) => (
               <li key={`${row.kind}:${row.id}`}>
                 <ChatRow
