@@ -83,17 +83,17 @@ the client falls back to the browser's copy on a brain without it.
 
 | Sound | Length | Shape | Used for |
 | --- | --- | --- | --- |
-| success | 330 ms | E6 then A6, a fourth up, bell | something you did worked |
-| warning | 320 ms | F#5 twice, triangle | mic or speaker blocked, a limit near |
-| danger | 370 ms | E5 then C#5, minor third down, triangle | **assistant turn failed (wired)**, action refused |
-| notification | 360 ms | one E6 bell | a general notice |
-| commit | 230 ms | A6 gliding to C#6 over a low A4 body | page or table committed, draft kept |
-| action | 50 ms | one A6 tick | small confirm: approved, moved, toggled |
-| attention | 700 ms | A5, E6, A6 rising, held bell | a tool call waits for approval |
+| success | 330 ms | E6 then A6, a fourth up, bell | **an upload batch went through (wired)** |
+| warning | 320 ms | F#5 twice, triangle | **mic or speaker blocked, an upload refused, a commit that changed elsewhere (wired)** |
+| danger | 370 ms | E5 then C#5, minor third down, triangle | **assistant turn or run failed, call join or commit refused, a decision refused (wired)** |
+| notification | 360 ms | one E6 bell | **a model provider starts failing (wired)** |
+| commit | 230 ms | A6 gliding to C#6 over a low A4 body | **page, table or drawing committed (wired)** |
+| action | 50 ms | one A6 tick | **a question answered, a tool call approved or rejected (wired)** |
+| attention | 700 ms | A5, E6, A6 rising, held bell | **a question or a tool call waits for you (wired)** |
 | message | 260 ms | B5 then E6, quick bubble | **new chat line (wired)** |
-| mention | 330 ms | A6 then C#7, bright bell taps | someone names you |
+| mention | 330 ms | A6 then C#7, bright bell taps | **a chat line names you, instead of message (wired)** |
 | reply | 380 ms | C#6 settling to A5 | **assistant finished its reply (wired)** |
-| complete | 395 ms | A5, C#6, E6, A6 arpeggio | task, run or export done |
+| complete | 395 ms | A5, C#6, E6, A6 arpeggio | **a run you are watching is done (wired)** |
 | ring | 990 ms | two E6/A6 bell pairs, repeated every 2.5 s | **incoming call (wired)** |
 | ringback | 900 ms | one low E5/A5 dyad, no bell, repeated every 3 s | **your call ringing the other side (wired)** |
 | join | 320 ms | A5 then E6, a fifth up | **call answered, someone came in (wired)** |
@@ -119,23 +119,41 @@ Wired in this prototype:
   45 s, and never again once anyone has answered). `join` plays when someone
   comes in, and `leave` when someone goes or the call ends for me.
 
-Found, not wired (each is a one-line `play()` at a place that already exists):
+Wired next (the choices are pure functions in `lib/sounds/events.ts`,
+pinned by `events.test.ts`):
 
-- **Mention:** the messenger has mention nodes. A `shouldPop` that knows the
-  line names me → `mention` instead of `message`.
-- **Tool call waiting for approval:** `pending_tool_call` realtime event
-  (`use-pending-questions.ts`, `sidebar-nav.tsx`) → `attention`.
-- **Mic or speaker blocked:** call `mic_blocked` / `audio_blocked` → `warning`.
-- **Run or task finished:** `active-runs-strip.tsx` (`run`), `tasks-client.tsx`
-  (`task`) → `complete`, only for runs or tasks the login started.
-- **Provider alert (a model provider failing):** `use-provider-alerts.ts` →
-  `danger`.
-- **Page or table commit:** the commit actions → `commit`.
-- **Export ready:** the export download → `complete`.
-- **Upload done or failed:** the upload dock → `success` / `danger`.
-- **Toasts in general:** deliberately *not* wired. Sounding every
-  `toast.success` would be noise. Sound should follow events the person is
-  waiting on, not every confirmation.
+- **Mention:** `messenger-shell.tsx` `pop` → `chatLineSound`: `mention` when
+  the line's `mentions` name my login, else `message`. Never both.
+- **Waiting for me:** `question-watcher.tsx` → `attention` once per batch of
+  new open pending rows (questions and tool calls held for approval). The
+  first load seeds, so rows already waiting stay quiet.
+- **Decided:** `useDecidePending` and the /pending screen → `action` when a
+  decision goes through, `danger` when it is refused.
+- **Commit:** the page, table and drawing editors → `commit` on success;
+  `warning` on a 409 (changed elsewhere, the editor reloads), `danger` on any
+  other refusal (`commitFailedSound`).
+- **Call trouble:** `call-sounds.tsx` → `warning` when the mic or speaker is
+  newly blocked, `danger` when the join itself failed (that path no longer
+  plays `leave`).
+- **Run finished:** `active-runs-strip.tsx`. A run that leaves the active list
+  is asked once how it ended: done is `complete`, failed is `danger`,
+  cancelled or superseded is quiet (it may be my own cancel in another tab).
+- **Provider outage:** `provider-alert-banner.tsx` → `notification` once per
+  outage (subject and start), seeded from the first answer, remembered for
+  the tab so a second banner never sounds it again.
+- **Uploads:** `upload-provider.tsx` → one sound when a batch is through:
+  `success`, or `warning` if any file was refused or failed; all cancelled is
+  quiet.
+
+Left out on purpose:
+
+- **Task done:** a task row carries no actor, so a task I ticked in another
+  tab looks the same as one an agent finished. It needs a `by` on the task
+  (or on its live event) before it can chime without echoing me.
+- **Export ready:** the export is a plain download link; the browser shows
+  the download, and the page never learns when it finished.
+- **Toasts in general:** sounding every `toast.success` would be noise. Sound
+  follows events the person is waiting on, not every confirmation.
 
 ## Rules the module keeps
 
@@ -160,7 +178,6 @@ Found, not wired (each is a one-line `play()` at a place that already exists):
    workstation), release it, then bump `@mantle/client-types` here when the
    client wants the shared `SoundPreference` type. The client keeps its own copy
    of the type until then.
-2. Wire the "found, not wired" events above, in this order: approval waiting,
-   mention, run or task done.
+2. Task done, once the brain says who finished a task (see above).
 3. Electron `autoplayPolicy` for the desktop window.
 4. Render the recipes to `.wav` for mantle-mobile.

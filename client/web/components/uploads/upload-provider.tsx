@@ -44,6 +44,8 @@ import {
 import type { ClashVerdict } from '@/lib/upload-progress';
 import { UploadAbortedError, UploadHttpError, xhrUpload } from '@/lib/xhr-upload';
 import { withCreateWs } from '@/lib/create-workspace';
+import { uploadBatchSound } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
 
 /**
  * App-wide background file uploader. Lives in the persistent app shell so a
@@ -375,6 +377,23 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     () => tasks.some((t) => t.status === 'pending' || t.status === 'uploading'),
     [tasks],
   );
+
+  // One sound when a batch is through (none left to send), from the rows
+  // that were in it: earlier, still-listed rows do not count again.
+  const batchRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (active) {
+      for (const t of tasks) {
+        if (t.status === 'pending' || t.status === 'uploading') batchRef.current.add(t.id);
+      }
+      return;
+    }
+    if (batchRef.current.size === 0) return;
+    const batch = batchRef.current;
+    batchRef.current = new Set();
+    const kind = uploadBatchSound(tasks.filter((t) => batch.has(t.id)).map((t) => t.status));
+    if (kind) play(kind);
+  }, [active, tasks]);
 
   // Guard against losing in-flight uploads to a reload / tab close.
   useEffect(() => {

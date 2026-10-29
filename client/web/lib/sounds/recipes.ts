@@ -138,17 +138,25 @@ export function soundLength(kind: SoundKind): number {
 /** The palette, in the order the settings list shows it, with what each is
  *  for (the app's events that use it, or would). */
 export const SOUND_CATALOG: { kind: SoundKind; label: string; use: string }[] = [
-  { kind: 'success', label: 'Success', use: 'Something you did worked (saved, sent, created)' },
-  { kind: 'warning', label: 'Warning', use: 'Microphone or speaker blocked, a limit near' },
-  { kind: 'danger', label: 'Error', use: 'An assistant turn failed, an action was refused' },
-  { kind: 'notification', label: 'Notification', use: 'A general notice from the brain' },
-  { kind: 'commit', label: 'Commit', use: 'A page or table committed, a draft kept' },
-  { kind: 'action', label: 'Action', use: 'A small confirm: approved, moved, toggled' },
-  { kind: 'attention', label: 'Attention', use: 'A tool call waits for your approval' },
+  { kind: 'success', label: 'Success', use: 'Your uploads went through' },
+  {
+    kind: 'warning',
+    label: 'Warning',
+    use: 'Microphone or speaker blocked, an upload refused, a commit that changed elsewhere',
+  },
+  {
+    kind: 'danger',
+    label: 'Error',
+    use: 'An assistant turn or a run failed, a call or a commit refused',
+  },
+  { kind: 'notification', label: 'Notification', use: 'A model provider starts failing' },
+  { kind: 'commit', label: 'Commit', use: 'A page, table or drawing committed' },
+  { kind: 'action', label: 'Action', use: 'A small confirm: a question answered, a call approved' },
+  { kind: 'attention', label: 'Attention', use: 'A question or a tool call waits for you' },
   { kind: 'message', label: 'Message', use: 'A new line in one of your chats' },
   { kind: 'mention', label: 'Mention', use: 'Someone names you in a chat' },
   { kind: 'reply', label: 'Reply', use: 'The assistant finished its reply' },
-  { kind: 'complete', label: 'Complete', use: 'A task, run or export is done' },
+  { kind: 'complete', label: 'Complete', use: 'A run you are watching is done' },
   { kind: 'ring', label: 'Ring', use: 'An incoming call (repeats while it rings)' },
   {
     kind: 'ringback',

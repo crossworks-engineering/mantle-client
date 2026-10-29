@@ -9,6 +9,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { QuestionnaireCard } from '@/components/pending/questionnaire-card';
 import { useViewerLogin } from '@/components/workspaces/use-shell-workspaces';
 import { invalidatePending } from '@/components/pending/use-pending-questions';
+import { play } from '@/lib/sounds/play';
 import {
   fmtRelative,
   isQuestionRow,
@@ -59,8 +60,10 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
         ...(payload?.answer ? { answer: payload.answer } : {}),
         ...(payload?.answers?.length ? { answers: payload.answers } : {}),
       });
+      play('action');
       await invalidate();
     } catch (e) {
+      play('danger');
       setError(e instanceof ApiError ? e.message : 'decision failed');
     } finally {
       setBusyId(null);

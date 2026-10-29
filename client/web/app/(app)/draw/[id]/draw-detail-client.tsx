@@ -44,6 +44,8 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { useFlushOnLeave } from '@mantle/web-ui/use-flush-on-leave';
+import { commitFailedSound } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
 
 type DrawDetail = {
   id: string;
@@ -379,6 +381,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
         if (draw?.hasSvg === false) hasSvg = false;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
+        play(commitFailedSound(e instanceof ApiError ? e.status : null));
         if (e instanceof ApiError && e.status === 409) {
           toast.error('This drawing changed elsewhere. Reloading the latest draft');
           void queryClient.invalidateQueries({ queryKey: ['draws', initial.id] });
@@ -394,6 +397,8 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
       // The scene is published either way, but without a snapshot the preview,
       // any live share link and both exports go blank — so say so instead of
       // reporting a clean commit the surfaces won't back up.
+      // Committed either way: the scene is kept.
+      play('commit');
       if (hasSvg) {
         toast.success('Committed');
       } else {

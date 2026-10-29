@@ -59,6 +59,8 @@ import {
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { scrollBehavior } from '@mantle/web-ui/lib/motion';
 import { useFlushOnLeave } from '@mantle/web-ui/use-flush-on-leave';
+import { commitFailedSound } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
 
 /** Still on the wire and still stored, but this route no longer reads it: the
  *  narrow/wide toggle was replaced by the draggable measure (`MeasurePane`).
@@ -304,6 +306,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
         if (typeof page?.draftRev === 'number') draftRevRef.current = page.draftRev;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
+        play(commitFailedSound(e instanceof ApiError ? e.status : null));
         if (e instanceof ApiError && e.status === 409) {
           // The draft moved under us (another device / the Pages agent).
           // Publishing would blow away their newer work — reload instead.
@@ -321,6 +324,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       setEditedIds([]); // changes are now committed — clear nav targets
       setReviewMode(false); // nothing left to review
       setDiffOverlay(null);
+      play('commit');
       toast.success('Committed');
     } finally {
       committingRef.current = false;

@@ -50,6 +50,8 @@ import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content-co
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { useFlushOnLeave } from '@mantle/web-ui/use-flush-on-leave';
+import { commitFailedSound } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
 import type { TableDetail } from '@mantle/content-core/table-model';
 
 const DRAFT_DEBOUNCE_MS = 1200;
@@ -391,11 +393,13 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
       savedKeyRef.current = s;
       savedDocRef.current = docRef.current;
       setHasDraft(false);
+      play('commit');
       toast.success('Committed');
       // Refresh the list summary (title/updatedAt) + the selected-table query.
       void queryClient.invalidateQueries({ queryKey: ['tables'] });
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return;
+      play(commitFailedSound(e instanceof ApiError ? e.status : null));
       toast.error(e instanceof Error ? e.message : 'Commit failed');
       return;
     } finally {

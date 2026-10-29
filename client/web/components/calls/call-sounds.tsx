@@ -10,13 +10,16 @@
  *   has come in yet), until someone answers, for at most RING_MS;
  * - join when I am in and someone else comes in (the answer, a group joiner);
  * - leave when someone else goes, and when my call ends (I hung up, I was
- *   removed, the call was ended).
+ *   removed, the call was ended);
+ * - warning when the microphone or the speaker is blocked, danger when the
+ *   join itself failed (lib/sounds/events.ts `callTroubleSound`).
  *
  * All through `play`, so the sound preference holds for every one.
  */
 
 import { useEffect, useRef } from 'react';
 import { RING_MS } from '@/lib/calls/session';
+import { callTroubleSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
 import { useCallState } from './call-store';
 
@@ -32,6 +35,11 @@ export function CallSounds() {
   // How this call was entered ('idle': I started it or picked it from the
   // chat; 'ringing': I answered) and whether anyone else has been in it.
   const prev = useRef({ phase: call.phase, others: 0, entered: 'idle' as string, met: false });
+  const trouble = useRef({
+    phase: call.phase,
+    micBlocked: call.micBlocked,
+    audioBlocked: call.audioBlocked,
+  });
 
   const inCall = call.phase === 'joining' || call.phase === 'live';
   const others = Math.max(0, call.people.length - 1);
@@ -46,7 +54,9 @@ export function CallSounds() {
     if (call.phase === 'live' && others > was.others && was.phase === 'live') play('join');
     else if (call.phase === 'live' && was.phase !== 'live' && others > 0) play('join');
     else if (call.phase === 'live' && others < was.others) play('leave');
-    if (wasIn && (call.phase === 'ending' || call.phase === 'idle')) play('leave');
+    // A join that failed is the trouble sound's (below), not a leave.
+    const failed = was.phase === 'joining' && call.phase === 'idle';
+    if (wasIn && !failed && (call.phase === 'ending' || call.phase === 'idle')) play('leave');
     prev.current = {
       phase: call.phase,
       others,
@@ -54,6 +64,15 @@ export function CallSounds() {
       met: inCall && (was.met || others > 0),
     };
   }, [call.phase, others, inCall]);
+
+  // The microphone or speaker newly blocked, or the join refused.
+  const { micBlocked, audioBlocked } = call;
+  useEffect(() => {
+    const now = { phase: call.phase, micBlocked, audioBlocked };
+    const kind = callTroubleSound(trouble.current, now);
+    trouble.current = now;
+    if (kind) play(kind);
+  }, [call.phase, micBlocked, audioBlocked]);
 
   // Ringback: live, alone, in a call this login started (entered from idle,
   // not answered from a ring). Read after the effect above has noted how
