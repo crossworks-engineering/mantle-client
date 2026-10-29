@@ -38,6 +38,7 @@ import {
   railCount,
   shouldPop,
 } from '@/lib/messenger/notify';
+import { play } from '@/lib/sounds/play';
 import { CallRinger } from '@/components/calls/call-ringer';
 import { CallUnloadGuard } from '@/components/calls/call-store';
 import { MessengerLiveSync, useMessengerBus } from './messenger-live';
@@ -165,6 +166,7 @@ function MessengerNotices() {
         shell.notify({ title: text.title, body: text.body, path: href });
         return;
       }
+      play('message');
       toast.push({
         kind: 'info',
         message: text.body ? `${text.title}: ${text.body}` : text.title,

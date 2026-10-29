@@ -5,6 +5,7 @@ import { apiEventStream } from '@mantle/web-ui/api-fetch';
 import { isTurnStreamingEnabledClient } from '@mantle/web-ui/turn-streaming';
 import type { TurnEvent } from '@mantle/client-types';
 import { estimateTokens } from '@/lib/token-estimate';
+import { play } from '@/lib/sounds/play';
 
 /** One step in a turn's thought trail (a `status` event, kept). */
 export interface ThoughtEvent {
@@ -262,6 +263,7 @@ export function useTurnStream(turnId: string | null): TurnStream {
               setTokensApprox(false);
             }
             setPhase('done');
+            play('reply');
             return;
           }
           if (ev && ev.type === 'error') {
@@ -269,6 +271,7 @@ export function useTurnStream(turnId: string | null): TurnStream {
             flusher.flushNow();
             setError(typeof ev.data?.message === 'string' ? ev.data.message : 'The turn failed.');
             setPhase('error');
+            play('danger');
             return;
           }
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
