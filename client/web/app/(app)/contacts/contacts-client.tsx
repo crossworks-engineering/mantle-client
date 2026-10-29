@@ -70,6 +70,7 @@ import type { TreeFolder } from '@mantle/web-ui/types/tree';
 import { Tabs, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 import { brainHasContactShares, type SharingContactRow } from '@/lib/contact-shares';
 import { ContactSharedTab, ContactSharingBlock } from './contact-sharing';
+import { play } from '@/lib/sounds/play';
 
 type ContactsListResponse = {
   contacts: ContactRow[];
@@ -381,9 +382,11 @@ function ContactForm({ contact }: { contact: ContactRow }) {
         });
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+        play('danger');
         toast.error(e instanceof Error ? e.message : 'Could not save');
         return;
       }
+      play('success');
       toast.success('Saved');
       // Refetch the list so the row's display name updates if it changed (and
       // the selected-detail row, which is read from the list).

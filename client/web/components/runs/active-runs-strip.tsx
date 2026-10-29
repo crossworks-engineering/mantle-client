@@ -129,7 +129,7 @@ export function ActiveRunsStrip() {
       void apiFetch<{ run: { status: string } }>(`/api/runs/${id}`)
         .then(({ run }) => {
           const kind = runEndSound(run?.status);
-          if (kind) play(kind);
+          if (kind) play(kind, { once: `run-end:${id}` });
         })
         .catch(() => {});
     }

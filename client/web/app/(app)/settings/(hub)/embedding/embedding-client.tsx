@@ -20,6 +20,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ExtractorQueueStatus, useExtractionStatus } from '../../ai-workers/extractor-throughput';
 import { ProviderAlertCard } from '@/components/needs-you/provider-alert-card';
+import { play } from '@/lib/sounds/play';
 
 /**
  * "No key" as a Select item value. Radix reserves `''` for "nothing selected"
@@ -244,6 +245,7 @@ function EmbeddingForm({
           | { ok: false; error: string }
         >('/api/embedding', 'POST', body);
         if (res.ok) {
+          play('success');
           toast.success(`Embedding config saved: ${res.model}`);
           if (res.suggestBackup) {
             toast.info(
@@ -254,9 +256,11 @@ function EmbeddingForm({
           // to catch up on what waits (no restart needed).
           queryClient.invalidateQueries({ queryKey: ['embedding'] });
         } else {
+          play('danger');
           toast.error(`Save failed: ${res.error}`);
         }
       } catch (err) {
+        play('danger');
         toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     });

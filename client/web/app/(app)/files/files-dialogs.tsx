@@ -30,6 +30,7 @@ import {
 } from '@/components/item-tree/visibility-confirm';
 import { defaultBodyFor, slugify } from './files-shared';
 import type { FileRow, RenameTarget, TextExt } from './files-shared';
+import { play } from '@/lib/sounds/play';
 
 // ─── Rename file / folder dialog ───────────────────────────────────
 export function RenameDialog({
@@ -72,11 +73,13 @@ export function RenameDialog({
     try {
       await apiSend(url, 'PATCH', { rename: name.trim() });
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Rename failed');
       return;
     } finally {
       setBusy(false);
     }
+    play('success');
     toast.success('Renamed');
     onRenamed();
     onOpenChange(false);
@@ -164,10 +167,12 @@ export function CreateFolderDialog({
     try {
       await apiSend('/api/files/folders', 'POST', { parentPath, slug, description });
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Could not create folder');
       setBusy(false);
       return;
     }
+    play('success');
     toast.success(`Created folder “${slug}”`);
     onOpenChange(false);
     onCreated();
@@ -287,11 +292,13 @@ export function CreateFileDialog({
           run: () => void create(true),
         });
       } else {
+        play('danger');
         toast.error(err instanceof ApiError ? err.message : 'Could not create file');
       }
       setBusy(false);
       return;
     }
+    play('success');
     toast.success(`Created ${file.filename}`);
     onOpenChange(false);
     onCreated(file.id);

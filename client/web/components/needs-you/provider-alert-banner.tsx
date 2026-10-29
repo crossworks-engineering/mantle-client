@@ -30,7 +30,7 @@ export function ProviderAlertBanner({ onNavigate }: { onNavigate?: () => void })
     if (!loaded) return;
     const next = freshKeys(heard, keys ? keys.split('|') : []);
     heard = next.seen;
-    if (next.fresh.length > 0) play('notification');
+    for (const key of next.fresh) play('notification', { once: `outage:${key}` });
   }, [keys, loaded]);
   const first = alerts[0];
   if (!first) return null;

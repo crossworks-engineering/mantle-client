@@ -30,6 +30,7 @@ import { treeKey } from '@/components/item-tree/tree-api';
 import { useTreeServes } from '@/components/item-tree/use-tree-kinds';
 import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
+import { play } from '@/lib/sounds/play';
 
 /** `in`: "New secret inside" a tree folder, where it goes once saved. */
 type Selection = { mode: 'create'; in?: TreeFolder } | { mode: 'view'; id: string } | null;
@@ -172,12 +173,14 @@ function SecretsView({
     try {
       ({ secret } = await apiSend<{ secret: SecretRow }>('/api/secrets', 'POST', body));
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Could not save secret');
       return;
     }
     setSecrets((prev) => [secret, ...prev]);
     setSel({ mode: 'view', id: secret.id });
     if (fileIn) void fileNew(secret.id, fileIn);
+    play('success');
     toast.success(`Saved “${secret.title}”`);
     refresh();
   };

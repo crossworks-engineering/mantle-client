@@ -38,7 +38,7 @@ import {
   railCount,
   shouldPop,
 } from '@/lib/messenger/notify';
-import { chatLineSound } from '@/lib/sounds/events';
+import { agentLineSounds, chatLineSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
 import { CallRinger } from '@/components/calls/call-ringer';
 import { CallUnloadGuard } from '@/components/calls/call-store';
@@ -150,6 +150,20 @@ function MessengerNotices() {
       if (shown.current.size > SHOWN_KEEP) {
         shown.current.delete(shown.current.values().next().value!);
       }
+      // An assistant thread pops nothing (its replies have their own
+      // places), but a line the agent wrote is a notice from the brain:
+      // `notification`, unless the assistant screen sounds its reply.
+      const agentRow = rows.find((r) => r.id === c && r.kind === 'agent');
+      if (agentRow) {
+        if (agentRow.muted || document.visibilityState !== 'visible') return;
+        if (!agentLineSounds(path.current)) return;
+        const page = await messengerApi.messages(c, { afterSeq: seq - 1, limit: 1 });
+        const line = page.messages.find((m) => m.seq === seq);
+        if (line?.authorKind === 'agent' && !line.deletedAt) {
+          play('notification', { once: `agent-line:${c}:${seq}` });
+        }
+        return;
+      }
       const row = rows.find((r) => r.id === c && r.kind !== 'agent');
       // A chat the list does not know (yet), or a muted one: no notice.
       if (!row || row.muted) return;
@@ -170,7 +184,7 @@ function MessengerNotices() {
         return;
       }
       // A line that names me chimes as a mention instead.
-      play(chatLineSound(message, me));
+      play(chatLineSound(message, me), { once: `chat-line:${c}:${seq}` });
       toast.push({
         kind: 'info',
         message: text.body ? `${text.title}: ${text.body}` : text.title,
@@ -187,7 +201,7 @@ function MessengerNotices() {
       const first = known.current === null;
       const seen = known.current ?? new Map<string, number>();
       for (const r of rows) {
-        if (r.kind === 'agent' || r.lastSeq === null) continue;
+        if (r.lastSeq === null) continue;
         const was = seen.get(r.id);
         seen.set(r.id, Math.max(was ?? 0, r.lastSeq));
         if (!first && r.lastSeq > (was ?? 0) && r.unread > 0) {

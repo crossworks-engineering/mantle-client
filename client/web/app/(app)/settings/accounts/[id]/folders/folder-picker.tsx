@@ -8,6 +8,7 @@ import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend } from '@mantle/web-ui/api-fetch';
+import { play } from '@/lib/sounds/play';
 
 /**
  * Checkbox picker over an account's IMAP folders. On submit it PUTs the checked,
@@ -66,12 +67,16 @@ export function FolderPicker({
         folders: selectable.filter((f) => checked.has(f)),
       }),
     onSuccess: () => {
+      play('success');
       void queryClient.invalidateQueries({ queryKey: ['email', 'accounts'] });
       // Land on the probe-free list — re-rendering the folders pane re-probes IMAP
       // (slow/flaky) and contends with the rescan we just kicked.
       router.push('/settings/accounts');
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => {
+      play('danger');
+      toast.error(err instanceof Error ? err.message : String(err));
+    },
   });
 
   return (

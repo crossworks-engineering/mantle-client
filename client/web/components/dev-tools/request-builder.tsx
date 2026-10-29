@@ -51,6 +51,7 @@ import { KvEditor } from './kv-editor';
 import { KindBadge } from './method-badge';
 import { SaveToolDialog } from './save-tool-dialog';
 import { JsonView } from '@mantle/web-ui/ui/json-view';
+import { play } from '@/lib/sounds/play';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -327,6 +328,7 @@ export function RequestBuilder() {
     const name = saveName.trim() || draft.name || 'Untitled request';
     saveDraftTo(saveCollectionId === '__new__' ? null : saveCollectionId, name);
     setSaveOpen(false);
+    play('success');
     toast.success(`Saved “${name}”`);
   };
 

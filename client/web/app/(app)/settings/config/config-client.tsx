@@ -24,6 +24,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import type { AdoptKind } from '@mantle/client-types';
 import type { ConfigDiffReport, EntityDiff, FieldDiff, DiffStatus } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 // Status → text accent. Fills stay token-based (bg-muted); only the text/border
 // carry the status colour, mirroring the sky hint precedent in tool-groups.
@@ -263,9 +264,11 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
     setSubmitting(true);
     try {
       await apiSend('/api/config/adopt', 'POST', { kind: e.kind as AdoptKind, slug: e.slug });
+      play('commit');
       toast.success(`Committed changes to ${e.name}`);
       queryClient.invalidateQueries({ queryKey: ['config'] });
     } catch (err) {
+      play('danger');
       toast.error(err instanceof Error ? err.message : 'Adopt failed.');
     } finally {
       setSubmitting(false);
@@ -276,9 +279,11 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
     setSubmitting(true);
     try {
       const res = await apiSend<{ ok: true; count: number }>('/api/config/adopt-all', 'POST');
+      play('commit');
       toast.success(`Committed ${res.count} change${res.count === 1 ? '' : 's'} from template`);
       queryClient.invalidateQueries({ queryKey: ['config'] });
     } catch (err) {
+      play('danger');
       toast.error(err instanceof Error ? err.message : 'Adopt-all failed.');
     } finally {
       setSubmitting(false);

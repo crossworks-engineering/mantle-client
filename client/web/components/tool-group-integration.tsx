@@ -41,6 +41,7 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { play } from '@/lib/sounds/play';
 
 /** One auth-template entry, flattened for editing. */
 export type AuthRow = { id: string; kind: 'header' | 'query'; name: string; value: string };
@@ -429,10 +430,14 @@ function DocsDialog({
   const save = useMutation({
     mutationFn: (content: string) => apiSend(`/api/files/files/${nodeId}`, 'PATCH', { content }),
     onSuccess: () => {
+      play('success');
       toast.success('Documentation saved');
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Save failed.'),
+    onError: (e) => {
+      play('danger');
+      toast.error(e instanceof Error ? e.message : 'Save failed.');
+    },
   });
 
   return (

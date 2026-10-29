@@ -93,6 +93,7 @@ import type {
   TtsWorkerOption,
 } from './agent-form-state';
 import { slugify } from '@mantle/web-ui/slugify';
+import { play } from '@/lib/sounds/play';
 
 // The embedder is no longer agent-configurable — it's the single
 // `embedding_config` row, managed at /settings/embedding (migration 0061).
@@ -469,6 +470,7 @@ export function AgentsClient() {
           avatar: { style: form.avatar.style, seed: form.avatar.seed },
         }));
       }
+      play('success');
       if (droppedParts) {
         toast.error('Saved, but this brain is too old to keep pinned avatar parts.');
       } else {
@@ -489,6 +491,7 @@ export function AgentsClient() {
       await invalidateAgentQueries(queryClient);
     } catch (err) {
       // A brain from before v0.238.8 rejects the unknown `tool_loading` key.
+      play('danger');
       const oldBrain =
         err instanceof Error && /unrecognized key[^:]*:.*\btool_loading\b/i.test(err.message);
       toast.error(

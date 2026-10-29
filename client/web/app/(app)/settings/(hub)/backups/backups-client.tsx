@@ -33,6 +33,7 @@ import {
 } from '@mantle/web-ui/ui/select';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 type BackupsData = {
   config: BackupConfig;
@@ -93,9 +94,11 @@ function BackupsView({ data }: { data: BackupsData }) {
           keep: Number(formData.get('keep')),
           location: String(formData.get('location') ?? '').trim(),
         });
+        play('success');
         toast.success('Backup settings saved');
         queryClient.invalidateQueries({ queryKey: ['backups'] });
       } catch (err) {
+        play('danger');
         toast.error(err instanceof Error ? err.message : 'Could not save backup settings');
       }
     });

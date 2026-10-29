@@ -50,6 +50,7 @@ import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice-client';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
+import { play } from '@/lib/sounds/play';
 
 type KeyRow = {
   id: string;
@@ -886,9 +887,11 @@ function WorkspaceIdField({
         { anthropicWorkspaceId: value.trim() || null },
       );
       onSaved(row.id, res.anthropicWorkspaceId ?? null);
+      play('success');
       toast.success(res.anthropicWorkspaceId ? 'Workspace id saved.' : 'Workspace id cleared.');
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
+      play('danger');
       setError(err instanceof Error ? err.message : 'Failed to save.');
     } finally {
       setSaving(false);

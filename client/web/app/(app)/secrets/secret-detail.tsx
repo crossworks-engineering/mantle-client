@@ -27,6 +27,7 @@ import {
   type SecretFormValues,
 } from './secret-form';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
+import { play } from '@/lib/sounds/play';
 
 export type SecretRow = {
   id: string;
@@ -143,9 +144,11 @@ export function SecretDetail({
         body,
       ));
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Save failed');
       return;
     }
+    play('success');
     setMeta(updated);
     setRevealed({ note: body.note, fields: body.fields });
     setVisibleIdx(new Set(body.fields.map((_, i) => i)));

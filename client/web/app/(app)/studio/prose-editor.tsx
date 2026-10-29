@@ -17,6 +17,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { Input } from '@mantle/web-ui/ui/input';
 import { lineDiff } from '@/lib/studio/diff';
+import { play } from '@/lib/sounds/play';
 
 type Version = {
   id: string;
@@ -114,6 +115,7 @@ export function ProseEditor({
 
   async function save() {
     const ok = await post({ body: draft, note: note.trim() || null });
+    play(ok ? 'commit' : 'danger');
     if (ok) {
       setNote('');
       setMode('view');

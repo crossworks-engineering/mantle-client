@@ -18,6 +18,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { play } from '@/lib/sounds/play';
 
 /** Breadcrumb frame: null itemId = the drive root. */
 type Crumb = { itemId: string | null; name: string };
@@ -91,6 +92,7 @@ export function DriveScopeDialog({
     onSuccess: (_res, next) => {
       queryClient.invalidateQueries({ queryKey: ['microsoft', 'drives', accountId] });
       queryClient.invalidateQueries({ queryKey: ['microsoft', 'scopes', drive.id] });
+      play('success');
       toast.success(
         next.length > 0
           ? `Selection saved — only ${next.length} selection${next.length === 1 ? '' : 's'} will sync.`
@@ -98,7 +100,10 @@ export function DriveScopeDialog({
       );
       onClose();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+    onError: (err) => {
+      play('danger');
+      toast.error(err instanceof Error ? err.message : String(err));
+    },
   });
 
   const toggleScope = (child: MsDriveChildDTO, checked: boolean) => {

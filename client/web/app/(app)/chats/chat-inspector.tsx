@@ -51,6 +51,7 @@ import {
   infoToSend,
   keepsGroupInfo,
 } from '@/lib/messenger/group-info';
+import { play } from '@/lib/sounds/play';
 
 type Confirm = {
   title: string;
@@ -201,6 +202,7 @@ export function ChatInspector({
     }
     setSaving(true);
     const ok = await act('rename', () => messengerApi.update(id, { title: next }), 'Renamed');
+    play(ok ? 'success' : 'danger');
     setSaving(false);
     if (ok) setRenaming(false);
   };
@@ -254,6 +256,7 @@ export function ChatInspector({
       }
     });
     setSavingInfo(false);
+    play(ok ? 'success' : 'danger');
     if (ok) doneInfo();
   };
   const infoEditable = canEditInfo(conversation);

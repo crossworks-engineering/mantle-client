@@ -80,3 +80,53 @@ export function uploadBatchSound(statuses: readonly string[]): SoundKind | null 
 export function commitFailedSound(status: number | null | undefined): SoundKind {
   return status === 409 ? 'warning' : 'danger';
 }
+
+/** The Activity column's items, as much as the sounds need. */
+type ActivityRow = { traceId: string; kind: string };
+
+/** A conversation turn's end is the reply's own sound (`reply` or `danger`
+ *  from the turn stream), so the Activity column does not sound it again. */
+const ENDS_SOUNDED_ELSEWHERE = new Set(['responder_turn']);
+
+/**
+ * What changed in the Activity column between two snapshots. `known` is the
+ * running items of the last look (id to kind), null before the first: that
+ * look seeds it, so items already running at load make no sound.
+ *
+ * - `starts`: items running now that were not before (each sounds `start`).
+ * - `ends`: items that stopped running, with their sound: in `failures` is
+ *   `danger`, in `recent` is `complete`. One found in neither is quiet (it
+ *   went by between two looks and the column does not say how it ended).
+ */
+export function activityChanges(
+  known: ReadonlyMap<string, string> | null,
+  snap: {
+    active: readonly ActivityRow[];
+    recent: readonly ActivityRow[];
+    failures: readonly ActivityRow[];
+  },
+): {
+  known: Map<string, string>;
+  starts: string[];
+  ends: { id: string; sound: 'complete' | 'danger' }[];
+} {
+  const next = new Map(snap.active.map((a) => [a.traceId, a.kind]));
+  if (known === null) return { known: next, starts: [], ends: [] };
+  const starts = [...next.keys()].filter((id) => !known.has(id));
+  const failed = new Set(snap.failures.map((f) => f.traceId));
+  const done = new Set(snap.recent.map((r) => r.traceId));
+  const ends: { id: string; sound: 'complete' | 'danger' }[] = [];
+  for (const [id, kind] of known) {
+    if (next.has(id) || ENDS_SOUNDED_ELSEWHERE.has(kind)) continue;
+    if (failed.has(id)) ends.push({ id, sound: 'danger' });
+    else if (done.has(id)) ends.push({ id, sound: 'complete' });
+  }
+  return { known: next, starts, ends };
+}
+
+/** A new line in an assistant thread is a notice from the brain (it wrote to
+ *  me), except where its reply sound already plays: on the assistant
+ *  screen, where the turn stream sounds `reply`. */
+export function agentLineSounds(pathname: string | null | undefined): boolean {
+  return !/^\/assistant(\/|$)/.test(pathname ?? '');
+}

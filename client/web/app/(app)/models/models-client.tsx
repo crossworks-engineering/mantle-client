@@ -49,6 +49,7 @@ import { ListCard, ListCardTitle } from '@mantle/web-ui/ui/list-card';
 import type { ExplorerModel, ModelSort } from '@mantle/client-types';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { JsonView } from '@mantle/web-ui/ui/json-view';
+import { play } from '@/lib/sounds/play';
 
 export type ProviderMeta = {
   id: string;
@@ -590,9 +591,11 @@ function AddToPoolDialog({
           : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       });
+      play('success');
       toast.success(`Added to ${pool?.label ?? poolId} — see /models/pools`);
       onClose();
     } catch (err) {
+      play('danger');
       toast.error(err instanceof Error ? err.message : 'Add failed.');
     } finally {
       setSaving(false);

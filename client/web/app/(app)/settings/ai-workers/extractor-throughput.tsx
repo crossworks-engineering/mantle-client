@@ -8,6 +8,7 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { play } from '@/lib/sounds/play';
 
 /** GET /api/embedding/extraction. Local type: the brain route is new and the
  *  shape is small, so it does not need a contract package bump. */
@@ -78,15 +79,18 @@ export function ExtractorThroughput() {
           { concurrency },
         );
         if (res.ok) {
+          play('success');
           toast.success(`Extractor set to ${res.effective} at once. It applies within 30 seconds.`);
           // The Embedding page seeds its form from this row: drop its cache so
           // it never shows (and re-saves) the old count.
           queryClient.removeQueries({ queryKey: ['embedding'], exact: true });
           await queryClient.invalidateQueries({ queryKey: EXTRACTION_STATUS_KEY });
         } else {
+          play('danger');
           toast.error(`Save failed: ${res.error}`);
         }
       } catch (err) {
+        play('danger');
         toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     });

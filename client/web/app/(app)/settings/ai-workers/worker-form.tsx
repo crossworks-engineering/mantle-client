@@ -66,6 +66,7 @@ import {
 import type { KeyOption, WorkerErrors } from './worker-form-state';
 import { LlmWorkerFields } from './worker-fields-llm';
 import { KeyValidityHint, RouteHostFields } from './worker-route-fields';
+import { play } from '@/lib/sounds/play';
 
 type Props = {
   mode: 'create' | 'edit';
@@ -381,6 +382,7 @@ export function WorkerForm({
         startTransition(async () => {
           try {
             await action(fd);
+            play('success');
             if (mode === 'edit') toast.success('Saved');
           } catch (err) {
             // Next's `redirect()` inside a server action throws a
@@ -397,6 +399,7 @@ export function WorkerForm({
             ) {
               throw err;
             }
+            play('danger');
             const msg = err instanceof Error ? err.message : String(err);
             setError(msg);
             toast.error(msg);

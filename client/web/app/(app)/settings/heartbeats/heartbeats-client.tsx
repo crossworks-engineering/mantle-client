@@ -50,6 +50,7 @@ import { useViewerAreas, useViewerLogin } from '@/components/workspaces/use-shel
 import { mayListUsers } from '@/app/(app)/settings/peers/peer-acts-as';
 import { slugify } from '@mantle/web-ui/slugify';
 import { heartbeatStateForSave } from './heartbeat-state';
+import { play } from '@/lib/sounds/play';
 
 type HeartbeatSummary = HeartbeatDTO;
 
@@ -416,9 +417,11 @@ export function HeartbeatsClient() {
       } else {
         await apiSend('/api/heartbeats', 'POST', body);
       }
+      play('success');
       close();
       await queryClient.invalidateQueries({ queryKey: ['heartbeats'] });
     } catch (err) {
+      play('danger');
       toast.error(err instanceof Error ? err.message : String(err));
     }
   };

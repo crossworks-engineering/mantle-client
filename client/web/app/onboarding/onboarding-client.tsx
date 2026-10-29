@@ -43,6 +43,7 @@ import { isOwnerShell, onboardingExit } from '@/lib/workspaces';
 import { OWNER_ONLY_PROMPT_TEXT } from '@/lib/profile-owner-fields';
 import { checkPurpose } from '@/lib/purpose-input';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { play } from '@/lib/sounds/play';
 
 type SanityCheck = { label: string; ok: boolean; detail: string };
 
@@ -427,7 +428,11 @@ function Wizard({
         archetype,
         purpose: purposeText,
       });
-      if (!res.ok) return toast.error(res.error ?? 'Could not save.');
+      if (!res.ok) {
+        play('danger');
+        return toast.error(res.error ?? 'Could not save.');
+      }
+      play('success');
       toast.success('Purpose saved.');
       go(index + 1);
     } catch (err) {

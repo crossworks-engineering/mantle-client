@@ -43,6 +43,7 @@ import { treeKey } from '@/components/item-tree/tree-api';
 import { useTreeServes } from '@/components/item-tree/use-tree-kinds';
 import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
+import { play } from '@/lib/sounds/play';
 
 /** `in`: "New event inside" a tree folder, where it goes once saved. */
 type Selection = { mode: 'create'; in?: TreeFolder } | { mode: 'view'; id: string } | null;
@@ -216,6 +217,7 @@ export function EventsClient() {
       ({ event } = await apiSend<{ event: EventRow }>('/api/events', 'POST', payload));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      play('danger');
       toast.error(e instanceof Error ? e.message : 'Could not save event');
       return;
     }
@@ -224,6 +226,7 @@ export function EventsClient() {
     queryClient.setQueryData(['events', event.id], event);
     view(event.id);
     if (fileIn) void fileNew(event.id, fileIn);
+    play('success');
     toast.success(`Saved “${event.title}”`);
     startTransition(async () => {
       await queryClient.invalidateQueries({ queryKey: ['events'] });

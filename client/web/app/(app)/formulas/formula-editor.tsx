@@ -70,6 +70,7 @@ import {
   type Draft,
   type Row,
 } from './formula-draft';
+import { play } from '@/lib/sounds/play';
 
 export type { Draft } from './formula-draft';
 
@@ -298,11 +299,13 @@ export function FormulaEditor({
             body,
           ).then((r) => r.formula)
         : await apiSend<{ id: string }>('/api/formulas', 'POST', body);
+      play('success');
       toast.success(formulaId ? 'Formula updated' : 'Formula created');
       onSaved(saved.id);
     } catch (err) {
       // The server validates all-at-once too; show its list the same way the
       // rail shows the local one rather than collapsing it to a toast line.
+      play('danger');
       const list = err instanceof ApiError ? err.body?.errors : undefined;
       if (Array.isArray(list)) setServerErrors(list.map(String));
       else toast.error(err instanceof Error ? err.message : 'Could not save');

@@ -16,6 +16,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import type { TailnetResult } from '@mantle/client-types';
 import type { TailscaleConfigSummary } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 type NetworkData = { status: TailnetResult; config: TailscaleConfigSummary | null };
 type NetworkResult = { ok: boolean; message: string };
@@ -179,15 +180,18 @@ function ActivateCard({
     [2000, 5000, 9000, 14000, 20000].forEach((ms) => setTimeout(refresh, ms));
   }
 
-  function run(fn: () => Promise<NetworkResult>, opts?: { poll?: boolean }) {
+  /** `saves`: the person's Save, so it sounds (the other actions stay quiet). */
+  function run(fn: () => Promise<NetworkResult>, opts?: { poll?: boolean; saves?: boolean }) {
     startTransition(async () => {
       try {
         const r = await fn();
+        if (opts?.saves) play(r.ok ? 'success' : 'danger');
         if (r.ok) toast.success(r.message);
         else toast.error(r.message);
         refresh();
         if (r.ok && opts?.poll) pollStatus();
       } catch (err) {
+        if (opts?.saves) play('danger');
         toast.error(err instanceof Error ? err.message : 'Request failed');
       }
     });
@@ -258,17 +262,20 @@ function ActivateCard({
                 size="sm"
                 disabled={pending || !authKey.trim()}
                 onClick={() =>
-                  run(async () => {
-                    const r = await apiSend<NetworkResult>('/api/network/key', 'POST', {
-                      authKey,
-                      hostname,
-                    });
-                    if (r.ok) {
-                      setAuthKey('');
-                      setEditing(false);
-                    }
-                    return r;
-                  })
+                  run(
+                    async () => {
+                      const r = await apiSend<NetworkResult>('/api/network/key', 'POST', {
+                        authKey,
+                        hostname,
+                      });
+                      if (r.ok) {
+                        setAuthKey('');
+                        setEditing(false);
+                      }
+                      return r;
+                    },
+                    { saves: true },
+                  )
                 }
               >
                 {pending ? <Loader2 className="animate-spin" /> : null}

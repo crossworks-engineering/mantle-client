@@ -55,6 +55,7 @@ import { PURPOSE_ARCHETYPES } from '@mantle/content-core/onboarding-questions';
 import { THINKING_TIERS, thinkingEffortForBudget } from '@mantle/content-core/thinking-tiers';
 import { THINKING_EFFORT_WARNINGS } from '@/lib/thinking-effort';
 import type { ProfilePreferences } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 /** Sentinel for "no pinned responder" — Radix Select can't use an empty-string
  *  value, so we map this to '' before submitting. */
@@ -192,12 +193,16 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => apiSend('/api/profile', 'PUT', body),
     onSuccess: () => {
+      play('success');
       toast.success('Preferences saved');
       void queryClient.invalidateQueries({ queryKey: ['profile'] });
       // The header wordmark reads siteName from the shell payload.
       void queryClient.invalidateQueries({ queryKey: ['shell'] });
     },
-    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+    onError: (err) => {
+      play('danger');
+      setError(err instanceof Error ? err.message : String(err));
+    },
   });
 
   const detectFromBrowser = () => {

@@ -15,6 +15,7 @@ import {
 import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import type { JournalRow } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 const USER_KINDS = KINDS.filter((k) => k.lane === 'user');
 
@@ -57,9 +58,11 @@ export function GapAnswerForm({
         );
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+        play('danger');
         toast.error(e instanceof Error ? e.message : 'Could not save the answer');
         return;
       }
+      play('success');
       toast.success('Answered — every agent now carries this');
       setAnswer('');
       onResolved?.(result);

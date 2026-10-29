@@ -77,6 +77,7 @@ import { InviteDetail, InviteDialog, stateLine, useInvites } from './invites';
 import { inviteName, newLinkSeed, openInvites } from '@/lib/user-invites';
 import { PairPhoneCard } from './pair-phone-card';
 import { LoginWorkspaces } from './login-workspaces';
+import { play } from '@/lib/sounds/play';
 
 /** What the delete confirm says. */
 export const LOGIN_DELETE_TEXT =
@@ -452,8 +453,10 @@ function UserDetail({
         ...(descriptionChanged ? { description: description.trim() || null } : {}),
       });
       onChanged();
+      play('success');
       toast.success('User saved');
     } catch (err) {
+      play('danger');
       toast.error(loginRefusalText(err, 'Could not save'));
     } finally {
       setSaving(false);
