@@ -56,6 +56,7 @@ import {
 } from '@/lib/recall-v2';
 import { CardInspector } from './card-inspector';
 import { cardQuery, mapQuery, type MapWrite } from './use-map-write';
+import { play } from '@/lib/sounds/play';
 
 /**
  * One card. The middle column is the text of it: the trail to it, its title
@@ -360,12 +361,14 @@ function Editor({
         {
           version: base.version,
           onError: (err) => {
+            play('danger');
             if (isStale(err)) stale = true;
             else toast.error(writeErrorText(err, 'Could not save the card.'));
           },
         },
       );
       if (res) {
+        play('success');
         // Show the saved copy now rather than wait for the refetch: until it
         // lands, the cached card is the old one, and a clean form would
         // otherwise follow it back for a moment.

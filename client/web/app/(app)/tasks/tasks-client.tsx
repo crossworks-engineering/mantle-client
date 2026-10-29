@@ -60,6 +60,7 @@ import {
   type Priority,
   type Status,
 } from './task-meta';
+import { play } from '@/lib/sounds/play';
 
 /** `in`: "New task inside" a tree folder, where it goes once saved. */
 type Selection = { mode: 'create'; in?: TreeFolder } | { mode: 'view'; id: string } | null;
@@ -255,6 +256,7 @@ export function TasksClient() {
       ({ task } = await apiSend<{ task: TaskRow }>('/api/tasks', 'POST', payload));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      play('danger');
       toast.error(e instanceof Error ? e.message : 'Could not save task');
       return;
     }
@@ -264,6 +266,7 @@ export function TasksClient() {
     setSel({ mode: 'view', id: task.id });
     address.open(task.id);
     if (fileIn) void fileNew(task.id, fileIn);
+    play('success');
     toast.success(`Added “${task.title}”`);
     startTransition(async () => {
       await queryClient.invalidateQueries({ queryKey: ['tasks'] });
@@ -436,7 +439,11 @@ export function TasksClient() {
         key={selected.id}
         task={selected}
         onToggleStatus={() => toggleStatus(selected)}
-        onSave={(payload) => patchTask(selected.id, payload)}
+        onSave={async (payload) => {
+          const ok = await patchTask(selected.id, payload);
+          play(ok ? 'success' : 'danger');
+          return ok;
+        }}
         onPatch={(patch) => patchTask(selected.id, patch)}
         onDelete={() => removeTask(selected.id)}
         editing={address.id === selected.id && address.editing}

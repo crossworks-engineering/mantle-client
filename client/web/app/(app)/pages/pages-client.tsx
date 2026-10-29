@@ -121,6 +121,7 @@ import {
 } from '@mantle/web-ui/page-tree';
 import { scrollBehavior } from '@mantle/web-ui/lib/motion';
 import type { PageListRow as ContractPageListRow, PageRow } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 // Wire shape is the GET /api/pages mapper's output — single source of truth
 // (the canonical row also carries `width`, unused by this list view). Drift
@@ -495,6 +496,7 @@ export function PagesClient() {
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
         if (!folder || !visibilityRefusal(e)) {
+          play('danger');
           toast.error(e instanceof Error ? e.message : 'request failed');
           return;
         }
@@ -505,6 +507,7 @@ export function PagesClient() {
           ({ page: created } = await create(null));
         } catch (e2) {
           if (e2 instanceof ApiError && e2.status === 401) return;
+          play('danger');
           toast.error(e2 instanceof Error ? e2.message : 'request failed');
           return;
         }
@@ -513,6 +516,7 @@ export function PagesClient() {
       }
       setForm({ title: '', tags: [] });
       setOpen(false);
+      play('success');
       toast.success('Page created');
       // Refresh the list cache so the new page is present on navigate-back.
       void queryClient.invalidateQueries({ queryKey: ['pages'] });
@@ -534,9 +538,11 @@ export function PagesClient() {
       }));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return;
+      play('danger');
       toast.error(e instanceof Error ? e.message : 'Could not create sub-page');
       return;
     }
+    play('success');
     void queryClient.invalidateQueries({ queryKey: ['pages'] }); // keep the list fresh
     router.push(`/pages/${created.id}?edit=1`);
   };

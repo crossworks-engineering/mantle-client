@@ -63,6 +63,7 @@ import {
 } from './peer-risky-tools';
 import { FlagRow, PeerColumnHeading } from './peer-section';
 import { TokenReveal, type Reveal } from './peer-tokens';
+import { play } from '@/lib/sounds/play';
 
 const RISKY_COUNT = RISKY_TOOL_GROUPS.reduce((n, g) => n + g.tools.length, 0);
 /** Names the catalog lists; a saved name outside it shows under Other. */
@@ -151,9 +152,11 @@ export function PeerToolAccess({
           allowedRiskyTools: p.allowedRiskyTools,
         });
       }
+      play('success');
       toast.success(minted ? 'Saved. New token for them minted' : 'Saved');
     } catch (err) {
       if (!saved && optimistic) onChanged(access);
+      if (!saved) play('danger');
       if (saved) toast.error('Saved, but the list could not reload');
       else toast.error(err instanceof ApiError ? err.message : 'Could not save');
     } finally {

@@ -52,6 +52,7 @@ import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { slugify } from '@mantle/web-ui/slugify';
 import type { ToolGroupRow } from '@/lib/tool-group-links';
 import { connectorKind, toolGroupSaveBody } from './tool-group-save';
+import { play } from '@/lib/sounds/play';
 
 // List items carry the agent-grant fan-out from GET /api/tool-groups.
 type ToolGroupSummary = ToolGroupRow;
@@ -144,8 +145,12 @@ export function ToolGroupsClient() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tool-groups'] });
       setEditing(null);
+      play('success');
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'save failed'),
+    onError: (e) => {
+      play('danger');
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
   });
 
   const deleteMutation = useMutation({

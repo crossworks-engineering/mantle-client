@@ -49,6 +49,7 @@ import { avatarPartsOf } from '@mantle/web-ui/avatar-parts';
 import { experienceOf, experienceTitle } from '@/lib/experience';
 import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice-client';
 import type { AgentDTO } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 /** The primary chat route — the ONLY thing this tab reads or writes. Backup
  *  routes, params, prompts, grants and TTS pins stay the agent form's job. */
@@ -199,6 +200,7 @@ export function ModelsTab({
     }
     setSavingId(null);
     setApplying(false);
+    play(failed === 0 ? 'success' : 'danger');
     if (failed === 0) toast.success(`Applied ${ok} model change${ok === 1 ? '' : 's'}`);
     else toast.error(`${ok} applied, ${failed} failed — failed rows stay staged`);
     // Both tabs read the same query; refetch so the matrix and the editor agree.

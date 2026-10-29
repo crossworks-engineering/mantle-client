@@ -18,6 +18,7 @@ export type SoundKind =
   | 'mention'
   | 'reply'
   | 'complete'
+  | 'start'
   | 'ring'
   | 'ringback'
   | 'join'
@@ -103,6 +104,12 @@ export const SOUND_RECIPES: Record<SoundKind, Note[]> = {
     { at: 0.09, hz: E6, dur: 0.14, gain: 0.13 },
     { at: 0.135, hz: A6, dur: 0.26, gain: 0.15, bell: true },
   ],
+  // A short soft pluck that lifts a step: something started running. Below
+  // complete's bright top and with no bell, so a start never reads as done.
+  start: [
+    { at: 0, hz: Cs6, glideTo: E6, dur: 0.1, gain: 0.12, wave: 'triangle' },
+    { at: 0.05, hz: A6, dur: 0.12, gain: 0.07 },
+  ],
   // One ring: two bell pairs. The caller repeats it (lib/calls/ring-tone.ts).
   ring: [
     { at: 0, hz: E6, dur: 0.18, gain: 0.14, bell: true },
@@ -156,7 +163,12 @@ export const SOUND_CATALOG: { kind: SoundKind; label: string; use: string }[] = 
   { kind: 'message', label: 'Message', use: 'A new line in one of your chats' },
   { kind: 'mention', label: 'Mention', use: 'Someone names you in a chat' },
   { kind: 'reply', label: 'Reply', use: 'The assistant finished its reply' },
-  { kind: 'complete', label: 'Complete', use: 'A run you are watching is done' },
+  { kind: 'start', label: 'Start', use: 'Something new starts running in Activity' },
+  {
+    kind: 'complete',
+    label: 'Complete',
+    use: 'A run or an Activity item is done',
+  },
   { kind: 'ring', label: 'Ring', use: 'An incoming call (repeats while it rings)' },
   {
     kind: 'ringback',

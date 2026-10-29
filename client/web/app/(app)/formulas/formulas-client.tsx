@@ -49,6 +49,7 @@ import { useTreeServes } from '@/components/item-tree/use-tree-kinds';
 import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
 import { FormulaDetail, type FormulaRow } from './formula-detail';
+import { play } from '@/lib/sounds/play';
 
 type ListResponse = {
   formulas: FormulaRow[];
@@ -203,12 +204,14 @@ export function FormulasClient() {
       const res = await apiSend<{ created: string[] }>('/api/formulas/seed', 'POST');
       await queryClient.invalidateQueries({ queryKey: ['formulas'] });
       void queryClient.invalidateQueries({ queryKey: treeKey('formulas') });
+      play('success');
       toast.success(
         res.created.length > 0
           ? `Added ${res.created.length} example formula${res.created.length === 1 ? '' : 's'}`
           : 'The examples are already here',
       );
     } catch (err) {
+      play('danger');
       toast.error(err instanceof Error ? err.message : 'Could not add the examples');
     } finally {
       setSeeding(false);

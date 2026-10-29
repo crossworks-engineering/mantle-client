@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Activity, AlertCircle, CheckCircle2, PanelRight, PanelRightClose } from 'lucide-react';
 import { AiThinkingOrb } from '@/components/ai-thinking-orb';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
@@ -20,6 +20,8 @@ import type { ActivityItem } from '@mantle/client-types/journey-format';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { RailHandle } from '@mantle/web-ui/ui/rail-handle';
 import { ACTIVITY_W_MAX, ACTIVITY_W_MIN } from '@/lib/nav-width';
+import { activityChanges } from '@/lib/sounds/events';
+import { play } from '@/lib/sounds/play';
 import { formatElapsed } from './elapsed';
 
 /**
@@ -35,6 +37,11 @@ import { formatElapsed } from './elapsed';
  * Both collapse and expand are controls on THIS column (header button one way,
  * rail button the other); they used to share the shell's footer bar with the
  * left rail's toggle, and that bar no longer exists.
+ *
+ * Sounds: an item that starts running plays `start`, one that ends plays
+ * `complete` or `danger` (lib/sounds/events.ts `activityChanges`), once per
+ * item across this browser's tabs. Items running at load stay quiet. Heard as
+ * fast as the poll: within 5s expanded, within a minute collapsed.
  */
 
 /** "what entered the brain" — outcome summary for content actions. */
@@ -172,6 +179,14 @@ export function LiveColumn({
     collapsed ? null : LIVE_ACTIVITY_POLL_MS,
   );
   void tick; // re-render cue for relative timestamps
+  const running = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const change = activityChanges(running.current, data);
+    running.current = change.known;
+    for (const id of change.starts) play('start', { once: `activity:start:${id}` });
+    for (const end of change.ends) play(end.sound, { once: `activity:end:${end.id}` });
+  }, [data]);
   const active = data?.active ?? [];
   const failures = data?.failures ?? [];
   const recent = data?.recent ?? [];

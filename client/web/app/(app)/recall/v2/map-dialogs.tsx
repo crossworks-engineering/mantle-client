@@ -26,6 +26,7 @@ import {
 import { treeKey } from '@/components/item-tree/tree-api';
 import { RECALL_LINE_MAX, RECALL_TITLE_MAX, recallKeys, writeErrorText } from '@/lib/recall-v2';
 import type { MapWrite } from './use-map-write';
+import { play } from '@/lib/sounds/play';
 
 /** A new native map. The brain writes its entry card (`start`) with it, and
  *  an owner-created map is published at once. */
@@ -55,10 +56,12 @@ export function CreateMapDialog({
       const res = await apiSend<RecallMapCreateResultDTO>('/api/recall/maps', 'POST', body);
       await qc.invalidateQueries({ queryKey: recallKeys.maps });
       void qc.invalidateQueries({ queryKey: treeKey('recall') });
+      play('success');
       toast.success(`Map created. Agents open it as ${res.slug}.`);
       onOpenChange(false);
       onCreated(res.mapId);
     } catch (err) {
+      play('danger');
       toast.error(writeErrorText(err, 'Could not create the map.'));
     } finally {
       setPending(false);
@@ -145,7 +148,12 @@ export function MapSettingsDialog({
         }),
       'Could not save the map.',
     );
-    if (res) onOpenChange(false);
+    if (!res) {
+      play('danger');
+      return;
+    }
+    play('success');
+    onOpenChange(false);
   }
 
   return (
@@ -253,9 +261,11 @@ export function AddCardDialog({
       'Could not add the card.',
     );
     if (!res?.cardSlug) {
+      play('danger');
       setBusy(false);
       return;
     }
+    play('success');
     const slug = res.cardSlug;
     // Wait for the map to list the new card, so opening it does not land on
     // the entry card for a moment. A failed reload only costs that moment.

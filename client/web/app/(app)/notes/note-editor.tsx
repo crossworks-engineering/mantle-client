@@ -11,6 +11,7 @@ import { itemAccess } from '@/lib/item-access';
 import { MarkdownEditor } from '@/components/markdown-editor';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ApiError, apiSend } from '@mantle/web-ui/api-fetch';
+import { play } from '@/lib/sounds/play';
 
 export type NoteRow = {
   id: string;
@@ -90,9 +91,11 @@ export function NoteEditor({
         ));
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) return;
+        play('danger');
         toast.error(err instanceof Error ? err.message : 'Save failed');
         return;
       }
+      play('success');
       toast.success(creating ? 'Note created' : 'Saved');
       onSaved(saved);
     } finally {

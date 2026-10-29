@@ -40,6 +40,7 @@ import {
 } from '@mantle/web-ui/ui/list-card';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { slugify } from '@mantle/web-ui/slugify';
+import { play } from '@/lib/sounds/play';
 
 // Row + backref shapes come from the shared client-types package (the wire
 // contract), so this screen never imports @mantle/db just to name them.
@@ -128,8 +129,12 @@ export function SkillsClient() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['skills'] });
       setEditing(null);
+      play('success');
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'save failed'),
+    onError: (e) => {
+      play('danger');
+      toast.error(e instanceof Error ? e.message : 'save failed');
+    },
   });
 
   const deleteMutation = useMutation({

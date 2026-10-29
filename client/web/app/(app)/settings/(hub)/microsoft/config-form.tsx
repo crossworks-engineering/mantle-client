@@ -10,6 +10,7 @@ import { Label } from '@mantle/web-ui/ui/label';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import type { MsConfigStatus } from '@mantle/client-types';
 import { apiSend } from '@mantle/web-ui/api-fetch';
+import { play } from '@/lib/sounds/play';
 
 /**
  * Azure AD app registration, editable from the UI (replaces editing `.env` +
@@ -47,11 +48,15 @@ export function MsConfigForm({
         redirectUri,
       }),
     onSuccess: () => {
+      play('success');
       setSaved(true);
       setSecret('');
       void invalidate();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+    onError: (err) => {
+      play('danger');
+      setError(err instanceof Error ? err.message : String(err));
+    },
   });
 
   const clear = useMutation({

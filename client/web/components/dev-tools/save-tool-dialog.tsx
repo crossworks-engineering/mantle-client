@@ -47,6 +47,7 @@ import { buildVarMap, substituteVars } from '@/lib/dev-tools/client';
 import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useDevTools } from './context';
 import { slugify } from '@mantle/web-ui/slugify';
+import { play } from '@/lib/sounds/play';
 
 const PARAM_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
@@ -195,6 +196,7 @@ export function SaveToolDialog({
         requiresConfirm,
         enabled: true,
       });
+      play('success');
       toast.success(
         res?.inherited && groupSlug !== 'none'
           ? `Tool ${slug.trim()} created — ${res.inherited}`
@@ -204,6 +206,7 @@ export function SaveToolDialog({
       void refreshAgentTools();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      play('danger');
       toast.error(e instanceof Error ? e.message : 'Save failed.');
     } finally {
       setPending(false);

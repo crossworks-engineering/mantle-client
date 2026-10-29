@@ -57,6 +57,7 @@ import {
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { formatBytes } from '@/lib/upload-progress';
 import { restoreBlockedReason, restoreErrorText } from '@/lib/apps-screen';
+import { play } from '@/lib/sounds/play';
 
 const TRIGGER_LABEL: Record<AppSnapshot['trigger'], string> = {
   publish: 'Published',
@@ -274,6 +275,7 @@ export function AppHistory({
             onDone={async (snap) => {
               setTaking(false);
               await refresh();
+              play('success');
               toast.success(`Snapshot v${snap.seq} taken.`);
             }}
           />
@@ -470,6 +472,7 @@ function TakeSnapshotDialog({
       );
       await onDone(snapshot);
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Could not take the snapshot.');
     } finally {
       setSaving(false);

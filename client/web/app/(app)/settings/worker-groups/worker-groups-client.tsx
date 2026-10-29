@@ -39,6 +39,7 @@ import { ListCard, ListCardMeta, ListCardTitle } from '@mantle/web-ui/ui/list-ca
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@mantle/web-ui/slugify';
+import { play } from '@/lib/sounds/play';
 
 type WorkerGroup = {
   id: string;
@@ -121,9 +122,13 @@ export function WorkerGroupsClient() {
       apiSend<{ group: WorkerGroup }>(`/api/settings/worker-groups/${vars.id}`, 'PATCH', vars.body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['worker-groups'] });
+      play('success');
       toast.success('Saved worker group');
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Save failed.'),
+    onError: (e) => {
+      play('danger');
+      toast.error(e instanceof Error ? e.message : 'Save failed.');
+    },
   });
 
   const deleteMutation = useMutation({

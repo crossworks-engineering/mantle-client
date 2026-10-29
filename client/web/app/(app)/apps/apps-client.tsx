@@ -77,6 +77,7 @@ import {
 } from '@/lib/apps-screen';
 import { useIsAdminUser, useIsBrainOwner } from '@/components/workspaces/use-shell-workspaces';
 import { AppItemHeader } from '@/components/app-nav/app-item-header';
+import { play } from '@/lib/sounds/play';
 
 type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };
 
@@ -596,8 +597,10 @@ function CreateAppDialog({
         name: name.trim(),
         description: description.trim() || undefined,
       });
+      play('success');
       await onCreated(app.id);
     } catch {
+      play('danger');
       toast.error('Could not create the app.');
     } finally {
       setSaving(false);

@@ -1,6 +1,8 @@
 /** Which sound each app event makes (lib/sounds/events.ts). */
 import { describe, expect, it } from 'vitest';
 import {
+  activityChanges,
+  agentLineSounds,
   callTroubleSound,
   chatLineSound,
   commitFailedSound,
@@ -118,5 +120,64 @@ describe('commitFailedSound', () => {
     expect(commitFailedSound(409)).toBe('warning');
     expect(commitFailedSound(500)).toBe('danger');
     expect(commitFailedSound(null)).toBe('danger');
+  });
+});
+
+describe('activityChanges', () => {
+  const item = (traceId: string, kind = 'extractor_run') => ({ traceId, kind });
+  const snap = (active: string[], recent: string[] = [], failures: string[] = []) => ({
+    active: active.map((id) => item(id)),
+    recent: recent.map((id) => item(id)),
+    failures: failures.map((id) => item(id)),
+  });
+
+  it('seeds on the first look: items already running are quiet', () => {
+    const first = activityChanges(null, snap(['a', 'b']));
+    expect(first.starts).toEqual([]);
+    expect(first.ends).toEqual([]);
+    expect([...first.known.keys()]).toEqual(['a', 'b']);
+  });
+
+  it('starts only the new ones, once', () => {
+    const { known } = activityChanges(null, snap(['a']));
+    const next = activityChanges(known, snap(['a', 'b']));
+    expect(next.starts).toEqual(['b']);
+    expect(activityChanges(next.known, snap(['a', 'b'])).starts).toEqual([]);
+  });
+
+  it('ends a finished item as complete and a failed one as danger', () => {
+    const { known } = activityChanges(null, snap(['a', 'b', 'c']));
+    const next = activityChanges(known, snap([], ['a'], ['b']));
+    expect(next.ends).toEqual([
+      { id: 'a', sound: 'complete' },
+      { id: 'b', sound: 'danger' },
+    ]);
+  });
+
+  it("leaves a conversation turn's end to the reply sound", () => {
+    const known = new Map([['t', 'responder_turn']]);
+    expect(activityChanges(known, snap([], ['t'])).ends).toEqual([]);
+  });
+
+  it('starts every new item, conversation turns included', () => {
+    const next = activityChanges(new Map(), {
+      active: [item('t', 'responder_turn')],
+      recent: [],
+      failures: [],
+    });
+    expect(next.starts).toEqual(['t']);
+  });
+});
+
+describe('agentLineSounds', () => {
+  it('stays quiet on the assistant screen, where the reply sounds', () => {
+    expect(agentLineSounds('/assistant')).toBe(false);
+    expect(agentLineSounds('/assistant/abc')).toBe(false);
+  });
+
+  it('sounds anywhere else', () => {
+    expect(agentLineSounds('/chats')).toBe(true);
+    expect(agentLineSounds('/assistant-settings')).toBe(true);
+    expect(agentLineSounds(null)).toBe(true);
   });
 });

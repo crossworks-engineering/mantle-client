@@ -83,23 +83,24 @@ the client falls back to the browser's copy on a brain without it.
 
 | Sound | Length | Shape | Used for |
 | --- | --- | --- | --- |
-| success | 330 ms | E6 then A6, a fourth up, bell | **an upload batch went through (wired)** |
+| success | 330 ms | E6 then A6, a fourth up, bell | **a save you clicked went through, an upload batch went through (wired)** |
 | warning | 320 ms | F#5 twice, triangle | **mic or speaker blocked, an upload refused, a commit that changed elsewhere (wired)** |
-| danger | 370 ms | E5 then C#5, minor third down, triangle | **assistant turn or run failed, call join or commit refused, a decision refused (wired)** |
-| notification | 360 ms | one E6 bell | **a model provider starts failing (wired)** |
-| commit | 230 ms | A6 gliding to C#6 over a low A4 body | **page, table or drawing committed (wired)** |
+| danger | 370 ms | E5 then C#5, minor third down, triangle | **assistant turn, run or Activity item failed; a save, commit, decision or call join refused (wired)** |
+| notification | 360 ms | one E6 bell | **a model provider starts failing, the assistant writes to you (wired)** |
+| commit | 230 ms | A6 gliding to C#6 over a low A4 body | **page, table, drawing, app or config committed, an app draft or a Studio version saved (wired)** |
 | action | 50 ms | one A6 tick | **a question answered, a tool call approved or rejected (wired)** |
 | attention | 700 ms | A5, E6, A6 rising, held bell | **a question or a tool call waits for you (wired)** |
 | message | 260 ms | B5 then E6, quick bubble | **new chat line (wired)** |
 | mention | 330 ms | A6 then C#7, bright bell taps | **a chat line names you, instead of message (wired)** |
 | reply | 380 ms | C#6 settling to A5 | **assistant finished its reply (wired)** |
-| complete | 395 ms | A5, C#6, E6, A6 arpeggio | **a run you are watching is done (wired)** |
+| start | 120 ms | C#6 lifting to E6, a soft triangle pluck | **something starts running in Activity (wired)** |
+| complete | 395 ms | A5, C#6, E6, A6 arpeggio | **a run or an Activity item is done (wired)** |
 | ring | 990 ms | two E6/A6 bell pairs, repeated every 2.5 s | **incoming call (wired)** |
 | ringback | 900 ms | one low E5/A5 dyad, no bell, repeated every 3 s | **your call ringing the other side (wired)** |
 | join | 320 ms | A5 then E6, a fifth up | **call answered, someone came in (wired)** |
 | leave | 360 ms | A5 then E5, down, quieter | **hung up, someone left, call ended (wired)** |
 
-All except attention, ring and ringback are under 400 ms. `sounds.test.ts` enforces the
+All except attention, ring and ringback are under 400 ms. `start` was added after the palette was approved, for the Activity column. `sounds.test.ts` enforces the
 lengths and caps every note's level at 0.2.
 
 ## Events in the app, and where to hook them
@@ -144,6 +145,33 @@ pinned by `events.test.ts`):
 - **Uploads:** `upload-provider.tsx` → one sound when a batch is through:
   `success`, or `warning` if any file was refused or failed; all cancelled is
   quiet.
+
+Then, at the owner's request (2026-10-29), louder than "sparing" for three
+things:
+
+- **Every save or commit button:** each clicked save plays `success` (or
+  `commit` for content commits: page, table, drawing, app, config adopt, an
+  app draft, a Studio version) once it went through, and `danger` when it was
+  refused. There is no shared save helper or SaveButton, and `toast.success`
+  also says "copied" and "cancelled", so each save handler (about 55 of them)
+  calls `play` beside its success toast. Autosave, debounced saves, saves on
+  blur and instant toggles stay silent; a shared action helper that also runs
+  non-saves takes a flag (`saves` in network, `form` in connectors).
+- **Every notification:** the client has no bell or inbox; the brain's
+  notices in the app are the chat lines (`message` / `mention`), the waiting
+  approvals (`attention`), provider outages and now a line the assistant
+  writes to me in its thread (`notification`, not on the assistant screen,
+  where the reply sounds, and never for my own line).
+- **Activity column:** `live-column.tsx` → `start` when a new item starts
+  running, `complete` or `danger` when it ends (`activityChanges`). Items
+  running at load are quiet; a conversation turn's end is left to `reply`.
+  As fast as the column polls: within 5 s expanded, within a minute
+  collapsed, so a short item can come and go unheard while collapsed.
+
+**One chime per event across tabs:** `play(kind, { once: key })` claims the
+event in localStorage (`lib/sounds/once.ts`, five-minute claims); the first
+tab that can play it does, the others stay quiet. Used for chat lines,
+approvals, outages, run ends and Activity items.
 
 Left out on purpose:
 

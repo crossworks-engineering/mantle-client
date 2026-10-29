@@ -37,6 +37,7 @@ import {
 } from '@mantle/client-types/lib/event-time';
 import { EventForm, eventToForm, type EventPayload } from './event-form';
 import type { EventRow } from '@mantle/client-types';
+import { play } from '@/lib/sounds/play';
 
 // Wire shape is the GET /api/events mapper's output — single source of truth.
 // Re-exported so the list client keeps importing it from here; drift is a
@@ -215,9 +216,11 @@ export function EventDetail({
       ));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      play('danger');
       toast.error(e instanceof Error ? e.message : 'Save failed');
       return;
     }
+    play('success');
     setMeta(updated);
     setEditing(false);
     onUpdated?.(updated);

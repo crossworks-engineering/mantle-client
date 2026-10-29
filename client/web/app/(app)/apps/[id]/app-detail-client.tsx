@@ -59,6 +59,7 @@ import {
   canChangeAppCode,
 } from '@/lib/apps-screen';
 import { itemAccess } from '@/lib/item-access';
+import { play } from '@/lib/sounds/play';
 
 type BuildMsg = { text: string; location: { file: string; line: number; column: number } | null };
 
@@ -272,6 +273,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
     setBuildErrors([]);
     try {
       await apiSend(`/api/apps/${app.id}/publish`, 'POST');
+      play('commit');
       toast.success('Committed. The live app is updated.');
       await queryClient.invalidateQueries({ queryKey: APPS_KEY });
       setReloadKey((k) => k + 1);
@@ -281,8 +283,10 @@ function AppDetailView({ app }: { app: AppDetail }) {
       if (err instanceof ApiError && err.status === 422) {
         const errors = (err.body?.errors as BuildMsg[] | undefined) ?? [];
         setBuildErrors(errors);
+        play('danger');
         toast.error(`${errors.length} error(s). Nothing was committed.`);
       } else {
+        play('danger');
         toast.error(appCodeErrorText(err, 'Commit failed.', { copy: isCopy }));
       }
     } finally {
@@ -337,6 +341,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
       });
       if (res?.draftUpdatedAt) baseRef.current = res.draftUpdatedAt;
       setDirty(false);
+      play('commit');
       toast.success('Saved to draft.');
       await queryClient.invalidateQueries({ queryKey: APPS_KEY });
       return true;
@@ -345,6 +350,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
         setConflict(true);
         return false;
       }
+      play('danger');
       toast.error(appCodeErrorText(err, 'Could not save.', { copy: isCopy }));
       return false;
     } finally {

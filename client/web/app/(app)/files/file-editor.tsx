@@ -27,6 +27,7 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
+import { play } from '@/lib/sounds/play';
 
 type FileRow = {
   id: string;
@@ -112,9 +113,11 @@ export function FileEditor({
     try {
       await apiSend(`/api/files/files/${fileId}`, 'PATCH', { content: draft });
       setDirty(false);
+      play('success');
       toast.success('Saved');
       onSaved();
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Save failed');
     } finally {
       setSaving(false);

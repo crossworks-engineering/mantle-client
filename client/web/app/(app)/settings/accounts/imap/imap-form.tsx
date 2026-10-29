@@ -19,6 +19,7 @@ import {
 import { FieldHint } from '@mantle/web-ui/ui/field-hint';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import { ContactsGateNotice } from '../contacts-gate-notice';
+import { play } from '@/lib/sounds/play';
 
 /** Probe result from a successful `intent: 'test'` (saves navigate instead). */
 type TestOk = { ok: true; foldersFound: number; folderSample: string[]; serverName?: string };
@@ -86,10 +87,14 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
     },
     onSuccess: (_res, { intent }) => {
       if (intent === 'save') {
+        play('success');
         void queryClient.invalidateQueries({ queryKey: ['email', 'accounts'] });
         // Land on the plain list (mirrors the old action's redirect).
         router.push('/settings/accounts');
       }
+    },
+    onError: (_err, { intent }) => {
+      if (intent === 'save') play('danger');
     },
   });
 

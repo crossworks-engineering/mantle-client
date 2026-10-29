@@ -44,6 +44,7 @@ import { connectorOff, groupsHolding, type ToolGroupRow } from '@/lib/tool-group
 import { ExternalAccessSection, type ToolWithExternalAccess } from './external-access-section';
 import { toolAccessBadge } from '@/lib/tool-access-copy';
 import { ConnectorOffNote, ToolGroupsOfTool } from './tool-groups-of-tool';
+import { play } from '@/lib/sounds/play';
 
 type ToolSummary = ToolWithExternalAccess;
 
@@ -301,9 +302,13 @@ export function ToolsClient() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['tools'] });
       setEditing(null);
+      play('success');
       toast.success(vars.mode === 'create' ? 'Tool created' : 'Tool saved');
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Save failed.'),
+    onError: (e) => {
+      play('danger');
+      toast.error(e instanceof Error ? e.message : 'Save failed.');
+    },
   });
 
   const deleteMutation = useMutation({

@@ -15,9 +15,13 @@
  *   anyway.
  * - The same sound twice within MIN_GAP_MS plays once: a burst of chat lines
  *   is one chime.
+ * - `once` names the event: the first tab of this browser to play it does,
+ *   the others stay quiet (lib/sounds/once.ts), so two windows on the same
+ *   brain chime once for a run they both see start.
  *
  * Best effort throughout: no audio is never an error.
  */
+import { claimOnce } from './once';
 import { getSoundPrefs } from './prefs';
 import { SOUND_RECIPES, type Note, type SoundKind } from './recipes';
 
@@ -96,9 +100,21 @@ function schedule(g: Graph, kind: SoundKind, volume: number): void {
   for (const n of SOUND_RECIPES[kind]) voice(g, n, t0, volume);
 }
 
+function localStore(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 /** Play one sound of the palette. `force` plays it with sounds switched
- *  off (a preview the user clicked); `volume` overrides the preference's. */
-export function play(kind: SoundKind, opts: { force?: boolean; volume?: number } = {}): void {
+ *  off (a preview the user clicked); `volume` overrides the preference's;
+ *  `once` is the event's key, sounded by one tab of this browser only. */
+export function play(
+  kind: SoundKind,
+  opts: { force?: boolean; volume?: number; once?: string } = {},
+): void {
   try {
     const prefs = getSoundPrefs();
     if (!opts.force && !prefs.enabled) return;
@@ -110,6 +126,9 @@ export function play(kind: SoundKind, opts: { force?: boolean; volume?: number }
     const g = makeGraph();
     if (!g) return;
     if (g.ctx.state === 'running') {
+      // Claimed only by a tab that can play now: a tab still waiting for its
+      // first click must not take the event from one that can sound it.
+      if (opts.once && !claimOnce(localStore(), opts.once)) return;
       schedule(g, kind, volume);
       return;
     }

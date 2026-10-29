@@ -33,6 +33,7 @@ import {
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { PeerSection } from './peer-section';
+import { play } from '@/lib/sounds/play';
 
 /** A token to show once. `replaced`: it took the place of one that now fails.
  *  `at`: where it shows, next to what made it: the Pairing tokens section (a
@@ -172,10 +173,12 @@ export function PeerTokens({
       await apiSend(`/api/peers/${peer.id}`, 'PATCH', { outboundToken: token });
       setTheirs('');
       onSaved();
+      play('success');
       toast.success(
         peer.hasOutboundToken ? 'Their token replaced' : `Linked: this brain can now call ${name}`,
       );
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Could not save their token');
     } finally {
       setSaving(false);

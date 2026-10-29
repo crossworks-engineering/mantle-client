@@ -53,7 +53,8 @@ export function PendingQuestionWatcher() {
       open.map((r) => r.id),
     );
     seenOpen.current = next.seen;
-    if (next.fresh.length > 0) play('attention');
+    // Per row, so two windows chime once; a burst merges in `play`.
+    for (const id of next.fresh) play('attention', { once: `pending:${id}` });
   }, [open, hasLoaded]);
 
   useEffect(() => {

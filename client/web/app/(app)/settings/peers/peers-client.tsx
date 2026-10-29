@@ -50,6 +50,7 @@ import { PeerToolAccess, usePeerLogins, type PeerAccess } from './peer-access';
 import { FlagRow, PeerColumnHeading, PeerSection, PeerStatePill } from './peer-section';
 import { peerHost, peerState, peerStateText } from './peer-status';
 import { PeerTokens, ThisBrainAddress, type Reveal } from './peer-tokens';
+import { play } from '@/lib/sounds/play';
 
 type Peer = {
   id: string;
@@ -304,9 +305,11 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
           ...(outboundToken.trim() ? { outboundToken: outboundToken.trim() } : {}),
         },
       );
+      play('success');
       toast.success(`Added ${peer.displayName}. Copy your token for them now`);
       onCreated(peer, inboundToken);
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Could not add the brain');
     }
     setPending(false);

@@ -105,6 +105,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
+import { play } from '@/lib/sounds/play';
 
 /** The three shapes the file list can take; anything else in storage is stale. */
 const VIEW_CHOICES = oneOf('list', 'grid', 'dual');
@@ -513,9 +514,11 @@ function FilesView({
     try {
       await apiSend(`/api/files/folders/${currentFolder.id}`, 'PATCH', { description: draftDesc });
     } catch (err) {
+      play('danger');
       toast.error(err instanceof ApiError ? err.message : 'Could not save description');
       return;
     }
+    play('success');
     setEditingDesc(false);
     refresh();
   };

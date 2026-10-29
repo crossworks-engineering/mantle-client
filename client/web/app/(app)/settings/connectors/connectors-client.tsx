@@ -45,6 +45,7 @@ import {
   ListCardTitle,
 } from '@mantle/web-ui/ui/list-card';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
+import { play } from '@/lib/sounds/play';
 
 /** Connector shapes come from the contract package (pins ≥ 0.232.73). */
 type McpBinding = NonNullable<ToolGroupIntegrationDTO['mcp']>;
@@ -307,6 +308,7 @@ export function ConnectorsClient() {
         oauthError?: string;
       }>('/api/mcp-connectors', 'POST', vars.body),
     onSuccess: (res, vars) => {
+      play('success');
       invalidate();
       setSel({ mode: 'view', slug: res.groupSlug });
       if (res.authorizeUrl) {
@@ -328,23 +330,29 @@ export function ConnectorsClient() {
       }
     },
     onError: (e, vars) => {
+      play('danger');
       vars.tab?.close();
       toast.error(e instanceof Error ? e.message : 'Create failed.');
     },
   });
 
+  /** `form`: the form's Save, which sounds; the Enabled switch stays quiet. */
   const saveMutation = useMutation({
-    mutationFn: (vars: { slug: string; body: Record<string, unknown> }) =>
+    mutationFn: (vars: { slug: string; body: Record<string, unknown>; form?: boolean }) =>
       apiSend(`/api/mcp-connectors/${vars.slug}`, 'PATCH', vars.body),
     onSuccess: (_res, vars) => {
       invalidate();
+      if (vars.form) play('success');
       toast.success(
         vars.body.oauthClient
           ? 'Connector saved. Authorize it again to sign in with the new app.'
           : 'Connector saved.',
       );
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Save failed.'),
+    onError: (e, vars) => {
+      if (vars.form) play('danger');
+      toast.error(e instanceof Error ? e.message : 'Save failed.');
+    },
   });
 
   const syncMutation = useMutation({
@@ -453,6 +461,7 @@ export function ConnectorsClient() {
     } else {
       saveMutation.mutate({
         slug: sel.slug,
+        form: true,
         body: {
           name: form.name.trim() || undefined,
           url: form.url.trim(),

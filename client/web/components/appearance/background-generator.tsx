@@ -21,6 +21,7 @@ import {
   type DriftStyle,
   type DriftTone,
 } from '@mantle/share-ui/drift';
+import { play } from '@/lib/sounds/play';
 
 /**
  * The background generator (Settings > Appearance): one animated Drift
@@ -89,8 +90,10 @@ export function useSavedBackground() {
       const encoded = encodeDriftSpec(spec);
       await apiSend('/api/profile/neat-background', 'PUT', { neatBackground: encoded });
       patchCache(encoded);
+      play('success');
       toast.success('Background saved.');
     } catch (err) {
+      play('danger');
       toast.error(err instanceof Error ? err.message : 'Could not save the background.');
     } finally {
       setBusy(null);

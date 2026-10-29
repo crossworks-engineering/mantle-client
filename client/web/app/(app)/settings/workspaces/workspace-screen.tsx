@@ -100,6 +100,7 @@ import {
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { TeamSettingsSections } from '@/components/workspaces/team-settings';
 import { WorkspaceSection as Section } from '@/components/workspaces/workspace-section';
+import { play } from '@/lib/sounds/play';
 
 /** A contact is set, but this login does not read contacts. */
 const CONTACT_SET_TEXT = 'Set by an Admin user';
@@ -337,8 +338,10 @@ function AboutForm({
         ...(contactEditable ? { contactNodeId: contactId } : {}),
       });
       setContact(undefined);
+      play('success');
       toast.success('Workspace saved');
     } catch (err) {
+      play('danger');
       toast.error(workspaceErrorText(err));
     } finally {
       setPending(false);
