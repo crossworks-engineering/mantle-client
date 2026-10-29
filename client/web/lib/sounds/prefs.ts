@@ -1,8 +1,9 @@
 /**
- * The sound preference (on/off and a volume), kept in this browser only for
- * now: the brain's PUT /api/profile strips keys it does not know, so a
- * roaming copy needs a field on the brain first (docs/sounds-feasibility.md).
- * Pure parse half pinned by prefs.test.ts; the store half is a tiny
+ * The sound preference (on/off and a volume). The brain keeps the login's
+ * copy (GET/PUT /api/profile/sounds, lib/sounds/sync.ts) so it follows the
+ * person across devices; this browser keeps the last one seen, so a sound
+ * can play before the brain answers and on a brain without the route.
+ * Pure parse half pinned by sounds.test.ts; the store half is a tiny
  * external store for useSyncExternalStore, synced across tabs by the
  * `storage` event.
  */
@@ -36,6 +37,9 @@ export function parseSoundPrefs(raw: string | null | undefined): SoundPrefs {
 }
 
 let current: SoundPrefs | null = null;
+/** Changes made here (setSoundPrefs), so a brain read that started before
+ *  one does not undo it (sync.ts). */
+let edits = 0;
 const listeners = new Set<() => void>();
 
 function read(): SoundPrefs {
@@ -52,7 +56,23 @@ export function getSoundPrefs(): SoundPrefs {
   return current;
 }
 
+/** A change made here, by the person. */
 export function setSoundPrefs(next: Partial<SoundPrefs>): void {
+  edits += 1;
+  store(next);
+}
+
+/** The count of changes made here so far. */
+export function soundPrefEdits(): number {
+  return edits;
+}
+
+/** The brain's copy, taken as this browser's (not an edit: nothing to send). */
+export function adoptSoundPrefs(next: Partial<SoundPrefs>): void {
+  store(next);
+}
+
+function store(next: Partial<SoundPrefs>): void {
   current = parseSoundPrefs(JSON.stringify({ ...getSoundPrefs(), ...next }));
   try {
     window.localStorage.setItem(SOUND_PREFS_KEY, JSON.stringify(current));

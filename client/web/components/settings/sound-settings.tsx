@@ -2,9 +2,8 @@
 
 /**
  * Sounds, on the profile screen: the on/off switch, a volume, and a play
- * button for every sound in the palette. Saved at once, in this browser
- * (lib/sounds/prefs.ts); not part of the profile form's Save, which writes
- * the brain.
+ * button for every sound in the palette. Saved at once, on its own route
+ * (lib/sounds/sync.ts), not with the profile form's Save.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -22,6 +21,7 @@ import {
   subscribeSoundPrefs,
 } from '@/lib/sounds/prefs';
 import { SOUND_CATALOG, soundLength, type SoundKind } from '@/lib/sounds/recipes';
+import { pushSoundPrefs } from '@/lib/sounds/sync';
 
 export function useSoundPrefs() {
   return useSyncExternalStore(subscribeSoundPrefs, getSoundPrefs, serverSoundPrefs);
@@ -48,13 +48,14 @@ export function SoundSettings() {
             checked={prefs.enabled}
             onCheckedChange={(enabled) => {
               setSoundPrefs({ enabled });
+              pushSoundPrefs();
               if (enabled) play('action', { force: true });
             }}
           />
         </div>
         <p className="text-xs text-muted-foreground">
           Short, soft sounds for chat messages, a finished reply, an incoming call and other events.
-          Off silences all of them, the call ring included. Saved in this browser only.
+          Off silences all of them, the call ring included. Follows you to your other devices.
         </p>
       </div>
 
@@ -71,7 +72,10 @@ export function SoundSettings() {
           value={[Math.round(prefs.volume * 100)]}
           disabled={!prefs.enabled}
           onValueChange={([v]) => setSoundPrefs({ volume: (v ?? 0) / 100 })}
-          onValueCommit={() => play('notification', { force: true })}
+          onValueCommit={() => {
+            pushSoundPrefs();
+            play('notification', { force: true });
+          }}
         />
       </div>
 
