@@ -51,6 +51,9 @@ export const ANY_LOGIN = [
   /^\/api\/version$/,
   /^\/api\/appearance(\/|$)/,
   /^\/api\/auth\//,
+  // The messenger (Chats): every route is open to every login on the brain
+  // (`open: 'any'`, mantle docs/messenger.md "The API").
+  /^\/api\/messenger(\/|$)/,
 ];
 
 /** Any live-update stream: the owner's /api/realtime or a member's
