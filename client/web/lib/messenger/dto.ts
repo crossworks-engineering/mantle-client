@@ -27,6 +27,10 @@
  * `dto/messenger.ts`, `person-description.ts`). They go once that brain
  * release ships them in client-types; optional here, so a brain before it
  * shows no description.
+ *
+ * client-types 0.400.34 ships these, with `event` on a message and `info` on
+ * a conversation REQUIRED. Both are omitted from the base below so they stay
+ * optional here: a brain before calls or 0343 still sends neither.
  */
 import type {
   MessengerConversation as BaseConversation,
@@ -100,7 +104,7 @@ export type MessengerListResponse = { rows: MessengerListRow[] };
  *  it. Groups only. Agents read it too. */
 type GroupInfoField = { info?: string | null };
 
-export type MessengerConversation = Omit<BaseConversation, 'participants'> &
+export type MessengerConversation = Omit<BaseConversation, 'participants' | 'info'> &
   GroupLookFields &
   GroupInfoField & { participants: MessengerParticipant[] };
 
@@ -162,7 +166,7 @@ export type MessengerEvent =
 
 /** A message, with the event a call's system line carries (null on every
  *  other row; absent on a brain before calls). */
-export type MessengerMessage = BaseMessage & { event?: MessengerEvent | null };
+export type MessengerMessage = Omit<BaseMessage, 'event'> & { event?: MessengerEvent | null };
 
 export type MessengerMessagesResponse = Omit<BaseMessagesResponse, 'messages'> & {
   messages: MessengerMessage[];

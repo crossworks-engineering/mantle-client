@@ -23,10 +23,10 @@ allowBuilds:
 # latest release) with known advisories; fast-uri / @xmldom/xmldom under
 # electron-builder (build-time only).
 overrides:
-  "@mantle/client-types": "npm:@crossworks/client-types@0.400.14"
-  "@mantle/content-core": "npm:@crossworks/content-core@0.400.14"
-  "@mantle/voice-client": "npm:@crossworks/voice-client@0.400.14"
-  "@mantle/share-ui": "npm:@crossworks/share-ui@0.400.14"
+  "@mantle/client-types": "npm:@crossworks/client-types@0.400.34"
+  "@mantle/content-core": "npm:@crossworks/content-core@0.400.34"
+  "@mantle/voice-client": "npm:@crossworks/voice-client@0.400.34"
+  "@mantle/share-ui": "npm:@crossworks/share-ui@0.400.34"
   # Mermaid is not supported (stubs/mermaid-to-excalidraw/README.md). Excalidraw
   # reaches its Mermaid feature through a dynamic import(), so the UI prop alone
   # would leave the real package installed and its ~640 KB chunk emitted; this
@@ -45,6 +45,11 @@ overrides:
   "http-cache-semantics": "4.3.0"
   "source-map-js": "1.2.2"
   "@tailwindcss/typography>postcss-selector-parser": "7.1.6"
+  # zod rides in under eslint-plugin-react-hooks (lint-time only). Below 4.6.6
+  # it has a memory exhaustion bug. pnpm applies this to every dependent whose
+  # range intersects <4.6.6 (the plugin's is ^3.25.0 || ^4.0.0), so the value
+  # is a range, not a pin: later 4.x fixes still resolve (2026-10-30).
+  "zod@<4.6.6": "^4.6.6"
 
 # The excalidraw patch drops upstream's esm.sh font source once
 # EXCALIDRAW_ASSET_PATH is set (client/web/components/draw/excalidraw-canvas.tsx).
@@ -56,4 +61,4 @@ overrides:
 # pnpm refuses an unused patch, and e2e/specs/draw-fonts.spec.ts fails without it.
 patchedDependencies:
   '@excalidraw/excalidraw@0.18.1': patches/@excalidraw__excalidraw@0.18.1.patch
-  katex@0.18.11: patches/katex@0.18.11.patch
+  katex@0.19.1: patches/katex@0.19.1.patch
