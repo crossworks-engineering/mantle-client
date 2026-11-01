@@ -1,11 +1,15 @@
+import type { BrainAppearance } from '@mantle/share-ui/appearance';
+
 /**
  * Runtime client configuration — the escape hatch from build-time-inlined
  * `NEXT_PUBLIC_*` vars, so ONE prebuilt client image can point at any server.
  *
- * The client app serves `/env.js` (a force-dynamic route reading process.env
- * per request) as a blocking script in its root layout head; it sets
- * `window.__MANTLE_ENV__` before any bundle code runs. Everything here falls
- * back to the build-time var, so:
+ * The UI is static files, so its HOST serves `/env.js` (the desktop shell per
+ * brain window, the box server per box; the contract is
+ * docs/static-ui-host.md). The root layout loads it as a blocking script in
+ * <head>; it sets `window.__MANTLE_ENV__` before any bundle code runs, and
+ * before the first paint, which is why it also carries the brain's public
+ * appearance. Everything here falls back to the build-time var, so:
  *   - same-origin monolith: both empty → today's behavior, untouched
  *   - detached dev (dev:fe): build-time vars, exactly as before
  *   - split client image: runtime values win
@@ -19,6 +23,10 @@ export type MantleRuntimeEnv = {
   turnStreaming?: string;
   /** The guided tour this deployment opens once per browser (MANTLE_TOUR). */
   tour?: string;
+  /** The brain's public appearance, raw, as its GET /api/appearance returns
+   *  it. lib/boot/boot-apply.ts maps it onto <html> before the first paint.
+   *  Absent or null: the static defaults. */
+  appearance?: BrainAppearance | null;
 };
 
 declare global {
@@ -30,6 +38,11 @@ declare global {
 export function runtimeEnv(): MantleRuntimeEnv {
   if (typeof window === 'undefined') return {};
   return window.__MANTLE_ENV__ ?? {};
+}
+
+/** The brain's public appearance the host handed over, or null. */
+export function runtimeAppearance(): BrainAppearance | null {
+  return runtimeEnv().appearance ?? null;
 }
 
 /** The API base origin, trailing-slash-stripped. Empty string = same-origin. */

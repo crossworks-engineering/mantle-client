@@ -1,7 +1,6 @@
 import { SetPageTitle } from '@/components/layout/page-title';
 import { SanityClient } from './sanity-client';
 
-
 /**
  * System sanity checker. Read-only config-correctness checks for the class of
  * break that hides in env vars or in a step only scripts/up.sh performs — a

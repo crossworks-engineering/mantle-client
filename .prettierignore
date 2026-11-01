@@ -2,6 +2,7 @@
 # to be listed here too or `format:check` fails the moment a tool rewrites it.
 client/web/next-env.d.ts
 client/web/public/app-runtime/
+client/web/public/_mantle/
 .next/
 dist/
 out/

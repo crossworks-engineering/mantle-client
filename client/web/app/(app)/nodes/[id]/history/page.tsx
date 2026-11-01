@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Node biography page — `/nodes/<id>/history`.
  *
@@ -15,9 +17,10 @@
 import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { NodeHistoryClient } from './node-history-client';
+import { useRouteParams } from '@/lib/route-params';
 
-export default async function NodeHistoryPage(props: { params: Promise<{ id: string }> }) {
-  const { id } = await props.params;
+export default function NodeHistoryPage() {
+  const { id = '' } = useRouteParams<{ id?: string }>('/nodes/[id]/history');
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">

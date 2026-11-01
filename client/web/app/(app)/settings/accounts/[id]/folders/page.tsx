@@ -1,15 +1,18 @@
+'use client';
+
 import Link from 'next/link';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { AccountFoldersClient } from './folders-client';
+import { useRouteParams } from '@/lib/route-params';
 
 /**
  * Per-account "which IMAP folders do we scan?" config (auth gate only). The live
  * folder tree is fetched client-side via `GET /api/email/accounts/[id]/folders`
  * (Phase 2 · Task 4).
  */
-export default async function AccountFoldersPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default function AccountFoldersPage() {
+  const { id = '' } = useRouteParams<{ id?: string }>('/settings/accounts/[id]/folders');
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">

@@ -74,8 +74,8 @@ const SELF = `${WEB}lib/no-review.guard.test.ts`;
  *  redirects (/review goes home), and the member space's own `review`
  *  filter (Mine by state, a kept member route). */
 const NAMES_ON_PURPOSE = [
-  'middleware.ts',
-  'middleware.test.ts',
+  'lib/route-guard.ts',
+  'lib/route-guard.test.ts',
   // Lists the client report route as one the Users screen must not name.
   'app/(app)/settings/users/users-flat.test.ts',
   // Pins that the gone-route needles catch the client portal's routes (W8).

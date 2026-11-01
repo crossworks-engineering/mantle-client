@@ -1,7 +1,7 @@
 'use client';
 
-import { use } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useRouteParams } from '@/lib/route-params';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import { DocView } from '../../doc-view';
 import type { ReaderDoc } from '@/lib/docs-types';
@@ -11,12 +11,10 @@ import type { ReaderDoc } from '@/lib/docs-types';
  * GET /api/docs/reader/doc. The route's 404 covers unknown collections and
  * the traversal/extension guard (the authoritative check stays server-side).
  */
-export default function DocPage({
-  params,
-}: {
-  params: Promise<{ collection: string; slug: string[] }>;
-}) {
-  const { collection, slug } = use(params);
+export default function DocPage() {
+  const { collection = '', slug = [] } = useRouteParams<{ collection?: string; slug?: string[] }>(
+    '/docs/[collection]/[...slug]',
+  );
   const relPath = slug.map((s) => decodeURIComponent(s)).join('/');
   const col = decodeURIComponent(collection);
 

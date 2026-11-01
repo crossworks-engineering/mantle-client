@@ -1,10 +1,10 @@
 'use client';
 
-import { use } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { AuditClient, type AuditRow } from './audit-client';
+import { WithSearchParams } from '@/lib/search-params';
 
 type AuditResponse = {
   rows: AuditRow[];
@@ -22,18 +22,15 @@ type AuditResponse = {
  * (lib/audit-query.ts on the server, shared with nothing else client-side —
  * this app is zero-secret and reads no DB).
  */
-export default function AuditSettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    actor?: string;
-    action?: string;
-    from?: string;
-    to?: string;
-    page?: string;
-  }>;
-}) {
-  const sp = use(searchParams);
+type Query = {
+  actor?: string;
+  action?: string;
+  from?: string;
+  to?: string;
+  page?: string;
+};
+
+function AuditSettingsView({ sp }: { sp: Query }) {
   const qs = new URLSearchParams();
   if (sp.actor) qs.set('actor', sp.actor);
   if (sp.action) qs.set('action', sp.action);
@@ -72,4 +69,8 @@ export default function AuditSettingsPage({
       )}
     </>
   );
+}
+
+export default function AuditSettingsPage() {
+  return <WithSearchParams render={(sp) => <AuditSettingsView sp={sp as Query} />} />;
 }

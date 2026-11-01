@@ -1,7 +1,6 @@
 import { SetPageTitle } from '@/components/layout/page-title';
 import { IntegrityClient } from './integrity-client';
 
-
 /**
  * Integrity screen. Two read-only views:
  *   • Live — the real content you add (notes, pages, files, email, …) as it

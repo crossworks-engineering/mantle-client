@@ -1,5 +1,8 @@
+'use client';
+
 import { RoleSwitch } from '@/components/layout/shell-role';
 import { MemberAppRun } from '@/components/member/member-app-run';
+import { useRouteParams } from '@/lib/route-params';
 
 /**
  * /apps/[id] — for the owner, one app run (`/apps/<id>`) or edited
@@ -7,7 +10,7 @@ import { MemberAppRun } from '@/components/member/member-app-run';
  * which reads the id from the route, so the folders stay. A member only runs
  * the published build here; the editor never mounts for one.
  */
-export default async function AppItemRoute({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default function AppItemRoute() {
+  const { id = '' } = useRouteParams<{ id?: string }>('/apps/[id]');
   return <RoleSwitch member={<MemberAppRun id={id} />}>{null}</RoleSwitch>;
 }

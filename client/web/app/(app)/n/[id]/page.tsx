@@ -1,7 +1,8 @@
 'use client';
 
-import { use, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRouteParams } from '@/lib/route-params';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 
@@ -55,8 +56,8 @@ function surfaceFor(type: string, id: string): string {
   }
 }
 
-export default function NodePermalink({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function NodePermalink() {
+  const { id = '' } = useRouteParams<{ id?: string }>('/n/[id]');
   return <OwnerPermalink id={id} />;
 }
 

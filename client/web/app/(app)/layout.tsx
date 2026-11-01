@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import {
   ACTIVITY_W_COOKIE,
@@ -26,10 +29,13 @@ import type { SpendRange } from '@mantle/client-types';
  *                   used to read the DB in-process, which is what the carve
  *                   took away)
  *
- * The cookies read here are pure request-state UX (flash-free first paint) —
- * reading them needs no secret. The spend range is one of them: the card owns
- * the range after mount, but seeding it server-side stops the pills flicking
- * from 'day' to the user's choice on every load.
+ * The cookies read here are pure layout UX — reading them needs no secret.
+ * The UI is static now, so they are read in the browser, once, when this
+ * layout first renders. That costs no flash: the shell frame (rails, usage
+ * card) mounts only after GET /api/shell answers, by which time these values
+ * are its first state. The spend range is one of them: the card owns the range
+ * after mount, but seeding it here stops the pills flicking from 'day' to the
+ * user's choice on every load.
  */
 
 const SPEND_RANGES: SpendRange[] = ['day', 'week', 'month'];
@@ -38,13 +44,29 @@ function readSpendRange(value: string | undefined): SpendRange {
   return (SPEND_RANGES as string[]).includes(value ?? '') ? (value as SpendRange) : 'day';
 }
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  // SPIKE: no request cookies in a static build; defaults, read client-side later.
-  const navCollapsed = false;
-  const activityCollapsed = true;
-  const navWidth = clampNavWidth(undefined);
-  const activityWidth = clampActivityWidth(undefined);
-  const spendRange = readSpendRange(undefined);
+function cookie(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined; // the static build
+  for (const part of document.cookie.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq !== -1 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return undefined;
+}
+
+function readLayout() {
+  return {
+    navCollapsed: cookie('mantle_nav_collapsed') === '1',
+    // Activity defaults to collapsed — only an explicit '0' (user expanded it) opens it.
+    activityCollapsed: cookie('mantle_activity_collapsed') !== '0',
+    navWidth: clampNavWidth(cookie(NAV_W_COOKIE)),
+    activityWidth: clampActivityWidth(cookie(ACTIVITY_W_COOKIE)),
+    spendRange: readSpendRange(cookie('mantle_spend_range')),
+  };
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const [{ navCollapsed, activityCollapsed, navWidth, activityWidth, spendRange }] =
+    useState(readLayout);
   return (
     <AppShell
       contextCard={<UsageCard initialRange={spendRange} />}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LINK_CODE_PAGES,
   LINK_CODE_ATTR,
   LINK_CODE_GLOBAL,
   LINK_CODE_SCRIPT,
@@ -136,16 +137,10 @@ describe('takeLinkCode (the page, in its first effect)', () => {
   });
 });
 
-describe('Referrer-Policy on the link pages (next.config.ts)', () => {
-  it('serves /client-signin and /invite (and below) with no-referrer', async () => {
-    const { default: config } = await import('../next.config');
-    const rules = (await config.headers?.()) ?? [];
-    for (const page of ['/client-signin', '/client-signin/:path*', '/invite', '/invite/:path*']) {
-      const rule = rules.find((r) => r.source === page);
-      expect(rule?.headers, page).toContainEqual({
-        key: 'Referrer-Policy',
-        value: 'no-referrer',
-      });
-    }
+describe('Referrer-Policy on the link pages (served by the host)', () => {
+  it('lists /client-signin and /invite (and below) for the no-referrer header', () => {
+    expect([...LINK_CODE_PAGES].sort()).toEqual(
+      ['/client-signin', '/client-signin/:path*', '/invite', '/invite/:path*'].sort(),
+    );
   });
 });

@@ -31,6 +31,8 @@ export default tseslint.config(
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
       'client/web/public/app-runtime/**',
+      // The static UI's generated boot script + CSP template (build-boot.mjs).
+      'client/web/public/_mantle/**',
       // The desktop shell's STAGED copy of the built owner UI — a whole
       // Next standalone tree (gitignored). CI never sees it because it
       // lints a fresh checkout, but anyone who runs `build:ui` locally and

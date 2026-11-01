@@ -1,8 +1,6 @@
 import type { NextConfig } from 'next';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CSP_ENFORCED_STATIC } from './lib/csp';
-import { LINK_CODE_PAGES } from './lib/link-code';
 
 /**
  * The ZERO-SECRET owner-UI app. No DB, no server packages, no SESSION_SECRET —
@@ -48,10 +46,12 @@ const nextConfig: NextConfig = {
   // server. Opt-in so image builds keep today's output. The tracing root is
   // pinned to the monorepo root so the standalone tree resolves workspace deps
   // from THIS checkout (with several worktrees present Next would guess).
-  ...(process.env.MANTLE_STANDALONE
-    ? { output: 'standalone' as const, outputFileTracingRoot: join(__dirname, '../..') }
-    : {}),
-  ...(process.env.MANTLE_STATIC ? { output: 'export' as const } : {}),
+  // Static files only: no server renders this UI. A host serves out/ (the
+  // desktop shell per brain window, the box server per box) and owns what a
+  // server used to do here: the per-brain /env.js, the CSP header, the
+  // no-referrer header on the link-code pages, and the fallback that serves a
+  // dynamic route's one placeholder page for every id. docs/static-ui-host.md.
+  output: 'export',
   env: {
     NEXT_PUBLIC_APP_VERSION: rootPkg.version,
     NEXT_PUBLIC_GIT_SHA: process.env.MANTLE_GIT_SHA ?? '',
@@ -60,39 +60,6 @@ const nextConfig: NextConfig = {
   // No /app-runtime here: every mini-app sandbox frames a document the BRAIN
   // renders (`${apiBase}/frame`), whose import map and CSP both point at the
   // brain's own /app-runtime. Nothing ever loaded a copy from this origin.
-  async headers() {
-    if (process.env.MANTLE_STATIC) return [];
-    return [
-      // The origin-independent half of the CSP, on every response. Resolved at
-      // build time, which is exactly why only the origin-independent half is
-      // here — see lib/csp.ts for the measurements behind that split. The
-      // runtime half (which names the brain) cannot live here at all; it is a
-      // <meta> rendered by the root layout. Harmless on the asset routes below
-      // (CSP governs documents), and this way no route can be added that
-      // quietly ships without one.
-      {
-        source: '/:path*',
-        headers: [{ key: 'Content-Security-Policy', value: CSP_ENFORCED_STATIC }],
-      },
-      // The pages a sign-in or invite link opens (lib/link-code.ts): a link
-      // issued before the fragment carries its code in the query, and no
-      // request from these pages may name it in a Referer.
-      ...LINK_CODE_PAGES.map((source) => ({
-        source,
-        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
-      })),
-    ];
-  },
-  // Renamed screens — old bookmarks/deep-links keep working (moved from the
-  // monolith; these are owner-UI routes, so they live here now).
-  async redirects() {
-    if (process.env.MANTLE_STATIC) return [];
-    return [
-      { source: '/lifelog', destination: '/journal', permanent: true },
-      { source: '/memories', destination: '/journal', permanent: true },
-      { source: '/todos', destination: '/tasks', permanent: true },
-    ];
-  },
 };
 
 export default nextConfig;

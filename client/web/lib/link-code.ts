@@ -1,7 +1,8 @@
 /**
  * The code an invite link (/invite) carries, and how it leaves the address
  * bar. /client-signin stays in the no-referrer list below: an old client
- * sign-in link still lands there before the middleware sends it to /login.
+ * sign-in link still lands there before the page-load guard
+ * (lib/route-guard.ts) sends it to /login.
  *
  * Links carry it in the FRAGMENT (`#code=…`, since the client logins audit
  * fixes): a fragment never reaches a server, so it lands in no access log and
@@ -12,12 +13,14 @@
  * (LINK_CODE_SCRIPT) strips it while the document is still parsing and
  * leaves it on `window[LINK_CODE_GLOBAL]`, and the page's first layout
  * effect takes it from there (takeLinkCode). The pages are also served with
- * `Referrer-Policy: no-referrer` (next.config.ts), for the query links.
+ * `Referrer-Policy: no-referrer` by the host (docs/static-ui-host.md), for
+ * the query links.
  */
 
-/** The pages a link's code lands on, as next.config.ts header sources:
- *  each is served with `Referrer-Policy: no-referrer`, so a query code
- *  (links issued before the fragment) never rides out in a Referer header. */
+/** The pages a link's code lands on, as path patterns (`:path*` = anything
+ *  below): the host serves each with `Referrer-Policy: no-referrer`, so a
+ *  query code (links issued before the fragment) never rides out in a Referer
+ *  header. docs/static-ui-host.md lists them for hosts. */
 export const LINK_CODE_PAGES = [
   '/client-signin',
   '/client-signin/:path*',
