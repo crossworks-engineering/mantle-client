@@ -14,7 +14,10 @@ Hosts:
 - the box: the client image (`Dockerfile`) holds `out/` and one bundled
   server, `client/host/dist/server.mjs` (the same `static-host.ts` the desktop
   uses), run by `bun server.mjs` on the `oven/bun` image. It keeps the box contract: port 3000, the
-  same env (`MANTLE_SERVER_ORIGIN`, `MANTLE_TURN_STREAMING`, `MANTLE_TOUR`),
+  same env (`MANTLE_SERVER_ORIGIN`, `MANTLE_TURN_STREAMING`, `MANTLE_TOUR`;
+  optional `MANTLE_APPEARANCE_ORIGIN`, an internal address such as
+  `http://web:3000` for the appearance fetch, so a box need not reach its own
+  public address),
   and `/env.js` answering 200 for the compose healthcheck. About 13 MB on Bun (measured), where
   `next start` took about 170 MB.
 - e2e: `next dev` plays the host there (`app/env.js/route.ts` answers per

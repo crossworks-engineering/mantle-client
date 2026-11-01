@@ -35,6 +35,16 @@ function clientTierImports(extra = []) {
   return [
     'error',
     {
+      // The UI is a static export: each dynamic route is ONE placeholder page,
+      // so Next's own params read `_` there. Read them from the path.
+      paths: [
+        {
+          name: 'next/navigation',
+          importNames: ['useParams', 'useSelectedLayoutSegment', 'useSelectedLayoutSegments'],
+          message:
+            'static export: route params read the placeholder here; use useRouteParams (client/web/lib/route-params.ts)',
+        },
+      ],
       patterns: [
         {
           group: ['@mantle/*', ...allowed.flatMap((a) => [`!${a}`, `!${a}/*`])],

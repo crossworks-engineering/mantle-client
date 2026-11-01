@@ -12,6 +12,10 @@ import { appearanceCache, createStaticHost } from './static-host';
  * healthcheck fetches it), and the same environment:
  *
  *   MANTLE_SERVER_ORIGIN   the brain's public origin ('' = same-origin)
+ *   MANTLE_APPEARANCE_ORIGIN  optional: where THIS server fetches the brain's
+ *                          appearance, such as http://web:3000 on the box's own
+ *                          network. Defaults to MANTLE_SERVER_ORIGIN, which
+ *                          needs the box to reach its own public address
  *   MANTLE_TURN_STREAMING  passed through to env.js
  *   MANTLE_TOUR            passed through to env.js
  *   PORT, HOST             3000 and 0.0.0.0 by default
@@ -24,7 +28,9 @@ import { appearanceCache, createStaticHost } from './static-host';
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-const brainOrigin = (process.env.MANTLE_SERVER_ORIGIN ?? '').trim().replace(/\/+$/, '');
+const clean = (v: string | undefined) => (v ?? '').trim().replace(/\/+$/, '');
+const brainOrigin = clean(process.env.MANTLE_SERVER_ORIGIN);
+const appearanceOrigin = clean(process.env.MANTLE_APPEARANCE_ORIGIN) || brainOrigin;
 
 const appearanceOf = appearanceCache(async (url, signal) => {
   const res = await fetch(url, { signal, cache: 'no-store' });
@@ -35,9 +41,9 @@ const appearanceOf = appearanceCache(async (url, signal) => {
 const host = createStaticHost({
   uiDir: process.env.UI_DIR || join(here, 'out'),
   brainOrigin,
-  // Same-origin with no origin set: no absolute URL to fetch the appearance
-  // from, so the page wears the fresh-install look and corrects after mount.
-  appearance: () => (brainOrigin ? appearanceOf(brainOrigin) : Promise.resolve(null)),
+  // No origin to fetch from: the page wears the fresh-install look and
+  // corrects after mount.
+  appearance: () => (appearanceOrigin ? appearanceOf(appearanceOrigin) : Promise.resolve(null)),
   turnStreaming: process.env.MANTLE_TURN_STREAMING ?? '',
   tour: process.env.MANTLE_TOUR ?? '',
 });

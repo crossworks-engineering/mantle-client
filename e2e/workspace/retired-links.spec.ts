@@ -50,11 +50,16 @@ test('a signed-in login: portal links go to /login, review links to the home', a
     };
     page.on('framenavigated', onNav);
     await page.goto(path);
-    await expect.poll(() => seen.length, { message: path }).toBeGreaterThan(1);
+    // The old link's own entry, then the guard's step. A late step of the
+    // previous link (/login handing a signed-in login on) may come first.
+    const at = () => seen.indexOf(path);
+    await expect
+      .poll(() => (at() === -1 ? 0 : seen.length - at()), { message: path })
+      .toBeGreaterThan(1);
     page.off('framenavigated', onNav);
-    // seen[0] is the old link itself; nothing after it may carry the code.
-    expect(seen.slice(1).join(' '), path).not.toContain(OLD_TEAM_CODE);
-    return seen[1];
+    // Nothing after the old link may carry the code.
+    expect(seen.slice(at() + 1).join(' '), path).not.toContain(OLD_TEAM_CODE);
+    return seen[at() + 1];
   };
   for (const path of TO_LOGIN) expect(await target(path), path).toBe('/login');
   for (const path of TO_HOME) expect(await target(path), path).toBe('/');

@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useRouteParams } from '@/lib/route-params';
 import { Map as MapIcon } from 'lucide-react';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
@@ -25,7 +26,7 @@ export function RecallScreen() {
   // The open map is the address (`/recall/<id>`); an old `?selected=` link
   // still opens it (and the pin moves it to the address). The rest are query
   // params: `view`, `card`, `q`, `page`.
-  const routeId = useParams<{ id?: string }>().id;
+  const routeId = useRouteParams<{ id?: string }>('/recall/[id]').id;
   const sp = useSearchParams();
   const selected =
     (typeof routeId === 'string' ? decodeURIComponent(routeId) : null) ??

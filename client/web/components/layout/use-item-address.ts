@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouteParams } from '@/lib/route-params';
 
 /**
  * Every open item has its own address, read and edited (item header
@@ -35,7 +36,9 @@ export function useItemAddress(
   close: () => void;
 } {
   const router = useRouter();
-  const params = useParams<{ id?: string }>();
+  // From the path, not useParams: the static build exports one placeholder
+  // page per item route, so Next's params read `_` (lib/route-params.ts).
+  const params = useRouteParams<{ id?: string }>(`/${section}/[id]`);
   const searchParams = useSearchParams();
   const id = typeof params.id === 'string' ? decodeURIComponent(params.id) : null;
   const editing = !!id && searchParams.get('edit') === '1';

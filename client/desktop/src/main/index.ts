@@ -250,6 +250,9 @@ function fenceBrainSession(
   );
 }
 
+/** Chromium's net error for a navigation that another one replaced. */
+const ERR_ABORTED = -3;
+
 // ── Windows ───────────────────────────────────────────────────────────────────
 
 let connectWindow: BrowserWindow | null = null;
@@ -453,8 +456,13 @@ async function openAppWindow(profile: Profile, path?: string): Promise<void> {
     if (!frameNavigationAllowed(from, event.url, profile.origin)) event.preventDefault();
   });
 
-  win.webContents.on('did-fail-load', (_event, _code, description, _url, isMainFrame) => {
+  win.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
     if (!isMainFrame) return;
+    // ERR_ABORTED is a load another navigation replaced, not a failure: the
+    // UI's boot script sends a load with no session to /login before it
+    // paints (lib/route-guard.ts), which aborts the first one. Closing the
+    // window on it lost the sign-in screen.
+    if (code === ERR_ABORTED) return;
     dialog.showErrorBox('MantleOS Desktop', `Could not load the owner UI (${description}).`);
     openConnectWindow();
     win.close();

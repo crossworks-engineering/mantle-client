@@ -15,7 +15,8 @@ import {
 } from 'react';
 import { revealInFolds } from '@mantle/share-ui/heading-fold-dom';
 import { WorkspaceChips } from '@/components/share/workspace-chips';
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouteParams } from '@/lib/route-params';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JSONContent } from '@tiptap/react';
 import {
@@ -181,7 +182,7 @@ export function PagesClient() {
   // and shared as it is: `/pages/<id>` reads the page, `/pages/<id>?edit=1`
   // edits it, both in the detail pane with the tree still beside them
   // (phase 5). `/pages` alone opens on the first page.
-  const routeParam = useParams<{ id?: string }>().id;
+  const routeParam = useRouteParams<{ id?: string }>('/pages/[id]').id;
   const routeId = typeof routeParam === 'string' ? routeParam : null;
   const editId = routeId && searchParams.get('edit') === '1' ? routeId : null;
   // Pages opens on the page read last (lib/last-opened.ts); the editor
