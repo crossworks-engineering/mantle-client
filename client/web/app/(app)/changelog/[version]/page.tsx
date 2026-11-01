@@ -1,6 +1,6 @@
 'use client';
 
-import { use } from 'react';
+import { useRouteParams } from '@/lib/route-params';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -14,8 +14,8 @@ type ChangelogResponse = {
 };
 
 /** One changelog entry by version (GET /api/changelog?version=…; 404 → message). */
-export default function ChangelogVersionPage({ params }: { params: Promise<{ version: string }> }) {
-  const { version } = use(params);
+export default function ChangelogVersionPage() {
+  const { version = '' } = useRouteParams<{ version?: string }>('/changelog/[version]');
   const query = useQuery({
     queryKey: ['changelog', version],
     queryFn: () =>

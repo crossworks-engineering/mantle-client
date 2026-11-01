@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers';
 import { AppShell } from '@/components/app-shell';
 import {
   ACTIVITY_W_COOKIE,
@@ -40,13 +39,12 @@ function readSpendRange(value: string | undefined): SpendRange {
 }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const navCollapsed = cookieStore.get('mantle_nav_collapsed')?.value === '1';
-  // Activity defaults to collapsed — only an explicit '0' (user expanded it) opens it.
-  const activityCollapsed = cookieStore.get('mantle_activity_collapsed')?.value !== '0';
-  const navWidth = clampNavWidth(cookieStore.get(NAV_W_COOKIE)?.value);
-  const activityWidth = clampActivityWidth(cookieStore.get(ACTIVITY_W_COOKIE)?.value);
-  const spendRange = readSpendRange(cookieStore.get('mantle_spend_range')?.value);
+  // SPIKE: no request cookies in a static build; defaults, read client-side later.
+  const navCollapsed = false;
+  const activityCollapsed = true;
+  const navWidth = clampNavWidth(undefined);
+  const activityWidth = clampActivityWidth(undefined);
+  const spendRange = readSpendRange(undefined);
   return (
     <AppShell
       contextCard={<UsageCard initialRange={spendRange} />}

@@ -51,6 +51,7 @@ const nextConfig: NextConfig = {
   ...(process.env.MANTLE_STANDALONE
     ? { output: 'standalone' as const, outputFileTracingRoot: join(__dirname, '../..') }
     : {}),
+  ...(process.env.MANTLE_STATIC ? { output: 'export' as const } : {}),
   env: {
     NEXT_PUBLIC_APP_VERSION: rootPkg.version,
     NEXT_PUBLIC_GIT_SHA: process.env.MANTLE_GIT_SHA ?? '',
@@ -60,6 +61,7 @@ const nextConfig: NextConfig = {
   // renders (`${apiBase}/frame`), whose import map and CSP both point at the
   // brain's own /app-runtime. Nothing ever loaded a copy from this origin.
   async headers() {
+    if (process.env.MANTLE_STATIC) return [];
     return [
       // The origin-independent half of the CSP, on every response. Resolved at
       // build time, which is exactly why only the origin-independent half is
@@ -84,6 +86,7 @@ const nextConfig: NextConfig = {
   // Renamed screens — old bookmarks/deep-links keep working (moved from the
   // monolith; these are owner-UI routes, so they live here now).
   async redirects() {
+    if (process.env.MANTLE_STATIC) return [];
     return [
       { source: '/lifelog', destination: '/journal', permanent: true },
       { source: '/memories', destination: '/journal', permanent: true },

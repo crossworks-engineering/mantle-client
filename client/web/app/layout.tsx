@@ -17,10 +17,8 @@ import {
   appearanceFontVars,
   resolveAppearanceAttrs,
 } from '@mantle/web-ui/appearance';
-import { loadBrainAppearance } from '@/lib/appearance';
 import { brandTitle, readBrandFields } from '@/lib/brand';
 import { buildRuntimeCsp } from '@/lib/csp';
-import { brainOrigin } from '@/lib/brain-origin';
 
 /**
  * ZERO-SECRET client root layout. No DB, no session read.
@@ -35,7 +33,7 @@ import { brainOrigin } from '@/lib/brain-origin';
  * per-request state, so the layout is explicitly dynamic — which this app
  * effectively is anyway (/env.js already serves per-request runtime config).
  */
-export const dynamic = 'force-dynamic';
+// SPIKE (static export): no per-request render.
 
 /**
  * The tab carries the brain's OWN name.
@@ -64,7 +62,7 @@ export const dynamic = 'force-dynamic';
  * you read once you have found the right kind of tab.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const name = brandTitle(readBrandFields(await loadBrainAppearance()));
+  const name = brandTitle(readBrandFields(null)); // SPIKE: host fills the brand later
   return {
     title: { default: name, template: `%s · ${name}` },
     description: 'The data-aware workspace.',
@@ -72,7 +70,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const appearance = await loadBrainAppearance().then(resolveAppearanceAttrs);
+  const appearance = resolveAppearanceAttrs(null); // SPIKE: defaults; host injects before paint
   // The origin-dependent half of the CSP (lib/csp.ts). It has to be rendered
   // here, as meta, because a header cannot carry it: `process.env` resolves at
   // BUILD time in next.config.ts's headers() and in middleware on both
@@ -83,10 +81,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // the REQUEST's (lib/brain-origin.ts): in the desktop shell one server
   // renders for several brains, and a connect-src naming another brain than
   // the window's refuses every request the window makes to its own.
-  const csp = buildRuntimeCsp({
-    brainOrigin: await brainOrigin(),
-    dev: process.env.NODE_ENV !== 'production',
-  });
+  // SPIKE: the per-brain CSP meta moves to the host (Tauri protocol / box server).
+  const csp = buildRuntimeCsp({ brainOrigin: '', dev: process.env.NODE_ENV !== 'production' });
   // Font attributes + vars come from the shared projections in appearance.ts —
   // the same tables the server htmlPage renders, so the two documents cannot
   // drift (the drift is exactly how /s and /print lost the interface font for

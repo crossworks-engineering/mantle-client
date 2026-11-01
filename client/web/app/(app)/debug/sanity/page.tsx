@@ -1,7 +1,6 @@
 import { SetPageTitle } from '@/components/layout/page-title';
 import { SanityClient } from './sanity-client';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * System sanity checker. Read-only config-correctness checks for the class of

@@ -1,7 +1,6 @@
 import { SetPageTitle } from '@/components/layout/page-title';
 import { IntegrityClient } from './integrity-client';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * Integrity screen. Two read-only views:
