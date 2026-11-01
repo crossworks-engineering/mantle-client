@@ -9,7 +9,9 @@
 //                            (lib/csp.ts stays the one source of the policy).
 //   public/_mantle/routes.json  the dynamic routes (`/notes/[id]`), read from
 //                            app/: the host serves a route's one exported
-//                            placeholder page (`_`) for every value.
+//                            placeholder page (`_`) for every value. Also the
+//                            path prefixes the host serves with
+//                            Referrer-Policy: no-referrer (lib/link-code.ts).
 //
 // The host contract is docs/static-ui-host.md.
 import { build } from 'esbuild';
@@ -58,11 +60,16 @@ await build({
   logLevel: 'warning',
 });
 
-// The policy (lib/csp.ts) and the placeholder (lib/static-param.ts) are code,
-// so bundle them and read them rather than copy them.
+// The policy (lib/csp.ts), the placeholder (lib/static-param.ts) and the
+// link-code pages (lib/link-code.ts) are code, so bundle them and read them
+// rather than copy them.
 const cspModule = await build({
   stdin: {
-    contents: "export * from './lib/csp'; export { STATIC_PARAM } from './lib/static-param';",
+    contents: [
+      "export * from './lib/csp';",
+      "export { STATIC_PARAM } from './lib/static-param';",
+      "export { LINK_CODE_PAGES } from './lib/link-code';",
+    ].join('\n'),
     resolveDir: appRoot,
     loader: 'ts',
   },
@@ -72,7 +79,7 @@ const cspModule = await build({
   write: false,
   logLevel: 'warning',
 });
-const { buildRuntimeCsp, CSP_ENFORCED_STATIC, STATIC_PARAM } = await import(
+const { buildRuntimeCsp, CSP_ENFORCED_STATIC, STATIC_PARAM, LINK_CODE_PAGES } = await import(
   `data:text/javascript;base64,${Buffer.from(cspModule.outputFiles[0].text).toString('base64')}`
 );
 const HOST = 'brain-origin.invalid';
@@ -95,9 +102,11 @@ function dynamicRoutes(dir, route) {
   return found;
 }
 const routes = dynamicRoutes(join(appRoot, 'app'), '').sort();
+// `/invite` and `/invite/:path*` are one prefix to a host.
+const noReferrer = [...new Set(LINK_CODE_PAGES.map((p) => p.replace(/\/:path\*$/, '')))].sort();
 writeFileSync(
   join(outDir, 'routes.json'),
-  `${JSON.stringify({ placeholder: STATIC_PARAM, routes }, null, 2)}\n`,
+  `${JSON.stringify({ placeholder: STATIC_PARAM, routes, noReferrer }, null, 2)}\n`,
 );
 
 console.log(`[build-boot] wrote public/_mantle/boot.js, csp.txt, routes.json (${routes.length})`);

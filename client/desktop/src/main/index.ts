@@ -1,8 +1,6 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import {
   app,
   BrowserWindow,
@@ -16,25 +14,26 @@ import {
   session,
   shell,
   Tray,
-  utilityProcess,
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { attentionMode, safeInAppPath } from './attention';
 import {
   brainRequestFilter,
-  brainWindowRequestFilter,
   frameNavigationAllowed,
   permissionAllowed,
-  rewriteBrainWindowRequest,
+  stripBrowserOnlyHeaders,
 } from './brain-fence';
+import { appearanceCache, createStaticHost, originOf, UI_HOST, UI_ORIGIN } from './static-host';
 import { createVault, type Vault } from './vault';
 
 /**
  * Jackdaw desktop — shell around the owner UI.
  *
- * The UI is the standalone `next build` of client/web, staged into ui/ by
- * scripts/build-ui.sh and run here as a utilityProcess bound to 127.0.0.1
- * (MANTLE_DESKTOP_RENDERER_URL overrides it for dev against a dev server).
+ * The UI is the static export of client/web, staged into ui/ by
+ * scripts/build-ui.sh and served to each brain window by the shell itself, on
+ * its own host, `http://mantle-ui.localhost` (static-host.ts, serveUi): no
+ * server, no port, no second process. MANTLE_DESKTOP_RENDERER_URL overrides it for dev against a
+ * client/web dev server, whose /env.js names ONE brain (MANTLE_SERVER_ORIGIN).
  * The shell is a NATIVE client in the same trust stance as the mobile
  * companion: the credential is the bearer token the login page mints; CORS is
  * a browser concern the shell fences inside its own network layer (see
@@ -72,15 +71,6 @@ const loadProfiles = () => {
 };
 const saveProfiles = (profiles: Profile[]) => writeJson(profilesPath(), profiles);
 
-/** Shell-level config. `uiPort` is STICKY on purpose: localStorage (and the
- *  bearer in it) is origin-scoped, so changing the embedded server's port
- *  changes the origin and logs every profile out. Allocated once, reused for
- *  the life of the install; reallocated only if something else took it. */
-type ShellConfig = { uiPort?: number };
-const configPath = () => join(app.getPath('userData'), 'shell.json');
-const loadConfig = () => readJson<ShellConfig>(configPath(), {});
-const saveConfig = (config: ShellConfig) => writeJson(configPath(), config);
-
 // ── Token vault ──────────────────────────────────────────────────────────────
 //
 // The bearers at rest live in ./vault (encrypted with safeStorage, one file per
@@ -108,11 +98,7 @@ function vaultProfileFor(
   const entry = windowProfiles.get(event.sender.id);
   const frame = event.senderFrame;
   if (!entry || !frame) return null;
-  try {
-    return new URL(frame.url).origin === entry.origin ? entry.profileId : null;
-  } catch {
-    return null;
-  }
+  return originOf(frame.url) === entry.origin ? entry.profileId : null;
 }
 
 // ── Profile helpers ──────────────────────────────────────────────────────────
@@ -142,10 +128,10 @@ async function probeBrain(origin: string): Promise<string> {
   return body.version;
 }
 
-// ── Embedded UI server ───────────────────────────────────────────────────────
+// ── The static UI ────────────────────────────────────────────────────────────
 
-// Packaged, the ui/ tree is asar-UNPACKED (a utilityProcess needs real files
-// on disk); unpackaged it sits beside out/.
+// The staged static export. Plain files read by the main process, so it can
+// stay inside app.asar; an unpacked copy from an older build still wins.
 const UI_DIR = (() => {
   const plain = join(__dirname, '../../ui');
   const unpacked = plain.replace('app.asar', 'app.asar.unpacked');
@@ -157,107 +143,47 @@ const ICON_PATH = join(__dirname, '../../resources/icon.png').replace(
   'app.asar.unpacked',
 );
 
-function portIsFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const probe = createServer();
-    probe.once('error', () => resolve(false));
-    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)));
-  });
-}
+/** The brain's public appearance for each window's /env.js. net.fetch runs in
+ *  the main process: native HTTP, no CORS. */
+const brainAppearance = appearanceCache(async (url, signal) => {
+  const res = await net.fetch(url, { signal, cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+});
 
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address() as { port: number };
-      probe.close(() => resolve(port));
-    });
-  });
-}
-
-let uiServer: { port: number; proc: Electron.UtilityProcess } | null = null;
-
-/** The spawn in flight, if any. `uiServer` is only assigned after the fork, and
- *  the work before it awaits — so two windows opening together (a second brain,
- *  a deep link while the first window is still booting) both read `uiServer` as
- *  null, both fork, and the second overwrites the first's record. The first
- *  process is then orphaned: nothing holds it, nothing kills it, and it keeps a
- *  port. Memoising the promise is the same shape `upgradeOwnerCookie` uses. */
-let uiServerBoot: Promise<string> | null = null;
-
-/** Proves to the embedded server that a "this window is brain X" header came
- *  from this shell (fenceBrainSession, client/web/lib/desktop-brain.ts). Per
- *  launch, held in memory and in the server process's environment only. */
-const RENDERER_BRAIN_KEY = randomBytes(32).toString('hex');
-
-/** Resolve the URL the app windows load: the dev override, or the embedded
- *  standalone server (spawned on first use). ONE server renders for every
- *  brain: each window's session names its brain on every request to it
- *  (fenceBrainSession), and the server renders that brain, its branding and
- *  its CSP. `brainOrigin` is only the server's fallback MANTLE_SERVER_ORIGIN
- *  for a request that names none. It used to be the whole answer, and a second
- *  brain's window was rendered for the first: its branding, and a CSP whose
- *  connect-src refused every request to its own brain. */
-function ensureRendererUrl(brainOrigin: string): Promise<string> {
+/** The URL a brain window loads: the dev override, or the shell's own scheme. */
+function rendererUrlFor(): string {
   const override = process.env.MANTLE_DESKTOP_RENDERER_URL;
-  if (override) return Promise.resolve(override);
-  if (uiServer) return Promise.resolve(`http://127.0.0.1:${uiServer.port}`);
-  // A failed boot must not be remembered — the next window has to be able to
-  // try again (a busy port, a UI build that arrived late).
-  uiServerBoot ??= startUiServer(brainOrigin).catch((err) => {
-    uiServerBoot = null;
-    throw err;
-  });
-  return uiServerBoot;
-}
-
-async function startUiServer(brainOrigin: string): Promise<string> {
-  const entry = readJson<{ server?: string }>(join(UI_DIR, 'entry.json'), {});
-  if (!entry.server) {
+  if (override) return override;
+  if (!existsSync(join(UI_DIR, '_mantle/routes.json'))) {
     throw new Error(
       'Embedded UI not found. Build it with:  pnpm -C client/desktop build:ui\n' +
         '(or point MANTLE_DESKTOP_RENDERER_URL at a client/web dev server)',
     );
   }
+  return `${UI_ORIGIN}/`;
+}
 
-  const config = loadConfig();
-  let port = config.uiPort ?? 0;
-  if (!port || !(await portIsFree(port))) {
-    port = await getFreePort();
-    saveConfig({ ...config, uiPort: port });
-  }
-
-  const proc = utilityProcess.fork(join(UI_DIR, entry.server), [], {
-    serviceName: 'mantle-ui',
-    env: {
-      ...process.env,
-      NODE_ENV: 'production',
-      PORT: String(port),
-      HOSTNAME: '127.0.0.1',
-      MANTLE_SERVER_ORIGIN: brainOrigin,
-      MANTLE_DESKTOP_BRAIN_KEY: RENDERER_BRAIN_KEY,
-    },
+/** Serve the UI to one brain's session. The partition IS the brain, so the
+ *  handler is made once per session and names that brain for good: its
+ *  /env.js, its CSP.
+ *
+ *  It intercepts http for the session, not a custom scheme: Chromium gives a
+ *  custom scheme no cookies, and the UI's login gate and layout live in
+ *  cookies. Only UI_HOST is answered here, so it never touches the network;
+ *  any other http request (a brain on plain http in dev) goes out unchanged. */
+function serveUi(ses: Electron.Session, brainOrigin: string): void {
+  if (ses.protocol.isProtocolHandled('http')) return;
+  const host = createStaticHost({
+    uiDir: UI_DIR,
+    brainOrigin,
+    appearance: () => brainAppearance(brainOrigin),
   });
-  uiServer = { port, proc };
-  proc.on('exit', () => {
-    if (uiServer?.proc === proc) {
-      uiServer = null;
-      uiServerBoot = null; // next caller spawns a fresh one
-    }
-  });
-
-  const url = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 30_000;
-  for (;;) {
-    try {
-      await net.fetch(`${url}/env.js`, { signal: AbortSignal.timeout(2_000), cache: 'no-store' });
-      return url;
-    } catch {
-      if (Date.now() > deadline) throw new Error('embedded UI server did not become ready');
-      await delay(250);
-    }
-  }
+  ses.protocol.handle('http', (request) =>
+    new URL(request.url).host === UI_HOST
+      ? host(request)
+      : ses.fetch(request, { bypassCustomProtocolHandlers: true }),
+  );
 }
 
 // ── Native-parity CORS fencing ────────────────────────────────────────────────
@@ -271,9 +197,6 @@ async function startUiServer(brainOrigin: string): Promise<string> {
 // way out, see brain-fence.ts) and satisfy the renderer's own check (supply
 // ACAO on the way in). Nothing about the server's browser-facing posture
 // changes; a real browser tab can't do this.
-//
-// The same listener tags every request to the embedded UI server with this
-// window's brain, so the one server renders each window for its own brain.
 
 function fenceBrainSession(
   ses: Electron.Session,
@@ -281,15 +204,9 @@ function fenceBrainSession(
   rendererOrigin: string,
 ): void {
   const brainUrls = brainRequestFilter(brainOrigin);
-  const origins = { brain: brainOrigin, renderer: rendererOrigin };
-  ses.webRequest.onBeforeSendHeaders(
-    brainWindowRequestFilter(brainOrigin, rendererOrigin),
-    ({ url, requestHeaders }, callback) => {
-      callback({
-        requestHeaders: rewriteBrainWindowRequest(url, requestHeaders, origins, RENDERER_BRAIN_KEY),
-      });
-    },
-  );
+  ses.webRequest.onBeforeSendHeaders(brainUrls, ({ requestHeaders }, callback) => {
+    callback({ requestHeaders: stripBrowserOnlyHeaders(requestHeaders) });
+  });
 
   ses.webRequest.onHeadersReceived(brainUrls, ({ responseHeaders = {} }, callback) => {
     for (const key of Object.keys(responseHeaders)) {
@@ -325,12 +242,6 @@ function fenceBrainSession(
       rendererOrigin,
     ),
   );
-
-  // No /env.js rewrite. It was redirected to a data: URL so the server's
-  // first-brain env could not win over the preload's, and Chromium refuses a
-  // redirect to data: (net::ERR_UNSAFE_REDIRECT in every window). It is the
-  // tagged request above that keeps it right now: /env.js answers with this
-  // window's brain, the same value the preload injected.
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
@@ -416,7 +327,7 @@ function deepLinkToPath(link: string): string | null {
 function inAppUrl(path: string, rendererUrl: string): string | null {
   try {
     const target = new URL(path, rendererUrl);
-    return target.origin === new URL(rendererUrl).origin ? target.toString() : null;
+    return originOf(target.toString()) === originOf(rendererUrl) ? target.toString() : null;
   } catch {
     return null;
   }
@@ -461,10 +372,12 @@ function openConnectWindow(): void {
 }
 
 async function openAppWindow(profile: Profile, path?: string): Promise<void> {
-  const rendererUrl = await ensureRendererUrl(profile.origin);
-  const rendererOrigin = new URL(rendererUrl).origin;
+  const rendererUrl = rendererUrlFor();
+  const rendererOrigin = originOf(rendererUrl) ?? UI_ORIGIN;
   const partition = `persist:brain-${profile.id}`;
-  fenceBrainSession(session.fromPartition(partition), profile.origin, rendererOrigin);
+  const ses = session.fromPartition(partition);
+  fenceBrainSession(ses, profile.origin, rendererOrigin);
+  if (rendererOrigin === UI_ORIGIN) serveUi(ses, profile.origin);
 
   // NO `title` here, deliberately. The window title follows the loaded page's
   // <title>, which the web app now sets from the brain's own name (site name,
@@ -486,9 +399,6 @@ async function openAppWindow(profile: Profile, path?: string): Promise<void> {
       partition,
       preload: join(__dirname, '../preload/app.js'),
       sandbox: true,
-      additionalArguments: [
-        `--mantle-env=${JSON.stringify({ apiBase: profile.origin, serverOrigin: profile.origin })}`,
-      ],
     },
   });
   win.once('ready-to-show', () => win.show());
@@ -523,7 +433,7 @@ async function openAppWindow(profile: Profile, path?: string): Promise<void> {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).origin !== rendererOrigin) {
+    if (originOf(url) !== rendererOrigin) {
       event.preventDefault();
       if (/^https?:/.test(url)) void shell.openExternal(url);
     }
@@ -885,8 +795,8 @@ function setupAutoUpdate(): void {
   setInterval(check, 4 * 60 * 60 * 1000);
 }
 
-// One instance only — the embedded UI server's sticky port is a single
-// resource, and a second instance would steal it (logging the first one out).
+// One instance only: one window per brain, one vault, and a mantle:// link on
+// Linux/Windows arrives as a second instance that hands it over.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -925,10 +835,6 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) focusOrOpen();
     });
-  });
-
-  app.on('will-quit', () => {
-    uiServer?.proc.kill();
   });
 
   app.on('window-all-closed', () => {

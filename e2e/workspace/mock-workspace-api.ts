@@ -32,11 +32,6 @@ export const MOCK_API_PORT = Number(process.env.E2E_WORKSPACE_API_PORT || 3922);
 /** The "brain" origin the owner UI is started against. */
 export const MOCK_API_ORIGIN = `http://127.0.0.1:${MOCK_API_PORT}`;
 
-/** The key the owner UI under test is started with in place of the desktop
- *  shell's per-launch one (client/web/lib/desktop-brain.ts): a spec sending it
- *  names the brain a request renders for, as the shell does for each window. */
-export const MOCK_DESKTOP_BRAIN_KEY = 'e2e-desktop-brain-key-not-a-secret';
-
 /** The one password of every mock login (a test value, nothing real). */
 export const PASSWORD = 'workspace-e2e-password-1';
 

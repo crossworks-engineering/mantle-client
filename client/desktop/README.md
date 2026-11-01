@@ -5,15 +5,19 @@ predates the 2026-08-13 repo split and is no longer carried as a document;
 this README is the current reference.
 
 The shell ships the connect screen, per-brain session partitions, the
-native-parity CORS fencing, and an **embedded copy of the built owner UI** —
-the standalone `next build` of `client/web`, run as a `utilityProcess` on a
-sticky loopback port (sticky because localStorage — and the bearer in it — is
-origin-scoped; a changing port would log everyone out).
+native-parity CORS fencing, and an **embedded copy of the built owner UI**:
+the static export of `client/web`, served by the shell itself on its own
+host, `http://mantle-ui.localhost` (`src/main/static-host.ts`): the shell
+intercepts http in each brain window's session and answers that host from
+disk, so it never reaches the network. A real http origin because Chromium
+gives a custom scheme no cookies. No server, no port, no second process: each brain window's session gets a handler that serves the
+files, answers `/env.js` with that brain's origin and appearance, and sends
+its CSP. The contract every host follows is `docs/static-ui-host.md`.
 
 ## Run it
 
 ```sh
-pnpm -C client/desktop build:ui   # build client/web standalone → client/desktop/ui/
+pnpm -C client/desktop build:ui   # build client/web static → client/desktop/ui/
 pnpm -C client/desktop dev        # the Electron shell
 ```
 
@@ -25,6 +29,8 @@ brain keeps its own login and a relaunch goes straight back in.
 For UI iteration without rebuilding, `MANTLE_DESKTOP_RENDERER_URL` points the
 shell at a `client/web` dev server instead of the embedded copy
 (e.g. `pnpm dev:fe -- --port 3001`, then set it to `http://localhost:3001`).
+The dev server's `/env.js` names ONE brain (its `MANTLE_SERVER_ORIGIN`), so
+in this mode every window talks to that brain.
 
 ## Packaging
 
@@ -43,18 +49,18 @@ installs on quit — never a surprise restart.
 
 CI picks the mode from the repository secrets:
 
-| Secrets present | Result on a downloaded Mac build |
-| --- | --- |
+| Secrets present                                                                     | Result on a downloaded Mac build                                                                                                                              |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | none (branch or manual build only; a tag build FAILS if any of the five is missing) | **Ad-hoc** signed. macOS says it cannot verify the developer; the user opens it once with System Settings > Privacy & Security > Open Anyway. No self-update. |
-| `CSC_LINK` + `CSC_KEY_PASSWORD` + the three `APPLE_API_*` | **Developer ID** signed, hardened runtime, notarized and stapled. Opens with no warning; electron-updater self-updates. |
+| `CSC_LINK` + `CSC_KEY_PASSWORD` + the three `APPLE_API_*`                           | **Developer ID** signed, hardened runtime, notarized and stapled. Opens with no warning; electron-updater self-updates.                                       |
 
-| Secret | What it holds |
-| --- | --- |
-| `CSC_LINK` | The "Developer ID Application" certificate with its private key, exported as `.p12`, then base64 (`base64 -i cert.p12 \| pbcopy`). |
-| `CSC_KEY_PASSWORD` | The password set on that `.p12` export. |
-| `APPLE_API_KEY` | The full text of an App Store Connect API key (`AuthKey_<id>.p8`). A Team key with the Developer role or higher. |
-| `APPLE_API_KEY_ID` | That key's Key ID. |
-| `APPLE_API_ISSUER` | The Issuer ID shown above the key list in App Store Connect. |
+| Secret             | What it holds                                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `CSC_LINK`         | The "Developer ID Application" certificate with its private key, exported as `.p12`, then base64 (`base64 -i cert.p12 \| pbcopy`). |
+| `CSC_KEY_PASSWORD` | The password set on that `.p12` export.                                                                                            |
+| `APPLE_API_KEY`    | The full text of an App Store Connect API key (`AuthKey_<id>.p8`). A Team key with the Developer role or higher.                   |
+| `APPLE_API_KEY_ID` | That key's Key ID.                                                                                                                 |
+| `APPLE_API_ISSUER` | The Issuer ID shown above the key list in App Store Connect.                                                                       |
 
 Never commit any of these or paste them into a log. The `Verify macOS
 signature` step fails the job when the bundle's seal is broken, and on a
@@ -87,8 +93,11 @@ reproduces the CI ad-hoc build.
   outgoing `Origin` dropped (a native client sends none — same stance as the
   mobile companion), ACAO injected on responses so the embedded renderer
   accepts them. No server-side CORS setup needed on any box.
-- **`window.__MANTLE_ENV__` injection** via preload (read-only), with the dev
-  server's `/env.js` neutralized so the user's chosen brain always wins.
+- **The static UI host** (`src/main/static-host.ts`): each brain window's
+  `/env.js` comes from the shell, with that window's brain and its public
+  appearance (fetched in the main process, cached 30 s), so the page paints
+  in the brain's theme from the first frame. The preload no longer injects
+  `window.__MANTLE_ENV__`.
 - **No secrets in the shell config.** The server URL list (`profiles.json`
   in userData) is plain config; bearers live in the **token vault**
   (`src/main/vault.ts`): OS-keychain-encrypted files (Electron `safeStorage`),
@@ -154,7 +163,7 @@ auto-update has been tested on an installed app:
 - `appId: engineering.crossworks.jackdaw`: the macOS bundle id and the
   Windows install identity. Changing it makes the update a different app.
 - `productName: Jackdaw` (here and in `package.json`): Electron derives the
-  `userData` folder (profiles, `shell.json`, the token vault) and, on macOS,
+  `userData` folder (profiles, the token vault) and, on macOS,
   the `safeStorage` keychain entry from it. A new name starts with an empty
   folder and cannot decrypt the old vault: every saved brain and login would
   be lost. Renaming needs `app.setPath('userData', …)` pinned to the old
@@ -166,4 +175,3 @@ auto-update has been tested on an installed app:
   installed pre-rename app before trusting it.
 - `linux.executableName` / `artifactName` (`jackdaw-…`): file names the
   update metadata and existing installs refer to.
-- The `X-Jackdaw-Brain` request headers, which the web build reads too.

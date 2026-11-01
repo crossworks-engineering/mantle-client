@@ -2,7 +2,6 @@ import { createServer, type Server } from 'node:http';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import {
   MOCK_API_ORIGIN,
-  MOCK_DESKTOP_BRAIN_KEY,
   startMockWorkspaceApi,
   type MockWorkspaceApi,
 } from './mock-workspace-api';
@@ -12,13 +11,13 @@ import {
  * sign-in can fail. No brain: the default one is the in-memory brain
  * (mock-workspace-api.ts), the others are the small servers below.
  *
- * The desktop shell runs ONE copy of the owner UI for every brain it knows,
- * started with the first brain's origin. A second brain's window came out
- * rendered for the first: its branding, and a CSP whose connect-src named only
- * the first brain, so every request the window made to its own brain was
- * refused and sign-in said "Could not reach the server". The shell now names
- * each window's brain on every request to the UI, with a key only it and the
- * UI process hold; these specs send that header the way the shell does.
+ * The desktop shell serves ONE static copy of the owner UI to every brain
+ * window, and each window's host answers its /env.js with that window's
+ * brain: its origin and its public appearance (docs/static-ui-host.md). A
+ * second brain's window once came out wearing the first one's branding, with a
+ * CSP that refused its own brain, so sign-in said "Could not reach the
+ * server". These specs answer /env.js the way the shell's host does, and the
+ * page must wear and reach only that brain.
  */
 
 let api: MockWorkspaceApi;
@@ -55,15 +54,20 @@ async function startBrain(name: string): Promise<string> {
   return `http://127.0.0.1:${port}`;
 }
 
-/** Every request to the owner UI names `brain`, as the shell's session does. */
-async function asWindowOf(page: Page, baseURL: string, brain: string) {
-  await page.route(`${new URL(baseURL).origin}/**`, (route) =>
-    route.continue({
-      headers: {
-        ...route.request().headers(),
-        'x-jackdaw-brain': brain,
-        'x-jackdaw-brain-key': MOCK_DESKTOP_BRAIN_KEY,
-      },
+/** This page's /env.js names `brain`, as the shell's host does for its window. */
+async function asWindowOf(page: Page, baseURL: string, brain: string, name: string) {
+  const env = {
+    apiBase: brain,
+    serverOrigin: brain,
+    turnStreaming: '',
+    tour: '',
+    appearance: { siteName: name },
+  };
+  await page.route(`${new URL(baseURL).origin}/env.js`, (route) =>
+    route.fulfill({
+      contentType: 'application/javascript; charset=utf-8',
+      headers: { 'cache-control': 'no-store' },
+      body: `window.__MANTLE_ENV__ = ${JSON.stringify(env)};`,
     }),
   );
 }
@@ -96,7 +100,7 @@ test.describe('a brain other than the one the UI was started with', () => {
           if (/Content Security Policy/.test(m.text())) violations.push(m.text());
         });
         await page.unrouteAll();
-        await asWindowOf(page, baseURL!, brain);
+        await asWindowOf(page, baseURL!, brain, name);
         await page.goto('/login');
         // Its own branding, its own address on the screen, its own env.
         await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 60_000 });
@@ -116,24 +120,6 @@ test.describe('a brain other than the one the UI was started with', () => {
       }
     });
   }
-
-  test('a header without the key is ignored: the UI stays on its own brain', async ({
-    page,
-    baseURL,
-  }) => {
-    const other = await startBrain('Brain 2');
-    await page.route(`${new URL(baseURL!).origin}/**`, (route) =>
-      route.continue({
-        headers: { ...route.request().headers(), 'x-jackdaw-brain': other },
-      }),
-    );
-    await page.goto('/login');
-    await expect(page.getByTestId('login-server')).toHaveText(
-      `Signing in to ${new URL(MOCK_API_ORIGIN).host}`,
-      { timeout: 60_000 },
-    );
-    await expect(page.getByText('Brain 2', { exact: true })).toHaveCount(0);
-  });
 });
 
 test.describe('Sign in comes back after every failure', () => {

@@ -9,17 +9,16 @@ directories:
   buildResources: build
   output: dist
 
-# out/ = the electron-vite bundles; ui/ = the standalone next build of
-# client/web (staged by build-ui.sh). ui/ and resources/ stay OUTSIDE the
-# asar: the UI runs as a utilityProcess, which needs real files on disk, and
-# the icon path feeds Tray/Notification.
+# out/ = the electron-vite bundles; ui/ = the static export of client/web
+# (staged by build-ui.sh). ui/ goes INSIDE the asar: the main process reads
+# its files and serves them (src/main/static-host.ts), and fs reads asar.
+# resources/ stays outside: the icon path feeds Tray/Notification.
 files:
   - out/**
   - resources/**
   - ui/**
   - package.json
 asarUnpack:
-  - ui/**
   - resources/**
 
 # electron-updater reads GitHub releases; the repo is public so no token is

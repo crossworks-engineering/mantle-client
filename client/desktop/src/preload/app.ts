@@ -3,27 +3,16 @@ import { contextBridge, ipcRenderer } from 'electron';
 /**
  * Preload for the Mantle UI window.
  *
- * 1. Injects window.__MANTLE_ENV__ with the user-chosen brain origin — the
- *    same object the web client's /env.js route emits
- *    (packages/web-ui/src/runtime-env.ts reads it). contextBridge bindings
- *    are read-only in the main world, so this value is authoritative. The
- *    served /env.js agrees with it: the shell names this window's brain on
- *    every request to the embedded server (brain-fence.ts).
- * 2. Exposes window.mantleDesktop — the small desktop API the UI's
- *    DesktopBridge and NeedsYouWatcher components feature-detect: OS
- *    notifications (a click can open an in-app path), a dock/taskbar badge,
- *    and asking for attention (dock bounce, taskbar flash).
+ * Exposes window.mantleDesktop — the small desktop API the UI's DesktopBridge
+ * and NeedsYouWatcher components feature-detect: OS notifications (a click
+ * can open an in-app path), a dock/taskbar badge, asking for attention (dock
+ * bounce, taskbar flash), the token vault and "add a login for another brain".
+ *
+ * It no longer injects window.__MANTLE_ENV__. The shell serves this window's
+ * /env.js itself (static-host.ts): its brain's origin AND its appearance,
+ * which the page needs before the first paint. A read-only value set here
+ * would make that assignment fail, so the host's file is the one source.
  */
-const flag = '--mantle-env=';
-const arg = process.argv.find((a) => a.startsWith(flag));
-if (arg) {
-  try {
-    contextBridge.exposeInMainWorld('__MANTLE_ENV__', JSON.parse(arg.slice(flag.length)));
-  } catch {
-    // Malformed env argument: fall through — the UI degrades to same-origin
-    // behavior, which fails visibly rather than silently pointing elsewhere.
-  }
-}
 
 contextBridge.exposeInMainWorld('mantleDesktop', {
   platform: process.platform,

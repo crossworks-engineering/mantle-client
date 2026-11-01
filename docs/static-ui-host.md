@@ -6,18 +6,25 @@ and does the few jobs a server used to do.
 
 Hosts:
 
-- the desktop shell, per brain window (Electron today, Tauri later)
+- the desktop shell, per brain window (Electron today, Tauri later):
+  `client/desktop/src/main/static-host.ts`. It serves `http://mantle-ui.localhost`
+  by intercepting http in each brain window's session, so nothing reaches the
+  network. A real http origin, not a custom scheme: Chromium gives a custom
+  scheme no cookies, and the login gate and layout state live in cookies.
 - the box, per box (T0b: Caddy or the brain serves `out/`)
-- `scripts/` test servers and e2e
+- e2e: `next dev` plays the host there (`app/env.js/route.ts` answers per
+  request in dev), and specs answer `/env.js` themselves to stand in for a
+  window's host. Only `next build` exports; `next dev` stays an ordinary dev
+  server, because an export refuses every id it did not export.
 
 The build hands every host what it needs in `out/_mantle/`, so no host keeps
 its own copy of the policy, the routes or the theme tables:
 
-| File                      | What it is                                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `out/_mantle/boot.js`     | The first-paint script. The UI loads it itself; a host only serves it.                                  |
-| `out/_mantle/csp.txt`     | The full Content-Security-Policy, with `{brain}` and `{brain_ws}` to fill. Generated from `lib/csp.ts`. |
-| `out/_mantle/routes.json` | The dynamic routes (`/notes/[id]`) and the placeholder value (`_`). Generated from `app/`.              |
+| File                      | What it is                                                                                                                                                  |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `out/_mantle/boot.js`     | The first-paint script. The UI loads it itself; a host only serves it.                                                                                      |
+| `out/_mantle/csp.txt`     | The full Content-Security-Policy, with `{brain}` and `{brain_ws}` to fill. Generated from `lib/csp.ts`.                                                     |
+| `out/_mantle/routes.json` | The dynamic routes (`/notes/[id]`), the placeholder value (`_`), and the no-referrer prefixes (`noReferrer`). Generated from `app/` and `lib/link-code.ts`. |
 
 ## 1. Serve the files, with the placeholder fallback
 
@@ -62,12 +69,12 @@ window.__MANTLE_ENV__ = {
 
 ## 3. Headers
 
-| Header                                               | Where                                                                                                        | Value                                                                                                                                      |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Content-Security-Policy`                            | every HTML response                                                                                          | `csp.txt`, with `{brain}` = the brain's origin and `{brain_ws}` = the same with `wss://` (or `ws://`). For same-origin, both become empty. |
-| `Referrer-Policy: no-referrer`                       | the link-code pages, `LINK_CODE_PAGES` in `lib/link-code.ts`: `/client-signin`, `/invite` and anything below |                                                                                                                                            |
-| `Cache-Control: public, max-age=31536000, immutable` | `/_next/static/*`                                                                                            | content-hashed                                                                                                                             |
-| `Cache-Control: no-cache`                            | HTML, `/_mantle/*`                                                                                           | so a new build shows at once                                                                                                               |
+| Header                                               | Where                                                                                       | Value                                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Content-Security-Policy`                            | every HTML response                                                                         | `csp.txt`, with `{brain}` = the brain's origin and `{brain_ws}` = the same with `wss://` (or `ws://`). For same-origin, both become empty. |
+| `Referrer-Policy: no-referrer`                       | the prefixes in `routes.json` `noReferrer` (`/client-signin`, `/invite`) and anything below |                                                                                                                                            |
+| `Cache-Control: public, max-age=31536000, immutable` | `/_next/static/*`                                                                           | content-hashed                                                                                                                             |
+| `Cache-Control: no-cache`                            | HTML, `/_mantle/*`                                                                          | so a new build shows at once                                                                                                               |
 
 The CSP is a header, not a meta tag, so `frame-ancestors` works.
 

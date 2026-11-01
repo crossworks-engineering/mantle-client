@@ -96,7 +96,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build embedded owner UI (next standalone)
+      - name: Build embedded owner UI (static export)
         shell: bash
         run: pnpm -C client/desktop build:ui
 

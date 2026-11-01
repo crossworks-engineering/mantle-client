@@ -2,15 +2,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  DESKTOP_BRAIN_HEADER,
-  DESKTOP_BRAIN_KEY_HEADER,
   brainRequestFilter,
-  brainWindowRequestFilter,
   frameNavigationAllowed,
   permissionAllowed,
-  rewriteBrainWindowRequest,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
+import { UI_ORIGIN } from './static-host';
 
 describe('stripBrowserOnlyHeaders', () => {
   it('drops Origin and every Sec-Fetch-* header, whatever the case', () => {
@@ -94,88 +91,25 @@ describe('the fence and a sign-in from the shell', () => {
   it('index.ts applies the fence to every brain window, before the window exists', () => {
     const src = readFileSync(fileURLToPath(new URL('./index.ts', import.meta.url)), 'utf8');
     expect(src).toContain('const brainUrls = brainRequestFilter(brainOrigin);');
-    // ONE onBeforeSendHeaders listener, over the brain and the embedded UI
-    // server both: a second registration would replace the first.
+    // ONE onBeforeSendHeaders listener, over the brain only: requests to the
+    // shell's own scheme never leave the machine and need no rewrite.
     expect(src.match(/onBeforeSendHeaders\(/g)).toHaveLength(1);
     expect(src).toMatch(
-      /ses\.webRequest\.onBeforeSendHeaders\(\s*brainWindowRequestFilter\(brainOrigin, rendererOrigin\),\s*\(\{ url, requestHeaders \}, callback\) => \{\s*callback\(\{\s*requestHeaders: rewriteBrainWindowRequest\(url, requestHeaders, origins, RENDERER_BRAIN_KEY\),/,
+      /ses\.webRequest\.onBeforeSendHeaders\(brainUrls, \(\{ requestHeaders \}, callback\) => \{\s*callback\(\{ requestHeaders: stripBrowserOnlyHeaders\(requestHeaders\) \}\);/,
     );
     // No redirect of /env.js to a data: URL: Chromium refuses it.
     expect(src).not.toContain('redirectURL');
-    // openAppWindow fences the window's own partition first.
+    // openAppWindow fences the window's own partition first, and serves the
+    // UI to that same session, both before the window exists.
     const open = src.slice(src.indexOf('async function openAppWindow('));
-    const fence = open.indexOf(
-      'fenceBrainSession(session.fromPartition(partition), profile.origin, rendererOrigin);',
-    );
+    expect(open).toContain('const ses = session.fromPartition(partition);');
+    const fence = open.indexOf('fenceBrainSession(ses, profile.origin, rendererOrigin);');
+    const serve = open.indexOf('serveUi(ses, profile.origin);');
     expect(fence).toBeGreaterThan(-1);
+    expect(serve).toBeGreaterThan(-1);
     expect(fence).toBeLessThan(open.indexOf('new BrowserWindow('));
+    expect(serve).toBeLessThan(open.indexOf('new BrowserWindow('));
     expect(open.slice(0, open.indexOf('preload:'))).toMatch(/webPreferences: \{\s*partition,/);
-  });
-});
-
-/**
- * One embedded UI server renders every brain's window. A second brain's window
- * was rendered for the first, CSP included, and could not reach its own brain,
- * until the shell named the window's brain on each request to that server.
- */
-describe('brain window requests', () => {
-  const renderer = 'http://127.0.0.1:53077';
-  const key = 'k'.repeat(64);
-
-  it('every window names ITS brain to the embedded server, with the key', () => {
-    for (const brain of ['https://second.example', 'https://third.example']) {
-      const out = rewriteBrainWindowRequest(
-        `${renderer}/login?add=1`,
-        { Accept: 'text/html' },
-        { brain, renderer },
-        key,
-      );
-      expect(out).toEqual({
-        Accept: 'text/html',
-        [DESKTOP_BRAIN_HEADER]: brain,
-        [DESKTOP_BRAIN_KEY_HEADER]: key,
-      });
-    }
-  });
-
-  it('a brain the page names itself is replaced, whatever its case', () => {
-    const out = rewriteBrainWindowRequest(
-      `${renderer}/login`,
-      { 'x-jackdaw-brain': 'https://evil.example', 'X-JACKDAW-BRAIN-KEY': 'guess' },
-      { brain: 'https://second.example', renderer },
-      key,
-    );
-    expect(out).toEqual({
-      [DESKTOP_BRAIN_HEADER]: 'https://second.example',
-      [DESKTOP_BRAIN_KEY_HEADER]: key,
-    });
-  });
-
-  it('requests to the brain are made native, and never carry the key', () => {
-    const brain = 'https://second.example';
-    const out = rewriteBrainWindowRequest(
-      `${brain}/api/auth/token`,
-      { Origin: renderer, 'Sec-Fetch-Site': 'cross-site', 'Content-Type': 'application/json' },
-      { brain, renderer },
-      key,
-    );
-    expect(out).toEqual({ 'Content-Type': 'application/json' });
-  });
-
-  it('anything else passes untouched: the key goes nowhere but the server', () => {
-    const out = rewriteBrainWindowRequest(
-      'http://127.0.0.1:53078/env.js',
-      { Accept: '*/*' },
-      { brain: 'https://second.example', renderer },
-      key,
-    );
-    expect(out).toEqual({ Accept: '*/*' });
-  });
-
-  it('one filter covers both, because a session keeps ONE such listener', () => {
-    expect(brainWindowRequestFilter('https://second.example', renderer)).toEqual({
-      urls: ['https://second.example/*', `${renderer}/*`],
-    });
   });
 });
 
@@ -205,6 +139,21 @@ describe('permissionAllowed', () => {
   const main = { requestingUrl: 'http://127.0.0.1:51234/chats/abc', isMainFrame: true };
   it('allows the microphone for the app page on the renderer origin', () => {
     expect(permissionAllowed('media', { ...main, mediaTypes: ['audio'] }, renderer)).toBe(true);
+  });
+  it("allows it on the shell's own UI origin, and on no other localhost", () => {
+    const page = { requestingUrl: `${UI_ORIGIN}/chats/abc`, isMainFrame: true };
+    expect(permissionAllowed('media', { ...page, mediaTypes: ['audio'] }, UI_ORIGIN)).toBe(true);
+    expect(
+      permissionAllowed(
+        'media',
+        {
+          requestingUrl: 'http://other.localhost/chats/abc',
+          isMainFrame: true,
+          mediaTypes: ['audio'],
+        },
+        UI_ORIGIN,
+      ),
+    ).toBe(false);
   });
   it('refuses video, no kind, a sub-frame, another origin and the brain origin', () => {
     expect(permissionAllowed('media', { ...main, mediaTypes: ['audio', 'video'] }, renderer)).toBe(

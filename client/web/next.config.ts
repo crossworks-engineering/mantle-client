@@ -51,7 +51,10 @@ const nextConfig: NextConfig = {
   // server used to do here: the per-brain /env.js, the CSP header, the
   // no-referrer header on the link-code pages, and the fallback that serves a
   // dynamic route's one placeholder page for every id. docs/static-ui-host.md.
-  output: 'export',
+  // The BUILD only: under `next dev` an export refuses every id it did not
+  // export, so dev stays an ordinary dev server. The pages read their ids from
+  // the path either way (lib/route-params.ts).
+  ...(process.env.NODE_ENV === 'production' ? { output: 'export' as const } : {}),
   env: {
     NEXT_PUBLIC_APP_VERSION: rootPkg.version,
     NEXT_PUBLIC_GIT_SHA: process.env.MANTLE_GIT_SHA ?? '',

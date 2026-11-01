@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { MOCK_API_ORIGIN, MOCK_DESKTOP_BRAIN_KEY } from './workspace/mock-workspace-api';
+import { MOCK_API_ORIGIN } from './workspace/mock-workspace-api';
 
 /**
  * The workspace specs (phase W5c: one shell for every login): NO brain.
@@ -8,7 +8,8 @@ import { MOCK_API_ORIGIN, MOCK_DESKTOP_BRAIN_KEY } from './workspace/mock-worksp
  * this checkout and nothing else: `pnpm e2e:workspace`.
  *
  * The owner UI runs from THIS checkout (next dev) with MANTLE_SERVER_ORIGIN
- * pointed at that mock. Kept apart from playwright.config.ts on purpose: that
+ * pointed at that mock. `boot` first: next dev serves public/, and the boot
+ * script (public/_mantle/boot.js) is generated, not committed. Kept apart from playwright.config.ts on purpose: that
  * one's global-setup signs in to a real brain, which these specs must not
  * need.
  *
@@ -41,7 +42,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: 'pnpm -C ../client/web exec next dev --port ' + PORT,
+          command: `pnpm -C ../client/web run boot && pnpm -C ../client/web exec next dev --port ${PORT}`,
           url: `${baseURL}/env.js`,
           reuseExistingServer: false,
           timeout: 180_000,
@@ -51,7 +52,6 @@ export default defineConfig({
           env: {
             MANTLE_SERVER_ORIGIN: MOCK_API_ORIGIN,
             NEXT_PUBLIC_MANTLE_API_BASE: '',
-            MANTLE_DESKTOP_BRAIN_KEY: MOCK_DESKTOP_BRAIN_KEY,
           },
         },
       }),
