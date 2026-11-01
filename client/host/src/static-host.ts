@@ -2,29 +2,28 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 
 /**
- * The host of the static owner UI in a brain window (docs/static-ui-host.md).
+ * THE host of the static owner UI (docs/static-ui-host.md), shared by both
+ * places that serve it:
  *
- * The UI is client/web's static export, staged into ui/ by
- * scripts/build-ui.sh. The shell serves it on its own host,
- * `http://mantle-ui.localhost`, by intercepting http in each brain window's
- * session (index.ts, serveUi): no request for that host ever reaches the
- * network, and every other http request passes through untouched. A real
- * http origin on purpose: a custom scheme gets no cookies in Chromium, and the
- * UI keeps its login gate and layout in cookies. `*.localhost` also makes it
- * a secure context (the microphone, crypto). It does here what a server used
- * to do:
+ *  - the desktop shell, one per brain window's session, on its own
+ *    `http://mantle-ui.localhost` (client/desktop/src/main/index.ts, serveUi);
+ *  - the box, as the client image's whole server (serve.ts).
  *
- *  - serve the files, with a dynamic route's one placeholder page (`_`) for
- *    every value, keeping the real path in the address bar;
- *  - answer `/env.js` with THIS window's brain: its origin and its public
- *    appearance, which the UI's boot script paints before the first frame;
- *  - send the CSP for this brain (the build's csp.txt) and Referrer-Policy on
+ * It does what a server used to do for the UI:
+ *
+ *  - serve the static export, with a dynamic route's one placeholder page
+ *    (`_`) for every value, keeping the real path in the address bar;
+ *  - answer `/env.js` with the brain: its origin and its public appearance,
+ *    which the UI's boot script paints before the first frame;
+ *  - send the CSP for that brain (the build's csp.txt) and Referrer-Policy on
  *    the link-code pages (the build's routes.json).
  *
- * No port and no process: nothing outside the window's own session can reach
- * these files. No Electron import, so it is tested under plain node.
+ * Plain fetch types and node:fs, no Electron, no framework: tested under node,
+ * bundled into the desktop main process and into the box's server.mjs.
  */
 
+/** The desktop shell's own host for the UI: serveUi intercepts http for it.
+ *  A real http origin, not a custom scheme, which Chromium gives no cookies. */
 export const UI_HOST = 'mantle-ui.localhost';
 export const UI_ORIGIN = `http://${UI_HOST}`;
 

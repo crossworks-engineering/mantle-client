@@ -23,7 +23,13 @@ import {
   permissionAllowed,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
-import { appearanceCache, createStaticHost, originOf, UI_HOST, UI_ORIGIN } from './static-host';
+import {
+  appearanceCache,
+  createStaticHost,
+  originOf,
+  UI_HOST,
+  UI_ORIGIN,
+} from '@mantle/client-host/static-host';
 import { createVault, type Vault } from './vault';
 
 /**

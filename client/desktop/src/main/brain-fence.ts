@@ -1,4 +1,4 @@
-import { originOf } from './static-host';
+import { originOf } from '@mantle/client-host/static-host';
 
 /**
  * The request headers the shell drops on the way to the configured brain, so

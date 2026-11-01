@@ -7,7 +7,7 @@ this README is the current reference.
 The shell ships the connect screen, per-brain session partitions, the
 native-parity CORS fencing, and an **embedded copy of the built owner UI**:
 the static export of `client/web`, served by the shell itself on its own
-host, `http://mantle-ui.localhost` (`src/main/static-host.ts`): the shell
+host, `http://mantle-ui.localhost` (`client/host/src/static-host.ts`): the shell
 intercepts http in each brain window's session and answers that host from
 disk, so it never reaches the network. A real http origin because Chromium
 gives a custom scheme no cookies. No server, no port, no second process: each brain window's session gets a handler that serves the
@@ -93,7 +93,7 @@ reproduces the CI ad-hoc build.
   outgoing `Origin` dropped (a native client sends none — same stance as the
   mobile companion), ACAO injected on responses so the embedded renderer
   accepts them. No server-side CORS setup needed on any box.
-- **The static UI host** (`src/main/static-host.ts`): each brain window's
+- **The static UI host** (`client/host/src/static-host.ts`): each brain window's
   `/env.js` comes from the shell, with that window's brain and its public
   appearance (fetched in the main process, cached 30 s), so the page paints
   in the brain's theme from the first frame. The preload no longer injects

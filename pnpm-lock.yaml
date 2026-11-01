@@ -63,6 +63,9 @@ importers:
         specifier: ^6.8.11
         version: 6.8.11
     devDependencies:
+      '@mantle/client-host':
+        specifier: workspace:*
+        version: link:../host
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
@@ -81,6 +84,18 @@ importers:
       vite:
         specifier: ^7.3.6
         version: 7.3.6(@types/node@26.6.6)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)
+
+  client/host:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
   client/web:
     dependencies:

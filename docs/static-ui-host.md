@@ -7,11 +7,16 @@ and does the few jobs a server used to do.
 Hosts:
 
 - the desktop shell, per brain window (Electron today, Tauri later):
-  `client/desktop/src/main/static-host.ts`. It serves `http://mantle-ui.localhost`
+  `client/host/src/static-host.ts`. It serves `http://mantle-ui.localhost`
   by intercepting http in each brain window's session, so nothing reaches the
   network. A real http origin, not a custom scheme: Chromium gives a custom
   scheme no cookies, and the login gate and layout state live in cookies.
-- the box, per box (T0b: Caddy or the brain serves `out/`)
+- the box: the client image (`Dockerfile`) holds `out/` and one bundled
+  server, `client/host/dist/server.mjs` (the same `static-host.ts` the desktop
+  uses), run by `node server.mjs`. It keeps the box contract: port 3000, the
+  same env (`MANTLE_SERVER_ORIGIN`, `MANTLE_TURN_STREAMING`, `MANTLE_TOUR`),
+  and `/env.js` answering 200 for the compose healthcheck. About 60 MB, where
+  `next start` took several hundred.
 - e2e: `next dev` plays the host there (`app/env.js/route.ts` answers per
   request in dev), and specs answer `/env.js` themselves to stand in for a
   window's host. Only `next build` exports; `next dev` stays an ordinary dev

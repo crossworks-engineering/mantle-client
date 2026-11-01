@@ -15,6 +15,43 @@ import nextPlugin from '@next/eslint-plugin-next';
 import mantlePlugin from './eslint-rules/pair-fill-foreground.mjs';
 import housePlugin from './eslint-rules/house-style.mjs';
 
+/**
+ * The jackdaw split boundary for the client tier (the blocks below): the
+ * client may import ONLY the split-safe packages, not even `import type` from
+ * a server package, because after the repo cut those types no longer exist on
+ * this side. Wire shapes live in @mantle/client-types; browser-safe logic in
+ * content-core / voice-client. `extra` widens it for one part of the client.
+ */
+function clientTierImports(extra = []) {
+  const allowed = [
+    '@mantle/client-types',
+    '@mantle/content-core',
+    '@mantle/voice-client',
+    '@mantle/share-ui',
+    '@mantle/web-ui',
+    ...extra,
+  ];
+  const names = allowed.map((a) => a.replace('@mantle/', '')).join(',');
+  return [
+    'error',
+    {
+      patterns: [
+        {
+          group: ['@mantle/*', ...allowed.flatMap((a) => [`!${a}`, `!${a}/*`])],
+          message: `jackdaw split boundary — the client tier may import only @mantle/{${names}}`,
+        },
+        {
+          // Gone since the P0 follow-up: the tsconfig alias itself was
+          // removed, so this is a tripwire against reintroducing it.
+          group: ['@server/*'],
+          message:
+            '@server/* no longer exists — wire types live in @mantle/client-types (or content-core)',
+        },
+      ],
+    },
+  ];
+}
+
 export default tseslint.config(
   {
     // Build output, deps, generated/vendored — never linted.
@@ -33,6 +70,8 @@ export default tseslint.config(
       'client/web/public/app-runtime/**',
       // The static UI's generated boot script + CSP template (build-boot.mjs).
       'client/web/public/_mantle/**',
+      // The box server bundle (client/host/scripts/build.mjs).
+      'client/host/dist/**',
       // The desktop shell's STAGED copy of the built owner UI — the whole
       // static export (gitignored). CI never sees it because it
       // lints a fresh checkout, but anyone who runs `build:ui` locally and
@@ -233,44 +272,15 @@ export default tseslint.config(
     // subpaths. `@server/*` and `@/…`-fallback resolution exist for TYPE
     // reach-through only.
     files: ['client/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
+    rules: { '@typescript-eslint/no-restricted-imports': clientTierImports() },
+  },
+  {
+    // client/desktop also takes @mantle/client-host: the node-side host of the
+    // static UI, bundled into the Electron main process. Never client/web or
+    // web-ui: it reads files from disk and has no place in a browser bundle.
+    files: ['client/desktop/**/*.{ts,tsx}'],
     rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              // The jackdaw-repo-split P0 boundary: the client tier may import
-              // ONLY the four split-safe packages — not even `import type` from
-              // a server package, because after the repo cut those types no
-              // longer exist on this side. Wire shapes live in
-              // @mantle/client-types; browser-safe logic in content-core /
-              // voice-client.
-              group: [
-                '@mantle/*',
-                '!@mantle/client-types',
-                '!@mantle/client-types/*',
-                '!@mantle/content-core',
-                '!@mantle/content-core/*',
-                '!@mantle/voice-client',
-                '!@mantle/voice-client/*',
-                '!@mantle/share-ui',
-                '!@mantle/share-ui/*',
-                '!@mantle/web-ui',
-                '!@mantle/web-ui/*',
-              ],
-              message:
-                'jackdaw split boundary — the client tier may import only @mantle/{client-types,content-core,voice-client,share-ui,web-ui}',
-            },
-            {
-              // Gone since the P0 follow-up: the tsconfig alias itself was
-              // removed, so this is a tripwire against reintroducing it.
-              group: ['@server/*'],
-              message:
-                '@server/* no longer exists — wire types live in @mantle/client-types (or content-core)',
-            },
-          ],
-        },
-      ],
+      '@typescript-eslint/no-restricted-imports': clientTierImports(['@mantle/client-host']),
     },
   },
   {

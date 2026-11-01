@@ -1,0 +1,20 @@
+{
+  "name": "@mantle/client-host",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The one host of the static owner UI (docs/static-ui-host.md): the desktop shell imports it per brain window, the box image runs it as a tiny server.",
+  "exports": {
+    "./static-host": "./src/static-host.ts"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/server.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^6.0.3"
+  }
+}

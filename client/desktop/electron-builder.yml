@@ -11,7 +11,7 @@ directories:
 
 # out/ = the electron-vite bundles; ui/ = the static export of client/web
 # (staged by build-ui.sh). ui/ goes INSIDE the asar: the main process reads
-# its files and serves them (src/main/static-host.ts), and fs reads asar.
+# its files and serves them (client/host/src/static-host.ts), and fs reads asar.
 # resources/ stays outside: the icon path feeds Tray/Notification.
 files:
   - out/**

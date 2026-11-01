@@ -7,7 +7,7 @@ import {
   permissionAllowed,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
-import { UI_ORIGIN } from './static-host';
+import { UI_ORIGIN } from '@mantle/client-host/static-host';
 
 describe('stripBrowserOnlyHeaders', () => {
   it('drops Origin and every Sec-Fetch-* header, whatever the case', () => {

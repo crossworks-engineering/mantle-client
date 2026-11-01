@@ -2,7 +2,7 @@
 set -euo pipefail
 #
 # build-ui.sh — build client/web as static files and stage them into
-# client/desktop/ui/ for the Electron shell to serve (src/main/static-host.ts,
+# client/desktop/ui/ for the Electron shell to serve (client/host/src/static-host.ts,
 # contract in docs/static-ui-host.md).
 #
 # The export is plain files (no node_modules, no links), so a plain recursive
