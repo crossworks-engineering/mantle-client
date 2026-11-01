@@ -13,10 +13,10 @@ Hosts:
   scheme no cookies, and the login gate and layout state live in cookies.
 - the box: the client image (`Dockerfile`) holds `out/` and one bundled
   server, `client/host/dist/server.mjs` (the same `static-host.ts` the desktop
-  uses), run by `node server.mjs`. It keeps the box contract: port 3000, the
+  uses), run by `bun server.mjs` on the `oven/bun` image. It keeps the box contract: port 3000, the
   same env (`MANTLE_SERVER_ORIGIN`, `MANTLE_TURN_STREAMING`, `MANTLE_TOUR`),
-  and `/env.js` answering 200 for the compose healthcheck. About 60 MB, where
-  `next start` took several hundred.
+  and `/env.js` answering 200 for the compose healthcheck. About 13 MB on Bun (measured), where
+  `next start` took about 170 MB.
 - e2e: `next dev` plays the host there (`app/env.js/route.ts` answers per
   request in dev), and specs answer `/env.js` themselves to stand in for a
   window's host. Only `next build` exports; `next dev` stays an ordinary dev

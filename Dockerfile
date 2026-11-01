@@ -8,9 +8,11 @@
 #
 # The UI is static files now (docs/static-ui-host.md). The final image holds
 # the export and one bundled host server (client/host, the same host the
-# desktop shell uses), and runs `node server.mjs`: no Next server, no
-# node_modules. Node stays as the runtime because composes already on boxes
-# healthcheck with `node -e "fetch(...)"`; the server runs on Bun unchanged.
+# desktop shell uses), and runs it on Bun: no Next server, no node_modules.
+# Composes already on boxes healthcheck with `node -e "fetch(...)"`; the
+# official Bun image ships `node` as a link to bun, and that check passes
+# (tested 2026-11-01), so no compose change is needed. The build stages stay
+# on Node: they run pnpm and next build.
 FROM node:26-slim AS deps
 WORKDIR /app
 
@@ -45,12 +47,13 @@ ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
 RUN pnpm -C client/web build && pnpm -C client/host build
 
 # The image boxes run. Keeps the box's contract: port 3000, /env.js answering
-# 200 (the compose healthcheck), the same environment.
-FROM node:26-slim AS client
+# 200 (the compose healthcheck), the same environment. Bun pinned to the
+# version the Bun plan targets; move it with that plan.
+FROM oven/bun:1.4.4-slim AS client
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/client/web/out ./out
 COPY --from=build /app/client/host/dist/server.mjs ./server.mjs
-USER node
+USER bun
 EXPOSE 3000
-CMD ["node", "server.mjs"]
+CMD ["bun", "server.mjs"]

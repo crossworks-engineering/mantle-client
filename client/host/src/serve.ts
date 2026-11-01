@@ -7,7 +7,7 @@ import { appearanceCache, createStaticHost } from './static-host';
  * The box's host of the static owner UI: the client image's whole server.
  *
  * It replaced `next start`. It is the same host the desktop shell uses
- * (static-host.ts), behind a plain node http server, and keeps the contract
+ * (static-host.ts), behind a plain node:http server (Bun runs node:http too), and keeps the contract
  * the box already relies on: port 3000, `/env.js` answering 200 (the compose
  * healthcheck fetches it), and the same environment:
  *
@@ -18,8 +18,9 @@ import { appearanceCache, createStaticHost } from './static-host';
  *   UI_DIR                 the static export, by default ./out beside this file
  *
  * scripts/build.mjs bundles it into one dependency-free dist/server.mjs, so
- * the image needs the export and this file and nothing else. It runs on Bun
- * as it is (`bun server.mjs`).
+ * the image needs the export and this file and nothing else. The image runs
+ * it on Bun (`bun server.mjs`); plain node runs it the same way, which is
+ * how the tests and a local check start it.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
