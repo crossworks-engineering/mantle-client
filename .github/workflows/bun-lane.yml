@@ -50,11 +50,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # What bun.sh starts, and the `node` it puts on PATH, must be the pinned
-      # Bun: the test fails otherwise, since bun.sh sets MANTLE_EXPECT_RUNTIME.
-      # verify:bun runs it again, inside the whole suite.
+      # Bun: the step fails otherwise, and so does the test, since bun.sh sets
+      # MANTLE_EXPECT_RUNTIME. verify:bun runs the test again, in the suite.
       - name: The runtime under bun.sh
         run: |
-          scripts/bun.sh node -p '`${process.versions.bun ?? "NOT BUN"} at ${process.execPath}`'
+          want="$(tr -d '[:space:]' < .bun-version)"
+          have="$(scripts/bun.sh node -p 'process.versions.bun ?? "NOT BUN"')"
+          echo "node under bun.sh: $have (.bun-version: $want)"
+          test "$have" = "$want"
           scripts/bun.sh vitest run scripts/bun-runtime.test.ts
 
       # typecheck, lint, format:check and vitest, every one of them on Bun.
@@ -82,12 +85,27 @@ jobs:
         run: pnpm build:bun
 
       # The host bundle must be byte-equal. The export must be the same UI:
-      # equal after the random build id, apart from the inline theme script
-      # Bun prints another way (compare-export.mjs says how that is proved).
+      # equal after the random build id, apart from the theme script pair
+      # compare-export.mjs pins. --expect-reprint fails it when no page was
+      # reprinted, which is what a "Bun" build that ran on Node gives. Both
+      # compares run and are reported before the step fails, so one red does
+      # not hide the other.
       - name: Compare the builds
         run: |
-          cmp "$RUNNER_TEMP/server-node.mjs" client/host/dist/server.mjs
-          pnpm compare:export "$RUNNER_TEMP/out-node" client/web/out
+          failed=0
+          if cmp "$RUNNER_TEMP/server-node.mjs" client/host/dist/server.mjs; then
+            echo "server.mjs: byte-equal"
+          else
+            echo "::error::server.mjs differs between the Node and the Bun build"
+            failed=1
+          fi
+          if pnpm compare:export "$RUNNER_TEMP/out-node" client/web/out --expect-reprint; then
+            echo "export: the same UI, reprinted on Bun"
+          else
+            echo "::error::the Node and the Bun export are not the same UI"
+            failed=1
+          fi
+          exit "$failed"
 
   # The workspace specs with the owner UI's `next dev` on Bun. Playwright
   # itself runs on Node, as in verify.yml.
