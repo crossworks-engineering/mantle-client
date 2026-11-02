@@ -157,6 +157,7 @@ describe('areas', () => {
     '/notes',
     '/pages',
     '/draw',
+    '/present',
     '/tables',
     '/apps',
     '/n',
