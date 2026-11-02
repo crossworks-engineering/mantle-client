@@ -16,6 +16,19 @@ const rootPkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), '
   version: string;
 };
 
+// A `:bun` run (scripts/bun.sh sets MANTLE_EXPECT_RUNTIME=bun) that ended up
+// on Node would build or serve on Node and still be called Bun. Fail here,
+// inside next dev and next build, unless this is the pinned Bun. Unset, as on
+// the Node path and in the image build, this does nothing.
+if (process.env.MANTLE_EXPECT_RUNTIME === 'bun') {
+  const pinned = readFileSync(join(__dirname, '../../.bun-version'), 'utf8').trim();
+  const have = process.versions.bun;
+  if (have !== pinned) {
+    const on = have ? `Bun ${have}` : `Node ${process.versions.node}`;
+    throw new Error(`MANTLE_EXPECT_RUNTIME=bun, but next runs on ${on} (.bun-version: ${pinned})`);
+  }
+}
+
 const nextConfig: NextConfig = {
   // The published contract packages ship TS source; both their alias names
   // (@mantle/*, how this repo imports them) and their real npm names

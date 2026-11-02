@@ -29,7 +29,9 @@ fi
 # Nothing here sets NODE or npm_node_execpath: the outer pnpm (on Node) sets
 # both to the real node, and `bun run --bun` replaces both with its own
 # Bun-as-node (checked on 1.4.4), so no nested tool can find Node through them.
-# MANTLE_EXPECT_RUNTIME tells scripts/bun-runtime.test.ts to fail unless it
-# runs on Bun: the proof that a `:bun` run did not end up on Node.
+# MANTLE_EXPECT_RUNTIME=bun makes these fail unless they run on the pinned
+# Bun: scripts/bun-runtime.test.ts (verify:bun, test:bun), client/web's
+# next.config.ts (dev:bun, build:bun, e2e:workspace:bun) and client/host's
+# scripts/build.mjs (build:bun). Other tools a script starts are not checked.
 export MANTLE_EXPECT_RUNTIME=bun
 exec bun run --bun "$@"
