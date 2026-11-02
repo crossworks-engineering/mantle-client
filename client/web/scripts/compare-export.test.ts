@@ -201,6 +201,8 @@ describe('compare-export', () => {
       expect(bytes.out).toContain('compare-export: NOT the same');
       expect(run(script, [a]).status).toBe(2);
       expect(run(script, [a, b, '--byte']).status).toBe(2);
+      // One tree against itself proves nothing.
+      expect(run(script, [a, a]).status).toBe(2);
     });
 
     it('with --expect-reprint exits 0 on a Bun tree and 1 on two Node trees', () => {

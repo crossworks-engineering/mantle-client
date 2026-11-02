@@ -185,6 +185,11 @@ function main(argv) {
   }
   let r;
   try {
+    // One tree against itself is always "the same": a typo, not a proof.
+    if (realpathSync(dirs[0]) === realpathSync(dirs[1])) {
+      console.error('compare-export: both paths are the same tree');
+      return 2;
+    }
     r = compareTrees(dirs[0], dirs[1]);
   } catch (err) {
     console.error(`compare-export: ${err instanceof Error ? err.message : String(err)}`);

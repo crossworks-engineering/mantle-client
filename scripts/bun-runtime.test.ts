@@ -18,9 +18,11 @@ const expected = process.env.MANTLE_EXPECT_RUNTIME;
 const pinned = readFileSync(join(__dirname, '..', '.bun-version'), 'utf8').trim();
 
 describe('the runtime a :bun run asked for', () => {
+  // Only the exact value `bun` asks for anything, here as in next.config.ts,
+  // the host build and vitest.config.ts: a stray value in a shell must not
+  // turn the Node gate red.
   it('is the one this test runs on', () => {
-    if (expected === undefined) return;
-    expect(expected).toBe('bun');
+    if (expected !== 'bun') return;
     expect(process.versions.bun).toBe(pinned);
     const onPath = execFileSync('node', ['-p', 'process.versions.bun ?? "node"'], {
       encoding: 'utf8',
