@@ -57,9 +57,11 @@ const RETIRED: ReadonlyArray<readonly [prefix: string, to: string]> = [
 const under = (pathname: string, prefix: string) =>
   pathname === prefix || pathname.startsWith(`${prefix}/`);
 
-/** Where a retired path goes now, or null for a live one. */
+/** Where a retired path goes now, or null for a live one. In any case: an
+ *  old link typed as `/Team` or `/Client-Signin?token=…` goes too. */
 export function retiredTarget(pathname: string): string | null {
-  for (const [prefix, to] of RETIRED) if (under(pathname, prefix)) return to;
+  const path = pathname.toLowerCase();
+  for (const [prefix, to] of RETIRED) if (under(path, prefix)) return to;
   return null;
 }
 

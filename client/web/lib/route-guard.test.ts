@@ -93,6 +93,9 @@ describe('guard: retired pages', () => {
     ['/lifelog', '/journal'],
     ['/memories', '/journal'],
     ['/todos', '/tasks'],
+    ['/Team', '/login'],
+    ['/CLIENT-SIGNIN?token=Xy7kPq2M', '/login'],
+    ['/Portal/Chat', '/assistant'],
   ];
 
   for (const [who, cookies] of Object.entries(SESSIONS)) {
