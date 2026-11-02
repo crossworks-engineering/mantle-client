@@ -24,7 +24,9 @@ pub mod windows;
 use std::borrow::Cow;
 
 use tauri::utils::assets::{AssetKey, AssetsIter, CspHash};
-use tauri::{Manager, RunEvent, Runtime, WindowEvent};
+#[cfg(target_os = "macos")]
+use tauri::RunEvent;
+use tauri::{Manager, Runtime, WindowEvent};
 
 use crate::host::FileSource;
 use crate::shell::Shell;
