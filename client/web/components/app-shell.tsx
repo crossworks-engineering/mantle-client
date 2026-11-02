@@ -177,7 +177,8 @@ function useShell() {
 export function AppShell(props: {
   contextCard: React.ReactNode;
   initialNavCollapsed?: boolean;
-  /** Rail widths in px, seeded from cookies for the same no-flash reason. */
+  /** Rail widths in px, seeded from the UI's prefs (ui-prefs) for the same
+   *  no-flash reason. */
   initialNavWidth?: number;
   initialActivityWidth?: number;
   initialActivityCollapsed?: boolean;

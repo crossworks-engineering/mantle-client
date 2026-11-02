@@ -176,8 +176,8 @@ export function bounceToLogin(): void {
   if (window.location.pathname.startsWith('/login')) return;
   if (bouncing) return;
   bouncing = true;
-  // A dead/revoked bearer won't heal — clear it (and the presence cookie) so
-  // the client middleware can't redirect-loop a logged-out page load. Before
+  // A dead/revoked bearer won't heal: clear it (and the presence flag) so
+  // the boot route guard can't redirect-loop a logged-out page load. Before
   // the flush, deliberately: a draft PUT with a dead credential will 401 too,
   // and must not recurse back into here.
   //

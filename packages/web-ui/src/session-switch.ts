@@ -155,8 +155,8 @@ export async function switchSession(id: string, to: string = '/'): Promise<Switc
 
   await runSessionFlushes();
   if (!setActiveSession(id)) return 'unavailable';
-  // A sign-out on the way here expired it, and without it the client
-  // middleware answers the load below with a redirect to /login.
+  // A sign-out on the way here expired it, and without it the boot route
+  // guard answers the load below with a redirect to /login.
   tokenStore.markPresence();
   setAssetToken(null);
   resetCookieUpgrade();

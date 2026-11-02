@@ -27,9 +27,9 @@ import { passwordRuleError, usePasswordRule } from '@/lib/password-rule';
 /**
  * Owner sign-in. One transport in both topologies: POST /api/auth/token, and
  * the response bearer is held as a session of its own (the token store, which
- * also sets the presence cookie for the client middleware). A device can hold
- * several logins, and a login that is a bearer can be switched to by swapping
- * a token; one that is a cookie cannot.
+ * also sets the presence flag for the boot route guard, lib/route-guard.ts).
+ * A device can hold several logins, and a login that is a bearer can be
+ * switched to by swapping a token; one that is a cookie cannot.
  *
  *   split (the API is on another origin): that is all. No cross-origin
  *     cookies anywhere.
