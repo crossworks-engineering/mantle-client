@@ -9,8 +9,10 @@ Hosts:
 - the desktop shell, per brain window (Electron today, Tauri later):
   `client/host/src/static-host.ts`. It serves `http://mantle-ui.localhost`
   by intercepting http in each brain window's session, so nothing reaches the
-  network. A real http origin, not a custom scheme: Chromium gives a custom
-  scheme no cookies, and the login gate and layout state live in cookies.
+  network. A real http origin, not a custom scheme: it was chosen while the
+  UI kept its login gate and layout state in cookies, which Chromium gives a
+  custom scheme none of. The UI keeps no cookies now (ui-prefs, below), so a
+  shell on its own scheme (Tauri, `mantle-ui://localhost`) works too.
   The intercept lets out only the window's own brain when it runs on plain
   http (dev) and refuses every other http request with a 502: a request the
   main process sends again carries no Origin and gets no CORS check, so it
@@ -110,8 +112,14 @@ digits, dots and dashes (or bracketed IPv6), so no `*` or `;`
 - **The login gate and retired pages.** `boot.js` runs `lib/route-guard.ts`
   before anything paints: no session goes to `/login?next=…`, an old path such
   as `/team` goes to its new home. This was the Next middleware.
-- **Layout state.** The rail widths and collapsed state come from cookies,
-  read in the browser (`app/(app)/layout.tsx`).
+- **Its own small state.** The presence flag the route guard reads, the rail
+  widths and collapsed state, the spend range, the assistant pick and panel
+  layouts live in localStorage through one module,
+  `packages/web-ui/src/ui-prefs.ts`, never in cookies (a lint rule refuses
+  `document.cookie` elsewhere). A value an older build left in a cookie moves
+  over on first read.
+- **The token vault of a desktop shell** answers synchronously, in Electron's
+  `tokenVault` shape.
 - **Values only the host knows** (the brain's origin, its branding) are read
   after hydration (`lib/use-hydrated.ts`). The login and invite cards stay
   invisible until then, so a wrong brand never shows.
