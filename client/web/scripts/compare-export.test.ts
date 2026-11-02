@@ -129,7 +129,7 @@ describe('compare-export', () => {
         return { status: e.status, out: e.stdout };
       }
     };
-    const trees = () => [
+    const trees = (): [string, string] => [
       tree('idA', { 'index.html': page(NODE_SCRIPT) }),
       tree('idB', { 'index.html': page(BUN_SCRIPT) }),
     ];
