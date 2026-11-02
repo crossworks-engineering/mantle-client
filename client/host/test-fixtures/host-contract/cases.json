@@ -1,0 +1,85 @@
+{
+  "about": "The host contract (docs/static-ui-host.md) as cases both hosts must answer alike: client/host/src/host-contract.test.ts runs them against static-host.ts, client/tauri (cargo test, src/host.rs) against its Rust port. Each case: the request path; the status; the fixture file served (null: the bare 'Not found'); optional content-type and cache-control; whether the answer carries the brain's CSP and Referrer-Policy no-referrer. Every answer carries nosniff. The Tauri host adds its IPC to connect-src; each test knows its own CSP.",
+  "brain": "https://b.example",
+  "cases": [
+    {
+      "path": "/",
+      "status": 200,
+      "file": "index.html",
+      "type": "text/html; charset=utf-8",
+      "cache": "no-cache",
+      "csp": true
+    },
+    { "path": "/login", "status": 200, "file": "login.html", "csp": true },
+    { "path": "/guide", "status": 200, "file": "guide/index.html", "csp": true },
+    { "path": "/notes/abc123?x=1", "status": 200, "file": "notes/_.html", "csp": true },
+    {
+      "path": "/notes/abc123.txt",
+      "status": 200,
+      "file": "notes/_.txt",
+      "type": "text/x-component; charset=utf-8",
+      "cache": "no-cache"
+    },
+    {
+      "path": "/notes/abc123/__next._tree.txt",
+      "status": 200,
+      "file": "notes/_/__next._tree.txt"
+    },
+    { "path": "/nodes/abc/history", "status": 200, "file": "nodes/_/history.html", "csp": true },
+    {
+      "path": "/docs/handbook/guide/intro",
+      "status": 200,
+      "file": "docs/_/_.html",
+      "csp": true
+    },
+    {
+      "path": "/invite?code=1",
+      "status": 200,
+      "file": "invite.html",
+      "csp": true,
+      "noReferrer": true
+    },
+    {
+      "path": "/%69nvite?code=1",
+      "status": 200,
+      "file": "invite.html",
+      "csp": true,
+      "noReferrer": true
+    },
+    {
+      "path": "//invite?code=1",
+      "status": 200,
+      "file": "invite.html",
+      "csp": true,
+      "noReferrer": true
+    },
+    { "path": "/invite/zzz", "status": 404, "file": "404.html", "csp": true, "noReferrer": true },
+    { "path": "/no-such-page", "status": 404, "file": "404.html", "csp": true },
+    { "path": "/notes", "status": 404, "file": "404.html", "csp": true },
+    {
+      "path": "/_next/static/chunks/a.js",
+      "status": 200,
+      "file": "_next/static/chunks/a.js",
+      "type": "text/javascript; charset=utf-8",
+      "cache": "public, max-age=31536000, immutable"
+    },
+    { "path": "/_next/static/chunks/missing.js", "status": 404, "file": null },
+    {
+      "path": "/_mantle/routes.json",
+      "status": 200,
+      "file": "_mantle/routes.json",
+      "type": "application/json; charset=utf-8",
+      "cache": "no-cache"
+    },
+    { "path": "/%2e%2e/secret.txt", "status": 404, "file": null },
+    { "path": "/notes/..%2F..%2Fsecret.txt", "status": 404, "file": null },
+    {
+      "path": "/env.js",
+      "status": 200,
+      "file": null,
+      "env": true,
+      "type": "text/javascript; charset=utf-8",
+      "cache": "no-store"
+    }
+  ]
+}
