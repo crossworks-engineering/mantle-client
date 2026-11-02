@@ -1187,7 +1187,7 @@ function AddUserDialog({
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={`At least ${(rule ?? OLD_RULE).min} characters`}
+              placeholder={rule ? `At least ${rule.min} characters` : undefined}
               autoComplete="off"
               aria-invalid={!!errors.password || undefined}
               aria-describedby={
@@ -1296,7 +1296,7 @@ function ResetPasswordDialog({
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={`At least ${(rule ?? OLD_RULE).min} characters`}
+              placeholder={rule ? `At least ${rule.min} characters` : undefined}
               autoComplete="off"
               aria-invalid={!!error || undefined}
               aria-describedby={
