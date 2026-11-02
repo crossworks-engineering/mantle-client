@@ -80,7 +80,8 @@ The phone app is a later phase.
   app's own main frame on the renderer origin and nothing else
   (`permissionAllowed`, `client/desktop/src/main/brain-fence.ts`). That
   frame gets only the few other permissions the app uses (the clipboard,
-  fullscreen, location, notifications, file save, a mailto: link); any
+  fullscreen, location, notifications, file save, a mailto: link, Local
+  Network Access for a brain on a private address); any
   other frame or origin gets none. The CSP
   names the brain's `wss://` twin in `connect-src` for the signalling socket.
 
