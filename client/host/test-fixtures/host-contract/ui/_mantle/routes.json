@@ -1,0 +1,5 @@
+{
+  "placeholder": "_",
+  "routes": ["/docs/[collection]", "/docs/[collection]/[...slug]", "/nodes/[id]", "/notes/[id]"],
+  "noReferrer": ["/client-signin", "/invite"]
+}
