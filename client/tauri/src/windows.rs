@@ -2,7 +2,7 @@
 //! window; the app menu that switches between brains.
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use url::Url;
 
@@ -122,6 +122,16 @@ pub fn brain_data_dir<R: Runtime>(
         .join(profile_id))
 }
 
+/// Loads the UI's root in a brain window whose main frame left it. Sent from
+/// a task, not from inside the page-load callback WebKit is running.
+fn send_back_to_ui<R: Runtime>(webview: WebviewWindow<R>) {
+    let label = webview.label().to_string();
+    tauri::async_runtime::spawn(async move {
+        let _ = webview.navigate(ui_root());
+    });
+    eprintln!("[mantle-desktop] {label}: the main frame left the UI; sent back");
+}
+
 /// The ONE function that builds a brain window.
 fn build_brain_window<R: Runtime>(
     app: &AppHandle<R>,
@@ -132,7 +142,6 @@ fn build_brain_window<R: Runtime>(
     shell.register_window(&label, &profile.origin);
 
     let brain = profile.origin.clone();
-    let nav_app = app.clone();
     let new_app = app.clone();
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::CustomProtocol(ui_root()))
         .title(&profile.name)
@@ -142,14 +151,21 @@ fn build_brain_window<R: Runtime>(
         // handler would swallow them for an event nothing listens to.
         .disable_drag_drop_handler()
         .initialization_script(page_api_script())
-        .on_navigation(move |url| match fence::brain_navigation(url, &brain) {
-            Navigation::Allow => true,
-            Navigation::OpenOutside => {
-                open_outside(&nav_app, url);
-                false
+        // Allow or refuse, never open outside: wry asks this for every
+        // frame (fence.rs, brain_navigation).
+        .on_navigation(move |url| fence::brain_navigation(url, &brain) == Navigation::Allow)
+        // The main frame stays on the UI. Allowing the brain origin above is
+        // for its frames; a main frame that commits anywhere else (a form
+        // posted to the brain, a script assigning location) is sent back.
+        // Started is the commit, and it is the main frame's alone, on both
+        // platforms.
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Started && !fence::is_ui_url(payload.url()) {
+                send_back_to_ui(webview);
             }
-            Navigation::Refuse => false,
         })
+        // A popup the page asked for, tied by WebKit to a user gesture: the
+        // only way anything is opened outside.
         .on_new_window(move |url, _features| {
             open_outside(&new_app, &url);
             NewWindowResponse::Deny
@@ -199,7 +215,6 @@ pub fn open_connect<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         reveal(&win);
         return Ok(());
     }
-    let nav_app = app.clone();
     let new_app = app.clone();
     WebviewWindowBuilder::new(
         app,
@@ -212,14 +227,7 @@ pub fn open_connect<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     // The connect page keeps nothing, and shares no storage with a brain.
     .incognito(true)
     .disable_drag_drop_handler()
-    .on_navigation(move |url| match fence::connect_navigation(url) {
-        Navigation::Allow => true,
-        Navigation::OpenOutside => {
-            open_outside(&nav_app, url);
-            false
-        }
-        Navigation::Refuse => false,
-    })
+    .on_navigation(|url| fence::connect_navigation(url) == Navigation::Allow)
     .on_new_window(move |url, _features| {
         open_outside(&new_app, &url);
         NewWindowResponse::Deny

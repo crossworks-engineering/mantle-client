@@ -98,12 +98,16 @@ pub fn is_connect_url(url: &Url) -> bool {
     is_own(url, CONNECT_SCHEME)
 }
 
-/// What a brain window does with a navigation.
+/// What a window does with a navigation: let it happen, or not. The
+/// navigation handlers never open anything outside the app: wry asks them for
+/// every frame's navigations alike, before the CSP's frame-src is checked and
+/// with no user gesture required, so an "open it in the browser" answer here
+/// would let any frame open browser tabs or prefilled mail drafts at will.
+/// Outside opens happen only from a new-window request (on_new_window), which
+/// WebKit's popup blocker ties to a user gesture.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Navigation {
     Allow,
-    /// Refused here, opened in the user's browser or mail app instead.
-    OpenOutside,
     Refuse,
 }
 
@@ -119,18 +123,18 @@ pub fn may_open_outside(url: &Url) -> bool {
 /// sub-frame's alike, and gives no way to tell them apart (WKWebView's
 /// navigation delegate and WebKitGTK's decide-policy both cover sub-frames).
 /// Refusing the brain origin would take down the brain's app and canvas
-/// frames, so it is allowed, and so are about:blank, about:srcdoc and blob:.
-/// Which sub-frames may load at all is the CSP's frame-src (the brain, self
-/// and blob:), and a main frame that ends up on the brain gets nothing from
-/// the shell: the page API is defined only on the UI origin, and every vault
-/// command checks the calling page is on it.
+/// frames, so it is allowed, and so are about:blank, about:srcdoc and a
+/// blob: of the UI or the brain. Which sub-frames may load at all is the
+/// CSP's frame-src (the brain, self and blob:). A MAIN frame that commits to
+/// anything but the UI is sent back to the UI (windows.rs, on_page_load), and
+/// gets nothing from the shell meanwhile: the page API is defined only on the
+/// UI origin, and the vault answers only a window showing it.
 ///
-/// A plain link the user clicks in the main frame never gets here as a
-/// brain-origin navigation: the page script turns it into a new-window
-/// request first (windows.rs, page_api_script), which opens outside.
-///
-/// Anything else that is http, https or mailto opens outside; the rest is
-/// refused. Tauri's own `tauri://localhost` is refused like any other scheme.
+/// Everything else is refused, Tauri's own `tauri://localhost` included. A
+/// plain link the user clicks in the main frame that leads off the UI does
+/// reach this handler, as a navigation of the main frame, unless the page
+/// script turned it into a new-window request first (windows.rs,
+/// page_api_script); that request is what opens it outside.
 pub fn brain_navigation(url: &Url, brain_origin: &str) -> Navigation {
     if is_ui_url(url) {
         return Navigation::Allow;
@@ -155,19 +159,13 @@ pub fn brain_navigation(url: &Url, brain_origin: &str) -> Navigation {
     {
         return Navigation::Allow;
     }
-    if may_open_outside(url) {
-        Navigation::OpenOutside
-    } else {
-        Navigation::Refuse
-    }
+    Navigation::Refuse
 }
 
-/// The connect window goes nowhere but its own page; a link opens outside.
+/// The connect window goes nowhere but its own page.
 pub fn connect_navigation(url: &Url) -> Navigation {
     if is_connect_url(url) {
         Navigation::Allow
-    } else if may_open_outside(url) {
-        Navigation::OpenOutside
     } else {
         Navigation::Refuse
     }
@@ -315,20 +313,12 @@ mod tests {
         for u in allow {
             assert_eq!(brain_navigation(&url(u), brain), Navigation::Allow, "{u}");
         }
-        let outside = [
+        // Never opened outside from here: refused, whatever the scheme.
+        let refuse = [
             "https://evil.example/",
             "http://brain.example/",
             "https://brain.example:8443/",
-            "mailto:a@b.example",
-        ];
-        for u in outside {
-            assert_eq!(
-                brain_navigation(&url(u), brain),
-                Navigation::OpenOutside,
-                "{u}"
-            );
-        }
-        let refuse = [
+            "mailto:a@b.example?subject=x&body=y",
             "tauri://localhost/",
             "mantle-connect://localhost/",
             "mantle-ui://localhost:1/",
@@ -358,7 +348,11 @@ mod tests {
         );
         assert_eq!(
             connect_navigation(&url("https://x.example/")),
-            Navigation::OpenOutside
+            Navigation::Refuse
+        );
+        assert_eq!(
+            connect_navigation(&url("mailto:a@b.example")),
+            Navigation::Refuse
         );
     }
 
