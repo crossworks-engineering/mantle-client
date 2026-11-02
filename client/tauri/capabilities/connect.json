@@ -1,0 +1,11 @@
+{
+  "identifier": "connect",
+  "description": "The connect window: list, add, remove and open brains. Local pages only.",
+  "windows": ["connect"],
+  "permissions": [
+    "allow-profiles-list",
+    "allow-profiles-add",
+    "allow-profiles-remove",
+    "allow-profiles-open"
+  ]
+}

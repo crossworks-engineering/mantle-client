@@ -1,0 +1,56 @@
+[package]
+name = "mantle-desktop"
+version = "0.0.0"
+description = "MantleOS Desktop on Tauri: the static owner UI in one isolated window per brain."
+edition = "2021"
+rust-version = "1.99"
+publish = false
+license-file = "../../LICENSE.md"
+
+[lib]
+name = "mantle_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mantle-desktop"
+path = "src/main.rs"
+
+[features]
+# Release builds embed the UI and serve it from the app; `cargo build` alone
+# is a dev build (scripts/build.sh passes this).
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+tauri-plugin-opener = "=2.7.2"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+uuid = { version = "=1.29.0", features = ["v4"] }
+url = "=2.5.8"
+keyring-core = "=1.0.1"
+
+# The same versions wry already brings in: the OS version check (wry's own
+# test for a per-brain data store) and the one native alert.
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "=1.0.2", features = ["keychain"] }
+objc2 = "=0.6.5"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSProcessInfo", "NSString"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSResponder"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus-secret-service-keyring-store = { version = "=1.0.1", features = ["rt-async-io-crypto-rust"] }
+# The one native alert. The version webkit2gtk already brings in.
+gtk = "=0.18.2"
+
+[dev-dependencies]
+# The mock runtime, for the test that each window reaches only its own commands.
+tauri = { version = "=2.12.5", features = ["test"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true

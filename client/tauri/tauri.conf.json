@@ -1,0 +1,22 @@
+{
+  "productName": "MantleOS Desktop",
+  "identifier": "engineering.crossworks.mantleos-desktop",
+  "build": {
+    "frontendDist": "../web/out"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": null,
+      "freezePrototype": false,
+      "capabilities": ["brain", "connect"]
+    }
+  },
+  "bundle": {
+    "icon": ["icons/icon.png"],
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    }
+  }
+}
