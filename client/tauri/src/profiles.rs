@@ -44,6 +44,29 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// A brain that answered its version probe, not saved yet.
+pub struct Probed {
+    origin: String,
+    version: String,
+}
+
+/// Checks the address and asks the brain for its version. Touches no file:
+/// it may take the probe's whole ten seconds, so nothing waits on it under
+/// a lock (commands.rs, add_profile).
+pub fn probe_brain(
+    raw_url: &str,
+    probe: impl Fn(&str) -> Result<String, String>,
+) -> Result<Probed, String> {
+    if raw_url.len() > 2048 {
+        return Err("That does not look like a valid URL.".into());
+    }
+    let origin = normalize_origin(raw_url)
+        .map_err(|_| "That does not look like a valid URL.".to_string())?;
+    let version =
+        probe(&origin).map_err(|_| format!("Couldn't reach a MantleOS server at {origin}."))?;
+    Ok(Probed { origin, version })
+}
+
 pub struct Profiles {
     path: PathBuf,
 }
@@ -117,13 +140,14 @@ impl Profiles {
         raw_url: &str,
         probe: impl Fn(&str) -> Result<String, String>,
     ) -> Result<Profile, String> {
-        if raw_url.len() > 2048 {
-            return Err("That does not look like a valid URL.".into());
-        }
-        let origin = normalize_origin(raw_url)
-            .map_err(|_| "That does not look like a valid URL.".to_string())?;
-        let version =
-            probe(&origin).map_err(|_| format!("Couldn't reach a MantleOS server at {origin}."))?;
+        self.save_probed(probe_brain(raw_url, probe)?)
+    }
+
+    /// Saves a brain `probe_brain` reached. Reads, changes and writes the
+    /// list: the caller holds the shell's `edits` lock for this part only,
+    /// never across the probe (commands.rs, add_profile).
+    pub fn save_probed(&self, probed: Probed) -> Result<Profile, String> {
+        let Probed { origin, version } = probed;
         let mut all = self.load();
         if let Some(existing) = all.iter_mut().find(|p| p.origin == origin) {
             existing.version = Some(version);

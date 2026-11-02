@@ -38,14 +38,26 @@ pub async fn profiles_add<R: Runtime>(webview: Webview<R>, url: String) -> Resul
     connect_only(&webview)?;
     let app = webview.app_handle().clone();
     let added = tauri::async_runtime::spawn_blocking(move || {
-        let shell = app.state::<Shell>();
-        let _edit = shell.edits.lock().unwrap_or_else(|e| e.into_inner());
-        shell.profiles.add(&url, crate::net::probe_version)
+        add_profile(&app.state::<Shell>(), &url, crate::net::probe_version)
     })
     .await
     .map_err(|e| e.to_string())??;
     windows::rebuild_menu(webview.app_handle());
     Ok(added)
+}
+
+/// The probe first, with no lock held; then `edits` for the load, merge
+/// and save only. `open_brain` takes `edits` on the main thread (a menu
+/// click, the dock icon), so a probe under it would hold the app's main
+/// thread for as long as a brain takes to answer.
+pub fn add_profile(
+    shell: &Shell,
+    url: &str,
+    probe: impl Fn(&str) -> Result<String, String>,
+) -> Result<Profile, String> {
+    let probed = crate::profiles::probe_brain(url, probe)?;
+    let _edit = shell.edits.lock().unwrap_or_else(|e| e.into_inner());
+    shell.profiles.save_probed(probed)
 }
 
 /// Removing a brain deletes its keychain entries, its index, its window and
