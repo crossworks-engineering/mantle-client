@@ -1,5 +1,5 @@
 {
-  "about": "The host contract (docs/static-ui-host.md) as cases both hosts must answer alike: client/host/src/host-contract.test.ts runs them against static-host.ts, client/tauri (cargo test, src/host.rs) against its Rust port. Each case: the request path; the status; the fixture file served (null: the bare 'Not found'); optional content-type and cache-control; whether the answer carries the brain's CSP and Referrer-Policy no-referrer. Every answer carries nosniff. The Tauri host adds its IPC to connect-src; each test knows its own CSP.",
+  "about": "The host contract (docs/static-ui-host.md) as cases both hosts must answer alike: client/host/src/host-contract.test.ts runs them against static-host.ts, client/tauri (cargo test, src/host.rs) against its Rust port. Each case: the request path; the status; the fixture file served (null: the bare 'Not found'); optional content-type and cache-control; whether the answer carries the brain's CSP and Referrer-Policy no-referrer. Every answer carries nosniff.",
   "brain": "https://b.example",
   "cases": [
     {
@@ -73,6 +73,14 @@
     },
     { "path": "/%2e%2e/secret.txt", "status": 404, "file": null },
     { "path": "/notes/..%2F..%2Fsecret.txt", "status": 404, "file": null },
+    { "path": "/..\\secret.txt", "status": 404, "file": null },
+    { "path": "/%5C..%5Csecret.txt", "status": 404, "file": null },
+    { "path": "/notes\\..\\..\\secret.txt", "status": 404, "file": null },
+    { "path": "/login%00", "status": 404, "file": null },
+    { "path": "/%00", "status": 404, "file": null },
+    { "path": "/INVITE/zzz", "status": 404, "file": "404.html", "csp": true, "noReferrer": true },
+    { "path": "/Notes/abc123", "status": 404, "file": "404.html", "csp": true },
+    { "path": "/_NEXT/static/chunks/missing.js", "status": 404, "file": null },
     {
       "path": "/env.js",
       "status": 200,
