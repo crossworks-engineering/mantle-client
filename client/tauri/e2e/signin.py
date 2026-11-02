@@ -28,11 +28,15 @@ two profiles, so two windows' data folders and two keychain namespaces.
      and runs the call there), a sandboxed srcdoc frame (allow-scripts
      only: an opaque origin) that reports by postMessage, and a
      same-origin about:blank frame whose script the UI page writes. The
-     first two must be refused, the third answered (it is the UI's own
-     origin, as the page itself is). The test prints, per frame, what the
-     frame saw and the method and Origin the shell traced. Then the page
-     asks Tauri's IPC for the opener plugin's open_url and for an app
-     command: a brain window has no command, so both must fail
+     first two must be refused from both ends: the frame sees exactly 403
+     (a throw, a request blocked before it reached the shell, does not
+     count), and the shell's trace has that POST with the frame's Origin
+     (the brain's, then `null`) answered 403. The third must be answered:
+     200 in the frame, and a getFor with the UI's Origin answered 200 in
+     the trace (it is the UI's own origin, as the page itself is, so that
+     line cannot be told from the page's own). Then the page asks Tauri's
+     IPC for the opener plugin's open_url and for an app command: the
+     internals must be there, and both calls rejected as not allowed
   e  no keychain (a dbus session with no Secret Service): the app starts
      and says at once, in a notice window that does not block, that logins
      last until you quit; its OK closes it; a sign-in WORKS for that run,
@@ -559,6 +563,22 @@ def trace_lines(app, mark, ui=False):
     return seen
 
 
+def refused(result, frame_origin, shell, traced_origin):
+    """A refusal proved from both ends: the frame (on `frame_origin`) saw
+    exactly 403, not a throw (a request blocked before the shell, by CSP for
+    one, throws), and the shell traced that POST with that Origin as 403,
+    and answered nothing else from a foreign Origin meanwhile."""
+    want = f"POST origin {traced_origin} -> 403"
+    return (
+        isinstance(result, dict)
+        and result.get("origin") == frame_origin
+        and result.get("status") == 403
+        and "error" not in result
+        and want in shell
+        and not any(line.endswith("-> 200") for line in shell)
+    )
+
+
 def frame_report(result):
     if not isinstance(result, dict):
         return f"no answer ({result!r})"
@@ -608,9 +628,9 @@ document.body.appendChild(f);
     shell_a = trace_lines(app, mark)
     note(f"g: brain-origin frame: {frame_report(result_a)}; shell saw: {'; '.join(shell_a) or 'nothing'}")
     check(
-        "g: a frame on the brain's origin is refused the vault",
-        isinstance(result_a, dict) and result_a.get("origin") == ORIGIN_A and result_a.get("status") != 200,
-        frame_report(result_a),
+        "g: a frame on the brain's origin is refused the vault (frame 403, shell traced it 403)",
+        refused(result_a, ORIGIN_A, shell_a, ORIGIN_A),
+        f"{frame_report(result_a)}; shell: {'; '.join(shell_a) or 'nothing'}",
     )
 
     # b: a sandboxed srcdoc frame (opaque origin), reporting by postMessage.
@@ -636,9 +656,9 @@ document.body.appendChild(f);
     shell_b = trace_lines(app, mark)
     note(f"g: sandboxed srcdoc frame: {frame_report(result_b)}; shell saw: {'; '.join(shell_b) or 'nothing'}")
     check(
-        "g: a sandboxed srcdoc frame is refused the vault",
-        isinstance(result_b, dict) and result_b.get("origin") == "null" and result_b.get("status") != 200,
-        frame_report(result_b),
+        "g: a sandboxed srcdoc frame is refused the vault (frame 403, shell traced it 403)",
+        refused(result_b, "null", shell_b, "null"),
+        f"{frame_report(result_b)}; shell: {'; '.join(shell_b) or 'nothing'}",
     )
 
     # c: a same-origin about:blank frame, its script written by the UI page.
@@ -673,7 +693,7 @@ s.textContent = arguments[0] + 'parent.postMessage(out, "*");';
         isinstance(result_c, dict)
         and result_c.get("origin") == UI
         and result_c.get("status") == 200
-        and any(line.endswith("-> 200") for line in shell_c),
+        and f"getFor origin {UI} -> 200" in shell_c,
         frame_report(result_c),
     )
     app.js(
@@ -706,12 +726,19 @@ Promise.all([
         f"g: IPC from the brain window: __TAURI_INTERNALS__ {'present' if ipc.get('internals') else 'absent'}; "
         f"open_url {ipc.get('opener', '(not tried)')}; profiles_list {ipc.get('app', '(not tried)')}"
     )
+    # Without the internals nothing below was tried, so nothing was proved:
+    # that is a failure of its own, not a pass.
+    check(
+        "g: the brain window has __TAURI_INTERNALS__ (so the IPC checks below ran)",
+        bool(ipc.get("internals")),
+        "present" if ipc.get("internals") else "absent",
+    )
     for name, key in (("the opener plugin's open_url", "opener"), ("an app command (profiles_list)", "app")):
         outcome = ipc.get(key)
         check(
-            f"g: the brain window cannot call {name}",
-            not ipc.get("internals") or (isinstance(outcome, str) and outcome.startswith("rejected")),
-            outcome or "no __TAURI_INTERNALS__",
+            f"g: the brain window cannot call {name} (rejected as not allowed)",
+            isinstance(outcome, str) and outcome.startswith("rejected") and "not allowed" in outcome,
+            outcome or "not tried",
         )
 
 
