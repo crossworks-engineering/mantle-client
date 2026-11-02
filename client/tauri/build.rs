@@ -4,10 +4,6 @@ use std::path::Path;
 /// permission (`allow-<command>`), granted per window in capabilities/: a
 /// command no capability names is refused to every window.
 const COMMANDS: &[&str] = &[
-    "vault_load",
-    "vault_set_for",
-    "vault_clear_for",
-    "vault_keep_only",
     "profiles_list",
     "profiles_add",
     "profiles_remove",

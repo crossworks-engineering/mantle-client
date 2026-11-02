@@ -79,34 +79,6 @@ pub fn fill_csp(template: &str, brain_origin: &str) -> String {
         .replace("{brain}", brain_origin)
 }
 
-/// Tauri's IPC, which the page's vault calls go through: `ipc://localhost`
-/// on macOS and Linux, `http://ipc.localhost` elsewhere.
-pub const IPC_SOURCES: &str = "ipc: http://ipc.localhost";
-
-/// The filled CSP with Tauri's IPC added to connect-src. The template always
-/// has a connect-src; were one ever missing, adding one that names only the
-/// IPC keeps it no wider than default-src would have been for connects.
-pub fn with_ipc(csp: &str) -> String {
-    let mut found = false;
-    let parts: Vec<String> = csp
-        .split(';')
-        .map(|part| {
-            if part.split_whitespace().next() == Some("connect-src") {
-                found = true;
-                format!("{} {IPC_SOURCES}", part.trim_end())
-            } else {
-                part.to_string()
-            }
-        })
-        .collect();
-    let joined = parts.join(";");
-    if found {
-        joined
-    } else {
-        format!("{joined}; connect-src {IPC_SOURCES}")
-    }
-}
-
 /// Strict percent-decoding of one path segment: a `%` must be followed by
 /// two hex digits, and the result must be UTF-8 (decodeURIComponent).
 fn percent_decode(raw: &str) -> Option<String> {
@@ -320,9 +292,12 @@ impl Host {
         })
     }
 
-    /// The CSP every HTML answer for this brain carries.
+    /// The CSP every HTML answer for this brain carries: the TS host's,
+    /// exactly. A brain window uses no IPC (its vault is this scheme's own
+    /// `/_mantle/vault`, reached through connect-src 'self'), so Tauri's IPC
+    /// is not named.
     pub fn csp_for(&self, brain_origin: &str) -> String {
-        with_ipc(&fill_csp(&self.csp_template, brain_origin))
+        fill_csp(&self.csp_template, brain_origin)
     }
 
     fn try_path(&self, rel: &str) -> Option<(String, Cow<'_, [u8]>)> {
@@ -511,18 +486,6 @@ mod tests {
     }
 
     #[test]
-    fn with_ipc_adds_tauris_ipc_to_connect_src_only() {
-        assert_eq!(
-            with_ipc("default-src 'self'; connect-src 'self' https://b; img-src 'self'"),
-            "default-src 'self'; connect-src 'self' https://b ipc: http://ipc.localhost; img-src 'self'"
-        );
-        assert_eq!(
-            with_ipc("default-src 'self'"),
-            "default-src 'self'; connect-src ipc: http://ipc.localhost"
-        );
-    }
-
-    #[test]
     fn safe_segments_refuses_what_could_climb_out() {
         for bad in [
             "/..",
@@ -628,12 +591,8 @@ mod tests {
             }
             let csp = res.header("content-security-policy");
             if case["csp"].as_bool() == Some(true) {
-                // This host's CSP is the TS host's plus Tauri's IPC.
-                assert_eq!(
-                    csp,
-                    Some(with_ipc(&fill_csp(&csp_template, BRAIN)).as_str()),
-                    "{path}"
-                );
+                // This host's CSP is the TS host's, exactly.
+                assert_eq!(csp, Some(fill_csp(&csp_template, BRAIN).as_str()), "{path}");
             } else {
                 assert_eq!(csp, None, "{path}");
             }
@@ -730,9 +689,10 @@ mod tests {
         ));
     }
 
-    /// The real export, when it is there: its CSP keeps Tauri's IPC open.
+    /// The real export: its CSP lets the page reach its brain and its vault
+    /// (`'self'`), and names no IPC.
     #[test]
-    fn the_real_csp_keeps_the_ipc_open() {
+    fn the_real_csp_reaches_the_brain_and_the_vault_and_no_ipc() {
         let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../web/out");
         let host = Host::new(Box::new(DirSource(out))).unwrap();
         let csp = host.csp_for("http://127.0.0.1:3000");
@@ -742,15 +702,13 @@ mod tests {
             .find(|d| d.starts_with("connect-src "))
             .unwrap();
         let sources: Vec<&str> = connect.split_whitespace().skip(1).collect();
-        for want in [
-            "'self'",
-            "http://127.0.0.1:3000",
-            "ws://127.0.0.1:3000",
-            "ipc:",
-            "http://ipc.localhost",
-        ] {
+        for want in ["'self'", "http://127.0.0.1:3000", "ws://127.0.0.1:3000"] {
             assert!(sources.contains(&want), "{want} missing from {connect}");
         }
+        assert!(
+            !csp.contains("ipc:") && !csp.contains("ipc.localhost"),
+            "{csp}"
+        );
         assert!(!csp.contains("{brain"));
     }
 }

@@ -32,12 +32,13 @@ fn reveal<R: Runtime>(win: &WebviewWindow<R>) {
     let _ = win.set_focus();
 }
 
-/// `window.mantleDesktop` on a brain window's page: the async vault, served
-/// by the vault commands (commands.rs). The main frame only, and only on the
-/// UI origin: a brain's frames never see it, and neither does a brain page
-/// the main frame was somehow taken to. No synchronous `tokenVault`: this
-/// shell cannot answer synchronously, and the page knows to load once
-/// (packages/web-ui desktop-vault.ts).
+/// `window.mantleDesktop` on a brain window's page, with Electron's
+/// synchronous `tokenVault` (client/desktop/src/preload/app.ts). Each method
+/// is one synchronous XMLHttpRequest to the UI scheme's `/_mantle/vault`
+/// (vault_endpoint.rs), so every read asks the keychain and the page holds
+/// no copy. The main frame only, and only on the UI origin: a brain's frames
+/// never see it, and neither does a brain page the main frame was somehow
+/// taken to (the endpoint refuses both anyway).
 pub fn page_api_script() -> String {
     let platform = if cfg!(target_os = "macos") {
         "darwin"
@@ -48,40 +49,54 @@ pub fn page_api_script() -> String {
         r#"(function () {{
   if (window.top !== window) return;
   if (window.location.protocol !== 'mantle-ui:' || window.location.host !== 'localhost') return;
-  var captured = window.__TAURI_INTERNALS__;
-  function invoke(cmd, args) {{
-    var tauri = captured || window.__TAURI_INTERNALS__;
-    if (!tauri) return Promise.reject(new Error('The desktop shell is not ready.'));
-    return tauri.invoke(cmd, args);
+  var XHR = window.XMLHttpRequest;
+  var stringify = JSON.stringify;
+  var parse = JSON.parse;
+  // One synchronous call. A refusal, an error or anything unexpected reads
+  // as null: the page then sees no bearer, which is the truth it can act on.
+  function call(op, args) {{
+    var body = {{ op: op }};
+    if (args) for (var k in args) if (Object.prototype.hasOwnProperty.call(args, k)) body[k] = args[k];
+    try {{
+      var xhr = new XHR();
+      xhr.open('POST', 'mantle-ui://localhost/_mantle/vault', false);
+      xhr.setRequestHeader('X-Mantle-Vault', '1');
+      xhr.send(stringify(body));
+      if (xhr.status !== 200) return null;
+      var value = parse(xhr.responseText).value;
+      return typeof value === 'string' ? value : null;
+    }} catch (e) {{
+      return null;
+    }}
   }}
   var vault = Object.freeze({{
-    load: function () {{ return invoke('vault_load'); }},
-    setFor: function (sessionId, token) {{
-      return invoke('vault_set_for', {{ sessionId: sessionId, token: token }}).then(function () {{}});
-    }},
-    clearFor: function (sessionId) {{
-      return invoke('vault_clear_for', {{ sessionId: sessionId }}).then(function () {{}});
-    }},
+    get: function () {{ return call('get'); }},
+    set: function (token) {{ call('set', {{ token: token }}); }},
+    clear: function () {{ call('clear'); }},
+    getFor: function (sessionId) {{ return call('getFor', {{ sessionId: sessionId }}); }},
+    setFor: function (sessionId, token) {{ call('setFor', {{ sessionId: sessionId, token: token }}); }},
+    clearFor: function (sessionId) {{ call('clearFor', {{ sessionId: sessionId }}); }},
+    adopt: function (sessionId) {{ return call('adopt', {{ sessionId: sessionId }}); }},
     keepOnly: function (sessionIds, strayBearers) {{
-      return invoke('vault_keep_only', {{ sessionIds: sessionIds, strayBearers: strayBearers }}).then(function () {{}});
+      call('keepOnly', {{ sessionIds: sessionIds, strayBearers: strayBearers }});
     }}
   }});
   // Notifications and the dock badge come in T2. The page's type names
   // them, so they are here, and do nothing yet.
   var api = Object.freeze({{
     platform: {platform:?},
+    tokenVault: vault,
     notify: function () {{}},
-    setBadge: function () {{}},
-    tokenVaultAsync: vault
+    setBadge: function () {{}}
   }});
   Object.defineProperty(window, 'mantleDesktop', {{ value: api, writable: false, configurable: false }});
 
   // A plain link off the UI (the Microsoft sign-in link points at the
-  // brain) opens outside, as Electron's will-navigate did. The navigation
-  // handler cannot do this itself: wry asks it for sub-frames too, without
-  // saying which, so it must let the brain origin through for the brain's
-  // own frames. Runs after the page's handlers (bubble phase, on document),
-  // and leaves alone what they handled, other targets and downloads.
+  // brain) opens outside, as Electron's will-navigate did, by way of a
+  // new-window request: the navigation handler never opens anything
+  // outside (fence.rs), and a new window is tied to this click. Runs after
+  // the page's handlers (bubble phase, on document), and leaves alone what
+  // they handled, other targets and downloads.
   document.addEventListener('click', function (event) {{
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

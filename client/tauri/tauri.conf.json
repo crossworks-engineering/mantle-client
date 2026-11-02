@@ -10,7 +10,7 @@
     "security": {
       "csp": null,
       "freezePrototype": false,
-      "capabilities": ["brain", "connect"]
+      "capabilities": ["connect"]
     }
   },
   "bundle": {
