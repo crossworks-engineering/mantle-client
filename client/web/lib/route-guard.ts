@@ -80,7 +80,10 @@ function cookieValue(cookieHeader: string, name: string): string | undefined {
 export function guardRedirect(pathname: string, search: string, cookies: string): string | null {
   const retired = retiredTarget(pathname);
   if (retired) return retired;
-  if (PUBLIC_PREFIXES.some((p) => under(pathname, p))) return null;
+  // In any case, as retiredTarget: a signed-out `/INVITE?code=…` stays on the
+  // invite and does not carry its code into `next`.
+  const path = pathname.toLowerCase();
+  if (PUBLIC_PREFIXES.some((p) => under(path, p))) return null;
   if (cookieValue(cookies, PRESENCE_COOKIE) === '1') return null;
   return `/login?next=${encodeURIComponent(pathname + search)}`;
 }

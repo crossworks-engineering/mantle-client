@@ -119,12 +119,16 @@ reproduces the CI ad-hoc build.
 
 ## Media permissions
 
-The shell registers no permission handler today (no
-`setPermissionRequestHandler` or `setPermissionCheckHandler` on the session),
-so microphone and camera prompts follow Electron's defaults: a packaged
-Electron app grants renderer permission requests unless a handler denies
-them, and the OS-level prompt (macOS microphone access, for example) is
-whatever the platform does. The Developer ID build runs under the hardened
+Each brain window's session answers both `setPermissionRequestHandler` and
+`setPermissionCheckHandler` with `permissionAllowed`
+(`src/main/brain-fence.ts`). Only the app's own main frame on the renderer
+origin gets anything, and only the names in `UI_PERMISSIONS`: clipboard,
+fullscreen, location, notifications, file save and Local Network Access.
+`media` is granted for audio only (the microphone for a call); the camera is
+refused. `openExternal` is granted for `mailto:` links only. A sub-frame (a
+mini app, a canvas, an embed) or any other origin gets nothing. The OS-level
+prompt (macOS microphone access, for example) is whatever the platform
+does. The Developer ID build runs under the hardened
 runtime, so `build/entitlements.mac.plist` carries the microphone and camera
 entitlements; without them macOS blocks the device even after the user says
 yes. This has not been verified

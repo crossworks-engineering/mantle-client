@@ -53,6 +53,17 @@ describe('guard: public pages', () => {
       }
     },
   );
+
+  it('matches a public path in any case, and carries no invite code into next', () => {
+    for (const p of ['/INVITE?code=AbCd2345efGH6789', '/Login', '/Pair']) {
+      expect(guard(p), p).toBeNull();
+    }
+  });
+
+  it('keeps next as typed for a path that is not public', () => {
+    const to = new URL(guard('/Pages/AbC?q=X')!, 'http://client.test');
+    expect(to.searchParams.get('next')).toBe('/Pages/AbC?q=X');
+  });
 });
 
 describe('guard: no role routing', () => {

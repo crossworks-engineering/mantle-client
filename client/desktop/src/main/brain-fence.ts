@@ -79,15 +79,29 @@ export function frameNavigationAllowed(
  * notification, Excalidraw's file save, and a mailto: link handed to the
  * system (openExternal, for that scheme only: the page shows chat and page
  * content, and no other link may start a program).
+ *
+ * Chromium also asks under names the page never calls by. A low-accuracy
+ * getCurrentPosition (the assistant's) can come as `geolocation-approximate`.
+ * Local Network Access comes as `local-network-access`, `local-network` and
+ * `loopback-network`: the page is served on http://mantle-ui.localhost, so
+ * Chromium may count it as public, and a brain on a LAN or tailnet address
+ * would then need it for every fetch, image, socket and frame. The CSP's
+ * connect-src still decides where the page may connect. Left out on
+ * purpose: `deprecated-sync-clipboard-read` (execCommand('paste'), which
+ * neither the UI nor Excalidraw calls) and every other name.
  */
 const UI_PERMISSIONS: ReadonlySet<string> = new Set([
   'clipboard-read',
   'clipboard-sanitized-write',
   'fullscreen',
   'geolocation',
+  'geolocation-approximate',
   'notifications',
   'fileSystem',
   'openExternal',
+  'local-network-access',
+  'local-network',
+  'loopback-network',
 ]);
 
 /**

@@ -193,6 +193,7 @@ describe('permissionAllowed', () => {
       'clipboard-read',
       'fileSystem',
       'geolocation',
+      'geolocation-approximate',
       'notifications',
     ]) {
       expect(permissionAllowed(p, main, renderer), p).toBe(true);
@@ -205,8 +206,35 @@ describe('permissionAllowed', () => {
         String(externalURL),
       ).toBe(false);
     }
-    for (const p of ['pointerLock', 'display-capture', 'midiSysex', 'hid', 'usb', 'unknown']) {
+    for (const p of [
+      'pointerLock',
+      'display-capture',
+      'midiSysex',
+      'hid',
+      'usb',
+      'deprecated-sync-clipboard-read',
+      'unknown',
+    ]) {
       expect(permissionAllowed(p, main, renderer), p).toBe(false);
+    }
+  });
+  it('grants Local Network Access to the app page only, so it can reach a LAN brain', () => {
+    const page = { requestingUrl: `${UI_ORIGIN}/chats/abc`, isMainFrame: true };
+    for (const p of ['local-network-access', 'local-network', 'loopback-network']) {
+      expect(permissionAllowed(p, page, UI_ORIGIN), p).toBe(true);
+      expect(permissionAllowed(p, { ...page, isMainFrame: false }, UI_ORIGIN), p).toBe(false);
+      expect(
+        permissionAllowed(
+          p,
+          { ...page, requestingUrl: 'https://192.168.1.20/api/apps/x/frame' },
+          UI_ORIGIN,
+        ),
+        p,
+      ).toBe(false);
+      expect(
+        permissionAllowed(p, { ...page, requestingUrl: 'http://other.localhost/' }, UI_ORIGIN),
+        p,
+      ).toBe(false);
     }
   });
   it('grants a sub-frame, another origin or no origin nothing at all', () => {
