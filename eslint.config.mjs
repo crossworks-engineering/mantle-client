@@ -129,6 +129,11 @@ export default tseslint.config(
       // then `pnpm verify` gets hundreds of errors from minified vendor
       // bundles that are not ours to lint.
       'client/desktop/ui/**',
+      // The Tauri shell's build output (cargo; the codegen writes the
+      // embedded UI there as compressed blobs with .js names) and the files
+      // tauri-build regenerates. All gitignored.
+      'client/tauri/target/**',
+      'client/tauri/gen/**',
       // Generated share-surface bundle + route manifest (gitignored).
       'server/web/public/share-runtime/**',
       'server/web/server/route-manifest.gen.ts',
@@ -188,6 +193,11 @@ export default tseslint.config(
     // process/console/etc. so no-undef doesn't false-positive.
     files: ['**/*.mjs', '**/*.cjs', '**/*.js', 'scripts/**'],
     languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    // The Tauri shell's connect page: plain browser JS on its own scheme.
+    files: ['client/tauri/connect/**/*.js'],
+    languageOptions: { globals: { ...globals.browser } },
   },
   {
     // React/Next linting for the web app. These resolve the inline
