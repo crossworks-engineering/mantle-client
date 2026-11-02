@@ -47,18 +47,19 @@ impl Shell {
         store: Option<Arc<CredentialStore>>,
         on_keychain_unavailable: Box<dyn Fn() + Send + Sync>,
     ) -> Result<Shell, String> {
+        // Off unless asked for: a line per scheme request and per vault
+        // call on stderr, for checking a build. Never a token.
+        let trace = std::env::var_os("MANTLE_DESKTOP_TRACE").is_some();
         Ok(Shell {
             host: Host::new(files)?,
             profiles: Profiles::new(config_dir),
-            vault: Vault::new(identifier, data_dir, store, on_keychain_unavailable),
+            vault: Vault::new(identifier, data_dir, store, on_keychain_unavailable, trace),
             appearance: AppearanceCache::new(),
             data_dir: data_dir.to_path_buf(),
             windows: Mutex::new(HashMap::new()),
             front: Mutex::new(None),
             edits: Mutex::new(()),
-            // Off unless asked for: a line per scheme request and per vault
-            // call on stderr, for checking a build. Never a token.
-            trace: std::env::var_os("MANTLE_DESKTOP_TRACE").is_some(),
+            trace,
         })
     }
 
@@ -159,9 +160,10 @@ fn forbidden() -> HostAnswer {
     }
 }
 
-/// `mantle-ui://`: the UI, for the brain of the window that asks. The window
-/// is known from the request's webview label, never from anything in the
-/// request. Answered off the main thread: env.js may wait on the brain.
+/// `mantle-ui://`: the UI, for the brain of the window that asks, and the
+/// page's vault (vault_endpoint.rs). The window is known from the request's
+/// webview label, never from anything in the request. Answered off the main
+/// thread: env.js may wait on the brain, and the vault on the keychain.
 pub fn serve_ui<R: Runtime>(
     ctx: UriSchemeContext<'_, R>,
     req: http::Request<Vec<u8>>,
@@ -170,6 +172,10 @@ pub fn serve_ui<R: Runtime>(
     let app = ctx.app_handle().clone();
     let label = ctx.webview_label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
+        if req.uri().path() == crate::vault_endpoint::VAULT_PATH {
+            responder.respond(crate::vault_endpoint::serve(&app, &label, &req));
+            return;
+        }
         let shell = app.state::<Shell>();
         let answer = match shell.brain_of_window(&label) {
             None => forbidden(),
@@ -210,7 +216,8 @@ const CONNECT_HTML: &[u8] = include_bytes!("../connect/index.html");
 const CONNECT_JS: &[u8] = include_bytes!("../connect/connect.js");
 const CONNECT_CSS: &[u8] = include_bytes!("../connect/connect.css");
 
-/// The connect page names nothing but itself and Tauri's IPC.
+/// The connect page names nothing but itself and Tauri's IPC (its profile
+/// commands).
 pub const CONNECT_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// What the connect scheme answers, for the connect window only. Pure.
