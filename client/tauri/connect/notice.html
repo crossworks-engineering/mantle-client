@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logins last until you quit</title>
+    <link rel="stylesheet" href="/notice.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Logins last until you quit</h1>
+      <p>
+        MantleOS Desktop could not use this computer's keychain (on Linux: the Secret Service). You
+        can sign in, but the login is kept in memory only, until you quit the app. Nothing is
+        written to disk in its place.
+      </p>
+      <p>
+        To stay signed in across restarts, make sure a keychain is installed and unlocked, then quit
+        and reopen the app.
+      </p>
+      <!-- No script: OK is a navigation the notice window turns into a close. -->
+      <form action="/notice-ok" method="get">
+        <button type="submit" autofocus>OK</button>
+      </form>
+    </main>
+  </body>
+</html>

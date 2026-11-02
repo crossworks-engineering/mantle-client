@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A login was not saved</title>
+    <link rel="stylesheet" href="/notice.css" />
+  </head>
+  <body>
+    <main>
+      <h1>A login was not saved</h1>
+      <p>
+        The keychain (on Linux: the Secret Service) refused a request, so a login may not have been
+        kept. Nothing is written to disk in its place.
+      </p>
+      <p>Make sure the keychain is unlocked, then sign in again.</p>
+      <!-- No script: OK is a navigation the notice window turns into a close. -->
+      <form action="/notice-ok" method="get">
+        <button type="submit" autofocus>OK</button>
+      </form>
+    </main>
+  </body>
+</html>

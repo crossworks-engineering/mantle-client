@@ -10,7 +10,7 @@
 //!   shell.rs     the app state and the two schemes
 //!   windows.rs   brain windows, the connect window, the menu
 //!   commands.rs  the IPC surface: the connect window's commands
-//!   dialog.rs    the native alert and notice, the macOS version check
+//!   dialog.rs    the native alert, the macOS version check
 
 pub mod commands;
 pub mod dialog;
@@ -80,20 +80,6 @@ pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
         .register_asynchronous_uri_scheme_protocol(fence::CONNECT_SCHEME, shell::serve_connect)
 }
 
-/// The notice's title and text, per reason (vault.rs, Unavailable).
-fn keychain_notice(why: vault::Unavailable) -> (&'static str, &'static str) {
-    match why {
-        vault::Unavailable::NoKeychain => (
-            "Logins last until you quit",
-            "MantleOS Desktop could not use this computer's keychain (on Linux: the Secret Service). You can sign in, but the login is kept in memory only, until you quit the app. Nothing is written to disk in its place. To stay signed in across restarts, make sure a keychain is installed and unlocked, then quit and reopen the app.",
-        ),
-        vault::Unavailable::KeychainFailed => (
-            "A login was not saved",
-            "The keychain (on Linux: the Secret Service) refused a request, so a login may not have been kept. Make sure the keychain is unlocked, then sign in again.",
-        ),
-    }
-}
-
 fn setup<R: Runtime>(
     app: &mut tauri::App<R>,
     files: Box<dyn FileSource>,
@@ -121,13 +107,14 @@ fn setup<R: Runtime>(
         &data_dir,
         vault::Vault::platform_store(),
         // Called by the vault once per run, never under its lock. The notice
-        // is queued on the main thread from a task (run_on_main_thread runs
-        // at once when called there, as from setup), and not waited on.
+        // window is built on the main thread, queued there from a task
+        // (run_on_main_thread runs at once when called there, as from
+        // setup), so it comes after setup and nothing waits on it.
         Box::new(move |why| {
-            let (title, message) = keychain_notice(why);
             let app = notify.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = app.run_on_main_thread(move || dialog::notice(title, message));
+                let main = app.clone();
+                let _ = app.run_on_main_thread(move || windows::open_notice(&main, why));
             });
         }),
     );
@@ -150,7 +137,7 @@ fn setup<R: Runtime>(
     // No keychain: logins last for this run only. Say so now, not at the
     // first sign-in, or a restart would sign the user out without a word.
     // The vault's lock is not held here, and the callback only queues the
-    // notice on the main thread, so it is shown once setup is done.
+    // notice window on the main thread, so it opens once setup is done.
     if handle.state::<Shell>().vault.this_run_only() {
         handle.state::<Shell>().vault.tell_unavailable();
     }
@@ -215,10 +202,11 @@ pub fn run() {
 #[cfg(test)]
 mod acl_tests {
     //! Each window reaches only what it is meant to: the connect window its
-    //! profile commands (Tauri's ACL, from capabilities/), a brain window no
-    //! command at all and its own brain's vault through the UI scheme
-    //! (vault_endpoint.rs), and nothing else anything. Runs the real
-    //! capabilities on Tauri's mock runtime.
+    //! profile commands (Tauri's ACL, from capabilities/), the keychain
+    //! notice no command at all, a brain window no command at all and its
+    //! own brain's vault through the UI scheme (vault_endpoint.rs), and
+    //! nothing else anything. Runs the real capabilities on Tauri's mock
+    //! runtime.
 
     use super::*;
     use std::sync::Arc;
@@ -292,8 +280,8 @@ mod acl_tests {
 
     /// The app on the mock runtime, with: a brain window on the UI, a
     /// brain window whose page is on its brain (not the UI), the connect
-    /// window, a window with another label, and a brain-shaped label the
-    /// shell never opened.
+    /// window, the keychain notice, a window with another label, and a
+    /// brain-shaped label the shell never opened.
     fn fixture() -> Fixture {
         let dir = std::env::temp_dir().join(format!("mantle-desktop-acl-{}", uuid::Uuid::new_v4()));
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -348,6 +336,13 @@ mod acl_tests {
         )
         .build()
         .unwrap();
+        WebviewWindowBuilder::new(
+            &app,
+            shell::NOTICE_LABEL,
+            WebviewUrl::CustomProtocol(shell::connect_root().join("notice.html").unwrap()),
+        )
+        .build()
+        .unwrap();
         WebviewWindowBuilder::new(&app, "other", ui.clone())
             .build()
             .unwrap();
@@ -369,6 +364,7 @@ mod acl_tests {
         let brain = f.app.get_webview_window(&f.brain).unwrap();
         let connect = f.app.get_webview_window(shell::CONNECT_LABEL).unwrap();
         let other = f.app.get_webview_window("other").unwrap();
+        let notice = f.app.get_webview_window(shell::NOTICE_LABEL).unwrap();
 
         for cmd in COMMANDS.iter().chain(GONE) {
             let profiles = cmd.starts_with("profiles_");
@@ -397,6 +393,14 @@ mod acl_tests {
                 "{cmd} from the connect window"
             );
             assert_eq!(from_other, "denied", "{cmd} from another window");
+            // The keychain notice: no command, from its own page or any.
+            for page in [
+                "mantle-connect://localhost/notice.html",
+                "mantle-connect://localhost/",
+            ] {
+                let from_notice = outcome(get_ipc_response(&notice, request(cmd, page)));
+                assert_eq!(from_notice, "denied", "{cmd} from the notice at {page}");
+            }
             assert_eq!(remote, "denied", "{cmd} from a remote page");
         }
     }

@@ -1,14 +1,15 @@
-//! The windows: one per brain, each on its own data store, and the connect
-//! window; the app menu that switches between brains.
+//! The windows: one per brain, each on its own data store, the connect
+//! window and the keychain notice; the app menu that switches between brains.
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use url::Url;
 
-use crate::fence::{self, Navigation};
+use crate::fence::{self, Navigation, NoticeNavigation};
 use crate::profiles::{label_for, Profile};
-use crate::shell::{connect_root, ui_root, Shell, CONNECT_LABEL};
+use crate::shell::{connect_root, ui_root, Shell, CONNECT_LABEL, NOTICE_LABEL};
+use crate::vault::Unavailable;
 
 pub const MENU_ADD_REMOVE: &str = "add-remove";
 pub const MENU_BRAIN_PREFIX: &str = "brain:";
@@ -252,6 +253,75 @@ pub fn open_connect<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     app.state::<Shell>()
         .trace(|| format!("window {CONNECT_LABEL} opened at {}", connect_root()));
     Ok(())
+}
+
+/// The keychain notice's page and title, per reason. The text is the page's
+/// own, fixed (connect/notice*.html); this line also goes to stderr, so a
+/// run from a terminal says the same.
+pub fn notice_page(why: Unavailable) -> (&'static str, &'static str, &'static str) {
+    match why {
+        Unavailable::NoKeychain => (
+            fence::NOTICE_PAGES[0],
+            "Logins last until you quit",
+            "no keychain; a login is kept in memory until the app quits, never on disk",
+        ),
+        Unavailable::KeychainFailed => (
+            fence::NOTICE_PAGES[1],
+            "A login was not saved",
+            "the keychain refused a request; a login may not have been kept",
+        ),
+    }
+}
+
+/// The keychain notice: a small window of its own, NOT modal (nothing waits
+/// on it, no nested run loop), on the connect scheme with fixed text and no
+/// script. It is granted no command (capabilities/ name only the connect
+/// window). OK is a form that goes to /notice-ok, which this window's
+/// navigation handler turns into a close: window.close() does nothing in
+/// wry on macOS, and on Linux it would take the webview out of its window.
+/// Called on the main thread, once per run (the vault's `told`), never from
+/// under the vault's lock.
+pub fn open_notice<R: Runtime>(app: &AppHandle<R>, why: Unavailable) {
+    let (page, title, line) = notice_page(why);
+    eprintln!("[mantle-desktop] {title}: {line}");
+    if let Some(win) = app.get_webview_window(NOTICE_LABEL) {
+        reveal(&win);
+        return;
+    }
+    let Ok(url) = connect_root().join(page) else {
+        return;
+    };
+    let closer = app.clone();
+    let built = WebviewWindowBuilder::new(app, NOTICE_LABEL, WebviewUrl::CustomProtocol(url))
+        .title(title)
+        .inner_size(460.0, 250.0)
+        .resizable(false)
+        .minimizable(false)
+        .maximizable(false)
+        .always_on_top(true)
+        .center()
+        // Keeps nothing, and shares no storage with a brain.
+        .incognito(true)
+        .disable_drag_drop_handler()
+        .on_navigation(move |url| match fence::notice_navigation(url) {
+            NoticeNavigation::Allow => true,
+            NoticeNavigation::Close => {
+                // From a task, not from inside WebKit's policy callback.
+                let app = closer.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(win) = app.get_webview_window(NOTICE_LABEL) {
+                        let _ = win.close();
+                    }
+                });
+                false
+            }
+            NoticeNavigation::Refuse => false,
+        })
+        .on_new_window(|_url, _features| NewWindowResponse::Deny)
+        .build();
+    if let Err(error) = built {
+        eprintln!("[mantle-desktop] notice: {error}");
+    }
 }
 
 /// The window to show when the app is asked for one: the last-used brain,
