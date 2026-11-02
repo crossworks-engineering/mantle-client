@@ -39,6 +39,11 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   ids and when each was written. **The keychain is the only copy**: nothing
   else holds a bearer, the page asks again on every read, and a write the
   keychain refuses is simply not stored (the next read tells the truth).
+  The index is written first, and when it cannot be written the keychain is
+  not either (that login is simply not stored, traced but not shown as the
+  keychain notice), so every entry is one the index names. Removing a brain
+  deletes what its index names, then sweeps the keychain for its
+  `<profile id>/` prefix (keyring-core's search) in case one was missed.
 - **No keychain: this run only.** When the platform has no keychain, or the
   keychain does not answer a read when the vault is made (`Vault::new`, the
   one place this is decided), the vault keeps that run's bearers AND its
@@ -61,6 +66,10 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   label, never from the body. The work runs off the main thread (the
   scheme's asynchronous handler, then `spawn_blocking`), one call at a time
   under one lock per process, and nothing that shows UI runs under it.
+  Whether the brain is still listed is asked again under that lock, with
+  the call (`Vault::when`); removing a brain takes it off the list first and
+  then removes its logins under the same lock, so a call on its way is
+  refused, or comes first and is swept.
 - **The keychain notice.** With no keychain, a notice says at start that
   logins last until you quit (`connect/notice.html`); when the keychain
   first fails during a run, it says so then (`connect/notice-failed.html`).
@@ -73,6 +82,13 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   window. The window is built on the main thread, queued there from a task
   after setup, and never from under the vault's lock. The only native dialog
   left is the modal alert for a start that cannot go on.
+- **Removing a brain** deletes its keychain entries and index, closes its
+  window and removes its data store (`commands.rs`, `windows.rs`). A store
+  still in use is listed in `pending-removals.json` and retried at the next
+  start, as a task: setup never waits for it. On macOS WebKit's store calls
+  answer on the main thread's run loop, so a main thread blocked on them
+  never gets the answer (the app hung at start that way). No window can use
+  a removed brain's store meanwhile: the brain is not listed.
 - **Capabilities** (`capabilities/`): the profile commands, granted to the
   `connect` window for the app's own page only. No other window gets any
   command. A test runs them, and the vault endpoint's refusals, on Tauri's
@@ -126,10 +142,25 @@ failure to stderr. Never a token.
 
 The Linux image (`docker/linux.Dockerfile`) installs rustup-init at a pinned
 version with its sha256 checked, and runs the scripted sign-in test
-(`e2e/`), which reads the vault through the page's own `tokenVault`. Its
+(`e2e/`), which reads the vault through the page's own `tokenVault`. One
+step reads it from `/invite`, a link-code page served with
+`Referrer-Policy: no-referrer`, where an invite sign-in keeps its bearer,
+and prints the `Origin` the shell saw (WebKitGTK sends the UI's). Its
 last step runs with no Secret Service: the notice shows once and its OK
 closes it, a sign-in works for that run with the bearer in no file and not
 in localStorage, and the next run is back on `/login`.
+
+## Known
+
+- **A Secret Service that asks to be unlocked holds up the vault** (Linux).
+  Keychain calls run under the vault's one lock, so while GNOME Keyring or
+  KeePassXC waits for its unlock prompt, every vault call, in every brain
+  window, waits with it (each page's synchronous `tokenVault` call blocks
+  that page) until the prompt is answered. The read that checks the
+  keychain at start (`Vault::new`) runs on the main thread, before the
+  first window, so a prompt there holds the start until it is answered.
+  A macOS keychain prompt (a locked keychain, or an access prompt after the
+  app's signature changed) holds the vault the same way.
 
 ## What T1 leaves for T2
 
