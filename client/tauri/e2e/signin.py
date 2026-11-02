@@ -21,6 +21,18 @@ two profiles, so two windows' data folders and two keychain namespaces.
      active session's bearer through tokenVault there, as the invite page
      does when it signs someone in; the shell must answer it, and the test
      prints the Origin the shell saw on that request
+  g  in that same signed-in window, three frames inside the UI page each
+     send the vault call themselves (a harmless getFor of an id no login
+     has): a frame on the brain's origin (the brain's /api/version; the
+     brain serves no HTML, so WebDriver switches into that JSON document
+     and runs the call there), a sandboxed srcdoc frame (allow-scripts
+     only: an opaque origin) that reports by postMessage, and a
+     same-origin about:blank frame whose script the UI page writes. The
+     first two must be refused, the third answered (it is the UI's own
+     origin, as the page itself is). The test prints, per frame, what the
+     frame saw and the method and Origin the shell traced. Then the page
+     asks Tauri's IPC for the opener plugin's open_url and for an app
+     command: a brain window has no command, so both must fail
   e  no keychain (a dbus session with no Secret Service): the app starts
      and says at once, in a notice window that does not block, that logins
      last until you quit; its OK closes it; a sign-in WORKS for that run,
@@ -507,6 +519,195 @@ def vault_checks(app, label, origin, email, expect_ids=None):
     return report
 
 
+# The vault call each frame sends: getFor of an id no login has, so even an
+# answer carries no bearer. Reports the status (or the error) and the
+# frame's own origin. `report` is how the answer gets out.
+FRAME_CALL = """
+var out = { origin: String(self.origin) };
+try {
+  var x = new XMLHttpRequest();
+  x.open('POST', 'mantle-ui://localhost/_mantle/vault', false);
+  x.setRequestHeader('X-Mantle-Vault', '1');
+  x.send(JSON.stringify({ op: 'getFor', sessionId: 'frame-probe' }));
+  out.status = x.status;
+} catch (e) {
+  out.error = String((e && e.name) || e);
+}
+"""
+
+
+UI = "mantle-ui://localhost"
+
+
+def trace_lines(app, mark, ui=False):
+    """The vault trace lines written since `mark`, as `<method or op>
+    origin <Origin> -> <status>`: those with an Origin other than the UI's,
+    or (ui=True) those with the UI's. The UI page reads the vault itself all
+    the time, so a line with the UI's Origin cannot be told apart from the
+    page's own. The label is left out (it names the profile); there is
+    never a token in these lines."""
+    seen = []
+    for line in app.log_text()[mark:].splitlines():
+        if "[mantle-desktop] vault " not in line or "(origin " not in line:
+            continue
+        what = line.split("[mantle-desktop] vault ", 1)[1].split(" from ", 1)[0]
+        origin = line.split("(origin ", 1)[1].split(")", 1)[0]
+        if (origin == UI) != ui:
+            continue
+        status = line.rsplit("-> ", 1)[-1].strip()
+        seen.append(f"{what} origin {origin} -> {status}")
+    return seen
+
+
+def frame_report(result):
+    if not isinstance(result, dict):
+        return f"no answer ({result!r})"
+    got = f"status {result['status']}" if "status" in result else f"error {result.get('error')}"
+    return f"{got}, frame origin {result.get('origin')}"
+
+
+def frame_checks(app):
+    """g: the vault from three frames inside the UI page, and no Tauri
+    command from the page. See the module docstring."""
+    app.js(
+        "document.querySelectorAll('iframe[id^=mantle-probe-]').forEach(function (f) { f.remove(); });"
+    )
+
+    # a: the brain's origin. WebDriver runs the call inside that frame.
+    mark = len(app.log_text())
+    loaded = app.js_async(
+        """
+var done = arguments[arguments.length - 1];
+var f = document.createElement('iframe');
+f.id = 'mantle-probe-a';
+f.onload = function () { done(true); };
+setTimeout(function () { done(false); }, 15000);
+f.src = arguments[0] + '/api/version';
+document.body.appendChild(f);
+""",
+        ORIGIN_A,
+    )
+    result_a = None
+    frame = app.find("iframe#mantle-probe-a", timeout=5)
+    if loaded and frame:
+        try:
+            app.cmd("POST", "/frame", {"id": {ELEMENT: frame}})
+            result_a = app.js(FRAME_CALL + "return out;")
+        except WebDriverError as e:
+            result_a = {"error": f"webdriver: {e}"}
+        finally:
+            app.cmd("POST", "/frame/parent", {})
+    time.sleep(0.5)
+    shell_a = trace_lines(app, mark)
+    note(f"g: brain-origin frame: {frame_report(result_a)}; shell saw: {'; '.join(shell_a) or 'nothing'}")
+    check(
+        "g: a frame on the brain's origin is refused the vault",
+        isinstance(result_a, dict) and result_a.get("origin") == ORIGIN_A and result_a.get("status") != 200,
+        frame_report(result_a),
+    )
+
+    # b: a sandboxed srcdoc frame (opaque origin), reporting by postMessage.
+    mark = len(app.log_text())
+    result_b = app.js_async(
+        """
+var done = arguments[arguments.length - 1];
+var f = document.createElement('iframe');
+f.id = 'mantle-probe-b';
+f.setAttribute('sandbox', 'allow-scripts');
+window.addEventListener('message', function heard(e) {
+  if (e.source !== f.contentWindow) return;
+  window.removeEventListener('message', heard);
+  done(e.data);
+});
+setTimeout(function () { done('timeout'); }, 15000);
+f.srcdoc = '<script>' + arguments[0] + 'parent.postMessage(out, "*");<\/script>';
+document.body.appendChild(f);
+""",
+        FRAME_CALL,
+    )
+    time.sleep(0.5)
+    shell_b = trace_lines(app, mark)
+    note(f"g: sandboxed srcdoc frame: {frame_report(result_b)}; shell saw: {'; '.join(shell_b) or 'nothing'}")
+    check(
+        "g: a sandboxed srcdoc frame is refused the vault",
+        isinstance(result_b, dict) and result_b.get("origin") == "null" and result_b.get("status") != 200,
+        frame_report(result_b),
+    )
+
+    # c: a same-origin about:blank frame, its script written by the UI page.
+    mark = len(app.log_text())
+    result_c = app.js_async(
+        """
+var done = arguments[arguments.length - 1];
+var f = document.createElement('iframe');
+f.id = 'mantle-probe-c';
+document.body.appendChild(f);
+window.addEventListener('message', function heard(e) {
+  if (e.source !== f.contentWindow) return;
+  window.removeEventListener('message', heard);
+  done(e.data);
+});
+setTimeout(function () { done('timeout'); }, 15000);
+var doc = f.contentWindow.document;
+var s = doc.createElement('script');
+s.textContent = arguments[0] + 'parent.postMessage(out, "*");';
+(doc.body || doc.documentElement).appendChild(s);
+""",
+        FRAME_CALL,
+    )
+    time.sleep(0.5)
+    shell_c = trace_lines(app, mark, ui=True)
+    note(
+        f"g: same-origin about:blank frame: {frame_report(result_c)}; shell saw (with the page's own calls): "
+        f"{'; '.join(sorted(set(shell_c))) or 'nothing'}"
+    )
+    check(
+        "g: a same-origin about:blank frame is answered, as the UI page is",
+        isinstance(result_c, dict)
+        and result_c.get("origin") == UI
+        and result_c.get("status") == 200
+        and any(line.endswith("-> 200") for line in shell_c),
+        frame_report(result_c),
+    )
+    app.js(
+        "document.querySelectorAll('iframe[id^=mantle-probe-]').forEach(function (f) { f.remove(); });"
+    )
+
+    # No Tauri command from the page: the opener plugin's, and an app one.
+    ipc = app.js_async(
+        """
+var done = arguments[arguments.length - 1];
+var t = window.__TAURI_INTERNALS__;
+var out = { internals: !!t };
+if (!t || typeof t.invoke !== 'function') { done(out); return; }
+function attempt(cmd, args) {
+  return Promise.race([
+    t.invoke(cmd, args).then(
+      function () { return 'resolved'; },
+      function (e) { return 'rejected: ' + String(e).slice(0, 160); }
+    ),
+    new Promise(function (r) { setTimeout(function () { r('no answer in 10 s'); }, 10000); })
+  ]);
+}
+Promise.all([
+  attempt('plugin:opener|open_url', { url: 'https://example.invalid' }),
+  attempt('profiles_list', {})
+]).then(function (r) { out.opener = r[0]; out.app = r[1]; done(out); });
+"""
+    ) or {}
+    note(
+        f"g: IPC from the brain window: __TAURI_INTERNALS__ {'present' if ipc.get('internals') else 'absent'}; "
+        f"open_url {ipc.get('opener', '(not tried)')}; profiles_list {ipc.get('app', '(not tried)')}"
+    )
+    for name, key in (("the opener plugin's open_url", "opener"), ("an app command (profiles_list)", "app")):
+        outcome = ipc.get(key)
+        check(
+            f"g: the brain window cannot call {name}",
+            not ipc.get("internals") or (isinstance(outcome, str) and outcome.startswith("rejected")),
+            outcome or "no __TAURI_INTERNALS__",
+        )
+
+
 def main():
     email, password, setup_code = read_login()
     bus = os.environ["DBUS_SESSION_BUS_ADDRESS"]
@@ -636,6 +837,10 @@ def main():
             held is True,
             f"origin {', '.join(seen) or '?'}",
         )
+
+        # g, in the same signed-in window, still tracing.
+        print("== g: frames inside the UI page, and no Tauri command", flush=True)
+        frame_checks(app)
     finally:
         app.quit()
 

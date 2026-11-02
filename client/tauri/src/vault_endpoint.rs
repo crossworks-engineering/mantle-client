@@ -206,7 +206,13 @@ pub fn serve<R: Runtime>(
     );
     let profile = if checked { caller(app, label) } else { None };
     let Some(profile) = profile else {
-        shell.trace(|| format!("vault from {label} (origin {}) -> 403", traced_origin(req)));
+        shell.trace(|| {
+            format!(
+                "vault {} from {label} (origin {}) -> 403",
+                req.method(),
+                traced_origin(req)
+            )
+        });
         return empty(403);
     };
     let op = op_name(req.body());
