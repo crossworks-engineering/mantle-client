@@ -572,6 +572,111 @@ mod acl_tests {
         assert!(folder(&listed).exists(), "a listed brain's store stays");
     }
 
+    /// A removal whose logins the keychain would not delete keeps the brain
+    /// listed even when its store went; the start's retry then removes the
+    /// logins (before the store step) and only then lets the brain go. On a
+    /// folder store, for the reason above.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_start_retry_removes_logins_left_behind_then_lets_the_brain_go() {
+        let f = fixture();
+        let shell = f.app.state::<Shell>();
+        let gone = uuid::Uuid::new_v4().to_string();
+        let folder = windows::brain_data_dir(f.app.handle(), &gone).unwrap();
+        std::fs::create_dir_all(&folder).unwrap();
+        shell.vault.set_for(&gone, "s1", "left.behind", 1);
+        tauri::async_runtime::block_on(windows::remove_brain_store(
+            f.app.handle().clone(),
+            gone.clone(),
+            false,
+        ));
+        assert!(!folder.exists(), "the store went");
+        assert_eq!(shell.pending_removals(), vec![gone.clone()]);
+
+        windows::start_retry_removals(f.app.handle());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !shell.pending_removals().is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the retry did not finish: {:?}",
+                shell.pending_removals()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(shell.vault.get_for(&gone, "s1"), None);
+
+        // Both done at once: nothing is listed.
+        let done = uuid::Uuid::new_v4().to_string();
+        tauri::async_runtime::block_on(windows::remove_brain_store(
+            f.app.handle().clone(),
+            done,
+            true,
+        ));
+        assert!(shell.pending_removals().is_empty());
+    }
+
+    /// The probe runs with no lock held: `open_brain` takes `edits` on the
+    /// main thread, and a probe may take ten seconds. The save is under it.
+    #[test]
+    fn adding_a_brain_probes_without_the_edits_lock() {
+        let f = fixture();
+        let shell = f.app.state::<Shell>();
+        let added = commands::add_profile(&shell, "https://third.example", |_| {
+            assert!(
+                shell.edits.try_lock().is_ok(),
+                "the probe ran under the edits lock"
+            );
+            Ok("1".into())
+        })
+        .unwrap();
+        assert!(shell.profiles.find(&added.id).is_some());
+        // A probe that fails saves nothing.
+        let failed = commands::add_profile(&shell, "https://fourth.example", |_| Err("no".into()));
+        assert!(failed.is_err());
+        assert_eq!(shell.profiles.load().len(), 3);
+    }
+
+    /// A window built for a brain removed while it was being built (open
+    /// and remove at once): destroyed, and the brain listed for the start's
+    /// retry, which removes the store it made. A brain still listed keeps
+    /// its window. The race is the gap between the list read and the build,
+    /// made here by removing the brain between the two. What the mock
+    /// runtime cannot show: that the window is gone. Its destroy drops the
+    /// window from the runtime's own table only, and Tauri's manager drops
+    /// it on the Destroyed event, which an app that is not running never
+    /// gets.
+    #[test]
+    fn a_window_built_for_a_brain_removed_meanwhile_is_closed_and_its_store_listed() {
+        let f = fixture();
+        let shell = f.app.state::<Shell>();
+        let kept = shell
+            .profiles
+            .add("https://kept.example", |_| Ok("1".into()))
+            .unwrap();
+        let win = windows::build_brain_window(f.app.handle(), &kept).unwrap();
+        assert!(windows::keep_if_listed(f.app.handle(), win, &kept.id));
+        let kept_label = profiles::label_for(&kept.id);
+        assert!(f.app.get_webview_window(&kept_label).is_some());
+        assert!(shell.brain_of_window(&kept_label).is_some());
+
+        let raced = shell
+            .profiles
+            .add("https://raced.example", |_| Ok("1".into()))
+            .unwrap();
+        let win = windows::build_brain_window(f.app.handle(), &raced).unwrap();
+        // The removal lands after the list was read, before the re-check.
+        shell.profiles.remove(&raced.id).unwrap();
+        assert!(!windows::keep_if_listed(f.app.handle(), win, &raced.id));
+        let label = profiles::label_for(&raced.id);
+        assert!(shell.brain_of_window(&label).is_none());
+        assert_eq!(shell.pending_removals(), vec![raced.id.clone()]);
+        // Its page has no vault meanwhile.
+        assert_eq!(call(&f, &label, serde_json::json!({ "op": "get" })).0, 403);
+        // open_brain on a brain gone before the read refuses at once.
+        assert!(windows::open_brain(f.app.handle(), &raced.id).is_err());
+        assert_eq!(shell.pending_removals(), vec![raced.id]);
+    }
+
     #[test]
     fn a_brain_no_longer_listed_loses_the_vault() {
         let f = fixture();
