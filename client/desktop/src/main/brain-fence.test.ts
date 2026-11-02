@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  BRAIN_PASSTHROUGH,
   brainRequestFilter,
   frameNavigationAllowed,
   httpRouteOf,
@@ -230,5 +231,11 @@ describe('httpRouteOf', () => {
   it('refuses all of it for a brain on https', () => {
     expect(httpRouteOf('http://brain.example/api/shell', 'https://brain.example')).toBe('refuse');
     expect(httpRouteOf(`${UI_ORIGIN}/`, 'https://brain.example')).toBe('ui');
+  });
+});
+
+describe('BRAIN_PASSTHROUGH', () => {
+  it('sends an http brain request with no cookies and follows no redirect', () => {
+    expect(BRAIN_PASSTHROUGH).toMatchObject({ redirect: 'manual', credentials: 'omit' });
   });
 });

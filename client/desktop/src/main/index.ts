@@ -18,6 +18,7 @@ import {
 import { autoUpdater } from 'electron-updater';
 import { attentionMode, safeInAppPath } from './attention';
 import {
+  BRAIN_PASSTHROUGH,
   brainRequestFilter,
   frameNavigationAllowed,
   httpRouteOf,
@@ -180,9 +181,9 @@ function rendererUrlFor(): string {
  *  It intercepts http for the session, not a custom scheme: Chromium gives a
  *  custom scheme no cookies, and the UI's login gate and layout live in
  *  cookies. Only the UI's own host is answered here, so it never touches the network;
- *  the window's own brain on plain http (dev) goes out, without following
- *  its redirects, and every other http request is refused (brain-fence.ts,
- *  httpRouteOf). */
+ *  the window's own brain on plain http (dev) goes out as a native client's
+ *  request (BRAIN_PASSTHROUGH: no cookies, no redirects), and every other
+ *  http request is refused (brain-fence.ts, httpRouteOf). */
 function serveUi(ses: Electron.Session, brainOrigin: string): void {
   if (ses.protocol.isProtocolHandled('http')) return;
   const host = createStaticHost({
@@ -194,12 +195,7 @@ function serveUi(ses: Electron.Session, brainOrigin: string): void {
     const route = httpRouteOf(request.url, brainOrigin);
     if (route === 'ui') return host(request);
     if (route === 'refuse') return new Response(null, { status: 502 });
-    // The main process sends it, so no CORS check sees where a redirect
-    // lands: a brain's 3xx must not take the page to a LAN or loopback
-    // service. 'manual' refuses it, and the page gets a 502.
-    return ses
-      .fetch(request, { bypassCustomProtocolHandlers: true, redirect: 'manual' })
-      .catch(() => new Response(null, { status: 502 }));
+    return ses.fetch(request, BRAIN_PASSTHROUGH).catch(() => new Response(null, { status: 502 }));
   });
 }
 

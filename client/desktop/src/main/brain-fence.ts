@@ -112,3 +112,18 @@ export function httpRouteOf(url: string, brainOrigin: string): 'ui' | 'brain' | 
   if (origin === UI_ORIGIN) return 'ui';
   return origin === brainOrigin ? 'brain' : 'refuse';
 }
+
+/**
+ * How the shell sends a request on to the window's own brain on plain http
+ * (httpRouteOf 'brain'). The main process sends it, so none of the page's own
+ * checks apply; it goes out as a native client's request does (the fence
+ * already drops Origin): no cookies, since the shell signs in with a bearer
+ * and a cookie in the jar would reach the brain's sandboxed app and canvas
+ * frames too, and no redirects, since no CORS check would see where one
+ * lands. A 3xx then fails, and the page gets a 502.
+ */
+export const BRAIN_PASSTHROUGH = {
+  bypassCustomProtocolHandlers: true,
+  redirect: 'manual',
+  credentials: 'omit',
+} as const;

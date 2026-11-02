@@ -238,7 +238,10 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
     if (type.startsWith('text/html')) {
       headers['content-security-policy'] = csp;
       headers['cache-control'] = 'no-cache';
-      if (routes.noReferrer.some((p) => under(url.pathname, p))) {
+      // Matched on the path the file was found by (decoded, any case, with
+      // or without .html), so `/%69nvite` or `/INVITE` is no way around it.
+      const asked = `/${(segments ?? []).join('/')}`.toLowerCase().replace(/\.html$/, '');
+      if (routes.noReferrer.some((p) => under(asked, p))) {
         headers['referrer-policy'] = 'no-referrer';
       }
     } else if (url.pathname.startsWith('/_next/static/')) {

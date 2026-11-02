@@ -115,6 +115,9 @@ describe('createStaticHost', () => {
     );
     expect(page.headers.get('referrer-policy')).toBeNull();
     expect((await get('/invite')).headers.get('referrer-policy')).toBe('no-referrer');
+    for (const path of ['/%69nvite?code=1', '//invite?code=1', '/invite.html?code=1']) {
+      expect((await get(path)).headers.get('referrer-policy'), path).toBe('no-referrer');
+    }
   });
 
   it('sends nosniff on every answer, env.js and a miss included', async () => {
