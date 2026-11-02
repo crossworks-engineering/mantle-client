@@ -165,9 +165,10 @@ function rendererUrlFor(): string {
  *  handler is made once per session and names that brain for good: its
  *  /env.js, its CSP.
  *
- *  It intercepts http for the session, not a custom scheme: Chromium gives a
- *  custom scheme no cookies, and the UI's login gate and layout live in
- *  cookies. Only the UI's own host is answered here, so it never touches the network;
+ *  It intercepts http for the session, not a custom scheme: that was chosen
+ *  while the UI kept its login gate and layout in cookies, which Chromium
+ *  gives a custom scheme none of (they are in ui-prefs now). Only the UI's
+ *  own host is answered here, so it never touches the network;
  *  the window's own brain on plain http (dev) goes out as a native client's
  *  request (BRAIN_PASSTHROUGH: no cookies, no redirects), and every other
  *  http request is refused (brain-fence.ts, httpRouteOf). */

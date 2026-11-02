@@ -26,7 +26,7 @@ export const ASSISTANT_W_DEFAULT = 480;
 export const ASSISTANT_W_MIN = 320;
 export const ASSISTANT_W_MAX = 900;
 
-/** Clamp a stored width. The cookie is user-editable, so junk has to survive. */
+/** Clamp a stored width. The pref is user-editable, so junk has to survive. */
 function clamp(raw: string | undefined, min: number, max: number, fallback: number): number {
   const parsed = Number.parseInt(raw ?? '', 10);
   if (!Number.isFinite(parsed)) return fallback;
