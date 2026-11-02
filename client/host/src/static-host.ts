@@ -37,6 +37,9 @@ export function originOf(url: string): string | null {
   }
 }
 
+/** On every answer: a file is only ever the type the host names. */
+const NOSNIFF = { 'x-content-type-options': 'nosniff' };
+
 export type HostManifest = {
   /** The value each dynamic segment was exported under. */
   placeholder: string;
@@ -212,16 +215,16 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
         appearance: await opts.appearance().catch(() => null),
       };
       return new Response(envScript(env), {
-        headers: { 'content-type': TYPES['.js']!, 'cache-control': 'no-store' },
+        headers: { 'content-type': TYPES['.js']!, 'cache-control': 'no-store', ...NOSNIFF },
       });
     }
 
     const segments = safeSegments(url.pathname);
     const hit = segments ? await find(segments, routes) : null;
-    if (!hit) return new Response('Not found', { status: 404 });
+    if (!hit) return new Response('Not found', { status: 404, headers: NOSNIFF });
 
     const type = TYPES[extname(hit.file)] ?? 'application/octet-stream';
-    const headers: Record<string, string> = { 'content-type': type };
+    const headers: Record<string, string> = { 'content-type': type, ...NOSNIFF };
     if (type.startsWith('text/html')) {
       headers['content-security-policy'] = csp;
       headers['cache-control'] = 'no-cache';

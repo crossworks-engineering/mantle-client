@@ -116,6 +116,12 @@ describe('createStaticHost', () => {
     expect((await get('/invite')).headers.get('referrer-policy')).toBe('no-referrer');
   });
 
+  it('sends nosniff on every answer, env.js and a miss included', async () => {
+    for (const path of ['/login', '/_next/static/chunks/a.js', '/env.js', '/no/such/page']) {
+      expect((await get(path)).headers.get('x-content-type-options'), path).toBe('nosniff');
+    }
+  });
+
   it('caches hashed assets for good, and HTML not at all', async () => {
     expect((await get('/_next/static/chunks/a.js')).headers.get('cache-control')).toMatch(
       /immutable/,

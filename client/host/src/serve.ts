@@ -28,9 +28,38 @@ import { appearanceCache, createStaticHost } from './static-host';
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-const clean = (v: string | undefined) => (v ?? '').trim().replace(/\/+$/, '');
-const brainOrigin = clean(process.env.MANTLE_SERVER_ORIGIN);
-const appearanceOrigin = clean(process.env.MANTLE_APPEARANCE_ORIGIN) || brainOrigin;
+const brainOrigin = originEnv('MANTLE_SERVER_ORIGIN');
+const appearanceOrigin = originEnv('MANTLE_APPEARANCE_ORIGIN') || brainOrigin;
+
+/** An origin from the environment, or '' when unset. The brain origin goes
+ *  into the CSP as written, so anything that is not a bare http(s) origin
+ *  (a path, a space, a second directive) stops the server instead. */
+function originEnv(name: string): string {
+  const raw = (process.env[name] ?? '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  let url: URL | null = null;
+  try {
+    url = new URL(raw);
+  } catch {
+    url = null;
+  }
+  const bare =
+    url &&
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    !url.username &&
+    !url.password &&
+    url.pathname === '/' &&
+    !url.search &&
+    !url.hash &&
+    !/\s/.test(raw);
+  if (!url || !bare) {
+    console.error(
+      `[client-host] ${name} must be a bare http(s) origin, got ${JSON.stringify(raw)}`,
+    );
+    process.exit(1);
+  }
+  return url.origin;
+}
 
 const appearanceOf = appearanceCache(async (url, signal) => {
   const res = await fetch(url, { signal, cache: 'no-store' });

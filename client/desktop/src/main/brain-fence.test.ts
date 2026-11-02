@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   brainRequestFilter,
   frameNavigationAllowed,
+  httpRouteOf,
   permissionAllowed,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
@@ -196,5 +197,38 @@ describe('permissionAllowed', () => {
       expect(permissionAllowed(p, main, renderer)).toBe(true);
       expect(permissionAllowed(p, { ...main, isMainFrame: false }, renderer)).toBe(true);
     }
+  });
+});
+
+describe('httpRouteOf', () => {
+  const httpBrain = 'http://127.0.0.1:3000';
+
+  it('answers the UI host from disk, its default port included', () => {
+    expect(httpRouteOf(`${UI_ORIGIN}/notes/_`, httpBrain)).toBe('ui');
+    expect(httpRouteOf(`${UI_ORIGIN}:80/env.js`, httpBrain)).toBe('ui');
+  });
+
+  it("lets the window's own plain-http brain through", () => {
+    expect(httpRouteOf(`${httpBrain}/api/shell`, httpBrain)).toBe('brain');
+  });
+
+  it('refuses every other http request, look-alikes of the UI host included', () => {
+    for (const url of [
+      'http://127.0.0.1:11434/api/tags',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://192.168.1.1/',
+      'http://127.0.0.1:3001/api/shell',
+      'http://mantle-ui.localhost:3000/',
+      'http://mantle-ui.localhost./',
+      'http://evil.mantle-ui.localhost/',
+      'not a url',
+    ]) {
+      expect(httpRouteOf(url, httpBrain), url).toBe('refuse');
+    }
+  });
+
+  it('refuses all of it for a brain on https', () => {
+    expect(httpRouteOf('http://brain.example/api/shell', 'https://brain.example')).toBe('refuse');
+    expect(httpRouteOf(`${UI_ORIGIN}/`, 'https://brain.example')).toBe('ui');
   });
 });

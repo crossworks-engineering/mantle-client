@@ -1,4 +1,4 @@
-import { originOf } from '@mantle/client-host/static-host';
+import { originOf, UI_ORIGIN } from '@mantle/client-host/static-host';
 
 /**
  * The request headers the shell drops on the way to the configured brain, so
@@ -95,4 +95,20 @@ export function permissionAllowed(
   const types = details.mediaTypes ?? [];
   if (types.length === 0 || types.some((t) => t !== 'audio')) return false;
   return originOf(details.requestingUrl ?? '') === rendererOrigin;
+}
+
+/**
+ * What the shell does with an http request from a brain window's session,
+ * where it intercepts http to serve the UI (index.ts, serveUi). The UI's own
+ * host is answered from disk; the window's own brain, when it runs on plain
+ * http, goes out as before. Anything else is refused: a request re-issued
+ * from the main process carries no Origin and gets no CORS check, so passing
+ * it through would let a page read any http service on the LAN or loopback
+ * that a browser keeps from it. Pure, so it is tested without Electron.
+ */
+export function httpRouteOf(url: string, brainOrigin: string): 'ui' | 'brain' | 'refuse' {
+  const origin = originOf(url);
+  if (origin === null) return 'refuse';
+  if (origin === UI_ORIGIN) return 'ui';
+  return origin === brainOrigin ? 'brain' : 'refuse';
 }

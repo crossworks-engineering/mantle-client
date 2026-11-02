@@ -11,6 +11,11 @@ Hosts:
   by intercepting http in each brain window's session, so nothing reaches the
   network. A real http origin, not a custom scheme: Chromium gives a custom
   scheme no cookies, and the login gate and layout state live in cookies.
+  The intercept lets out only the window's own brain when it runs on plain
+  http (dev) and refuses every other http request with a 502: a request the
+  main process sends again carries no Origin and gets no CORS check, so it
+  must never reach the LAN or loopback for a page (`brain-fence.ts`,
+  `httpRouteOf`).
 - the box: the client image (`Dockerfile`) holds `out/` and one bundled
   server, `client/host/dist/server.mjs` (the same `static-host.ts` the desktop
   uses), run by `bun server.mjs` on the `oven/bun` image. It keeps the box contract: port 3000, the
@@ -83,8 +88,12 @@ window.__MANTLE_ENV__ = {
 | `Referrer-Policy: no-referrer`                       | the prefixes in `routes.json` `noReferrer` (`/client-signin`, `/invite`) and anything below |                                                                                                                                            |
 | `Cache-Control: public, max-age=31536000, immutable` | `/_next/static/*`                                                                           | content-hashed                                                                                                                             |
 | `Cache-Control: no-cache`                            | HTML, `/_mantle/*`                                                                          | so a new build shows at once                                                                                                               |
+| `X-Content-Type-Options: nosniff`                    | every response                                                                              | a file is only the type the host names                                                                                                     |
 
 The CSP is a header, not a meta tag, so `frame-ancestors` works.
+The brain origin goes into the CSP as written, so the box host refuses to
+start when `MANTLE_SERVER_ORIGIN` or `MANTLE_APPEARANCE_ORIGIN` is anything
+but a bare http(s) origin (no path, no space, no second directive).
 
 ## What the UI does itself
 

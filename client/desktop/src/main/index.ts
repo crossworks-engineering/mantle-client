@@ -20,6 +20,7 @@ import { attentionMode, safeInAppPath } from './attention';
 import {
   brainRequestFilter,
   frameNavigationAllowed,
+  httpRouteOf,
   permissionAllowed,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
@@ -27,7 +28,6 @@ import {
   appearanceCache,
   createStaticHost,
   originOf,
-  UI_HOST,
   UI_ORIGIN,
 } from '@mantle/client-host/static-host';
 import { createVault, type Vault } from './vault';
@@ -176,8 +176,9 @@ function rendererUrlFor(): string {
  *
  *  It intercepts http for the session, not a custom scheme: Chromium gives a
  *  custom scheme no cookies, and the UI's login gate and layout live in
- *  cookies. Only UI_HOST is answered here, so it never touches the network;
- *  any other http request (a brain on plain http in dev) goes out unchanged. */
+ *  cookies. Only the UI's own host is answered here, so it never touches the network;
+ *  the window's own brain on plain http (dev) goes out unchanged, and every
+ *  other http request is refused (brain-fence.ts, httpRouteOf). */
 function serveUi(ses: Electron.Session, brainOrigin: string): void {
   if (ses.protocol.isProtocolHandled('http')) return;
   const host = createStaticHost({
@@ -185,11 +186,12 @@ function serveUi(ses: Electron.Session, brainOrigin: string): void {
     brainOrigin,
     appearance: () => brainAppearance(brainOrigin),
   });
-  ses.protocol.handle('http', (request) =>
-    new URL(request.url).host === UI_HOST
-      ? host(request)
-      : ses.fetch(request, { bypassCustomProtocolHandlers: true }),
-  );
+  ses.protocol.handle('http', (request) => {
+    const route = httpRouteOf(request.url, brainOrigin);
+    if (route === 'ui') return host(request);
+    if (route === 'brain') return ses.fetch(request, { bypassCustomProtocolHandlers: true });
+    return new Response(null, { status: 502 });
+  });
 }
 
 // ── Native-parity CORS fencing ────────────────────────────────────────────────
