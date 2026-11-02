@@ -14,17 +14,27 @@
 // One more difference is known, and it is not a change of the UI: next-themes
 // writes its theme script into every page with Function.prototype.toString(),
 // and Bun answers that with its own printing of the function (other spacing,
-// `a === "class"` for `"class"===a`), not the minified source Node gives. An
-// inline script counts as REPRINTED only when esbuild minifies both copies to
-// the same code, and only when the rest of the page is byte-equal. --bytes
-// counts a reprint as a difference too.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+// `a === "class"` for `"class"===a`), not the minified source Node gives. So a
+// page counts as REPRINTED only when all of this holds:
+//   - the rest of the page is byte-equal;
+//   - exactly one inline script differs, and both copies of it end in the
+//     next-themes call this app makes, `)("class","theme",...)` (attribute
+//     and storage key), with byte-equal arguments;
+//   - esbuild prints both copies to the same code with whitespace and syntax
+//     minifying only: names stay as they are (a renamed function can be read
+//     by its .name), and /* @__PURE__ */ is ignored (it would let esbuild drop
+//     a call).
+// --bytes counts a reprint as a difference too.
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transformSync } from 'esbuild';
 
 const PLACEHOLDER = '__BUILD_ID__';
 const INLINE_SCRIPT = /<script>([\s\S]*?)<\/script>/g;
+// The arguments next-themes appends to its script: attribute, storage key, then
+// the rest of this app's ThemeProvider props as JSON (no parentheses in them).
+const THEME_CALL = /\)\(("class","theme",[^()]*)\)$/;
 
 /** Every file under `dir`, as sorted paths relative to it with `/` separators. */
 export function listFiles(dir) {
@@ -66,32 +76,45 @@ function normalised(buf, id) {
   return id ? text.split(id).join(PLACEHOLDER) : text;
 }
 
-function minified(code) {
+function canonical(code) {
   try {
-    return transformSync(code, { minify: true, loader: 'js' }).code;
+    return transformSync(code, {
+      loader: 'js',
+      minifyWhitespace: true,
+      minifySyntax: true,
+      ignoreAnnotations: true,
+    }).code;
   } catch {
     return null;
   }
 }
 
+/** True when two copies of an inline script are the one theme script, printed two ways. */
+function sameThemeScript(a, b) {
+  const callA = a.trimEnd().match(THEME_CALL);
+  const callB = b.trimEnd().match(THEME_CALL);
+  if (!callA || !callB || callA[1] !== callB[1]) return false;
+  const ca = canonical(a);
+  return ca !== null && ca === canonical(b);
+}
+
 /**
- * True when two pages differ only in inline scripts that esbuild minifies to
- * the same code. The text between the scripts must be byte-equal.
+ * True when two pages differ only in the theme script, printed another way.
+ * The text around it must be byte-equal, and only one script may differ.
  */
 export function sameAfterReprint(a, b) {
   const partsA = a.split(INLINE_SCRIPT);
   const partsB = b.split(INLINE_SCRIPT);
   if (partsA.length !== partsB.length) return false;
-  let reprinted = false;
+  let reprinted = 0;
   for (let i = 0; i < partsA.length; i++) {
     if (partsA[i] === partsB[i]) continue;
     // split() with one capture group puts the captured script bodies at odd indexes.
     if (i % 2 === 0) return false;
-    const ma = minified(partsA[i]);
-    if (ma === null || ma !== minified(partsB[i])) return false;
-    reprinted = true;
+    if (!sameThemeScript(partsA[i], partsB[i])) return false;
+    reprinted++;
   }
-  return reprinted;
+  return reprinted === 1;
 }
 
 /** Compares two export trees. Paths are reported with the build id replaced. */
@@ -146,7 +169,7 @@ function main(argv) {
   console.log(
     `${r.files} files in both: ${r.equal} byte-equal, ${r.reprinted.length} reprinted, ${r.different.length} different`,
   );
-  show('reprinted (an inline script printed another way, the same after minify)', r.reprinted);
+  show('reprinted (the theme script printed another way)', r.reprinted);
   show('different', r.different);
   show(`only in ${dirs[0]}`, r.onlyA);
   show(`only in ${dirs[1]}`, r.onlyB);
@@ -156,6 +179,12 @@ function main(argv) {
   return failed === 0 ? 0 : 1;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  process.exitCode = main(process.argv.slice(2));
-}
+// import.meta.main is the runtime's own answer (Node 26 and Bun both have it).
+// Comparing import.meta.url with argv[1] is not: Node resolves symlinks in the
+// first and not in the second, so a call through a symlinked path never ran
+// and exited 0. The realpath compare covers a runtime without import.meta.main.
+const isMain =
+  import.meta.main ??
+  (process.argv[1] !== undefined &&
+    realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)));
+if (isMain) process.exitCode = main(process.argv.slice(2));
