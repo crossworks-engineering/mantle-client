@@ -102,6 +102,10 @@ explicit origin is required. Setup and troubleshooting: `docs/db-less-dev.md`.
 renders and every data fetch fails. The Electron shell has its own dev loop,
 see `client/desktop/README.md`.
 
+The tools also run on Bun, beside Node: `pnpm dev:bun`, `pnpm build:bun`,
+`pnpm verify:bun` and others. Node stays the default; `docs/bun-tooling.md`
+has the commands, what stays on Node and why, and the numbers.
+
 ## Layout
 
 - `client/web`: the owner UI (Next.js). `pnpm dev:fe` runs it against the
