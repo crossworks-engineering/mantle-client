@@ -62,6 +62,38 @@ function clientTierImports(extra = []) {
   ];
 }
 
+const COOKIE_MESSAGE = 'Keep UI state in @mantle/web-ui/ui-prefs, not in cookies.';
+
+/** The selectors for every way the UI could reach its origin's cookies. */
+function cookieReaches() {
+  // Something that names a document: `document`, `doc`, or a property of
+  // that name (`window.document`, `frame.contentDocument`, `el.ownerDocument`).
+  const docName = '/^(document|doc|contentDocument|ownerDocument)$/';
+  const docs = [`[object.name=${docName}]`, `[object.property.name=${docName}]`];
+  const cookieKey = [
+    "[computed=false][property.name='cookie']",
+    "[computed=true][property.value='cookie']",
+    "[computed=true][property.quasis.length=1][property.quasis.0.value.cooked='cookie']",
+  ];
+  const members = docs.flatMap((d) => cookieKey.map((k) => `MemberExpression${d}${k}`));
+  const destructured = [
+    // const { cookie } = document; ({ cookie } = window.document)
+    ...docs.flatMap((d) => [
+      `VariableDeclarator${d.replace('[object.', '[init.')} > ObjectPattern > Property[key.name='cookie']`,
+      `AssignmentExpression${d.replace('[object.', '[right.')} > ObjectPattern > Property[key.name='cookie']`,
+    ]),
+    // const { document: { cookie } } = window
+    `Property[key.name=${docName}] > ObjectPattern > Property[key.name='cookie']`,
+  ];
+  // window.cookieStore, globalThis.cookieStore (the bare global is
+  // no-restricted-globals' job).
+  const store = ["MemberExpression[property.name='cookieStore']"];
+  return [...members, ...destructured, ...store].map((selector) => ({
+    selector,
+    message: COOKIE_MESSAGE,
+  }));
+}
+
 export default tseslint.config(
   {
     // Build output, deps, generated/vendored — never linted.
@@ -289,17 +321,15 @@ export default tseslint.config(
     // (mantle-ui://localhost) keeps none, so a value kept there was lost on
     // every load. Its small preferences go through ui-prefs (localStorage),
     // the one file that still reads document.cookie, to move an older
-    // build's values over.
+    // build's values over. Every spelling of the same reach is refused:
+    // `document.cookie`, `window.document.cookie` (or globalThis, self, any
+    // object's), `document['cookie']`, `doc.cookie`, a destructured
+    // `{ cookie }`, and the Cookie Store API.
     files: ['client/web/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
     ignores: ['packages/web-ui/src/ui-prefs.ts', '**/*.test.ts', '**/*.test.tsx'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "MemberExpression[object.name='document'][property.name='cookie']",
-          message: 'Keep UI state in @mantle/web-ui/ui-prefs, not document.cookie.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...cookieReaches()],
+      'no-restricted-globals': ['error', { name: 'cookieStore', message: COOKIE_MESSAGE }],
     },
   },
   {
