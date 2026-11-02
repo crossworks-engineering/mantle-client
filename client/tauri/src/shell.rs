@@ -1,7 +1,8 @@
 //! The app's shared state, and the two schemes it serves.
 //!
 //!   mantle-ui://localhost       the owner UI, to brain windows only (host.rs)
-//!   mantle-connect://localhost  the connect page, to the connect window only
+//!   mantle-connect://localhost  the connect page, to the connect window only,
+//!                               and the keychain notice, to the notice window
 //!
 //! Nothing intercepts http: a brain window's page talks to its brain
 //! directly from WebKit, and the CSP served here is what keeps it there.
@@ -21,6 +22,8 @@ use crate::profiles::Profiles;
 use crate::vault::{Unavailable, Vault};
 
 pub const CONNECT_LABEL: &str = "connect";
+/// The keychain notice (windows.rs, open_notice): no command, its own pages.
+pub const NOTICE_LABEL: &str = "notice";
 
 pub struct Shell {
     pub host: Host,
@@ -215,14 +218,38 @@ pub fn serve_ui<R: Runtime>(
 const CONNECT_HTML: &[u8] = include_bytes!("../connect/index.html");
 const CONNECT_JS: &[u8] = include_bytes!("../connect/connect.js");
 const CONNECT_CSS: &[u8] = include_bytes!("../connect/connect.css");
+const NOTICE_HTML: &[u8] = include_bytes!("../connect/notice.html");
+const NOTICE_FAILED_HTML: &[u8] = include_bytes!("../connect/notice-failed.html");
+const NOTICE_CSS: &[u8] = include_bytes!("../connect/notice.css");
 
 /// The connect page names nothing but itself and Tauri's IPC (its profile
 /// commands).
 pub const CONNECT_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-/// What the connect scheme answers, for the connect window only. Pure.
+/// The notice runs no script and loads nothing but its stylesheet. Its one
+/// form goes to its own scheme (the OK, which the window turns into a close).
+pub const NOTICE_CSP: &str = "default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+/// Which window a file of the connect scheme is for, its type, and its bytes.
+fn connect_file(path: &str) -> Option<(&'static str, &'static str, &'static [u8])> {
+    const HTML: &str = "text/html; charset=utf-8";
+    const CSS: &str = "text/css; charset=utf-8";
+    Some(match path {
+        "/" | "/index.html" => (CONNECT_LABEL, HTML, CONNECT_HTML),
+        "/connect.js" => (CONNECT_LABEL, "text/javascript; charset=utf-8", CONNECT_JS),
+        "/connect.css" => (CONNECT_LABEL, CSS, CONNECT_CSS),
+        "/notice.html" => (NOTICE_LABEL, HTML, NOTICE_HTML),
+        "/notice-failed.html" => (NOTICE_LABEL, HTML, NOTICE_FAILED_HTML),
+        "/notice.css" => (NOTICE_LABEL, CSS, NOTICE_CSS),
+        _ => return None,
+    })
+}
+
+/// What the connect scheme answers: each file to its own window only (the
+/// connect page to the connect window, the notice to the notice window).
+/// Pure.
 pub fn connect_answer(
-    is_connect_window: bool,
+    label: &str,
     method: &str,
     path: &str,
     origin: Option<&str>,
@@ -238,28 +265,32 @@ pub fn connect_answer(
     }
     let referer_ok =
         referer.is_none_or(|r| url::Url::parse(r).is_ok_and(|u| crate::fence::is_connect_url(&u)));
-    if !is_connect_window || origin.is_some_and(|o| o != CONNECT_ORIGIN) || !referer_ok {
+    let own_window = label == CONNECT_LABEL || label == NOTICE_LABEL;
+    if !own_window || origin.is_some_and(|o| o != CONNECT_ORIGIN) || !referer_ok {
         return forbidden();
     }
-    let (kind, body) = match path {
-        "/" | "/index.html" => ("text/html; charset=utf-8", CONNECT_HTML),
-        "/connect.js" => ("text/javascript; charset=utf-8", CONNECT_JS),
-        "/connect.css" => ("text/css; charset=utf-8", CONNECT_CSS),
-        _ => {
-            return HostAnswer {
-                status: 404,
-                headers: vec![nosniff],
-                body: b"Not found".to_vec(),
-            }
-        }
+    let Some((window, kind, body)) = connect_file(path) else {
+        return HostAnswer {
+            status: 404,
+            headers: vec![nosniff],
+            body: b"Not found".to_vec(),
+        };
     };
+    if window != label {
+        return forbidden();
+    }
     let mut headers = vec![
         ("content-type", kind.to_string()),
         nosniff,
         ("cache-control", "no-cache".into()),
     ];
     if kind.starts_with("text/html") {
-        headers.push(("content-security-policy", CONNECT_CSP.into()));
+        let csp = if window == CONNECT_LABEL {
+            CONNECT_CSP
+        } else {
+            NOTICE_CSP
+        };
+        headers.push(("content-security-policy", csp.into()));
         headers.push(("referrer-policy", "no-referrer".into()));
     }
     let body = if method.eq_ignore_ascii_case("HEAD") {
@@ -280,7 +311,7 @@ pub fn serve_connect<R: Runtime>(
     responder: UriSchemeResponder,
 ) {
     let answer = connect_answer(
-        ctx.webview_label() == CONNECT_LABEL,
+        ctx.webview_label(),
         req.method().as_str(),
         req.uri().path(),
         header_of(&req, header::ORIGIN),
@@ -313,24 +344,29 @@ pub fn connect_root() -> url::Url {
 mod tests {
     use super::*;
 
+    const C: &str = CONNECT_LABEL;
+    const N: &str = NOTICE_LABEL;
+
     #[test]
     fn the_connect_page_is_for_the_connect_window_only() {
-        let page = connect_answer(true, "GET", "/", None, None);
+        let page = connect_answer(C, "GET", "/", None, None);
         assert_eq!(page.status, 200);
         assert_eq!(page.header("content-security-policy"), Some(CONNECT_CSP));
         assert_eq!(page.header("x-content-type-options"), Some("nosniff"));
         assert_eq!(
-            connect_answer(true, "GET", "/connect.js", Some(CONNECT_ORIGIN), None).status,
+            connect_answer(C, "GET", "/connect.js", Some(CONNECT_ORIGIN), None).status,
             200
         );
-        assert_eq!(connect_answer(false, "GET", "/", None, None).status, 403);
+        for other in ["brain-x", "other", ""] {
+            assert_eq!(connect_answer(other, "GET", "/", None, None).status, 403);
+        }
         assert_eq!(
-            connect_answer(true, "GET", "/", Some(UI_ORIGIN), None).status,
+            connect_answer(C, "GET", "/", Some(UI_ORIGIN), None).status,
             403
         );
         assert_eq!(
             connect_answer(
-                true,
+                C,
                 "GET",
                 "/connect.js",
                 None,
@@ -339,10 +375,54 @@ mod tests {
             .status,
             403
         );
-        assert_eq!(connect_answer(true, "POST", "/", None, None).status, 405);
-        assert_eq!(connect_answer(true, "GET", "/../x", None, None).status, 404);
-        assert!(connect_answer(true, "HEAD", "/", None, None)
-            .body
-            .is_empty());
+        assert_eq!(connect_answer(C, "POST", "/", None, None).status, 405);
+        assert_eq!(connect_answer(C, "GET", "/../x", None, None).status, 404);
+        assert!(connect_answer(C, "HEAD", "/", None, None).body.is_empty());
+        // The notice's files are not the connect window's.
+        for path in ["/notice.html", "/notice-failed.html", "/notice.css"] {
+            assert_eq!(
+                connect_answer(C, "GET", path, None, None).status,
+                403,
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_notice_is_for_the_notice_window_only_and_runs_no_script() {
+        for path in crate::fence::NOTICE_PAGES {
+            let page = connect_answer(N, "GET", path, None, None);
+            assert_eq!(page.status, 200, "{path}");
+            assert_eq!(page.header("content-security-policy"), Some(NOTICE_CSP));
+            let text = String::from_utf8(page.body).unwrap();
+            assert!(!text.contains("<script"), "{path} has no script");
+            assert!(text.contains("action=\"/notice-ok\""), "{path} has its OK");
+            for other in [C, "brain-x", "other"] {
+                assert_eq!(connect_answer(other, "GET", path, None, None).status, 403);
+            }
+        }
+        assert!(NOTICE_CSP.contains("default-src 'none'"));
+        assert!(!NOTICE_CSP.contains("script-src"));
+        let css = connect_answer(N, "GET", "/notice.css", Some(CONNECT_ORIGIN), None);
+        assert_eq!(css.status, 200);
+        assert_eq!(css.header("content-security-policy"), None);
+        // The connect page and its script are not the notice window's: it
+        // has no command, and never loads the page that would call them.
+        for path in ["/", "/index.html", "/connect.js", "/connect.css"] {
+            assert_eq!(
+                connect_answer(N, "GET", path, None, None).status,
+                403,
+                "{path}"
+            );
+        }
+        // Its OK is a navigation the window refuses, never a file.
+        assert_eq!(
+            connect_answer(N, "GET", "/notice-ok", None, None).status,
+            404
+        );
+        assert_eq!(
+            connect_answer(N, "GET", "/notice.html", Some(UI_ORIGIN), None).status,
+            403
+        );
     }
 }

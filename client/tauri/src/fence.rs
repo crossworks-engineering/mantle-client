@@ -171,6 +171,34 @@ pub fn connect_navigation(url: &Url) -> Navigation {
     }
 }
 
+/// The keychain notice's two pages (connect/notice*.html), and where its OK
+/// button goes: a plain form, no script, so OK is a navigation.
+pub const NOTICE_PAGES: [&str; 2] = ["/notice.html", "/notice-failed.html"];
+pub const NOTICE_OK_PATH: &str = "/notice-ok";
+
+/// What the notice window does with a navigation. Like the others it never
+/// opens anything outside; its one extra answer is to close itself, which is
+/// what its OK button asks for.
+#[derive(Debug, PartialEq, Eq)]
+pub enum NoticeNavigation {
+    Allow,
+    Close,
+    Refuse,
+}
+
+/// The notice window shows its own two pages and nothing else; OK closes it.
+pub fn notice_navigation(url: &Url) -> NoticeNavigation {
+    if !is_connect_url(url) || url.fragment().is_some() {
+        return NoticeNavigation::Refuse;
+    }
+    match url.path() {
+        // The form's GET adds an empty query: any query is the same OK.
+        NOTICE_OK_PATH => NoticeNavigation::Close,
+        path if NOTICE_PAGES.contains(&path) && url.query().is_none() => NoticeNavigation::Allow,
+        _ => NoticeNavigation::Refuse,
+    }
+}
+
 /// mantle://n/<id> (the permalink responders embed) to the in-app /n/<id>;
 /// any mantle://<path> maps the same way. Deep links are wired in T2; this
 /// is the pure part, ported now with Electron's rules.
@@ -333,6 +361,43 @@ mod tests {
         ];
         for u in refuse {
             assert_eq!(brain_navigation(&url(u), brain), Navigation::Refuse, "{u}");
+        }
+    }
+
+    #[test]
+    fn the_notice_shows_its_own_pages_and_its_ok_closes_it() {
+        for page in NOTICE_PAGES {
+            assert_eq!(
+                notice_navigation(&url(&format!("mantle-connect://localhost{page}"))),
+                NoticeNavigation::Allow,
+                "{page}"
+            );
+        }
+        for ok in [
+            "mantle-connect://localhost/notice-ok",
+            "mantle-connect://localhost/notice-ok?",
+        ] {
+            assert_eq!(notice_navigation(&url(ok)), NoticeNavigation::Close, "{ok}");
+        }
+        for refused in [
+            "mantle-connect://localhost/",
+            "mantle-connect://localhost/index.html",
+            "mantle-connect://localhost/notice.css",
+            "mantle-connect://localhost/notice.html?x=1",
+            "mantle-connect://localhost/notice.html#x",
+            "mantle-connect://localhost:1/notice-ok",
+            "mantle-connect://other/notice-ok",
+            "mantle-ui://localhost/notice-ok",
+            "mantle-ui://localhost/",
+            "https://x.example/notice-ok",
+            "mailto:a@b.example",
+            "about:blank",
+        ] {
+            assert_eq!(
+                notice_navigation(&url(refused)),
+                NoticeNavigation::Refuse,
+                "{refused}"
+            );
         }
     }
 
