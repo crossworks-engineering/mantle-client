@@ -37,6 +37,16 @@ export function originOf(url: string): string | null {
   }
 }
 
+/**
+ * Whether a parsed URL names a plain host: letters, digits, dots and dashes,
+ * or a bracketed IPv6 address. The URL parser lets `*`, `;` and `,` through
+ * in a hostname, and a brain origin goes into the CSP as written, so
+ * `https://*` would open connect-src to every https host.
+ */
+export function plainHost(url: URL): boolean {
+  return /^[a-z0-9.-]+$/.test(url.hostname) || /^\[[0-9a-f:.]+\]$/.test(url.hostname);
+}
+
 /** On every answer: a file is only ever the type the host names. */
 const NOSNIFF = { 'x-content-type-options': 'nosniff' };
 

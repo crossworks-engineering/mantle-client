@@ -15,7 +15,8 @@ Hosts:
   http (dev) and refuses every other http request with a 502: a request the
   main process sends again carries no Origin and gets no CORS check, so it
   must never reach the LAN or loopback for a page (`brain-fence.ts`,
-  `httpRouteOf`).
+  `httpRouteOf`). For the same reason it does not follow that brain's
+  redirects: a 3xx answers 502. An https brain is not intercepted at all.
 - the box: the client image (`Dockerfile`) holds `out/` and one bundled
   server, `client/host/dist/server.mjs` (the same `static-host.ts` the desktop
   uses), run by `bun server.mjs` on the `oven/bun` image. It keeps the box contract: port 3000, the
@@ -93,7 +94,9 @@ window.__MANTLE_ENV__ = {
 The CSP is a header, not a meta tag, so `frame-ancestors` works.
 The brain origin goes into the CSP as written, so the box host refuses to
 start when `MANTLE_SERVER_ORIGIN` or `MANTLE_APPEARANCE_ORIGIN` is anything
-but a bare http(s) origin (no path, no space, no second directive).
+but a bare http(s) origin: no path, no space, and a host of only letters,
+digits, dots and dashes (or bracketed IPv6), so no `*` or `;`
+(`plainHost`). The desktop shell refuses such an address the same way.
 
 ## What the UI does itself
 

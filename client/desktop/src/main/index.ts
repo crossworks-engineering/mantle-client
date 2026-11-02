@@ -28,6 +28,7 @@ import {
   appearanceCache,
   createStaticHost,
   originOf,
+  plainHost,
   UI_ORIGIN,
 } from '@mantle/client-host/static-host';
 import { createVault, type Vault } from './vault';
@@ -118,6 +119,8 @@ function normalizeOrigin(input: string): string {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new Error(`unsupported protocol ${url.protocol}`);
   }
+  // The origin goes into the window's CSP as written (static-host.ts).
+  if (!plainHost(url)) throw new Error(`unsupported host ${url.hostname}`);
   return url.origin;
 }
 
@@ -177,8 +180,9 @@ function rendererUrlFor(): string {
  *  It intercepts http for the session, not a custom scheme: Chromium gives a
  *  custom scheme no cookies, and the UI's login gate and layout live in
  *  cookies. Only the UI's own host is answered here, so it never touches the network;
- *  the window's own brain on plain http (dev) goes out unchanged, and every
- *  other http request is refused (brain-fence.ts, httpRouteOf). */
+ *  the window's own brain on plain http (dev) goes out, without following
+ *  its redirects, and every other http request is refused (brain-fence.ts,
+ *  httpRouteOf). */
 function serveUi(ses: Electron.Session, brainOrigin: string): void {
   if (ses.protocol.isProtocolHandled('http')) return;
   const host = createStaticHost({
@@ -189,8 +193,13 @@ function serveUi(ses: Electron.Session, brainOrigin: string): void {
   ses.protocol.handle('http', (request) => {
     const route = httpRouteOf(request.url, brainOrigin);
     if (route === 'ui') return host(request);
-    if (route === 'brain') return ses.fetch(request, { bypassCustomProtocolHandlers: true });
-    return new Response(null, { status: 502 });
+    if (route === 'refuse') return new Response(null, { status: 502 });
+    // The main process sends it, so no CORS check sees where a redirect
+    // lands: a brain's 3xx must not take the page to a LAN or loopback
+    // service. 'manual' refuses it, and the page gets a 502.
+    return ses
+      .fetch(request, { bypassCustomProtocolHandlers: true, redirect: 'manual' })
+      .catch(() => new Response(null, { status: 502 }));
   });
 }
 

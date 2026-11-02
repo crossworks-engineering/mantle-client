@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appearanceCache, createStaticHost } from './static-host';
+import { appearanceCache, createStaticHost, plainHost } from './static-host';
 
 /**
  * The box's host of the static owner UI: the client image's whole server.
@@ -33,7 +33,7 @@ const appearanceOrigin = originEnv('MANTLE_APPEARANCE_ORIGIN') || brainOrigin;
 
 /** An origin from the environment, or '' when unset. The brain origin goes
  *  into the CSP as written, so anything that is not a bare http(s) origin
- *  (a path, a space, a second directive) stops the server instead. */
+ *  (a path, a space, a wildcard or `;` in the host) stops the server instead. */
 function originEnv(name: string): string {
   const raw = (process.env[name] ?? '').trim().replace(/\/+$/, '');
   if (!raw) return '';
@@ -41,6 +41,7 @@ function originEnv(name: string): string {
   const bare =
     url &&
     (url.protocol === 'http:' || url.protocol === 'https:') &&
+    plainHost(url) &&
     !url.username &&
     !url.password &&
     url.pathname === '/' &&

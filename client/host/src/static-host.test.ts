@@ -8,6 +8,7 @@ import {
   fillCsp,
   originOf,
   placeholderPath,
+  plainHost,
   UI_ORIGIN,
   type HostManifest,
 } from './static-host';
@@ -198,5 +199,19 @@ describe('appearanceCache', () => {
     const cached = appearanceCache(async (url) => ({ from: url }));
     expect(await cached('https://a.example')).toEqual({ from: 'https://a.example/api/appearance' });
     expect(await cached('https://b.example')).toEqual({ from: 'https://b.example/api/appearance' });
+  });
+});
+
+describe('plainHost', () => {
+  it('takes names, IPv4 and bracketed IPv6', () => {
+    for (const u of ['https://b.example', 'http://127.0.0.1:3000', 'http://[::1]:3000']) {
+      expect(plainHost(new URL(u)), u).toBe(true);
+    }
+  });
+
+  it('refuses a wildcard, a semicolon or a comma in the host', () => {
+    for (const u of ['https://*', 'https://*.x.com', 'https://a;b.com', 'https://a,b.com']) {
+      expect(plainHost(new URL(u)), u).toBe(false);
+    }
   });
 });
