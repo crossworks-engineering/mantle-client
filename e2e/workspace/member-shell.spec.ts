@@ -59,17 +59,6 @@ async function newPage(page: Page, title: string) {
   await page.getByRole('button', { name: 'Create page' }).click();
 }
 
-/** New page, then wait until the app has opened it (`/pages/<id>`). The
- *  app navigates there itself after a create; a `goto` sent before it lands
- *  can lose to it (next dev compiles the route on its first visit, and a
- *  client navigation cut short falls back to a full one), and the new page
- *  then sits open in the reading pane. */
-async function newPageOpened(page: Page, title: string) {
-  await newPage(page, title);
-  // The first visit compiles the route in dev: give it the time a goto gets.
-  await expect(page).toHaveURL(/\/pages\/[^/?]+(\?|$)/, { timeout: 30_000 });
-}
-
 test('the rail: the work screens and Workspaces, flat, no scope choice and no Admin rows', async ({
   page,
 }) => {
@@ -125,14 +114,14 @@ test('a new page lands in the private workspace, then in Team as a Moderator', a
   await expect(page.getByRole('main').getByText(PAGES.handbook.title)).toBeVisible();
 
   await pickWorkspace(page, 'Only you');
-  await newPageOpened(page, 'My own notes page');
+  await newPage(page, 'My own notes page');
   await expect
     .poll(() => api.created.map((c) => [c.title, c.ws]))
     .toEqual([['My own notes page', 'own']]);
 
   await page.goto('/pages');
   await pickWorkspace(page, /^Team/);
-  await newPageOpened(page, 'Crew rota');
+  await newPage(page, 'Crew rota');
   await expect
     .poll(() => api.created.map((c) => [c.title, c.ws]))
     .toEqual([
@@ -147,11 +136,15 @@ test('a new page lands in the private workspace, then in Team as a Moderator', a
     WORKSPACES.own.id,
     WORKSPACES.team.id,
   ]);
-  // The private page lists under Only you.
+  // The private page lists under Only you. The list's rows only: entering
+  // /pages opens the page this login last had open (lib/last-opened.ts),
+  // here Crew rota once its editor has loaded, and the reading pane beside
+  // the list then shows its title whatever the switcher says.
   await page.goto('/pages');
   await pickWorkspace(page, 'Only you');
-  await expect(page.getByRole('main').getByText('My own notes page')).toBeVisible();
-  await expect(page.getByRole('main').getByText('Crew rota')).toHaveCount(0);
+  const rows = page.getByRole('main').getByRole('treeitem');
+  await expect(rows.filter({ hasText: 'My own notes page' })).toBeVisible();
+  await expect(rows.filter({ hasText: 'Crew rota' })).toHaveCount(0);
   expect(beyondMember(api.asked('member'))).toEqual([]);
 });
 
