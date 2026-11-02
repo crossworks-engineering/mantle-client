@@ -273,9 +273,11 @@ fn bare(status: u16, body: &str) -> HostAnswer {
 
 /// Whether a request comes from the UI's own pages. A header that is absent
 /// says nothing (a navigation, a classic script); one that is present must
-/// name the UI origin. This keeps a brain's frames from loading the app's
-/// files by the obvious route; it is not a secret-keeping boundary (a frame
-/// can drop its Referer), which is why nothing here is secret.
+/// name the UI origin. A Referer may be a `blob:` URL the UI made
+/// (`blob:mantle-ui://localhost/<uuid>`), whose origin is the UI's. This
+/// keeps a brain's frames from loading the app's files by the obvious route;
+/// it is not a secret-keeping boundary (a frame can drop its Referer), which
+/// is why nothing here is secret.
 fn from_ui(value: Option<&str>, whole_url: bool) -> bool {
     let Some(value) = value else {
         return true;
@@ -283,7 +285,13 @@ fn from_ui(value: Option<&str>, whole_url: bool) -> bool {
     if !whole_url {
         return value == UI_ORIGIN;
     }
-    url::Url::parse(value).is_ok_and(|u| crate::fence::is_ui_url(&u))
+    let Ok(url) = url::Url::parse(value) else {
+        return false;
+    };
+    if url.scheme() == "blob" {
+        return url::Url::parse(url.path()).is_ok_and(|inner| crate::fence::is_ui_url(&inner));
+    }
+    crate::fence::is_ui_url(&url)
 }
 
 /// The UI host of one window.
@@ -695,6 +703,11 @@ mod tests {
         assert_eq!(ask(None, Some("https://b.example/api/apps/a/frame")), 403);
         assert_eq!(ask(None, Some("mantle-ui://localhost:1/")), 403);
         assert_eq!(ask(None, Some("not a url")), 403);
+        // A blob the UI made is the UI's; one a brain frame made is not.
+        assert_eq!(ask(None, Some("blob:mantle-ui://localhost/1234")), 200);
+        assert_eq!(ask(None, Some("blob:https://b.example/1234")), 403);
+        assert_eq!(ask(None, Some("blob:mantle-ui://localhost:1/1234")), 403);
+        assert_eq!(ask(None, Some("blob:null/1234")), 403);
     }
 
     #[test]

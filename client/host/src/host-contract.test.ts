@@ -9,6 +9,10 @@ import { createStaticHost, fillCsp, UI_ORIGIN } from './static-host';
  * cases from its Rust port (client/tauri/src/host.rs, `cargo test`), over the
  * same fixture tree, so a rule changed in one host and not the other fails
  * one of the two runs.
+ *
+ * The upper-case cases are paths that miss on any filesystem: a case-blind
+ * one (macOS) would find `/LOGIN` on disk where the Tauri shell's embedded
+ * files, looked up exactly, would not, so such a path is no shared case.
  */
 
 type HostCase = {
