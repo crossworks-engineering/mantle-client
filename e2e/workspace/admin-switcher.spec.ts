@@ -38,6 +38,14 @@ async function newPage(page: Page, title: string) {
   await page.getByRole('button', { name: 'Create page' }).click();
 }
 
+/** New page, then wait until the app has opened it (`/pages/<id>`), before
+ *  the spec navigates on: a navigation sent first can lose to the app's own
+ *  (member-shell.spec.ts, newPageOpened). */
+async function newPageOpened(page: Page, title: string) {
+  await newPage(page, title);
+  await expect(page).toHaveURL(/\/pages\/[^/?]+(\?|$)/, { timeout: 30_000 });
+}
+
 /** The `ws` of every Pages list the admin asked for, in order. */
 const listWs = () =>
   api.requests
@@ -69,7 +77,7 @@ test('an Admin user in Team switches to Team and back: label, lists and creates 
   await expect(main.getByText(PAGES.handbook.title, { exact: true })).toBeVisible();
   await expect(main.getByText(PAGES.minutes.title, { exact: true })).toHaveCount(0);
 
-  await newPage(page, 'Team plan');
+  await newPageOpened(page, 'Team plan');
   await expect.poll(() => api.created.map((c) => [c.title, c.ws])).toEqual([['Team plan', 'team']]);
   expect(createWs()).toEqual([WORKSPACES.team.id]);
 
@@ -130,7 +138,7 @@ test('with browser storage full, a switch still switches for the page', async ({
   await expect(switcher(page)).toHaveAccessibleName('Workspace: Team');
   await expect.poll(() => listWs().at(-1)).toBe(WORKSPACES.team.id);
   await expect(main.getByText(PAGES.minutes.title, { exact: true })).toHaveCount(0);
-  await newPage(page, 'Team plan');
+  await newPageOpened(page, 'Team plan');
   await expect.poll(() => api.created.map((c) => [c.title, c.ws])).toEqual([['Team plan', 'team']]);
   expect(createWs()).toEqual([WORKSPACES.team.id]);
 
