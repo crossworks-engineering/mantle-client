@@ -30,7 +30,14 @@
 //! Electron's alphabet before it is used.
 //!
 //! One lock per process serializes every call: index reads and writes, and
-//! the store calls between them. Callers run off the main thread.
+//! the store calls between them. Callers run off the main thread. A caller
+//! that must check something under the same lock (is the brain still
+//! listed?) uses `Vault::when`.
+//!
+//! The index is written BEFORE a login's entry, and when it cannot be
+//! written the entry is not either: every entry of a brain is one its index
+//! names, so `keep_only` and `remove_profile` find it. `remove_profile` also
+//! sweeps the keychain for the brain's prefix, in case one was missed.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -64,14 +71,25 @@ struct Index {
     sessions: BTreeMap<String, u64>,
 }
 
-/// What went wrong during one call, reported once the lock is released.
+/// What went wrong during one call, reported once the lock is released:
+/// the keychain's failures (traced, and the user is told once per run), and
+/// the index file's (traced only: the notice is about the keychain, and a
+/// disk that will not take a small file is not something it can explain).
 #[derive(Default)]
-struct Failures(Vec<String>);
+struct Failures {
+    keychain: Vec<String>,
+    disk: Vec<String>,
+}
 
 impl Failures {
     fn note(&mut self, what: &str, error: &KeyError) {
         // The error's text names the store's own failure, never a secret.
-        self.0.push(format!("{what}: {error}"));
+        self.keychain.push(format!("{what}: {error}"));
+    }
+
+    fn note_index(&mut self, error: &std::io::Error) {
+        self.disk
+            .push(format!("index: {error}; the login was not stored"));
     }
 }
 
@@ -206,12 +224,12 @@ impl Vault {
             let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
             call(&mut failures)
         };
-        if !failures.0.is_empty() {
-            if self.trace {
-                for line in &failures.0 {
-                    eprintln!("[mantle-desktop] vault: {line}");
-                }
+        if self.trace {
+            for line in failures.keychain.iter().chain(&failures.disk) {
+                eprintln!("[mantle-desktop] vault: {line}");
             }
+        }
+        if !failures.keychain.is_empty() {
             self.tell_unavailable();
         }
         out
@@ -290,7 +308,11 @@ impl Vault {
             .unwrap_or_default()
     }
 
-    fn write_index(&self, profile: &str, index: &Index) {
+    /// Writes a brain's index: whole, to a temporary file renamed over the
+    /// old one; an empty index removes the file. In a run with no keychain
+    /// the index is in memory and this cannot fail. An error means the index
+    /// on disk is what it was before the call.
+    fn write_index(&self, profile: &str, index: &Index) -> std::io::Result<()> {
         if let Some(memory) = &self.memory_index {
             let mut map = memory.lock().unwrap_or_else(|e| e.into_inner());
             if index.sessions.is_empty() {
@@ -298,34 +320,38 @@ impl Vault {
             } else {
                 map.insert(profile.to_string(), index.clone());
             }
-            return;
+            return Ok(());
         }
         if index.sessions.is_empty() {
-            let _ = std::fs::remove_file(self.index_path(profile));
-            return;
+            return match std::fs::remove_file(self.index_path(profile)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            };
         }
-        let _ = std::fs::create_dir_all(&self.dir);
+        std::fs::create_dir_all(&self.dir)?;
         let body = serde_json::to_string(&Index {
             v: 1,
             sessions: index.sessions.clone(),
-        })
-        .unwrap_or_default();
+        })?;
         let tmp = self.dir.join(format!("{profile}.json.tmp"));
-        if std::fs::write(&tmp, body).is_ok() {
-            let _ = std::fs::rename(&tmp, self.index_path(profile));
-        }
+        std::fs::write(&tmp, body)?;
+        std::fs::rename(&tmp, self.index_path(profile))
     }
 
-    fn index_add(&self, profile: &str, session: &str, now: u64) {
+    /// Lists a login in its brain's index. An error: it is not listed.
+    fn index_add(&self, profile: &str, session: &str, now: u64) -> std::io::Result<()> {
         let mut index = self.read_index(profile);
         index.sessions.insert(session.to_string(), now);
-        self.write_index(profile, &index);
+        self.write_index(profile, &index)
     }
 
+    /// Takes a login off its brain's index. Best effort: a login the index
+    /// still names after its entry is gone is harmless (it is dropped when
+    /// found missing), so a failure here is not one to act on.
     fn index_remove(&self, profile: &str, session: &str) {
         let mut index = self.read_index(profile);
         if index.sessions.remove(session).is_some() {
-            self.write_index(profile, &index);
+            let _ = self.write_index(profile, &index);
         }
     }
 
@@ -333,91 +359,228 @@ impl Vault {
         !token.is_empty() && token.len() <= MAX_TOKEN_BYTES
     }
 
-    // ── the unscoped slot: what an earlier build kept, one per brain ───────
+    /// Runs one call with the lock held (the ops are `Held`'s).
+    fn held<T>(&self, call: impl FnOnce(&mut Held<'_>) -> T) -> T {
+        self.with_lock(|failures| {
+            call(&mut Held {
+                vault: self,
+                failures,
+            })
+        })
+    }
+
+    /// Runs one call with the lock held, only when `allowed` says so, asked
+    /// under that same lock. vault_endpoint.rs asks here whether the brain
+    /// is still listed: a brain removed meanwhile (commands.rs removes it
+    /// from the list, then calls `remove_profile`, which waits for this lock)
+    /// is either refused here or swept by `remove_profile` afterwards, never
+    /// written to after its removal. None: not allowed, nothing done.
+    pub fn when<T>(
+        &self,
+        allowed: impl FnOnce() -> bool,
+        call: impl FnOnce(&mut Held<'_>) -> T,
+    ) -> Option<T> {
+        self.held(|held| allowed().then(|| call(held)))
+    }
+
+    // The ops, each under the lock (Held has their rules).
 
     pub fn get(&self, profile: &str) -> Option<String> {
-        self.with_lock(|f| self.read(&Self::slot(profile), f).ok().flatten())
+        self.held(|h| h.get(profile))
     }
 
     pub fn set(&self, profile: &str, token: &str) {
-        if !Self::token_ok(token) {
-            return;
-        }
-        self.with_lock(|f| {
-            self.write(&Self::slot(profile), token, f);
-        });
+        self.held(|h| h.set(profile, token))
     }
 
     pub fn clear(&self, profile: &str) {
+        self.held(|h| h.clear(profile))
+    }
+
+    pub fn get_for(&self, profile: &str, session: &str) -> Option<String> {
+        self.held(|h| h.get_for(profile, session))
+    }
+
+    pub fn set_for(&self, profile: &str, session: &str, token: &str, now: u64) {
+        self.held(|h| h.set_for(profile, session, token, now))
+    }
+
+    pub fn clear_for(&self, profile: &str, session: &str) {
+        self.held(|h| h.clear_for(profile, session))
+    }
+
+    pub fn adopt(&self, profile: &str, session: &str, now: u64) -> Option<String> {
+        self.held(|h| h.adopt(profile, session, now))
+    }
+
+    pub fn keep_only(
+        &self,
+        profile: &str,
+        session_ids: &[String],
+        stray_bearers: &[String],
+        now: u64,
+    ) {
+        self.held(|h| h.keep_only(profile, session_ids, stray_bearers, now))
+    }
+
+    /// A brain was removed from the app: none of its logins stay behind.
+    /// The entries its index names, the unscoped slot, and then whatever
+    /// else the keychain holds under this brain's prefix (`<profile>/`), in
+    /// case the index missed one: keyring-core's search, which the macOS
+    /// keychain, the Secret Service, the mock and the memory store all
+    /// answer. A store that cannot search is left to the index.
+    pub fn remove_profile(&self, profile: &str) {
         self.with_lock(|f| {
             self.delete(&Self::slot(profile), f);
+            let mut index = self.read_index(profile);
+            let held: Vec<String> = index.sessions.keys().cloned().collect();
+            for session in held {
+                if self.delete(&Self::login(profile, &session), f) {
+                    index.sessions.remove(&session);
+                }
+            }
+            self.sweep(profile, f);
+            // What could not be deleted stays listed, for a later removal.
+            // Best effort, as index_remove.
+            let _ = self.write_index(profile, &index);
         });
+    }
+
+    /// Deletes every entry of this service whose user is `<profile>/...`.
+    fn sweep(&self, profile: &str, failures: &mut Failures) {
+        let prefix = format!("{profile}/");
+        let spec = HashMap::from([("service", self.service.as_str())]);
+        let found = match self.store.search(&spec) {
+            Ok(found) => found,
+            Err(KeyError::NotSupportedByStore(_)) => return,
+            Err(e) => {
+                // Not a login that failed to be kept: the trace only.
+                if self.trace {
+                    eprintln!("[mantle-desktop] vault: search: {e}");
+                }
+                return;
+            }
+        };
+        for entry in found {
+            let Some((service, user)) = entry.get_specifiers() else {
+                continue;
+            };
+            if service != self.service || !user.starts_with(&prefix) {
+                continue;
+            }
+            if let Err(e) = entry.delete_credential() {
+                if !matches!(e, KeyError::NoEntry) {
+                    failures.note("delete", &e);
+                }
+            }
+        }
+    }
+}
+
+/// The vault with its lock held: every op, with its rules. Made only by
+/// `Vault::held` and `Vault::when`, so whatever runs here runs under the
+/// lock, one call at a time.
+pub struct Held<'a> {
+    vault: &'a Vault,
+    failures: &'a mut Failures,
+}
+
+impl Held<'_> {
+    fn read(&mut self, user: &str) -> Result<Option<String>, ()> {
+        self.vault.read(user, self.failures)
+    }
+
+    fn write(&mut self, user: &str, token: &str) -> bool {
+        self.vault.write(user, token, self.failures)
+    }
+
+    fn delete(&mut self, user: &str) -> bool {
+        self.vault.delete(user, self.failures)
+    }
+
+    // ── the unscoped slot: what an earlier build kept, one per brain ───────
+
+    pub fn get(&mut self, profile: &str) -> Option<String> {
+        self.read(&Vault::slot(profile)).ok().flatten()
+    }
+
+    pub fn set(&mut self, profile: &str, token: &str) {
+        if Vault::token_ok(token) {
+            self.write(&Vault::slot(profile), token);
+        }
+    }
+
+    pub fn clear(&mut self, profile: &str) {
+        self.delete(&Vault::slot(profile));
     }
 
     // ── one bearer per login ────────────────────────────────────────────────
 
-    pub fn get_for(&self, profile: &str, session: &str) -> Option<String> {
+    pub fn get_for(&mut self, profile: &str, session: &str) -> Option<String> {
         if !is_session_id(session) {
             return None;
         }
-        self.with_lock(|f| self.read(&Self::login(profile, session), f).ok().flatten())
+        self.read(&Vault::login(profile, session)).ok().flatten()
     }
 
-    pub fn set_for(&self, profile: &str, session: &str, token: &str, now: u64) {
-        if !is_session_id(session) || !Self::token_ok(token) {
+    /// The index first: an entry the index names but the keychain lacks is
+    /// harmless (it is dropped when found missing), while an entry the index
+    /// does not name could outlive its brain. So when the index cannot be
+    /// written the keychain is not either: the login is simply not stored,
+    /// as a write the keychain refuses is not (Electron's rule), and the
+    /// next read tells the truth.
+    pub fn set_for(&mut self, profile: &str, session: &str, token: &str, now: u64) {
+        if !is_session_id(session) || !Vault::token_ok(token) {
             return;
         }
-        self.with_lock(|f| {
-            // The index first: an entry the index names but the keychain
-            // lacks is harmless (it is dropped when found missing), while an
-            // entry the index does not name could outlive its brain.
-            self.index_add(profile, session, now);
-            self.write(&Self::login(profile, session), token, f);
-        });
+        if let Err(e) = self.vault.index_add(profile, session, now) {
+            self.failures.note_index(&e);
+            return;
+        }
+        self.write(&Vault::login(profile, session), token);
     }
 
-    pub fn clear_for(&self, profile: &str, session: &str) {
+    pub fn clear_for(&mut self, profile: &str, session: &str) {
         if !is_session_id(session) {
             return;
         }
-        self.with_lock(|f| {
-            if self.delete(&Self::login(profile, session), f) {
-                self.index_remove(profile, session);
-            }
-        });
+        if self.delete(&Vault::login(profile, session)) {
+            self.vault.index_remove(profile, session);
+        }
     }
 
     /// Give the unscoped bearer to a login that has none, and answer with
     /// it: a move, as Electron's rename is. A login that already has a
     /// bearer of its own keeps it and the slot is left alone. When the slot
     /// cannot be emptied the copy is taken back, so the bearer is never left
-    /// in both places by this call.
-    pub fn adopt(&self, profile: &str, session: &str, now: u64) -> Option<String> {
+    /// in both places by this call. Index first, as set_for.
+    pub fn adopt(&mut self, profile: &str, session: &str, now: u64) -> Option<String> {
         if !is_session_id(session) {
             return None;
         }
-        let target = Self::login(profile, session);
-        let slot = Self::slot(profile);
-        self.with_lock(|f| {
-            match self.read(&target, f) {
-                Ok(Some(own)) => return Some(own),
-                Ok(None) => {}
-                Err(()) => return None,
+        let target = Vault::login(profile, session);
+        let slot = Vault::slot(profile);
+        match self.read(&target) {
+            Ok(Some(own)) => return Some(own),
+            Ok(None) => {}
+            Err(()) => return None,
+        }
+        let token = self.read(&slot).ok().flatten()?;
+        if let Err(e) = self.vault.index_add(profile, session, now) {
+            self.failures.note_index(&e);
+            return None;
+        }
+        if !self.write(&target, &token) {
+            self.vault.index_remove(profile, session);
+            return None;
+        }
+        if !self.delete(&slot) {
+            if self.delete(&target) {
+                self.vault.index_remove(profile, session);
             }
-            let token = self.read(&slot, f).ok().flatten()?;
-            self.index_add(profile, session, now);
-            if !self.write(&target, &token, f) {
-                self.index_remove(profile, session);
-                return None;
-            }
-            if !self.delete(&slot, f) {
-                if self.delete(&target, f) {
-                    self.index_remove(profile, session);
-                }
-                return None;
-            }
-            Some(token)
-        })
+            return None;
+        }
+        Some(token)
     }
 
     /// Drop this brain's leftover logins: those under an id the page's list
@@ -427,7 +590,7 @@ impl Vault {
     /// of this brain may be listing it right now. Ids that are not session
     /// ids are ignored, and the unscoped slot is not a login. Electron's rule.
     pub fn keep_only(
-        &self,
+        &mut self,
         profile: &str,
         session_ids: &[String],
         stray_bearers: &[String],
@@ -446,49 +609,30 @@ impl Vault {
         if stray.is_empty() {
             return;
         }
-        self.with_lock(|f| {
-            let mut index = self.read_index(profile);
-            let candidates: Vec<String> = index
-                .sessions
-                .iter()
-                .filter(|(s, at)| {
-                    !keep.contains(s.as_str()) && now.saturating_sub(**at) >= RECENT_MS
-                })
-                .map(|(s, _)| s.clone())
-                .collect();
-            let mut changed = false;
-            for session in candidates {
-                let user = Self::login(profile, &session);
-                let gone = match self.read(&user, f) {
-                    Ok(Some(token)) if stray.contains(token.as_str()) => self.delete(&user, f),
-                    Ok(None) => true,
-                    _ => false,
-                };
-                if gone {
-                    index.sessions.remove(&session);
-                    changed = true;
-                }
+        let mut index = self.vault.read_index(profile);
+        let candidates: Vec<String> = index
+            .sessions
+            .iter()
+            .filter(|(s, at)| !keep.contains(s.as_str()) && now.saturating_sub(**at) >= RECENT_MS)
+            .map(|(s, _)| s.clone())
+            .collect();
+        let mut changed = false;
+        for session in candidates {
+            let user = Vault::login(profile, &session);
+            let gone = match self.read(&user) {
+                Ok(Some(token)) if stray.contains(token.as_str()) => self.delete(&user),
+                Ok(None) => true,
+                _ => false,
+            };
+            if gone {
+                index.sessions.remove(&session);
+                changed = true;
             }
-            if changed {
-                self.write_index(profile, &index);
-            }
-        });
-    }
-
-    /// A brain was removed from the app: none of its logins stay behind.
-    pub fn remove_profile(&self, profile: &str) {
-        self.with_lock(|f| {
-            self.delete(&Self::slot(profile), f);
-            let mut index = self.read_index(profile);
-            let held: Vec<String> = index.sessions.keys().cloned().collect();
-            for session in held {
-                if self.delete(&Self::login(profile, &session), f) {
-                    index.sessions.remove(&session);
-                }
-            }
-            // What could not be deleted stays listed, for a later removal.
-            self.write_index(profile, &index);
-        });
+        }
+        if changed {
+            // Best effort, as index_remove.
+            let _ = self.vault.write_index(profile, &index);
+        }
     }
 }
 
@@ -575,6 +719,29 @@ impl CredentialStoreApi for MemoryStore {
         })))
     }
 
+    /// Every entry of the service named in `spec` (all of them without one),
+    /// as the keychain's own search answers: what `remove_profile` sweeps.
+    fn search(&self, spec: &HashMap<&str, &str>) -> keyring_core::Result<Vec<Entry>> {
+        let service = spec.get("service").copied();
+        let keys: Vec<(String, String)> = self
+            .entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .filter(|(s, _)| service.is_none_or(|want| s == want))
+            .cloned()
+            .collect();
+        Ok(keys
+            .into_iter()
+            .map(|key| {
+                Entry::new_with_credential(Arc::new(MemoryEntry {
+                    entries: self.entries.clone(),
+                    key,
+                }))
+            })
+            .collect())
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -650,7 +817,7 @@ mod tests {
             Ok(None)
         }
         fn get_specifiers(&self) -> Option<(String, String)> {
-            None
+            self.inner.get_specifiers()
         }
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -676,6 +843,27 @@ mod tests {
                 user: user.to_string(),
                 refuse: self.refuse.clone(),
             })))
+        }
+        fn search(
+            &self,
+            spec: &std::collections::HashMap<&str, &str>,
+        ) -> keyring_core::Result<Vec<Entry>> {
+            if self.refuse.all.load(Ordering::SeqCst) {
+                return Err(locked());
+            }
+            Ok(self
+                .inner
+                .search(spec)?
+                .into_iter()
+                .map(|inner| {
+                    let user = inner.get_specifiers().map(|(_, u)| u).unwrap_or_default();
+                    Entry::new_with_credential(Arc::new(FlakyCred {
+                        inner,
+                        user,
+                        refuse: self.refuse.clone(),
+                    }))
+                })
+                .collect())
         }
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -957,6 +1145,126 @@ mod tests {
         assert_eq!(f.keychain(&format!("{A}/s2")), None);
         assert!(!f.dir.join("vault").join(format!("{A}.json")).exists());
         assert_eq!(vault.get_for(B, "s1").as_deref(), Some("b.one"));
+    }
+
+    /// An entry under this brain's prefix that its index does not name (an
+    /// earlier build's, or one written while the index was lost) goes too;
+    /// another brain's, another service's and the probe's stay.
+    #[test]
+    fn remove_profile_sweeps_what_the_index_does_not_name() {
+        let f = Fixture::new();
+        let vault = f.vault();
+        vault.set_for(A, "s1", "a.one", now());
+        vault.set_for(B, "s1", "b.one", now());
+        let plant = |service: &str, user: &str| {
+            f.store
+                .build(service, user, None)
+                .unwrap()
+                .set_password("planted")
+                .unwrap();
+        };
+        plant(SERVICE, &format!("{A}/unindexed"));
+        plant(SERVICE, &format!("{B}/unindexed"));
+        plant("another.app", &format!("{A}/s1"));
+        vault.remove_profile(A);
+        assert_eq!(f.keychain(&format!("{A}/s1")), None);
+        assert_eq!(f.keychain(&format!("{A}/unindexed")), None);
+        assert_eq!(
+            f.keychain(&format!("{B}/unindexed")).as_deref(),
+            Some("planted")
+        );
+        assert_eq!(vault.get_for(B, "s1").as_deref(), Some("b.one"));
+        let other = f
+            .store
+            .build("another.app", &format!("{A}/s1"), None)
+            .unwrap();
+        assert_eq!(other.get_password().unwrap(), "planted");
+        assert_eq!(f.told(), 0);
+    }
+
+    /// The same in a run with no keychain: the memory store searches too.
+    #[test]
+    fn remove_profile_sweeps_the_memory_store_too() {
+        let f = Fixture::new();
+        let vault = f.vault_with(None);
+        vault.set_for(A, "s1", "a.one", now());
+        vault.set_for(B, "s1", "b.one", now());
+        // Written past the index, as an index that was lost would leave it.
+        vault
+            .store
+            .build(SERVICE, &format!("{A}/unindexed"), None)
+            .unwrap()
+            .set_password("planted")
+            .unwrap();
+        vault.remove_profile(A);
+        assert_eq!(vault.get_for(A, "s1"), None);
+        assert_eq!(vault.get_for(A, "unindexed"), None);
+        assert_eq!(vault.get_for(B, "s1").as_deref(), Some("b.one"));
+    }
+
+    /// `when` asks under the lock: a call it allows finishes before a
+    /// removal waiting on that lock starts, so the removal finds what the
+    /// call wrote; a call it refuses does nothing at all.
+    #[test]
+    fn a_call_allowed_under_the_lock_is_swept_by_a_removal_waiting_on_it() {
+        let f = Fixture::new();
+        let vault = Arc::new(f.vault());
+        let remover = vault.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let mut removal = None;
+        let done = vault.when(
+            || {
+                // The brain is removed from the list now: the removal then
+                // waits for this call's lock.
+                removal = Some(std::thread::spawn(move || {
+                    let _ = started_tx.send(());
+                    remover.remove_profile(A);
+                }));
+                started_rx.recv().unwrap();
+                true
+            },
+            |held| held.set_for(A, "s1", "a.one", now()),
+        );
+        assert_eq!(done, Some(()));
+        removal.unwrap().join().unwrap();
+        assert_eq!(f.keychain(&format!("{A}/s1")), None);
+        assert!(f.indexed(A).is_empty());
+
+        // Refused: nothing written, nothing listed.
+        assert_eq!(
+            vault.when(|| false, |held| held.set_for(A, "s2", "a.two", now())),
+            None
+        );
+        assert_eq!(f.keychain(&format!("{A}/s2")), None);
+        assert!(f.indexed(A).is_empty());
+    }
+
+    // ── when the index cannot be written ────────────────────────────────────
+
+    /// The index first: a login whose index cannot be written is not stored
+    /// at all (the keychain is not written), so no entry is ever one that
+    /// keepOnly and removeProfile cannot find. Not the keychain's fault, so
+    /// the keychain notice is not shown.
+    #[test]
+    fn a_login_whose_index_cannot_be_written_is_not_stored() {
+        let f = Fixture::new();
+        let vault = f.vault();
+        vault.set(A, "legacy");
+        // The index folder is a file: nothing can be written under it.
+        std::fs::write(f.dir.join("vault"), b"not a folder").unwrap();
+        vault.set_for(A, "s1", "a.one", now());
+        assert_eq!(f.keychain(&format!("{A}/s1")), None);
+        assert_eq!(vault.get_for(A, "s1"), None);
+        // adopt does not move the slot either: it stays where it was.
+        assert_eq!(vault.adopt(A, "s2", now()), None);
+        assert_eq!(f.keychain(&format!("{A}/s2")), None);
+        assert_eq!(vault.get(A).as_deref(), Some("legacy"));
+        assert_eq!(f.told(), 0);
+        // Once the index can be written, the next sign-in is stored.
+        std::fs::remove_file(f.dir.join("vault")).unwrap();
+        vault.set_for(A, "s1", "a.one", now());
+        assert_eq!(vault.get_for(A, "s1").as_deref(), Some("a.one"));
+        assert_eq!(f.indexed(A), vec!["s1".to_string()]);
     }
 
     // ── leftover logins ─────────────────────────────────────────────────────

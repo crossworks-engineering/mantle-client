@@ -18,6 +18,9 @@
 //!
 //! The brain is the window's, from its label: never from the body. Called
 //! off the main thread (shell.rs, serve_ui); the vault serializes the work.
+//! Whether the brain is still listed is asked again under the vault's lock,
+//! with the call (`Vault::when`): a brain removed while a call was on its
+//! way is never written to after its removal.
 //!
 //! On Linux, wry gives a webview only its main frame's URL, and WebKitGTK's
 //! navigation and IPC hooks cannot tell a sub-frame from the main frame. The
@@ -30,7 +33,7 @@ use tauri::{AppHandle, Manager, Runtime};
 use crate::fence::{is_ui_url, UI_ORIGIN};
 use crate::profiles::id_from_label;
 use crate::shell::Shell;
-use crate::vault::Vault;
+use crate::vault::Held;
 
 pub const VAULT_PATH: &str = "/_mantle/vault";
 pub const VAULT_HEADER: &str = "x-mantle-vault";
@@ -89,45 +92,72 @@ pub fn op_name(body: &[u8]) -> &'static str {
     }
 }
 
-/// One vault call for `profile`. None: not a call this endpoint knows.
-pub fn answer(vault: &Vault, profile: &str, body: &[u8], now: u64) -> Option<Option<String>> {
+/// One vault call, as the page sent it: read from the body before the lock
+/// is taken, and run under it.
+pub enum Call {
+    Get,
+    Set(String),
+    Clear,
+    GetFor(String),
+    SetFor(String, String),
+    ClearFor(String),
+    Adopt(String),
+    /// None: either list was not a list, and Electron then does nothing.
+    KeepOnly(Option<(Vec<String>, Vec<String>)>),
+}
+
+/// The call a body asks for. None: not a call this endpoint knows.
+pub fn parse(body: &[u8]) -> Option<Call> {
     if body.len() > MAX_BODY_BYTES {
         return None;
     }
     let body: serde_json::Value = serde_json::from_slice(body).ok()?;
     let op = body.get("op")?.as_str()?;
-    let session = str_arg(&body, "sessionId");
-    let token = str_arg(&body, "token");
+    let session = || str_arg(&body, "sessionId").to_string();
+    let token = || str_arg(&body, "token").to_string();
     Some(match op {
-        "get" => vault.get(profile),
-        "set" => {
-            vault.set(profile, token);
-            None
-        }
-        "clear" => {
-            vault.clear(profile);
-            None
-        }
-        "getFor" => vault.get_for(profile, session),
-        "setFor" => {
-            vault.set_for(profile, session, token, now);
-            None
-        }
-        "clearFor" => {
-            vault.clear_for(profile, session);
-            None
-        }
-        "adopt" => vault.adopt(profile, session, now),
+        "get" => Call::Get,
+        "set" => Call::Set(token()),
+        "clear" => Call::Clear,
+        "getFor" => Call::GetFor(session()),
+        "setFor" => Call::SetFor(session(), token()),
+        "clearFor" => Call::ClearFor(session()),
+        "adopt" => Call::Adopt(session()),
         "keepOnly" => {
-            let ids = strings(body.get("sessionIds"));
-            let strays = strings(body.get("strayBearers"));
-            if let (Some(ids), Some(strays)) = (ids, strays) {
-                vault.keep_only(profile, &ids, &strays, now);
-            }
-            None
+            Call::KeepOnly(strings(body.get("sessionIds")).zip(strings(body.get("strayBearers"))))
         }
         _ => return None,
     })
+}
+
+/// Runs one call for `profile`, with the vault's lock held.
+pub fn run(held: &mut Held<'_>, profile: &str, call: &Call, now: u64) -> Option<String> {
+    match call {
+        Call::Get => held.get(profile),
+        Call::Set(token) => {
+            held.set(profile, token);
+            None
+        }
+        Call::Clear => {
+            held.clear(profile);
+            None
+        }
+        Call::GetFor(session) => held.get_for(profile, session),
+        Call::SetFor(session, token) => {
+            held.set_for(profile, session, token, now);
+            None
+        }
+        Call::ClearFor(session) => {
+            held.clear_for(profile, session);
+            None
+        }
+        Call::Adopt(session) => held.adopt(profile, session, now),
+        Call::KeepOnly(Some((ids, strays))) => {
+            held.keep_only(profile, ids, strays, now);
+            None
+        }
+        Call::KeepOnly(None) => None,
+    }
 }
 
 fn empty(status: u16) -> http::Response<Vec<u8>> {
@@ -147,6 +177,21 @@ fn values<'a>(req: &'a http::Request<Vec<u8>>, name: &str) -> Vec<&'a [u8]> {
         .collect()
 }
 
+/// The request's `Origin` as the trace prints it: each value, `-` for
+/// none. An origin is no secret, and it is what a refusal most often turns
+/// on.
+fn traced_origin(req: &http::Request<Vec<u8>>) -> String {
+    let all: Vec<String> = values(req, header::ORIGIN.as_str())
+        .into_iter()
+        .map(|v| String::from_utf8_lossy(&v[..v.len().min(200)]).into_owned())
+        .collect();
+    if all.is_empty() {
+        "-".into()
+    } else {
+        all.join(", ")
+    }
+}
+
 /// Answers a request to VAULT_PATH from the webview `label`.
 pub fn serve<R: Runtime>(
     app: &AppHandle<R>,
@@ -161,20 +206,33 @@ pub fn serve<R: Runtime>(
     );
     let profile = if checked { caller(app, label) } else { None };
     let Some(profile) = profile else {
-        shell.trace(|| format!("vault from {label} -> 403"));
+        shell.trace(|| format!("vault from {label} (origin {}) -> 403", traced_origin(req)));
         return empty(403);
     };
     let op = op_name(req.body());
-    let Some(value) = answer(
-        &shell.vault,
-        &profile,
-        req.body(),
-        crate::profiles::now_ms(),
-    ) else {
+    let Some(call) = parse(req.body()) else {
         shell.trace(|| format!("vault {op} from {label} -> 400"));
         return empty(400);
     };
-    shell.trace(|| format!("vault {op} from {label} -> 200"));
+    let now = crate::profiles::now_ms();
+    // The brain is asked about again with the vault's lock held: removing
+    // it (commands.rs) takes it off the list first, then removes its logins
+    // under that lock, so this call either is refused or comes first and is
+    // swept.
+    let still_listed = || shell.profiles.find(&profile).is_some();
+    let Some(value) = shell
+        .vault
+        .when(still_listed, |held| run(held, &profile, &call, now))
+    else {
+        shell.trace(|| format!("vault {op} from {label} -> 403 (no longer listed)"));
+        return empty(403);
+    };
+    shell.trace(|| {
+        format!(
+            "vault {op} from {label} (origin {}) -> 200",
+            traced_origin(req)
+        )
+    });
     let body = serde_json::json!({ "value": value })
         .to_string()
         .into_bytes();

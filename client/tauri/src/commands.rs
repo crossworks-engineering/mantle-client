@@ -62,6 +62,10 @@ pub async fn profiles_remove<R: Runtime>(webview: Webview<R>, id: String) -> Res
     if !removed {
         return Ok(());
     }
+    // Off the list first, then its logins: a vault call on its way asks
+    // under the vault's lock whether the brain is still listed
+    // (vault_endpoint.rs), so it is refused, or it comes before this
+    // removal, which waits for that lock and finds what it wrote.
     let shell = app.state::<Shell>();
     shell.vault.remove_profile(&id);
     let label = crate::profiles::label_for(&id);
