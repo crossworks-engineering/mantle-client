@@ -16,9 +16,14 @@ two profiles, so two windows' data folders and two keychain namespaces.
   c  brain B last used: B's window is on /login, holds nothing of A's;
      signs in there too
   d  brain A last used again: A still signed in, nothing of B's in it
-  e  no keychain (a dbus session with no Secret Service): the app starts,
-     says once that logins are not saved, a sign-in works for that run,
-     and the next run is back on /login
+  e  no keychain (a dbus session with no Secret Service): the app starts
+     and says at once, in a notice that does not block, that logins are not
+     saved; a sign-in holds no bearer anywhere (the keychain is the only
+     copy), the notice is shown once, and the next run says it again
+
+The vault is read the way the page reads it: through
+window.mantleDesktop.tokenVault, the synchronous API, which asks the shell
+on every call.
 
 Prints a PASS or FAIL line per check and exits non-zero on any failure.
 Never prints a password, a setup code or a bearer: the checks on those are
@@ -306,38 +311,51 @@ class App:
             " var k = localStorage.key(i); o[k] = localStorage.getItem(k); } return o;"
         )
 
-    def vault_report(self, origin, email):
-        """What this window's vault holds, checked in the page: which session
-        ids, whether the active one has a bearer, whether any bearer is also
-        in localStorage, and whether the brain accepts the active one."""
+    def vault_report(self, origin, email, probe_ids=()):
+        """What this window's vault holds, checked in the page through the
+        page's own synchronous API: which of the listed sessions (and of
+        `probe_ids`, ids from another brain) have a bearer, whether the
+        active one does, whether any bearer is also in localStorage, and
+        whether the brain accepts the active one. Only booleans and ids
+        come back, never a bearer."""
         return self.js_async(
             """
-var origin = arguments[0], email = arguments[1], done = arguments[arguments.length - 1];
-var v = window.mantleDesktop && window.mantleDesktop.tokenVaultAsync;
-if (!v) { done({ error: 'no tokenVaultAsync on this page' }); return; }
-v.load().then(function (held) {
-  var ids = Object.keys(held);
-  var all = [];
-  for (var i = 0; i < localStorage.length; i++) {
-    var k = localStorage.key(i);
-    all.push(k + '\\n' + localStorage.getItem(k));
-  }
-  var leaked = ids.some(function (id) {
-    var t = held[id];
-    return !!t && all.some(function (e) { return e.indexOf(t) !== -1; });
-  });
-  var active = localStorage.getItem('mantle_active_session');
-  var token = active ? held[active] : null;
-  var out = { ids: ids, activeHeld: !!token, leaked: leaked, whoami: null, sameEmail: null };
-  if (!token) { done(out); return; }
-  fetch(origin + '/api/auth/whoami', { headers: { authorization: 'Bearer ' + token } })
-    .then(function (r) { out.whoami = r.status; return r.ok ? r.json() : null; })
-    .then(function (body) { out.sameEmail = !!body && body.email === email; done(out); })
-    .catch(function (e) { out.whoami = 'error ' + e; done(out); });
-}, function (e) { done({ error: String(e) }); });
+var origin = arguments[0], email = arguments[1], probe = arguments[2];
+var done = arguments[arguments.length - 1];
+var d = window.mantleDesktop;
+var v = d && d.tokenVault;
+if (!v || typeof v.getFor !== 'function') { done({ error: 'no tokenVault on this page' }); return; }
+var rows = [];
+try { rows = JSON.parse(localStorage.getItem('mantle_sessions') || '[]'); } catch (e) {}
+var ids = [], held = {};
+rows.forEach(function (r) {
+  var t = r && typeof r.id === 'string' ? v.getFor(r.id) : null;
+  if (t) { ids.push(r.id); held[r.id] = t; }
+});
+var probed = probe.filter(function (id) { return v.getFor(id) !== null; });
+var all = [];
+for (var i = 0; i < localStorage.length; i++) {
+  var k = localStorage.key(i);
+  all.push(k + '\\n' + localStorage.getItem(k));
+}
+var leaked = ids.some(function (id) {
+  return all.some(function (e) { return e.indexOf(held[id]) !== -1; });
+});
+var active = localStorage.getItem('mantle_active_session');
+var token = active ? v.getFor(active) : null;
+var out = {
+  ids: ids, probed: probed, activeHeld: !!token, leaked: leaked,
+  asyncApi: 'tokenVaultAsync' in d, whoami: null, sameEmail: null
+};
+if (!token) { done(out); return; }
+fetch(origin + '/api/auth/whoami', { headers: { authorization: 'Bearer ' + token } })
+  .then(function (r) { out.whoami = r.status; return r.ok ? r.json() : null; })
+  .then(function (body) { out.sameEmail = !!body && body.email === email; done(out); })
+  .catch(function (e) { out.whoami = 'error ' + e; done(out); });
 """,
             origin,
             email,
+            list(probe_ids),
         )
 
     def quit(self):
@@ -372,8 +390,9 @@ v.load().then(function (held) {
 # ── the steps ────────────────────────────────────────────────────────────────
 
 
-def sign_in(app, email, password, setup_code, label):
-    """Fill the login form (or the first-run signup) and submit it."""
+def submit_login(app, email, password, setup_code, label):
+    """Fill the login form (or the first-run signup) and submit it. False
+    (with a FAIL line) when the form is not there."""
     signup = brain_first_run()
     note(f"{label}: the brain is {'fresh: signing up the owner' if signup else 'claimed: signing in'}")
     email_el = app.find("#email")
@@ -391,6 +410,13 @@ def sign_in(app, email, password, setup_code, label):
     if not button:
         return check(f"{label}: the submit button is there", False)
     app.click(button)
+    return True
+
+
+def sign_in(app, email, password, setup_code, label):
+    """Sign in, and check the window lands off /login."""
+    if not submit_login(app, email, password, setup_code, label):
+        return False
     path = app.wait_off_login()
     if path.startswith("/login"):
         error = app.js(
@@ -431,6 +457,7 @@ def vault_checks(app, label, origin, email, expect_ids=None):
     report = app.vault_report(origin, email) or {}
     if report.get("error"):
         return check(f"{label}: the vault answers", False, report["error"])
+    check(f"{label}: the page has the synchronous vault and no async one", report.get("asyncApi") is False)
     check(f"{label}: the active session's bearer is in the vault", report.get("activeHeld") is True)
     check(f"{label}: no bearer is also in localStorage", report.get("leaked") is False)
     check(
@@ -480,6 +507,7 @@ def main():
         app.quit()
     ids_a = report_a.get("ids") or []
     check("a: the vault index for A is written", os.path.exists(home.vault_index(id_a)))
+    check("a: no keychain notice with a keychain", len(app.notices) == 0, f"{len(app.notices)} dialog(s)")
 
     # b
     print("== b: quit, start again", flush=True)
@@ -505,8 +533,12 @@ def main():
             "mantle_sessions" not in store and "mantle_pref:mantle_authed" not in store,
             f"keys: {', '.join(sorted(store)) or '(none)'}",
         )
-        held = app.vault_report(ORIGIN_B, email) or {}
-        check("c: B's vault holds no login", held.get("ids") == [], f"{len(held.get('ids') or [])} login(s)")
+        held = app.vault_report(ORIGIN_B, email, ids_a) or {}
+        check(
+            "c: B's vault holds no login, and none of A's",
+            held.get("ids") == [] and held.get("probed") == [] and not held.get("error"),
+            held.get("error") or f"{len(held.get('ids') or [])} login(s), {len(held.get('probed') or [])} of A's",
+        )
         if sign_in(app, email, password, setup_code, "c"):
             time.sleep(2)
             storage_checks(app, "c", ORIGIN_B, ORIGIN_A)
@@ -524,6 +556,8 @@ def main():
         "c: A and B have their own keychain namespaces",
         os.path.exists(home.vault_index(id_a))
         and os.path.exists(home.vault_index(id_b))
+        and bool(ids_a)
+        and bool(ids_b)
         and not set(ids_a) & set(ids_b),
     )
 
@@ -536,6 +570,8 @@ def main():
         check("d: A is still signed in (lands off /login)", not path.startswith("/login"), f"landed on {path}")
         storage_checks(app, "d", ORIGIN_A, ORIGIN_B)
         vault_checks(app, "d", ORIGIN_A, email, expect_ids=ids_a)
+        held = app.vault_report(ORIGIN_A, email, ids_b) or {}
+        check("d: A's vault holds none of B's logins", held.get("probed") == [], held.get("error") or "")
     finally:
         app.quit()
 
@@ -551,20 +587,27 @@ def main():
         try:
             path = app.landed()
             check("e: the app starts without a keychain, on /login", path.startswith("/login"), f"landed on {path}")
-            if sign_in(app, email, password, setup_code, "e"):
-                time.sleep(2)
+            # Said at start, before any sign-in, and without blocking: the
+            # page loaded and settled while the notice was up.
+            check("e: the notice is up at start, before any sign-in", len(app.notices) == 1,
+                  f"{len(app.notices)} dialog(s)")
+            if submit_login(app, email, password, setup_code, "e"):
+                time.sleep(8)
                 report = app.vault_report(ORIGIN_A, email) or {}
+                check("e: the vault answers", not report.get("error"), report.get("error") or "")
+                check("e: no bearer is held (the keychain is the only copy)",
+                      report.get("activeHeld") is False and report.get("ids") == [])
+                store = app.storage() or {}
                 check(
-                    "e: the login works for this run (held in memory)",
-                    report.get("activeHeld") is True and report.get("whoami") == 200,
-                    f"whoami {report.get('whoami')}",
+                    "e: no bearer in localStorage either",
+                    not any(k == "mantle_token" or k.startswith("mantle_token:") for k in store),
                 )
-                check("e: no bearer in localStorage", report.get("leaked") is False)
+                note(f"e: after the sign-in the window is on {app.path()}")
         finally:
             app.quit()
         log = app.log_text()
         check(
-            "e: the one-time notice was shown, once",
+            "e: the notice was shown once in that run",
             len(app.notices) == 1 and log.count(f"[mantle-desktop] {NOTICE}") == 1,
             f"{len(app.notices)} dialog(s), {log.count(NOTICE)} line(s) in the app's output",
         )
@@ -572,12 +615,10 @@ def main():
         app = App(bare, NO_KEYCHAIN_BUS, "run-e2.log")
         try:
             path = app.landed()
-            check("e: the next run is back on /login", path.startswith("/login"), f"landed on {path}")
+            check("e: the next run is on /login", path.startswith("/login"), f"landed on {path}")
+            check("e: the next run says so at start too", len(app.notices) == 1, f"{len(app.notices)} dialog(s)")
         finally:
             app.quit()
-        # Not a check: the notice comes the first time the keychain fails in
-        # a run, and a run that only loads may or may not touch it.
-        note(f"e: the next run showed the notice {len(app.notices)} time(s)")
 
     print(flush=True)
     if failures:
