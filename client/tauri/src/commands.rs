@@ -65,16 +65,24 @@ pub async fn profiles_remove<R: Runtime>(webview: Webview<R>, id: String) -> Res
     // Off the list first, then its logins: a vault call on its way asks
     // under the vault's lock whether the brain is still listed
     // (vault_endpoint.rs), so it is refused, or it comes before this
-    // removal, which waits for that lock and finds what it wrote.
+    // removal, which waits for that lock and finds what it wrote. Logins
+    // the keychain would not delete keep the brain in pending-removals.json
+    // (remove_brain_store), and the next start tries again.
     let shell = app.state::<Shell>();
-    shell.vault.remove_profile(&id);
+    let logins_gone = {
+        let app = app.clone();
+        let id = id.clone();
+        tauri::async_runtime::spawn_blocking(move || app.state::<Shell>().vault.remove_profile(&id))
+            .await
+            .unwrap_or(false)
+    };
     let label = crate::profiles::label_for(&id);
     if let Some(win) = app.get_webview_window(&label) {
         let _ = win.destroy();
     }
     shell.unregister_window(&label);
     windows::rebuild_menu(&app);
-    windows::remove_brain_store(app.clone(), id).await;
+    windows::remove_brain_store(app.clone(), id, logins_gone).await;
     Ok(())
 }
 
