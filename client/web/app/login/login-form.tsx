@@ -21,6 +21,8 @@ import {
   signInErrorMessage,
 } from '@/lib/sign-in-error';
 import { SetupCodeField, isSetupCodeRefusal } from './setup-code-field';
+import { PasswordStrength } from '@/components/auth/password-strength';
+import { passwordRuleError, usePasswordRule } from '@/lib/password-rule';
 
 /**
  * Owner sign-in. One transport in both topologies: POST /api/auth/token, and
@@ -76,6 +78,7 @@ export function LoginForm({
 }) {
   const router = useRouter();
   const isSignup = mode === 'signup';
+  const rule = usePasswordRule();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [setupCode, setSetupCode] = useState('');
@@ -131,6 +134,12 @@ export function LoginForm({
       const split = isCrossOrigin();
 
       if (isSignup) {
+        // The brain's rule, said before the request (the brain still checks).
+        const weak = rule ? passwordRuleError(password, rule) : null;
+        if (weak) {
+          setError(weak);
+          return;
+        }
         const res = await fetch(apiUrl('/api/auth/signup'), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -261,7 +270,12 @@ export function LoginForm({
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete={isSignup ? 'new-password' : 'current-password'}
+            aria-describedby={isSignup ? 'password-strength' : undefined}
           />
+          {isSignup ? (
+            <PasswordStrength id="password-strength" password={password} rule={rule} />
+          ) : null}
         </div>
       )}
       {/* This brain's setup code: nothing to do with another brain. */}

@@ -110,7 +110,7 @@ describe('validateInviteForm', () => {
     expect(validateInviteForm({ ...ok, code: '   ' }).code).toBeDefined();
   });
 
-  it('needs at least 8 characters, as the brain does', () => {
+  it('needs at least 8 characters on a brain from before the rule', () => {
     expect(validateInviteForm({ ...ok, password: 'short77', confirm: 'short77' }).password).toMatch(
       /at least 8/,
     );
