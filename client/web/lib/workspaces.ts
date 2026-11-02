@@ -69,6 +69,9 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/notes', null],
   ['/pages', null],
   ['/draw', null],
+  // Present canvases are workspace items, like drawings: a member opens
+  // the ones its workspaces read.
+  ['/present', null],
   ['/tables', null],
   ['/apps', null],
   ['/n', null],
