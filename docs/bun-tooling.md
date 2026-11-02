@@ -11,14 +11,14 @@ about the tools only.
 
 ## Commands
 
-| Node (default)            | Bun                      | What                                         |
-| ------------------------- | ------------------------ | -------------------------------------------- |
-| `pnpm install`            | (the same)               | pnpm installs for both. See below why.       |
-| `pnpm dev`                | `pnpm dev:bun`           | `next dev` (slower pages on Bun, see below)  |
-| `pnpm -C client/web build`<br>`pnpm -C client/host build` | `pnpm build:bun` | the static export and the host bundle |
-| `pnpm test`               | `pnpm test:bun`          | vitest                                       |
-| `pnpm verify`             | `pnpm verify:bun`        | typecheck, lint, format check, vitest        |
-| `pnpm e2e:workspace`      | `pnpm e2e:workspace:bun` | the workspace specs, `next dev` on Bun       |
+| Node (default)                                            | Bun                      | What                                        |
+| --------------------------------------------------------- | ------------------------ | ------------------------------------------- |
+| `pnpm install`                                            | (the same)               | pnpm installs for both. See below why.      |
+| `pnpm dev`                                                | `pnpm dev:bun`           | `next dev` (slower pages on Bun, see below) |
+| `pnpm -C client/web build`<br>`pnpm -C client/host build` | `pnpm build:bun`         | the static export and the host bundle       |
+| `pnpm test`                                               | `pnpm test:bun`          | vitest                                      |
+| `pnpm verify`                                             | `pnpm verify:bun`        | typecheck, lint, format check, vitest       |
+| `pnpm e2e:workspace`                                      | `pnpm e2e:workspace:bun` | the workspace specs, `next dev` on Bun      |
 
 Every `:bun` script goes through `scripts/bun.sh`. It refuses a Bun other than
 the one `.bun-version` pins, then runs `bun run --bun <script>`. That puts a
@@ -31,9 +31,14 @@ way). The `pnpm` that starts `pnpm verify:bun` is still on Node; it only
 starts `scripts/bun.sh`. `bun run --bun` also points `NODE` and
 `npm_node_execpath` at its Bun, so no tool finds Node through them.
 
-Each run checks it too: `scripts/bun.sh` sets `MANTLE_EXPECT_RUNTIME=bun`, and
-then `scripts/bun-runtime.test.ts` fails unless vitest and the `node` on PATH
-are the pinned Bun. A plain `pnpm verify` does not set it.
+Each run checks it too: `scripts/bun.sh` sets `MANTLE_EXPECT_RUNTIME=bun`,
+and then these fail unless they run on the pinned Bun:
+`scripts/bun-runtime.test.ts` (vitest and the `node` on PATH, for `verify:bun`
+and `test:bun`), `client/web/next.config.ts` (`next dev` and `next build`, for
+`dev:bun`, `build:bun` and `e2e:workspace:bun`) and
+`client/host/scripts/build.mjs` (`build:bun`). Other tools a script starts are
+not checked one by one. A plain `pnpm verify`, a Node build and the image
+build do not set the variable, and then nothing is checked.
 
 Bun loads `.env` files and installs missing packages on its own when it runs
 a file directly. Neither happens here, checked on 1.4.4: the scripts that
@@ -72,22 +77,31 @@ sha256), or Bun's own installer for that exact version elsewhere.
 
 - `pnpm verify` and `pnpm verify:bun`: both exit 0, the same tests pass. A
   test-by-test compare of vitest's JSON reports shows no test that differs.
-- The builds: `pnpm compare:export <outA> <outB>`
+- The builds: `pnpm compare:export <node-out> <bun-out>`
   (`client/web/scripts/compare-export.mjs`). It replaces each build's random
   build id first; two Node builds are then byte-equal. A Node and a Bun build:
   `server.mjs` byte-equal, the export the same UI (only the theme script
-  reprinted). The tool counts a page as reprinted only when the rest of the
-  page is byte-equal, exactly one inline script differs, both copies end in
-  the next-themes call `)("class","theme",...)` with the same arguments, and
-  esbuild prints both to the same code with whitespace and syntax minifying
-  only (names kept, `@__PURE__` ignored). `--bytes` makes a reprint fail.
+  reprinted). The tool counts a page as reprinted only when it is an HTML
+  page, the page outside its bare inline scripts (`<script>`, any case) is
+  byte-equal, exactly one inline script body differs, neither copy holds
+  `<!--`, `<script` or `</script` (any case), and the Node body and the Bun
+  body hash (sha256) to a pair the tool pins. It pins one pair, the
+  next-themes theme script, the only pair on the 109 pages; esbuild's full
+  minify prints both bodies to the same code, checked once by hand when it
+  was pinned. The hashes are the rule, not esbuild. When next-themes, Next or
+  `.bun-version` moves, the pair can change and the compare then fails: build
+  both, read the pair with `--show-reprints`, check it, and pin the new
+  hashes. `--bytes` makes a reprint fail;
+  `--expect-reprint` fails unless a page was reprinted, which only a Bun build
+  gives.
 - The workspace specs: 30 of 30 with `next dev` on Node and on Bun.
 
 The Bun lane (`.github/workflows/bun-lane.yml`) runs this on main and on Bun
 branches: the runtime check, `verify:bun`, both builds (the Bun one from a
-clean tree) with the compare, and the workspace specs. It checks exit codes
-and the build compare; the test-by-test compare of vitest's JSON reports was
-a one-off, not part of the lane. It is not a required check.
+clean tree) with both compares (`--expect-reprint`), and the workspace specs.
+It checks exit codes and the build compares; the test-by-test compare of
+vitest's JSON reports was a one-off, not part of the lane. It is not a
+required check.
 
 ## Numbers
 
@@ -95,16 +109,16 @@ Workstation, 16 cores, in one container with Node 26.13.0, Bun 1.4.4 and pnpm
 11.1.2; 3 runs each, median. Install is with a warm store and no
 node_modules.
 
-| Job                                       | Node    | Bun      |
-| ----------------------------------------- | ------- | -------- |
-| `pnpm install` (pnpm for both)            | 3.4 s   | (pnpm)   |
-| `bun install`, for the record, not used   |         | 0.7 s    |
-| `verify` (typecheck, lint, format, tests) | 37.3 s  | 31.6 s   |
-| `test` (vitest, 2681 tests)               | 6.6 s   | 5.5 s    |
-| static build (`client/web` and host)      | 38.7 s  | 35.8 s   |
-| `next dev` cold start, `/env.js` answers  | 2.4 s   | 0.9 s    |
-| `next dev` cold start, first `/login`     | 5.1 s   | 3.4 s    |
-| workspace specs (30, `next dev` under it) | 112 s   | 183 s    |
+| Job                                       | Node   | Bun    |
+| ----------------------------------------- | ------ | ------ |
+| `pnpm install` (pnpm for both)            | 3.4 s  | (pnpm) |
+| `bun install`, for the record, not used   |        | 0.7 s  |
+| `verify` (typecheck, lint, format, tests) | 37.3 s | 31.6 s |
+| `test` (vitest, 2681 tests)               | 6.6 s  | 5.5 s  |
+| static build (`client/web` and host)      | 38.7 s | 35.8 s |
+| `next dev` cold start, `/env.js` answers  | 2.4 s  | 0.9 s  |
+| `next dev` cold start, first `/login`     | 5.1 s  | 3.4 s  |
+| workspace specs (30, `next dev` under it) | 112 s  | 183 s  |
 
 The first `verify` of a fresh copy takes longer on both (61 s and 32 s):
 tsc's incremental cache was warm for the runs above.
