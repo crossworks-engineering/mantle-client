@@ -80,8 +80,19 @@ pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
         .register_asynchronous_uri_scheme_protocol(fence::CONNECT_SCHEME, shell::serve_connect)
 }
 
-const KEYCHAIN_TITLE: &str = "Logins are not saved";
-const KEYCHAIN_MESSAGE: &str = "MantleOS Desktop could not use this computer's keychain (on Linux: the Secret Service), so it cannot keep you signed in. Make sure a keychain is installed and unlocked, then quit and reopen the app. Nothing is written to disk in its place.";
+/// The notice's title and text, per reason (vault.rs, Unavailable).
+fn keychain_notice(why: vault::Unavailable) -> (&'static str, &'static str) {
+    match why {
+        vault::Unavailable::NoKeychain => (
+            "Logins last until you quit",
+            "MantleOS Desktop could not use this computer's keychain (on Linux: the Secret Service). You can sign in, but the login is kept in memory only, until you quit the app. Nothing is written to disk in its place. To stay signed in across restarts, make sure a keychain is installed and unlocked, then quit and reopen the app.",
+        ),
+        vault::Unavailable::KeychainFailed => (
+            "A login was not saved",
+            "The keychain (on Linux: the Secret Service) refused a request, so a login may not have been kept. Make sure the keychain is unlocked, then sign in again.",
+        ),
+    }
+}
 
 fn setup<R: Runtime>(
     app: &mut tauri::App<R>,
@@ -109,10 +120,15 @@ fn setup<R: Runtime>(
         &config_dir,
         &data_dir,
         vault::Vault::platform_store(),
-        // Called by the vault once per run, never under its lock, and never
-        // on the main thread: the notice is queued there and not waited on.
-        Box::new(move || {
-            let _ = notify.run_on_main_thread(|| dialog::notice(KEYCHAIN_TITLE, KEYCHAIN_MESSAGE));
+        // Called by the vault once per run, never under its lock. The notice
+        // is queued on the main thread from a task (run_on_main_thread runs
+        // at once when called there, as from setup), and not waited on.
+        Box::new(move |why| {
+            let (title, message) = keychain_notice(why);
+            let app = notify.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = app.run_on_main_thread(move || dialog::notice(title, message));
+            });
         }),
     );
     let shell = match shell {
@@ -131,14 +147,12 @@ fn setup<R: Runtime>(
     windows::rebuild_menu(&handle);
     windows::focus_or_open(&handle);
 
-    // No keychain at all: say so now, not at the first sign-in, or a
-    // restart would sign the user out without a word. From a task, so the
-    // notice is shown once setup is done, beside the first window.
-    if !handle.state::<Shell>().vault.has_store() {
-        let app = handle.clone();
-        tauri::async_runtime::spawn(async move {
-            app.state::<Shell>().vault.tell_unavailable();
-        });
+    // No keychain: logins last for this run only. Say so now, not at the
+    // first sign-in, or a restart would sign the user out without a word.
+    // The vault's lock is not held here, and the callback only queues the
+    // notice on the main thread, so it is shown once setup is done.
+    if handle.state::<Shell>().vault.this_run_only() {
+        handle.state::<Shell>().vault.tell_unavailable();
     }
     Ok(())
 }
@@ -291,7 +305,7 @@ mod acl_tests {
             &dir,
             &dir,
             Some(store as Arc<keyring_core::CredentialStore>),
-            Box::new(|| {}),
+            Box::new(|_| {}),
         )
         .unwrap();
         let profile = shell

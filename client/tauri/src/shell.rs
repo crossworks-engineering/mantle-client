@@ -18,7 +18,7 @@ use crate::fence::{CONNECT_ORIGIN, UI_ORIGIN};
 use crate::host::{FileSource, Host, HostAnswer, HostRequest};
 use crate::net::AppearanceCache;
 use crate::profiles::Profiles;
-use crate::vault::Vault;
+use crate::vault::{Unavailable, Vault};
 
 pub const CONNECT_LABEL: &str = "connect";
 
@@ -45,7 +45,7 @@ impl Shell {
         config_dir: &Path,
         data_dir: &Path,
         store: Option<Arc<CredentialStore>>,
-        on_keychain_unavailable: Box<dyn Fn() + Send + Sync>,
+        on_keychain_unavailable: Box<dyn Fn(Unavailable) + Send + Sync>,
     ) -> Result<Shell, String> {
         // Off unless asked for: a line per scheme request and per vault
         // call on stderr, for checking a build. Never a token.
