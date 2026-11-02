@@ -15,9 +15,9 @@ import { readPref } from '@mantle/web-ui/ui-prefs';
 /**
  * App shell: the rail on the left (brand, account, search, nav, launchers),
  * live-activity column on the right, content in the middle running the full
- * height of the window. No header, no footer bar — see components/app-shell.
+ * height of the window. No header, no footer bar: see components/app-shell.
  *
- * ZERO-SECRET variant — this app cannot verify a session (no SESSION_SECRET,
+ * ZERO-SECRET variant: this app cannot verify a session (no SESSION_SECRET,
  * no DB), so there is NO server-side auth or onboarding gate here. This is
  * the detached-dev branch of the old monolith layout made permanent:
  *   - auth UX     → boot.js route guard (presence flag → /login redirect)
@@ -30,7 +30,7 @@ import { readPref } from '@mantle/web-ui/ui-prefs';
  *                   used to read the DB in-process, which is what the carve
  *                   took away)
  *
- * The values read here (ui-prefs) are pure layout UX — reading them needs no
+ * The values read here (ui-prefs) are pure layout UX: reading them needs no
  * secret. The UI is static now, so they are read in the browser, once, when this
  * layout first renders. That costs no flash: the shell frame (rails, usage
  * card) mounts only after GET /api/shell answers, by which time these values

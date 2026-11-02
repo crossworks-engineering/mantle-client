@@ -108,12 +108,13 @@ export function AssistantThreadClient({
       ),
   });
 
-  // Adopt a NEW assignment once. The sticky `mantle_assistant_agent` cookie is
-  // per-browser, so a co-admin who has been chatting to the shared agent keeps
-  // landing there after the operator gives them their own — i.e. the change
-  // wouldn't reach the very people it's for. Comparing the server's assignedAt
-  // against a local watermark switches them over exactly once; a deliberate pick
-  // from the agent picker afterwards is left alone.
+  // Adopt a NEW assignment once. The sticky `mantle_assistant_agent` pref
+  // (ui-prefs) is per-browser, so a co-admin who has been chatting to the
+  // shared agent keeps landing there after the operator gives them their
+  // own, and the change wouldn't reach the very people it's for. Comparing
+  // the server's assignedAt against a local watermark switches them over
+  // exactly once; a deliberate pick from the agent picker afterwards is left
+  // alone.
   const assignedSlug = threadQuery.data?.assigned?.slug ?? null;
   const assignedAt = threadQuery.data?.assigned?.assignedAt ?? null;
   // Showing the live thread marks it read for every login (the messenger's

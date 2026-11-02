@@ -406,9 +406,11 @@ async function openAppWindow(profile: Profile, path?: string): Promise<void> {
   });
   win.once('ready-to-show', () => win.show());
 
-  // Chromium batch-flushes cookies; an abrupt exit can lose the presence
-  // cookie while localStorage (the token) survives. Flush on close so a
-  // normal quit never relies on the batch timer.
+  // Chromium batch-flushes cookies, and an abrupt exit can lose the last
+  // ones. The UI keeps none of its own now (ui-prefs, localStorage); what
+  // this partition holds is the brain's own cookies, so a same-origin brain's
+  // session cookie. Flush on close so a normal quit never relies on the
+  // batch timer.
   win.on('close', () => {
     void session.fromPartition(partition).cookies.flushStore();
   });

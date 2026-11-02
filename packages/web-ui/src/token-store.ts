@@ -6,7 +6,7 @@
  * on sanitized-HTML rendering, opaque-origin mini-app sandboxes, per-device
  * revocation + rotation, and the client app's CSP.
  *
- * The presence flag (ui-prefs, `mantle_authed`) is a UX signal ONLY — it lets
+ * The presence flag (ui-prefs, `mantle_authed`) is a UX signal ONLY. It lets
  * the boot route guard send logged-out page loads to /login before the first
  * paint. It authenticates nothing.
  *
@@ -137,7 +137,7 @@ export const tokenStore = {
       /* ignore */
     }
   },
-  /** Set ONLY the presence flag — the same-origin cookie-login path has no
+  /** Set ONLY the presence flag: the same-origin cookie-login path has no
    *  bearer to store but the boot route guard still keys off presence. */
   markPresence(): void {
     writePref(PRESENCE_PREF, '1', 60 * 60 * 24 * 365);

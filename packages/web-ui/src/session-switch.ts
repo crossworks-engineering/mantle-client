@@ -219,7 +219,7 @@ export async function forgetSession(id: string): Promise<void> {
   const wasActive = activeSession()?.id === id;
   removeSession(id);
   if (!wasActive) return;
-  tokenStore.clear(); // the presence cookie
+  tokenStore.clear(); // the presence flag
   if (!isCrossOrigin()) {
     // The cookie only. Sent without the bearer, so nothing is revoked.
     await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' }).catch(

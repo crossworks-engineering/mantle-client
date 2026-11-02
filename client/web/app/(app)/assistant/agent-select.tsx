@@ -13,8 +13,9 @@ import { useDockActions } from '@/components/assistant/assistant-dock';
 import type { AssistantAgentOption } from '@mantle/client-types';
 
 /** Agent picker for the assistant panel. Switching updates the selected agent
- *  in the app-wide dock (which re-keys the thread query in place AND persists
- *  the choice to the `mantle_assistant_agent` cookie) — no navigation. */
+ *  in the app-wide dock (which re-keys the thread query in place AND keeps
+ *  the choice in the `mantle_assistant_agent` pref, ui-prefs), with no
+ *  navigation. */
 export function AgentSelect({
   agents,
   selected,
