@@ -10,12 +10,12 @@ import {
   DialogTitle,
 } from '@mantle/web-ui/ui/dialog';
 import { Field, FieldError, FieldLabel } from '@mantle/web-ui/ui/field';
-import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { PasswordStrength } from '@/components/auth/password-strength';
+import { usePasswordRule } from '@/lib/password-rule';
 import {
-  MIN_PASSWORD,
   PASSWORD_CHANGED,
   passwordOutcome,
   validatePasswordForm,
@@ -45,6 +45,7 @@ export function MemberPasswordDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const toast = useToast();
+  const rule = usePasswordRule();
   const [form, setForm] = useState<PasswordForm>(EMPTY);
   const [errors, setErrors] = useState<PasswordErrors>({});
   const [pending, setPending] = useState(false);
@@ -61,7 +62,7 @@ export function MemberPasswordDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const errs = validatePasswordForm(form);
+    const errs = validatePasswordForm(form, rule ?? undefined);
     setErrors(errs);
     const first = (['current', 'next', 'confirm'] as const).find((k) => errs[k]);
     if (first) {
@@ -102,9 +103,10 @@ export function MemberPasswordDialog({
     }
   };
 
-  const field = (key: keyof PasswordForm, label: string, autoComplete: string, hint?: string) => {
+  const field = (key: keyof PasswordForm, label: string, autoComplete: string, meter?: boolean) => {
     const id = FIELD_ID[key];
     const error = errors[key];
+    const hint = meter ? `${id}-strength` : null;
     return (
       <Field data-invalid={!!error || undefined}>
         <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -116,11 +118,10 @@ export function MemberPasswordDialog({
           autoComplete={autoComplete}
           aria-invalid={!!error || undefined}
           aria-describedby={
-            [error ? `${id}-error` : null, hint ? hintId(id) : null].filter(Boolean).join(' ') ||
-            undefined
+            [error ? `${id}-error` : null, hint].filter(Boolean).join(' ') || undefined
           }
         />
-        {hint ? <FieldHint id={id}>{hint}</FieldHint> : null}
+        {hint ? <PasswordStrength id={hint} password={form[key]} rule={rule} /> : null}
         <FieldError id={`${id}-error`}>{error}</FieldError>
       </Field>
     );
@@ -138,7 +139,7 @@ export function MemberPasswordDialog({
         </DialogHeader>
         <form onSubmit={submit} noValidate className="space-y-3">
           {field('current', 'Current password', 'current-password')}
-          {field('next', 'New password', 'new-password', `At least ${MIN_PASSWORD} characters.`)}
+          {field('next', 'New password', 'new-password', true)}
           {field('confirm', 'New password again', 'new-password')}
           <div className="flex justify-end pt-1">
             <SubmitButton pending={pending}>Change password</SubmitButton>

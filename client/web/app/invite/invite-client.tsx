@@ -17,13 +17,14 @@ import { SecretInput } from '@mantle/web-ui/ui/secret-input';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import {
   INVITE_NOT_VALID,
-  MIN_PASSWORD,
   acceptOutcome,
   readInviteCode,
   validateInviteForm,
   type InviteFormErrors,
 } from '@/lib/user-invites';
+import { PasswordStrength } from '@/components/auth/password-strength';
 import { takeLinkCode } from '@/lib/link-code';
+import { usePasswordRule } from '@/lib/password-rule';
 import { UNEXPECTED_RESPONSE, signInErrorMessage } from '@/lib/sign-in-error';
 import { signInAfterInvite } from '@/lib/invite-sign-in';
 
@@ -90,6 +91,7 @@ export function InviteClient({
   });
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const rule = usePasswordRule();
   const [errors, setErrors] = useState<InviteFormErrors>({});
   const [formError, setFormError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -132,7 +134,7 @@ export function InviteClient({
   async function accept(e: React.FormEvent) {
     e.preventDefault();
     if (preview.kind !== 'ok') return;
-    const errs = validateInviteForm({ code: preview.code, password, confirm });
+    const errs = validateInviteForm({ code: preview.code, password, confirm }, rule ?? undefined);
     setErrors(errs);
     setFormError(undefined);
     if (errs.password || errs.confirm) {
@@ -241,9 +243,7 @@ export function InviteClient({
                       : 'invite-password-hint'
                   }
                 />
-                <FieldDescription id="invite-password-hint">
-                  At least {MIN_PASSWORD} characters.
-                </FieldDescription>
+                <PasswordStrength id="invite-password-hint" password={password} rule={rule} />
                 <FieldError id="invite-password-error">{errors.password}</FieldError>
               </Field>
               <Field data-invalid={!!errors.confirm || undefined}>

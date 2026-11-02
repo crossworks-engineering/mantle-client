@@ -14,6 +14,7 @@ import type { MemberInviteRow } from '@mantle/client-types';
 import { formerClientText } from './login-refusals';
 import { readLinkCode } from './link-code';
 import { MAX_PASSWORD, MIN_PASSWORD } from './member-password';
+import { OLD_RULE, passwordRuleError, type PasswordRule } from './password-rule';
 
 export { MAX_PASSWORD, MIN_PASSWORD };
 
@@ -108,12 +109,12 @@ export type InviteForm = { code: string; password: string; confirm: string };
 export type InviteFormErrors = Partial<Record<keyof InviteForm, string>>;
 
 /** The brain's rules, checked before anything is sent. */
-export function validateInviteForm(f: InviteForm): InviteFormErrors {
+export function validateInviteForm(f: InviteForm, rule: PasswordRule = OLD_RULE): InviteFormErrors {
   const errors: InviteFormErrors = {};
+  const ruleError = f.password ? passwordRuleError(f.password, rule) : null;
   if (!readInviteCode(f.code)) errors.code = 'Enter your invite code.';
   if (!f.password) errors.password = 'Choose a password.';
-  else if (f.password.length < MIN_PASSWORD)
-    errors.password = `Use at least ${MIN_PASSWORD} characters.`;
+  else if (ruleError) errors.password = ruleError;
   // The brain's own cap: above it the accept is refused as a bad request,
   // which read as "That code is not valid".
   else if (f.password.length > MAX_PASSWORD) errors.password = 'That password is too long.';

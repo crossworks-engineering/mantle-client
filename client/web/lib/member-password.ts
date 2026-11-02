@@ -12,18 +12,26 @@
  * pinned by a test.
  */
 
-export const MIN_PASSWORD = 8;
+import { OLD_RULE, passwordRuleError, type PasswordRule } from './password-rule';
+
+/** A brain from before the 2026-11 rule: 8 characters. A form takes the
+ *  brain's own rule (usePasswordRule) when it has one. */
+export const MIN_PASSWORD = OLD_RULE.min;
 export const MAX_PASSWORD = 1024;
 
 export type PasswordForm = { current: string; next: string; confirm: string };
 export type PasswordErrors = Partial<Record<keyof PasswordForm, string>>;
 
 /** The same rules the brain applies, checked before anything is sent. */
-export function validatePasswordForm(f: PasswordForm): PasswordErrors {
+export function validatePasswordForm(
+  f: PasswordForm,
+  rule: PasswordRule = OLD_RULE,
+): PasswordErrors {
   const errors: PasswordErrors = {};
+  const ruleError = f.next ? passwordRuleError(f.next, rule) : null;
   if (!f.current) errors.current = 'Enter your current password.';
   if (!f.next) errors.next = 'Enter a new password.';
-  else if (f.next.length < MIN_PASSWORD) errors.next = `Use at least ${MIN_PASSWORD} characters.`;
+  else if (ruleError) errors.next = ruleError;
   else if (f.next.length > MAX_PASSWORD) errors.next = 'That password is too long.';
   else if (f.current && f.next === f.current)
     errors.next = 'The new password must be different from the current one.';

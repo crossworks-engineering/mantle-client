@@ -12,7 +12,7 @@ describe('validatePasswordForm', () => {
     expect(validatePasswordForm({ ...ok, current: '' }).current).toBeDefined();
   });
 
-  it('needs at least 8 characters, as the brain does', () => {
+  it('needs at least 8 characters on a brain from before the rule', () => {
     expect(validatePasswordForm({ ...ok, next: 'short77', confirm: 'short77' }).next).toMatch(
       /at least 8/,
     );

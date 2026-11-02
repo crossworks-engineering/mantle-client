@@ -78,6 +78,8 @@ import { inviteName, newLinkSeed, openInvites } from '@/lib/user-invites';
 import { PairPhoneCard } from './pair-phone-card';
 import { LoginWorkspaces } from './login-workspaces';
 import { play } from '@/lib/sounds/play';
+import { PasswordStrength } from '@/components/auth/password-strength';
+import { OLD_RULE, passwordRuleError, usePasswordRule } from '@/lib/password-rule';
 
 /** What the delete confirm says. */
 export const LOGIN_DELETE_TEXT =
@@ -1094,6 +1096,7 @@ function AddUserDialog({
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [displayName, setDisplayName] = useState('');
   const [pending, setPending] = useState(false);
+  const rule = usePasswordRule();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1104,8 +1107,9 @@ function AddUserDialog({
     if (!email.trim()) errs.email = 'An email address is required.';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
       errs.email = 'That does not look like an email address.';
+    const weak = password ? passwordRuleError(password, rule ?? OLD_RULE) : null;
     if (!password) errs.password = 'A starting password is required.';
-    else if (password.length < 8) errs.password = 'Use at least 8 characters.';
+    else if (weak) errs.password = weak;
     if (errs.email || errs.password) {
       setErrors(errs);
       document.getElementById(errs.email ? 'new-user-email' : 'new-user-password')?.focus();
@@ -1181,18 +1185,18 @@ function AddUserDialog({
             <SecretInput
               id="new-user-password"
               required
-              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder={`At least ${(rule ?? OLD_RULE).min} characters`}
               autoComplete="off"
               aria-invalid={!!errors.password || undefined}
               aria-describedby={
                 errors.password
-                  ? 'new-user-password-error new-user-password-hint'
-                  : 'new-user-password-hint'
+                  ? 'new-user-password-error new-user-password-hint new-user-password-strength'
+                  : 'new-user-password-hint new-user-password-strength'
               }
             />
+            <PasswordStrength id="new-user-password-strength" password={password} rule={rule} />
             <FieldHint
               id="new-user-password"
               warn="You'll need to pass this to them yourself. It isn't emailed."
@@ -1237,17 +1241,19 @@ function ResetPasswordDialog({
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
+  const rule = usePasswordRule();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Same rules `required` + `minLength={8}` already encoded (§6b).
+    // The brain's rule, said before the request (§6b; the brain still checks).
     if (!password) {
       setError('A new password is required.');
       document.getElementById('reset-password-value')?.focus();
       return;
     }
-    if (password.length < 8) {
-      setError('Use at least 8 characters.');
+    const weak = passwordRuleError(password, rule ?? OLD_RULE);
+    if (weak) {
+      setError(weak);
       document.getElementById('reset-password-value')?.focus();
       return;
     }
@@ -1288,16 +1294,15 @@ function ResetPasswordDialog({
             <SecretInput
               id="reset-password-value"
               required
-              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder={`At least ${(rule ?? OLD_RULE).min} characters`}
               autoComplete="off"
               aria-invalid={!!error || undefined}
               aria-describedby={
                 error
-                  ? 'reset-password-value-error reset-password-value-hint'
-                  : 'reset-password-value-hint'
+                  ? 'reset-password-value-error reset-password-value-hint reset-password-value-strength'
+                  : 'reset-password-value-hint reset-password-value-strength'
               }
             />
             <FieldHint
@@ -1306,6 +1311,7 @@ function ResetPasswordDialog({
             >
               What they&apos;ll sign in with from now on.
             </FieldHint>
+            <PasswordStrength id="reset-password-value-strength" password={password} rule={rule} />
             <FieldError id="reset-password-value-error">{error}</FieldError>
           </Field>
           <div className="flex justify-end pt-1">
