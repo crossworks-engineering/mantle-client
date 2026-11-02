@@ -2,6 +2,7 @@
 
 import type { SpendRange } from '@mantle/client-types';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
+import { writePref } from '@mantle/web-ui/ui-prefs';
 
 const COOKIE = 'mantle_spend_range';
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
@@ -15,8 +16,8 @@ const PILLS: { value: SpendRange; label: string }[] = [
 /**
  * Day/week/month picker for the sidebar usage card.
  *
- * The cookie is still written, but only so the server layout can seed the
- * first paint without a flash. The card itself is a client component fetching
+ * The pick is kept in ui-prefs, only so the app layout can seed the first
+ * paint without a flash. The card itself is a client component fetching
  * over HTTP now, so the pick is reported up via `onPick` rather than through
  * the `router.refresh()` this used when the card was server-rendered.
  */
@@ -31,7 +32,7 @@ export function UsageCardPills({
 }) {
   function pick(range: SpendRange) {
     if (range === current) return;
-    document.cookie = `${COOKIE}=${range}; path=/; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
+    writePref(COOKIE, range, ONE_YEAR_SECONDS);
     onPick(range);
   }
 

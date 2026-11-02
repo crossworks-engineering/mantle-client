@@ -223,7 +223,8 @@ describe('signing in', () => {
     const s = activeSession();
     expect(s).toMatchObject({ email: 'owner@example.com', origin: 'https://brain.example' });
     expect(storage.map.get('mantle_token')).toBe(bearer(2_000_000_000));
-    expect(cookies.at(-1)).toContain('mantle_authed=1');
+    expect(JSON.parse(storage.map.get('mantle_pref:mantle_authed') ?? '{}').v).toBe('1');
+    expect(cookies).toEqual([]);
   });
 
   it('signing in again as the same login refreshes its row instead of adding one', () => {

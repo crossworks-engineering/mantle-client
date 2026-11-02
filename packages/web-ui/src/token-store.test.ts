@@ -72,42 +72,55 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** The presence flag as ui-prefs keeps it, or undefined. */
+function presence(
+  storage: ReturnType<typeof fakeStorage>,
+): { v: string; exp?: number } | undefined {
+  const raw = storage.map.get('mantle_pref:mantle_authed');
+  return raw === undefined ? undefined : (JSON.parse(raw) as { v: string; exp?: number });
+}
+
 describe('tokenStore · browser (no desktop vault)', () => {
-  it('round-trips the bearer through localStorage and sets the presence cookie', () => {
+  it('round-trips the bearer through localStorage and sets the presence flag', () => {
     const { storage, writes } = setup({});
     expect(tokenStore.get()).toBeNull();
 
     tokenStore.set('bearer-1');
     expect(storage.map.get('mantle_token')).toBe('bearer-1');
     expect(tokenStore.get()).toBe('bearer-1');
-    expect(writes.at(-1)).toContain('mantle_authed=1');
-    expect(writes.at(-1)).toContain('SameSite=Lax');
+    expect(presence(storage)?.v).toBe('1');
+    expect(tokenStore.hasPresence()).toBe(true);
+    // No cookie is written for it (the desktop scheme keeps none).
+    expect(writes.filter((w) => w.startsWith('mantle_authed=1'))).toEqual([]);
   });
 
-  it('marks the presence cookie Secure only over https', () => {
-    const a = setup({ https: true });
+  it('keeps the presence flag for 30 days, as the cookie did', () => {
+    const { storage } = setup({});
+    const before = Date.now();
     tokenStore.set('x');
-    expect(a.writes.at(-1)).toContain('; Secure');
-
-    vi.unstubAllGlobals();
-    const b = setup({ https: false });
-    tokenStore.set('x');
-    expect(b.writes.at(-1)).not.toContain('; Secure');
+    const exp = presence(storage)?.exp ?? 0;
+    expect(exp).toBeGreaterThanOrEqual(before + 30 * 86400_000);
+    expect(exp).toBeLessThanOrEqual(Date.now() + 30 * 86400_000);
   });
 
-  it('clear removes the token and expires the presence cookie', () => {
-    const { storage, writes } = setup({ storage: fakeStorage({ mantle_token: 'bearer-1' }) });
+  it('clear removes the token and the presence flag', () => {
+    const { storage } = setup({
+      storage: fakeStorage({
+        mantle_token: 'bearer-1',
+        'mantle_pref:mantle_authed': JSON.stringify({ v: '1' }),
+      }),
+    });
     tokenStore.clear();
     expect(storage.map.has('mantle_token')).toBe(false);
-    expect(writes.at(-1)).toContain('mantle_authed=');
-    expect(writes.at(-1)).toContain('Max-Age=0');
+    expect(presence(storage)).toBeUndefined();
+    expect(tokenStore.hasPresence()).toBe(false);
   });
 
-  it('markPresence sets the cookie without touching the token', () => {
-    const { storage, writes } = setup({ storage: fakeStorage({ mantle_token: 'bearer-1' }) });
+  it('markPresence sets the flag without touching the token', () => {
+    const { storage } = setup({ storage: fakeStorage({ mantle_token: 'bearer-1' }) });
     tokenStore.markPresence();
     expect(storage.map.get('mantle_token')).toBe('bearer-1');
-    expect(writes.at(-1)).toContain('mantle_authed=1');
+    expect(presence(storage)?.v).toBe('1');
   });
 });
 

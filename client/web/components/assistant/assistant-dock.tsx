@@ -22,6 +22,7 @@ import {
 import { Button } from '@mantle/web-ui/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { readPref, writePref } from '@mantle/web-ui/ui-prefs';
 import {
   apiEventStream,
   apiFetch,
@@ -201,7 +202,7 @@ type AssistantDockApi = {
   /** open ⇄ min — what the bubble + ⌘I toggle. */
   toggle: () => void;
   /** The agent selected for the panel — source of truth (mirrors the
-   *  `mantle_assistant_agent` cookie). The panel ALWAYS talks to this sticky
+   *  `mantle_assistant_agent` pref, ui-prefs). The panel ALWAYS talks to this sticky
    *  pick, even on the Pages/Tables/Apps screens: the main responder plans and
    *  delegates to the surface specialists herself (invoke_agent), so the thread
    *  never switches out from under the user and composer state survives
@@ -731,17 +732,18 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
     });
   }, []);
 
-  // Seed the selected agent from the cookie the picker writes, so the panel
-  // opens on your last-used agent without a URL param.
+  // Seed the selected agent from the pref the picker writes, so the panel
+  // opens on your last-used agent without a URL param. Kept URI-encoded, as
+  // the cookie it replaces was.
   useEffect(() => {
-    const m = document.cookie.match(/(?:^|;\s*)mantle_assistant_agent=([^;]+)/);
-    if (m?.[1]) setActiveAgentSlugState(decodeURIComponent(m[1]));
+    const kept = readPref(AGENT_COOKIE);
+    if (kept) setActiveAgentSlugState(decodeURIComponent(kept));
   }, []);
 
   const setActiveAgentSlug = useCallback((slug?: string) => {
     setActiveAgentSlugState(slug);
     if (slug) {
-      document.cookie = `${AGENT_COOKIE}=${encodeURIComponent(slug)}; path=/; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
+      writePref(AGENT_COOKIE, encodeURIComponent(slug), ONE_YEAR_SECONDS);
     }
   }, []);
 

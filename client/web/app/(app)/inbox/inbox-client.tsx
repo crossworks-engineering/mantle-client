@@ -11,6 +11,7 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { readPref } from '@mantle/web-ui/ui-prefs';
 import { EmailRow } from '@/components/email-row';
 import { ReadingPane } from '@/components/reading-pane';
 import { MailClient } from '@/components/mail/mail-client';
@@ -138,10 +139,10 @@ export function InboxClient() {
       .catch(() => {});
   }, [selectedId, queryClient]);
 
-  const defaultCollapsed = React.useMemo(() => {
-    if (typeof document === 'undefined') return false;
-    return document.cookie.split('; ').includes('react-resizable-panels:collapsed=true');
-  }, []);
+  const defaultCollapsed = React.useMemo(
+    () => readPref('react-resizable-panels:collapsed') === 'true',
+    [],
+  );
 
   const navAccounts: MailAccount[] = React.useMemo(
     () => accounts.map((a) => ({ id: a.id, address: a.address, provider: a.provider })),

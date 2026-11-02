@@ -10,6 +10,7 @@ import { Separator } from '@mantle/web-ui/ui/separator';
 import { TooltipProvider } from '@mantle/web-ui/ui/tooltip';
 import { AccountSwitcher, type MailAccount } from './account-switcher';
 import { MailNav, type FolderLink } from './mail-nav';
+import { writePref } from '@mantle/web-ui/ui-prefs';
 
 const NAV_COLLAPSED_PCT = 4;
 
@@ -54,7 +55,7 @@ export function MailClient({
         <ResizablePanelGroup
           orientation="horizontal"
           onLayoutChanged={(layout) => {
-            document.cookie = `react-resizable-panels:layout:mail=${JSON.stringify(layout)}; path=/`;
+            writePref('react-resizable-panels:layout:mail', JSON.stringify(layout));
           }}
           className="h-full items-stretch"
         >
@@ -68,7 +69,7 @@ export function MailClient({
             onResize={(panelSize) => {
               const collapsed = panelSize.asPercentage <= NAV_COLLAPSED_PCT;
               setIsCollapsed(collapsed);
-              document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(collapsed)}; path=/`;
+              writePref('react-resizable-panels:collapsed', JSON.stringify(collapsed));
             }}
             className={cn(isCollapsed && 'min-w-[50px] transition-all duration-300 ease-in-out')}
           >

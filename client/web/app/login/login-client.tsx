@@ -49,10 +49,10 @@ export function LoginClient({
     // signed in.
     if (add) return;
     if (tokenStore.get()) {
-      // Re-assert the presence cookie before bouncing. It can be lost while
-      // the token survives (an abrupt shutdown can drop Chromium's unflushed
-      // cookie store; localStorage flushes eagerly), and without it the
-      // middleware redirects the bounce right back here, a deadlock.
+      // Re-assert the presence flag before bouncing. It can be missing while
+      // the token survives (it ended, or an older build's cookie was lost),
+      // and without it the route guard sends the bounce right back here, a
+      // deadlock.
       tokenStore.markPresence();
       // Back to the MCP consent page when that is where the brain sent this
       // browser from (lib/oauth-consent.ts), else into the app.
@@ -81,7 +81,7 @@ export function LoginClient({
   const [replacesCurrent, setReplacesCurrent] = useState(false);
   useEffect(() => {
     if (!add || !held.ready) return;
-    setReplacesCurrent(!held.active && /(?:^|;\s*)mantle_authed=1/.test(document.cookie));
+    setReplacesCurrent(!held.active && tokenStore.hasPresence());
   }, [add, held.ready, held.active]);
 
   // Opened by another brain window's "Add login": the shell holds the email

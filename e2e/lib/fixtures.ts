@@ -9,7 +9,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
-import { PRESENCE_COOKIE, TOKEN_STORAGE_KEY } from './contract';
+import { PRESENCE_PREF_KEY, PRESENCE_PREF_VALUE, TOKEN_STORAGE_KEY } from './contract';
 import { BEARER_PATH, CLIENT_URL, SERVER_URL, STORAGE_STATE_PATH } from './env';
 
 /**
@@ -72,22 +72,12 @@ export const test = base.extend<Fixtures>({
       const ctx = await browser.newContext();
       const token = bearer();
       await ctx.addInitScript(
-        ([key, value]) => {
+        ([key, value, presenceKey, presence]) => {
           window.localStorage.setItem(key, value);
+          window.localStorage.setItem(presenceKey, presence);
         },
-        [TOKEN_STORAGE_KEY, token] as const,
+        [TOKEN_STORAGE_KEY, token, PRESENCE_PREF_KEY, PRESENCE_PREF_VALUE] as const,
       );
-      const client = new URL(CLIENT_URL);
-      await ctx.addCookies([
-        {
-          name: PRESENCE_COOKIE,
-          value: '1',
-          domain: client.hostname,
-          path: '/',
-          secure: client.protocol === 'https:',
-          sameSite: 'Lax',
-        },
-      ]);
       await use(ctx);
       await ctx.close();
     } else {

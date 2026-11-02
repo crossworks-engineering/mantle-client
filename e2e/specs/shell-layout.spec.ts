@@ -94,7 +94,7 @@ test.describe('shell layout', () => {
 
     // Keyboard, not a drag: the handle is arrow-operable on purpose (a
     // drag-only control is unusable without a mouse), and it writes the same
-    // cookie either way. Four nudges of 8px = 288px.
+    // pref either way. Four nudges of 8px = 288px.
     const handle = ownerPage.getByRole('separator', { name: 'Resize navigation' });
     await handle.focus();
     for (let i = 0; i < 4; i++) await ownerPage.keyboard.press('ArrowRight');
@@ -106,15 +106,15 @@ test.describe('shell layout', () => {
     expect(Math.round((await rail.boundingBox())!.width)).toBe(288);
     expect(Math.round((await ownerPage.locator('main').boundingBox())!.x)).toBe(288);
 
-    // Cookie, so the value comes back with the SERVER's first paint.
-    const cookies = await ownerPage.context().cookies();
-    expect(cookies.find((c) => c.name === 'mantle_nav_w')?.value).toBe('288');
+    // Kept in ui-prefs, so the value comes back with the first paint.
+    const kept = await ownerPage.evaluate(() => localStorage.getItem('mantle_pref:mantle_nav_w'));
+    expect(JSON.parse(kept ?? '{}').v).toBe('288');
     await ownerPage.reload();
     await expect.poll(navWidth).toBe('288px');
     await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}shell-nav-resized.png` });
 
     // Leave the rail as found — the browser context is per-test, but the
-    // cookie is written on the client origin and a stray 288 would make the
+    // pref is written on the client origin and a stray 288 would make the
     // "starts at 256px" assertion above order-dependent if that ever changes.
     await handle.focus();
     for (let i = 0; i < 4; i++) await ownerPage.keyboard.press('ArrowLeft');

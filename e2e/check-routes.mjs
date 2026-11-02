@@ -242,23 +242,15 @@ const noted = [];
 async function newContext() {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   if (bearer) {
+    // The presence flag as ui-prefs keeps it (it was a cookie before the
+    // desktop app's own URL scheme, which keeps none).
     await ctx.addInitScript(
-      ([key, value]) => {
+      ([key, value, presenceKey, presence]) => {
         window.localStorage.setItem(key, value);
+        window.localStorage.setItem(presenceKey, presence);
       },
-      [TOKEN_STORAGE_KEY, bearer],
+      [TOKEN_STORAGE_KEY, bearer, `mantle_pref:${PRESENCE_COOKIE}`, JSON.stringify({ v: '1' })],
     );
-    const client = new URL(BASE);
-    await ctx.addCookies([
-      {
-        name: PRESENCE_COOKIE,
-        value: '1',
-        domain: client.hostname,
-        path: '/',
-        secure: client.protocol === 'https:',
-        sameSite: 'Lax',
-      },
-    ]);
   }
   return ctx;
 }

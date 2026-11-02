@@ -8,9 +8,9 @@
  *
  * ZERO-SECRET: the client holds no SESSION_SECRET, so it verifies NOTHING —
  * real enforcement is the server origin's 401s on every data fetch. The only
- * job here is UX: a page load without the presence cookie (set at login by the
- * token store, cleared at sign-out/bounce) goes to /login instead of flashing
- * an empty shell that then bounces. The presence cookie is spoofable by
+ * job here is UX: a page load without the presence flag (ui-prefs, set at login
+ * by the token store, cleared at sign-out/bounce) goes to /login instead of
+ * flashing an empty shell that then bounces. The presence flag is spoofable by
  * construction — spoofing it renders a data-free skeleton whose every fetch
  * 401s. Nothing is protected here.
  *
@@ -18,13 +18,11 @@
  * manage is the shell's own business (GET /api/shell `areas`).
  */
 
-const PRESENCE_COOKIE = 'mantle_authed';
-
 /** Paths that render without a session: login itself, the runtime env,
  *  `/pair` (the static page a browser lands on when it scans the phone
  *  sign-in QR; it holds no data and never reads the code in the fragment),
  *  and `/invite`, where a person redeems an invite. Public paths pass before
- *  any cookie is read, so a signed-in browser is never sent away from them. */
+ *  presence is read, so a signed-in browser is never sent away from them. */
 const PUBLIC_PREFIXES: readonly string[] = ['/login', '/env.js', '/pair', '/invite'];
 
 /** Retired pages and where they go now, for everyone and before the presence
@@ -65,25 +63,17 @@ export function retiredTarget(pathname: string): string | null {
   return null;
 }
 
-function cookieValue(cookieHeader: string, name: string): string | undefined {
-  for (const part of cookieHeader.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq !== -1 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return undefined;
-}
-
 /**
  * The path (with query) a load of `pathname` + `search` must go to instead, or
- * null to stay. `cookies` is `document.cookie`.
+ * null to stay. `present` is the token store's presence flag.
  */
-export function guardRedirect(pathname: string, search: string, cookies: string): string | null {
+export function guardRedirect(pathname: string, search: string, present: boolean): string | null {
   const retired = retiredTarget(pathname);
   if (retired) return retired;
   // In any case, as retiredTarget: a signed-out `/INVITE?code=…` stays on the
   // invite and does not carry its code into `next`.
   const path = pathname.toLowerCase();
   if (PUBLIC_PREFIXES.some((p) => under(path, p))) return null;
-  if (cookieValue(cookies, PRESENCE_COOKIE) === '1') return null;
+  if (present) return null;
   return `/login?next=${encodeURIComponent(pathname + search)}`;
 }

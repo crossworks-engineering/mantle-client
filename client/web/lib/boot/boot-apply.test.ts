@@ -70,13 +70,13 @@ describe('guardLoad', () => {
 
   it('sends a load with no session to /login and says so', () => {
     const { loc, replaced } = fakeLocation('/notes/abc', '?x=1');
-    expect(guardLoad(loc, '')).toBe(true);
+    expect(guardLoad(loc, false)).toBe(true);
     expect(replaced).toEqual([`/login?next=${encodeURIComponent('/notes/abc?x=1')}`]);
   });
 
   it('lets a signed-in load stay', () => {
     const { loc, replaced } = fakeLocation('/notes/abc');
-    expect(guardLoad(loc, 'mantle_authed=1')).toBe(false);
+    expect(guardLoad(loc, true)).toBe(false);
     expect(replaced).toEqual([]);
   });
 });

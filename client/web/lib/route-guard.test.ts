@@ -4,14 +4,12 @@ import { guardRedirect } from './route-guard';
 /**
  * The page-load guard (was the client middleware, phase W5c): the presence
  * gate, the public pages, and the retired pages. No role routing: the role
- * hint cookies of older builds change nothing.
+ * hints of older builds change nothing. `prefs` stands for what ui-prefs
+ * holds; only the presence flag being exactly '1' counts.
  */
-function guard(path: string, cookies: Record<string, string> = {}): string | null {
+function guard(path: string, prefs: Record<string, string> = {}): string | null {
   const url = new URL(path, 'http://client.test');
-  const header = Object.entries(cookies)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('; ');
-  return guardRedirect(url.pathname, url.search, header);
+  return guardRedirect(url.pathname, url.search, prefs.mantle_authed === '1');
 }
 
 const SESSIONS: Record<string, Record<string, string>> = {
@@ -34,13 +32,8 @@ describe('guard: the presence gate', () => {
     expect(to.searchParams.get('next')).toBe('/pages?q=x');
   });
 
-  it('a presence cookie of anything but 1 is no session', () => {
+  it('a presence flag of anything but 1 is no session', () => {
     expect(guard('/pages', { mantle_authed: '0' })).toMatch(/^\/login\?next=/);
-  });
-
-  it('reads the presence cookie among others, with spaces', () => {
-    expect(guardRedirect('/pages', '', 'a=b;  mantle_authed=1 ; c=d')).toBeNull();
-    expect(guardRedirect('/pages', '', 'not_mantle_authed=1')).toMatch(/^\/login\?next=/);
   });
 });
 

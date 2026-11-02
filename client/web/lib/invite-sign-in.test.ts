@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  *   - split with no bearer, nothing in the store changes and the person is
  *     told to sign in at /login;
  *   - same-origin with no bearer, the accept's cookie is the session: the old
- *     bearer goes and the presence cookie is set (main's cookie fallback).
+ *     bearer goes and the presence flag is set (main's cookie fallback).
  *
  * The real token store and session registry run over a fake localStorage, so
  * "untouched" is checked on the stored keys themselves. Modules are fresh per
@@ -159,7 +159,7 @@ describe('signInAfterInvite · same-origin', () => {
       spies.markPresence.mock.invocationCallOrder[0]!,
     );
     expect(map.has('mantle_token')).toBe(false);
-    expect(document.cookie).toContain('mantle_authed=1');
+    expect(JSON.parse(map.get('mantle_pref:mantle_authed') ?? '{}').v).toBe('1');
   });
 
   it('a 200 with no token in it is no bearer', async () => {

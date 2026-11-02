@@ -10,6 +10,7 @@ import {
 } from '@/lib/nav-width';
 import { UsageCard } from '@/components/usage-card';
 import type { SpendRange } from '@mantle/client-types';
+import { readPref } from '@mantle/web-ui/ui-prefs';
 
 /**
  * App shell: the rail on the left (brand, account, search, nav, launchers),
@@ -19,7 +20,7 @@ import type { SpendRange } from '@mantle/client-types';
  * ZERO-SECRET variant — this app cannot verify a session (no SESSION_SECRET,
  * no DB), so there is NO server-side auth or onboarding gate here. This is
  * the detached-dev branch of the old monolith layout made permanent:
- *   - auth UX     → client middleware (presence cookie → /login redirect)
+ *   - auth UX     → boot.js route guard (presence flag → /login redirect)
  *   - enforcement → the server origin's 401s on every data fetch (apiFetch
  *                   bounces to /login and clears the token store)
  *   - onboarding  → AppShell's client redirect off GET /api/shell
@@ -29,8 +30,8 @@ import type { SpendRange } from '@mantle/client-types';
  *                   used to read the DB in-process, which is what the carve
  *                   took away)
  *
- * The cookies read here are pure layout UX — reading them needs no secret.
- * The UI is static now, so they are read in the browser, once, when this
+ * The values read here (ui-prefs) are pure layout UX — reading them needs no
+ * secret. The UI is static now, so they are read in the browser, once, when this
  * layout first renders. That costs no flash: the shell frame (rails, usage
  * card) mounts only after GET /api/shell answers, by which time these values
  * are its first state. The spend range is one of them: the card owns the range
@@ -44,23 +45,14 @@ function readSpendRange(value: string | undefined): SpendRange {
   return (SPEND_RANGES as string[]).includes(value ?? '') ? (value as SpendRange) : 'day';
 }
 
-function cookie(name: string): string | undefined {
-  if (typeof document === 'undefined') return undefined; // the static build
-  for (const part of document.cookie.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq !== -1 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return undefined;
-}
-
 function readLayout() {
   return {
-    navCollapsed: cookie('mantle_nav_collapsed') === '1',
+    navCollapsed: readPref('mantle_nav_collapsed') === '1',
     // Activity defaults to collapsed — only an explicit '0' (user expanded it) opens it.
-    activityCollapsed: cookie('mantle_activity_collapsed') !== '0',
-    navWidth: clampNavWidth(cookie(NAV_W_COOKIE)),
-    activityWidth: clampActivityWidth(cookie(ACTIVITY_W_COOKIE)),
-    spendRange: readSpendRange(cookie('mantle_spend_range')),
+    activityCollapsed: readPref('mantle_activity_collapsed') !== '0',
+    navWidth: clampNavWidth(readPref(NAV_W_COOKIE)),
+    activityWidth: clampActivityWidth(readPref(ACTIVITY_W_COOKIE)),
+    spendRange: readSpendRange(readPref('mantle_spend_range')),
   };
 }
 

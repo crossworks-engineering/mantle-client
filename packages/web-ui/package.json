@@ -9,6 +9,7 @@
     "./api-fetch": "./src/api-fetch.ts",
     "./appearance": "./src/appearance.ts",
     "./desktop-shell": "./src/desktop-shell.ts",
+    "./ui-prefs": "./src/ui-prefs.ts",
     "./app-bridge/protocol": "./src/app-bridge/protocol.ts",
     "./app-sandbox/access-log": "./src/app-sandbox/access-log.tsx",
     "./app-sandbox/code-editor": "./src/app-sandbox/code-editor.tsx",

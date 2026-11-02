@@ -31,6 +31,7 @@ import {
 import { brandTitle, FALLBACK_NAME, readBrandFields } from '../brand';
 import { runtimeAppearance } from '@mantle/web-ui/runtime-env';
 import { guardRedirect } from '../route-guard';
+import { PRESENCE_PREF, readPref } from '@mantle/web-ui/ui-prefs';
 
 /** `Page · MantleOS` → `Page · <brain>`, and a bare `MantleOS` → `<brain>`. */
 export function brandDocumentTitle(title: string, name: string): string {
@@ -73,8 +74,8 @@ export function syncBrandTitle(doc: Document, appearance: BrainAppearance | null
 }
 
 /** True when the load was sent elsewhere: the caller stops there. */
-export function guardLoad(loc: Location, cookies: string): boolean {
-  const to = guardRedirect(loc.pathname, loc.search, cookies);
+export function guardLoad(loc: Location, present: boolean): boolean {
+  const to = guardRedirect(loc.pathname, loc.search, present);
   if (!to) return false;
   loc.replace(to);
   return true;
@@ -82,7 +83,7 @@ export function guardLoad(loc: Location, cookies: string): boolean {
 
 export function boot(doc: Document): void {
   try {
-    if (guardLoad(doc.location, doc.cookie)) return;
+    if (guardLoad(doc.location, readPref(PRESENCE_PREF) === '1')) return;
   } catch {
     // A broken guard must not blank the page: the API's 401s still bounce.
   }

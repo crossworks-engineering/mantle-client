@@ -6,9 +6,9 @@
  * on sanitized-HTML rendering, opaque-origin mini-app sandboxes, per-device
  * revocation + rotation, and the client app's CSP.
  *
- * The presence cookie is a non-httpOnly UX signal ONLY — it lets the client's
- * middleware server-redirect logged-out page loads to /login without a
- * flash. It authenticates nothing.
+ * The presence flag (ui-prefs, `mantle_authed`) is a UX signal ONLY — it lets
+ * the boot route guard send logged-out page loads to /login before the first
+ * paint. It authenticates nothing.
  *
  * Key names are contract with e2e/lib/contract.ts — the split suite seeds
  * them directly.
@@ -27,8 +27,7 @@ import {
   signInSession,
   TOKEN_STORAGE_KEY,
 } from './session-registry';
-
-const PRESENCE_COOKIE = 'mantle_authed';
+import { clearPref, PRESENCE_PREF, readPref, writePref } from './ui-prefs';
 
 function canStore(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -42,9 +41,8 @@ function vault() {
   return typeof window !== 'undefined' ? (window.mantleDesktop?.tokenVault ?? null) : null;
 }
 
-function setPresenceCookie(): void {
-  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  document.cookie = `${PRESENCE_COOKIE}=1; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax${secure}`;
+function setPresence(): void {
+  writePref(PRESENCE_PREF, '1', 60 * 60 * 24 * 30);
 }
 
 export const tokenStore = {
@@ -97,7 +95,7 @@ export const tokenStore = {
         token: login.token,
         ...(login.loginId !== undefined ? { loginId: login.loginId } : {}),
       });
-      setPresenceCookie();
+      setPresence();
     } catch {
       /* storage unavailable (private mode etc.); the session just won't persist */
     }
@@ -121,7 +119,7 @@ export const tokenStore = {
         }
         reconcile();
       }
-      setPresenceCookie();
+      setPresence();
     } catch {
       /* storage unavailable (private mode etc.) — the session just won't persist */
     }
@@ -134,16 +132,18 @@ export const tokenStore = {
       dropActiveCredential();
       vault()?.clear();
       window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-      document.cookie = `${PRESENCE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+      clearPref(PRESENCE_PREF);
     } catch {
       /* ignore */
     }
   },
-  /** Set ONLY the presence cookie — the same-origin cookie-login path has no
-   *  bearer to store but the client middleware still keys off presence. */
+  /** Set ONLY the presence flag — the same-origin cookie-login path has no
+   *  bearer to store but the boot route guard still keys off presence. */
   markPresence(): void {
-    if (typeof document === 'undefined') return;
-    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `${PRESENCE_COOKIE}=1; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax${secure}`;
+    writePref(PRESENCE_PREF, '1', 60 * 60 * 24 * 365);
+  },
+  /** Whether the presence flag is set (a UX signal, never a credential). */
+  hasPresence(): boolean {
+    return readPref(PRESENCE_PREF) === '1';
   },
 };

@@ -14,6 +14,7 @@ import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { useFonts } from '@mantle/web-ui/font-provider';
 import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { setAssetToken } from '@mantle/web-ui/asset-url';
+import { writePref } from '@mantle/web-ui/ui-prefs';
 import { assetTokenRefreshDelayMs } from '@mantle/web-ui/token-claims';
 import { RailHandle } from '@mantle/web-ui/ui/rail-handle';
 import {
@@ -90,19 +91,21 @@ import { LastOpenedLoginProvider } from '@/components/last-opened/last-opened';
  * than inline here. Collapsed state is also mirrored as
  * `data-{nav,activity}-collapsed` for descendants to restyle via
  * `group-data-[…]/shell:` (the mobile drawer portals outside this root, so
- * it always renders expanded). State is persisted to cookies and seeded
- * from them server-side (see layout.tsx) for a flash-free first paint.
+ * it always renders expanded). State is kept in ui-prefs and read once by
+ * layout.tsx before the frame mounts, for a flash-free first paint.
  */
 
 const NAV_COOKIE = 'mantle_nav_collapsed';
 const ACTIVITY_COOKIE = 'mantle_activity_collapsed';
 
+const ONE_YEAR_SECONDS = 31536000;
+
 function writeCookie(name: string, on: boolean) {
-  document.cookie = `${name}=${on ? '1' : '0'}; path=/; max-age=31536000; samesite=lax`;
+  writePref(name, on ? '1' : '0', ONE_YEAR_SECONDS);
 }
 
 function writeCookieValue(name: string, value: string | number) {
-  document.cookie = `${name}=${value}; path=/; max-age=31536000; samesite=lax`;
+  writePref(name, String(value), ONE_YEAR_SECONDS);
 }
 
 /** GET /api/shell's answer: the brain's contract (`Shell`, @mantle/client-types). */
@@ -238,8 +241,8 @@ function ShellFrame({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(initialNavCollapsed);
-  // Seeded from a cookie (like the collapse flags) rather than localStorage, so
-  // the server renders the user's width and the rail doesn't jump on load.
+  // Seeded from ui-prefs (like the collapse flags) before the frame mounts, so
+  // the rail renders the user's width and doesn't jump on load.
   const [navWidth, setNavWidth] = useState(initialNavWidth);
   // True for the duration of a resize, by pointer OR keyboard. Published as
   // `data-resizing` on the shell root, where one CSS rule suspends transitions

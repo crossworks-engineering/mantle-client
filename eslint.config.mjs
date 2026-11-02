@@ -285,6 +285,24 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-restricted-imports': clientTierImports() },
   },
   {
+    // The UI keeps no cookies of its own: the desktop app's URL scheme
+    // (mantle-ui://localhost) keeps none, so a value kept there was lost on
+    // every load. Its small preferences go through ui-prefs (localStorage),
+    // the one file that still reads document.cookie, to move an older
+    // build's values over.
+    files: ['client/web/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
+    ignores: ['packages/web-ui/src/ui-prefs.ts', '**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name='document'][property.name='cookie']",
+          message: 'Keep UI state in @mantle/web-ui/ui-prefs, not document.cookie.',
+        },
+      ],
+    },
+  },
+  {
     // client/desktop also takes @mantle/client-host: the node-side host of the
     // static UI, bundled into the Electron main process. Never client/web or
     // web-ui: it reads files from disk and has no place in a browser bundle.
