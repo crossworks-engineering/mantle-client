@@ -18,7 +18,11 @@ describe('the Bun version', () => {
   });
 
   it('is the version the box image runs', () => {
-    const images = [...read('Dockerfile').matchAll(/^FROM\s+oven\/bun:(\S+?)(?:-slim)?(?:\s|$)/gm)];
+    const images = [
+      ...read('Dockerfile').matchAll(
+        /^FROM\s+oven\/bun:([^\s@]+?)(?:-slim)?(?:@sha256:[0-9a-f]{64})?(?:\s|$)/gm,
+      ),
+    ];
     expect(images.length).toBeGreaterThan(0);
     for (const m of images) expect(m[1]).toBe(pinned);
   });

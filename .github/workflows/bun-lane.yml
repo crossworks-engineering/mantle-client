@@ -24,7 +24,6 @@ concurrency:
 permissions:
   contents: read
 
-
 jobs:
   bun:
     runs-on: ubuntu-24.04
@@ -32,6 +31,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -48,6 +49,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # What bun.sh starts, and the `node` it puts on PATH, must be the pinned
+      # Bun: the test fails otherwise, since bun.sh sets MANTLE_EXPECT_RUNTIME.
+      # verify:bun runs it again, inside the whole suite.
+      - name: The runtime under bun.sh
+        run: |
+          scripts/bun.sh node -p '`${process.versions.bun ?? "NOT BUN"} at ${process.execPath}`'
+          scripts/bun.sh vitest run scripts/bun-runtime.test.ts
+
       # typecheck, lint, format:check and vitest, every one of them on Bun.
       - name: Verify on Bun
         run: pnpm verify:bun
@@ -59,7 +68,15 @@ jobs:
           pnpm -C client/host build
           mv client/web/out "$RUNNER_TEMP/out-node"
           cp client/host/dist/server.mjs "$RUNNER_TEMP/server-node.mjs"
-          rm -rf client/web/.next client/host/dist
+
+      # The Bun build starts from nothing Node made: no .next, no export, no
+      # host bundle, and none of what prebuild writes into public/
+      # (copy-excalidraw-assets.mjs, build-boot.mjs). A Bun prebuild that did
+      # nothing then shows up in the compare as missing files.
+      - name: Clean the Node build
+        run: |
+          rm -rf client/web/.next client/web/out client/host/dist
+          rm -rf client/web/public/_mantle client/web/public/excalidraw-assets
 
       - name: Build on Bun
         run: pnpm build:bun
@@ -79,6 +96,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

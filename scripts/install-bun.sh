@@ -27,9 +27,12 @@ fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL --retry 3 -o "$tmp/bun.zip" \
+curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --max-time 300 -o "$tmp/bun.zip" \
   "https://github.com/oven-sh/bun/releases/download/bun-v$version/bun-linux-x64.zip"
-echo "$sha  $tmp/bun.zip" | sha256sum -c - >/dev/null
+if ! echo "$sha  $tmp/bun.zip" | sha256sum -c - >/dev/null 2>&1; then
+  echo "install-bun.sh: checksum mismatch for bun-linux-x64.zip (bun $version), not installed" >&2
+  exit 1
+fi
 unzip -q "$tmp/bun.zip" -d "$tmp"
 mkdir -p "$dest"
 install -m 0755 "$tmp/bun-linux-x64/bun" "$dest/bun"
