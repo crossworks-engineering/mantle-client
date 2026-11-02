@@ -307,10 +307,12 @@ export type FormState = {
    *  chip in the chat composer). One extra cheap LLM call per turn, so off by
    *  default. */
   suggestFollowUp: boolean;
-  /** How granted tools reach the model (brain v0.238.8). 'full' sends every
-   *  granted tool on every call; 'deferred' sends a fixed core in full and
-   *  lists the rest for `tool_search`. Same grant either way. */
-  toolLoading: ToolLoading;
+  /** How granted tools reach the model. 'full' sends every granted tool on
+   *  every call; 'deferred' (brain v0.238.8) sends a fixed core in full and
+   *  lists the rest for `tool_search`; 'map' (brain v0.400.50) sends the core
+   *  plus a map of the rest. Same grant each way. null = the agent has none
+   *  set, so the brain picks (`defaultToolLoading`). */
+  toolLoading: ToolLoading | null;
   /** The agent's own thinking effort; null = inherit the person's profile. */
   thinkingEffort: AgentThinkingEffort | null;
   /** Avatar {style, seed}; null = initials fallback. */
@@ -359,7 +361,7 @@ export function emptyForm(role: Role = 'responder'): FormState {
     temperature: '0.7',
     maxTokens: '',
     suggestFollowUp: false,
-    toolLoading: 'full',
+    toolLoading: null,
     thinkingEffort: null,
     avatar: null,
   };
@@ -410,20 +412,49 @@ export function formFromAgent(a: AgentSummary): FormState {
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
     suggestFollowUp: a.params.suggest_follow_up === true,
-    toolLoading: a.params.tool_loading === 'deferred' ? 'deferred' : 'full',
+    toolLoading: parseToolLoading(a.params.tool_loading),
     thinkingEffort: parseAgentThinkingEffort(a.thinkingEffort),
     avatar: a.avatar ?? null,
   };
 }
 
-export type ToolLoading = 'full' | 'deferred';
+export type ToolLoading = NonNullable<AgentParamsDTO['tool_loading']>;
+
+export const TOOL_LOADING_OPTIONS: readonly { value: ToolLoading; label: string; hint: string }[] =
+  [
+    { value: 'full', label: 'Full', hint: 'Full: every granted tool on every call.' },
+    {
+      value: 'deferred',
+      label: 'Deferred',
+      hint: 'Deferred: a core in full; the agent searches for the rest by name.',
+    },
+    {
+      value: 'map',
+      label: 'Map',
+      hint: 'Map: a small core plus a map of areas; the agent finds the rest.',
+    },
+  ];
+
+export function parseToolLoading(v: unknown): ToolLoading | null {
+  return TOOL_LOADING_OPTIONS.some((o) => o.value === v) ? (v as ToolLoading) : null;
+}
+
+/** The mode the brain runs an agent with no `tool_loading` set (brain
+ *  v0.400.50, `resolveToolLoading`): the map for an assistant, deferred on a
+ *  Haiku model, which scored lower on the map; full for every other role. */
+export function defaultToolLoading(role: Role, model: string): ToolLoading {
+  if (role !== 'responder' && role !== 'assistant') return 'full';
+  return /haiku/i.test(model) ? 'deferred' : 'map';
+}
 
 /**
  * The `params` an agent save sends. The brain stores params WHOLE and checks
  * them strictly, so this writes exactly the keys it accepts: the form's own
  * fields, plus `top_p` carried over from the saved row (no field for it here,
- * but a save must not wipe it). Off/full values are omitted (absent = off), so
- * a brain from before a key never sees it unless the person turns it on.
+ * but a save must not wipe it). Off values are omitted (absent = off), so a
+ * brain from before a key never sees it unless the person turns it on.
+ * `tool_loading` goes back exactly as loaded: absent stays absent (the brain
+ * picks, map for an assistant), and a set mode, `full` included, is sent.
  */
 export function agentParamsFromForm(
   form: Pick<FormState, 'temperature' | 'maxTokens' | 'suggestFollowUp' | 'toolLoading'>,
@@ -439,7 +470,7 @@ export function agentParamsFromForm(
   }
   if (typeof saved?.top_p === 'number') params.top_p = saved.top_p;
   if (form.suggestFollowUp) params.suggest_follow_up = true;
-  if (form.toolLoading === 'deferred') params.tool_loading = 'deferred';
+  if (form.toolLoading) params.tool_loading = form.toolLoading;
   return params;
 }
 

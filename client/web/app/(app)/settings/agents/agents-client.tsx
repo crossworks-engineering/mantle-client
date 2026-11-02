@@ -57,6 +57,7 @@ import {
   NONE,
   RouteHostFields,
   ThinkingEffortField,
+  ToolLoadingField,
 } from './agent-form-sections';
 import { ContextWindowHint, DelegatePicker, SkillPicker, ToolGroupPicker } from './agent-pickers';
 import { catalogKeyId, useModelCatalog } from './use-model-catalog';
@@ -496,7 +497,7 @@ export function AgentsClient() {
         err instanceof Error && /unrecognized key[^:]*:.*\btool_loading\b/i.test(err.message);
       toast.error(
         oldBrain
-          ? 'This brain is too old for on-demand tools (it needs v0.238.8 or later). Turn the switch off and save again.'
+          ? 'This brain is too old for tool loading modes (it needs v0.238.8 or later). Set Tool loading to Default and save again.'
           : err instanceof Error
             ? err.message
             : 'Save failed.',
@@ -1303,28 +1304,7 @@ export function AgentsClient() {
                                 costs a little per message. Off by default.
                               </FieldHint>
                             </Field>
-                            <Field>
-                              <FieldLabel
-                                htmlFor="toolLoading"
-                                className="cursor-pointer items-center gap-2"
-                              >
-                                <Switch
-                                  id="toolLoading"
-                                  checked={form.toolLoading === 'deferred'}
-                                  onCheckedChange={(v) =>
-                                    setForm((f) => ({ ...f, toolLoading: v ? 'deferred' : 'full' }))
-                                  }
-                                />
-                                Load tools on demand
-                              </FieldLabel>
-                              <FieldHint>
-                                Sends the most used tools in full and lists the rest by name; the
-                                agent loads one with a search when it needs it. Same tools, about
-                                75% fewer tool tokens per call, and one extra step when a rarely
-                                used tool is needed. Off sends every granted tool on every call.
-                                Needs brain v0.238.8 or later.
-                              </FieldHint>
-                            </Field>
+                            <ToolLoadingField form={form} setForm={setForm} />
                             {hasThinkingEffort && (
                               <ThinkingEffortField form={form} setForm={setForm} />
                             )}

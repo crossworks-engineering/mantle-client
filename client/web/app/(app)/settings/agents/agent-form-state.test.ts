@@ -4,6 +4,7 @@ import {
   agentMemoryConfigFromForm,
   agentParamsFromForm,
   brainHasAgentThinkingEffort,
+  defaultToolLoading,
   emptyForm,
   formFromAgent,
   tempDescriptor,
@@ -159,30 +160,54 @@ describe('tool loading and the params a save sends', () => {
       params,
     }) as AgentSummary;
 
-  it('a new agent sends every tool (full)', () => {
-    expect(emptyForm().toolLoading).toBe('full');
+  it('a new agent sets no mode, so the brain picks', () => {
+    expect(emptyForm().toolLoading).toBeNull();
     expect(agentParamsFromForm(emptyForm())).not.toHaveProperty('tool_loading');
   });
 
-  it('loads deferred, and full for absent or unknown values', () => {
-    expect(formFromAgent(row({ tool_loading: 'deferred' })).toolLoading).toBe('deferred');
-    expect(formFromAgent(row({ tool_loading: 'full' })).toolLoading).toBe('full');
-    expect(formFromAgent(row({})).toolLoading).toBe('full');
+  it('loads every mode the contract has, and none for absent or unknown values', () => {
+    for (const v of ['full', 'deferred', 'map'] as const) {
+      expect(formFromAgent(row({ tool_loading: v })).toolLoading).toBe(v);
+    }
+    expect(formFromAgent(row({})).toolLoading).toBeNull();
+    expect(
+      formFromAgent(row({ tool_loading: 'lazy' } as unknown as AgentSummary['params'])).toolLoading,
+    ).toBeNull();
   });
 
-  it('a save keeps tool_loading: loading a deferred agent and saving sends it back', () => {
-    const saved = { temperature: 0.4, tool_loading: 'deferred' as const };
+  it('a save keeps tool_loading: loading a map agent and saving sends map back', () => {
+    const saved = { temperature: 0.4, tool_loading: 'map' as const };
     const form = formFromAgent(row(saved));
-    expect(agentParamsFromForm(form, saved)).toEqual({
-      temperature: 0.4,
-      tool_loading: 'deferred',
-    });
+    expect(agentParamsFromForm(form, saved)).toEqual({ temperature: 0.4, tool_loading: 'map' });
   });
 
-  it('turning it off omits the key, so absent means full', () => {
-    const saved = { tool_loading: 'deferred' as const };
-    const form = { ...formFromAgent(row(saved)), toolLoading: 'full' as const };
-    expect(agentParamsFromForm(form, saved)).not.toHaveProperty('tool_loading');
+  it('a save keeps tool_loading: deferred and an explicit full go back as loaded', () => {
+    for (const v of ['deferred', 'full'] as const) {
+      const saved = { tool_loading: v };
+      expect(agentParamsFromForm(formFromAgent(row(saved)), saved)).toEqual({
+        temperature: 0.7,
+        tool_loading: v,
+      });
+    }
+  });
+
+  it('a save of an agent with no mode set sends none, so the default still applies', () => {
+    expect(agentParamsFromForm(formFromAgent(row({})), {})).not.toHaveProperty('tool_loading');
+  });
+
+  it('sends the mode the person picks, and none when they pick Default', () => {
+    const saved = { tool_loading: 'map' as const };
+    const picked = { ...formFromAgent(row(saved)), toolLoading: 'full' as const };
+    expect(agentParamsFromForm(picked, saved)).toHaveProperty('tool_loading', 'full');
+    const reset = { ...formFromAgent(row(saved)), toolLoading: null };
+    expect(agentParamsFromForm(reset, saved)).not.toHaveProperty('tool_loading');
+  });
+
+  it('the default is the map for an assistant, deferred on Haiku, full otherwise', () => {
+    expect(defaultToolLoading('assistant', 'anthropic/claude-sonnet-5.5')).toBe('map');
+    expect(defaultToolLoading('responder', 'anthropic/claude-sonnet-5.5')).toBe('map');
+    expect(defaultToolLoading('assistant', 'anthropic/claude-haiku-5.5')).toBe('deferred');
+    expect(defaultToolLoading('extractor', 'anthropic/claude-sonnet-5.5')).toBe('full');
   });
 
   it('keeps top_p, which has no field, and never sends keys the brain rejects', () => {
