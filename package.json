@@ -25,7 +25,13 @@
     "e2e:test": "e2e/scripts/run-local.sh test",
     "e2e:down": "e2e/scripts/run-local.sh down",
     "e2e:routes": "node e2e/check-routes.mjs",
-    "e2e:workspace": "pnpm -C e2e e2e:workspace"
+    "e2e:workspace": "pnpm -C e2e e2e:workspace",
+    "dev:bun": "scripts/bun.sh --cwd client/web dev",
+    "build:bun": "scripts/bun.sh --cwd client/web build && scripts/bun.sh --cwd client/host build",
+    "test:bun": "scripts/bun.sh test",
+    "verify:bun": "scripts/bun.sh verify",
+    "e2e:workspace:bun": "E2E_NEXT_RUNTIME=bun pnpm -C e2e e2e:workspace",
+    "compare:export": "node client/web/scripts/compare-export.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

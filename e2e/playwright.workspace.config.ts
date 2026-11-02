@@ -23,6 +23,17 @@ const baseURL = external || `http://localhost:${PORT}`;
 // E2E_BROWSER_CHANNEL=chrome drives the installed Chrome instead of
 // Playwright's bundled build (a machine whose browsers lag the package).
 const channel = process.env.E2E_BROWSER_CHANNEL || undefined;
+// E2E_NEXT_RUNTIME=bun runs the boot script and `next dev` on Bun
+// (`pnpm e2e:workspace:bun`, docs/bun-tooling.md). Playwright itself stays on
+// Node either way: Bun is not a runtime Playwright supports.
+const runtime = process.env.E2E_NEXT_RUNTIME || 'node';
+if (runtime !== 'node' && runtime !== 'bun') {
+  throw new Error(`E2E_NEXT_RUNTIME must be node or bun, not ${runtime}`);
+}
+const devCommand =
+  runtime === 'bun'
+    ? `../scripts/bun.sh --cwd ../client/web boot && ../scripts/bun.sh --cwd ../client/web next dev --port ${PORT}`
+    : `pnpm -C ../client/web run boot && pnpm -C ../client/web exec next dev --port ${PORT}`;
 
 export default defineConfig({
   testDir: './workspace',
@@ -42,7 +53,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: `pnpm -C ../client/web run boot && pnpm -C ../client/web exec next dev --port ${PORT}`,
+          command: devCommand,
           url: `${baseURL}/env.js`,
           reuseExistingServer: false,
           timeout: 180_000,

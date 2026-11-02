@@ -1,0 +1,109 @@
+# The Bun lane: the developer tools on the Bun runtime, beside the Node gate
+# (verify.yml), and the proof that both give the same result. Node stays the
+# default and the required gate; this lane says where Bun differs.
+# docs/bun-tooling.md has the why and the numbers.
+#
+# pnpm installs, as in every other workflow: Bun only RUNS the tools here.
+# Bun's own installer does not keep pnpm-lock.yaml's versions (see the doc).
+#
+# It runs on main and on Bun branches, and by hand, not on every pull request:
+# a red here is a fact about Bun, and it must not block ordinary work while
+# Bun is the second runtime.
+
+name: bun-lane
+
+on:
+  push:
+    branches: [main, 'feat/*bun*']
+  workflow_dispatch:
+
+concurrency:
+  group: bun-lane-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+
+jobs:
+  bun:
+    runs-on: ubuntu-24.04
+    # verify and two static builds: about 2.5 minutes on the workstation.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      # The pinned version with a pinned checksum (scripts/install-bun.sh), not
+      # an install script and not a third-party action.
+      - name: Install Bun
+        run: |
+          scripts/install-bun.sh "$RUNNER_TEMP/bun-bin"
+          echo "$RUNNER_TEMP/bun-bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # typecheck, lint, format:check and vitest, every one of them on Bun.
+      - name: Verify on Bun
+        run: pnpm verify:bun
+
+      # The same export twice, once per runtime, from a clean .next each time.
+      - name: Build on Node
+        run: |
+          pnpm -C client/web build
+          pnpm -C client/host build
+          mv client/web/out "$RUNNER_TEMP/out-node"
+          cp client/host/dist/server.mjs "$RUNNER_TEMP/server-node.mjs"
+          rm -rf client/web/.next client/host/dist
+
+      - name: Build on Bun
+        run: pnpm build:bun
+
+      # The host bundle must be byte-equal. The export must be the same UI:
+      # equal after the random build id, apart from the inline theme script
+      # Bun prints another way (compare-export.mjs says how that is proved).
+      - name: Compare the builds
+        run: |
+          cmp "$RUNNER_TEMP/server-node.mjs" client/host/dist/server.mjs
+          pnpm compare:export "$RUNNER_TEMP/out-node" client/web/out
+
+  # The workspace specs with the owner UI's `next dev` on Bun. Playwright
+  # itself runs on Node, as in verify.yml.
+  e2e-workspace-bun:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install Bun
+        run: |
+          scripts/install-bun.sh "$RUNNER_TEMP/bun-bin"
+          echo "$RUNNER_TEMP/bun-bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm -C e2e exec playwright install --with-deps chromium
+
+      - name: e2e (workspace, mock API, next dev on Bun)
+        run: pnpm e2e:workspace:bun
+
+      - name: Upload traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-workspace-bun-traces
+          path: e2e/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
