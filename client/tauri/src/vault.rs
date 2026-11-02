@@ -11,26 +11,34 @@
 //!                    `keep_only` and `remove_profile` walk, and what stands
 //!                    in for Electron's file times (the two-minute grace).
 //!
-//! The keychain is the ONLY copy of a bearer. Nothing is kept in memory:
-//! every read asks the keychain, so what the page gets is what is stored.
-//! A write the keychain refuses is simply not stored (as in Electron), and
-//! the next read tells the truth. The first time the keychain fails in a
-//! run, the shell is told once, AFTER the vault's lock is released: the
-//! callback may show UI, and nothing that shows UI runs under the lock.
+//! The store is the ONLY copy of a bearer. Nothing else is kept: every read
+//! asks the store, so what the page gets is what is stored. A write the
+//! keychain refuses is simply not stored (as in Electron), and the next read
+//! tells the truth. The first time the keychain fails in a run, the shell is
+//! told once, AFTER the vault's lock is released: the callback may show UI,
+//! and nothing that shows UI runs under the lock.
+//!
+//! With no keychain (none on this platform, or one that will not answer when
+//! the vault is made), the store is this process's memory for the whole run
+//! (`MemoryStore`), and so is the index: a sign-in works, and lasts until the
+//! app quits. Nothing of it is written to disk. Every rule above holds the
+//! same, because the memory store answers as the keychain does, and is the
+//! only copy in the same way. This is decided once, in `Vault::new`.
 //!
 //! The profile id is the shell's own (from the window that asks, never from
 //! the page). The SESSION id comes from the page, so it is checked against
 //! Electron's alphabet before it is used.
 //!
 //! One lock per process serializes every call: index reads and writes, and
-//! the keychain calls between them. Callers run off the main thread.
+//! the store calls between them. Callers run off the main thread.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use keyring_core::{CredentialStore, Error as KeyError};
+use keyring_core::api::{CredentialApi, CredentialPersistence, CredentialStoreApi};
+use keyring_core::{Credential, CredentialStore, Entry, Error as KeyError};
 use serde::{Deserialize, Serialize};
 
 /// What the page may name a session (Electron's vault.ts): no dot, no
@@ -49,7 +57,7 @@ pub const RECENT_MS: u64 = 120_000;
 /// keychain with one call.
 pub const MAX_TOKEN_BYTES: usize = 16 * 1024;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct Index {
     v: u32,
     /// session id -> when its entry was last written (ms since the epoch).
@@ -67,37 +75,89 @@ impl Failures {
     }
 }
 
+/// Why the user is told that logins are not kept as they should be. Once
+/// per run, whichever comes first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unavailable {
+    /// No keychain at start: logins are kept in memory, for this run only.
+    NoKeychain,
+    /// The keychain refused a call during the run: that login was not kept.
+    KeychainFailed,
+}
+
+/// The user an entry is never stored under: what `Vault::new` reads to see
+/// whether the keychain answers. Not a profile id (those are UUIDs).
+const PROBE_USER: &str = "probe";
+
 pub struct Vault {
     service: String,
     dir: PathBuf,
-    /// None when the platform has no keychain this app can use.
-    store: Option<Arc<CredentialStore>>,
+    /// The keychain, or this run's memory when there is no keychain.
+    store: Arc<CredentialStore>,
+    /// The index for a run without a keychain: in memory, like the bearers,
+    /// so nothing of such a run is on disk. None: the index files.
+    memory_index: Option<Mutex<HashMap<String, Index>>>,
     lock: Mutex<()>,
-    /// Set once the user has been told the keychain is not usable.
+    /// Set once the user has been told.
     told: AtomicBool,
-    /// Called once per run, the first time the keychain fails (or at start
-    /// when there is none). Never called with the lock held.
-    on_unavailable: Box<dyn Fn() + Send + Sync>,
+    /// Called once per run: at start when there is no keychain, or the first
+    /// time the keychain fails. Never called with the lock held.
+    on_unavailable: Box<dyn Fn(Unavailable) + Send + Sync>,
     /// A line per failure on stderr, never a token (MANTLE_DESKTOP_TRACE).
     trace: bool,
 }
 
 impl Vault {
+    /// `store` is the platform's keychain, or None when there is none. A
+    /// keychain that does not answer a read now is treated as none: the run
+    /// keeps its logins in memory instead (the module comment).
     pub fn new(
         service: &str,
         data_dir: &Path,
         store: Option<Arc<CredentialStore>>,
-        on_unavailable: Box<dyn Fn() + Send + Sync>,
+        on_unavailable: Box<dyn Fn(Unavailable) + Send + Sync>,
         trace: bool,
     ) -> Self {
+        let keychain = store.filter(|store| match Self::probe(store, service) {
+            Ok(()) => true,
+            Err(error) => {
+                if trace {
+                    eprintln!("[mantle-desktop] vault: the keychain does not answer ({error})");
+                }
+                false
+            }
+        });
+        let (store, memory_index) = match keychain {
+            Some(store) => (store, None),
+            None => {
+                if trace {
+                    eprintln!("[mantle-desktop] vault: no keychain; logins last for this run only");
+                }
+                let memory: Arc<CredentialStore> = Arc::new(MemoryStore::default());
+                (memory, Some(Mutex::new(HashMap::new())))
+            }
+        };
         Self {
             service: service.to_string(),
             dir: data_dir.join("vault"),
             store,
+            memory_index,
             lock: Mutex::new(()),
             told: AtomicBool::new(false),
             on_unavailable,
             trace,
+        }
+    }
+
+    /// One read of an entry that is never written: the keychain answers
+    /// when it says what is there, even that nothing is.
+    fn probe(store: &Arc<CredentialStore>, service: &str) -> Result<(), KeyError> {
+        match store
+            .build(service, PROBE_USER, None)
+            .and_then(|e| e.get_password())
+        {
+            Ok(_) | Err(KeyError::NoEntry) => Ok(()),
+            Err(error) => Err(error),
         }
     }
 
@@ -121,16 +181,21 @@ impl Vault {
         }
     }
 
-    /// Whether there is a keychain at all. Without one nothing is stored,
-    /// and the shell says so at start.
-    pub fn has_store(&self) -> bool {
-        self.store.is_some()
+    /// Whether this run keeps its logins in memory (there is no keychain).
+    /// The shell then says so at start.
+    pub fn this_run_only(&self) -> bool {
+        self.memory_index.is_some()
     }
 
-    /// Tell the user, once per run, that logins cannot be kept.
+    /// Tell the user, once per run, that logins are not kept as they should
+    /// be. Never call it with the lock held.
     pub fn tell_unavailable(&self) {
         if !self.told.swap(true, Ordering::SeqCst) {
-            (self.on_unavailable)();
+            (self.on_unavailable)(if self.this_run_only() {
+                Unavailable::NoKeychain
+            } else {
+                Unavailable::KeychainFailed
+            });
         }
     }
 
@@ -163,10 +228,8 @@ impl Vault {
     /// The bearer under `user`: Some, None when there is none, or None with
     /// a failure noted when the keychain would not answer.
     fn read(&self, user: &str, failures: &mut Failures) -> Result<Option<String>, ()> {
-        let Some(store) = &self.store else {
-            return Ok(None);
-        };
-        match store
+        match self
+            .store
             .build(&self.service, user, None)
             .and_then(|e| e.get_password())
         {
@@ -180,10 +243,8 @@ impl Vault {
     }
 
     fn write(&self, user: &str, token: &str, failures: &mut Failures) -> bool {
-        let Some(store) = &self.store else {
-            return false;
-        };
-        match store
+        match self
+            .store
             .build(&self.service, user, None)
             .and_then(|e| e.set_password(token))
         {
@@ -197,10 +258,8 @@ impl Vault {
 
     /// Whether the entry is gone afterwards (deleted, or never there).
     fn delete(&self, user: &str, failures: &mut Failures) -> bool {
-        let Some(store) = &self.store else {
-            return true;
-        };
-        match store
+        match self
+            .store
             .build(&self.service, user, None)
             .and_then(|e| e.delete_credential())
         {
@@ -217,6 +276,10 @@ impl Vault {
     }
 
     fn read_index(&self, profile: &str) -> Index {
+        if let Some(memory) = &self.memory_index {
+            let map = memory.lock().unwrap_or_else(|e| e.into_inner());
+            return map.get(profile).cloned().unwrap_or_default();
+        }
         std::fs::read_to_string(self.index_path(profile))
             .ok()
             .and_then(|t| serde_json::from_str::<Index>(&t).ok())
@@ -228,6 +291,15 @@ impl Vault {
     }
 
     fn write_index(&self, profile: &str, index: &Index) {
+        if let Some(memory) = &self.memory_index {
+            let mut map = memory.lock().unwrap_or_else(|e| e.into_inner());
+            if index.sessions.is_empty() {
+                map.remove(profile);
+            } else {
+                map.insert(profile.to_string(), index.clone());
+            }
+            return;
+        }
         if index.sessions.is_empty() {
             let _ = std::fs::remove_file(self.index_path(profile));
             return;
@@ -292,7 +364,7 @@ impl Vault {
     }
 
     pub fn set_for(&self, profile: &str, session: &str, token: &str, now: u64) {
-        if !is_session_id(session) || !Self::token_ok(token) || self.store.is_none() {
+        if !is_session_id(session) || !Self::token_ok(token) {
             return;
         }
         self.with_lock(|f| {
@@ -371,7 +443,7 @@ impl Vault {
             .map(String::as_str)
             .filter(|b| !b.is_empty())
             .collect();
-        if stray.is_empty() || self.store.is_none() {
+        if stray.is_empty() {
             return;
         }
         self.with_lock(|f| {
@@ -420,16 +492,108 @@ impl Vault {
     }
 }
 
+/// The store of a run with no keychain: each bearer in this process's
+/// memory under the same (service, user) the keychain would use, gone when
+/// the app quits. It answers as the keychain does (NoEntry when there is
+/// nothing), and like the keychain it is the only copy: the vault keeps no
+/// other. It never fails, so the user is told once, at start, and not again.
+#[derive(Default)]
+struct MemoryStore {
+    entries: MemoryEntries,
+}
+
+/// (service, user) -> the secret.
+type MemoryEntries = Arc<Mutex<HashMap<(String, String), Vec<u8>>>>;
+
+/// One entry of the memory store. Holds a key, never a secret of its own.
+struct MemoryEntry {
+    entries: MemoryEntries,
+    key: (String, String),
+}
+
+impl MemoryEntry {
+    fn entries(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), Vec<u8>>> {
+        self.entries.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+impl CredentialApi for MemoryEntry {
+    fn set_secret(&self, secret: &[u8]) -> keyring_core::Result<()> {
+        self.entries().insert(self.key.clone(), secret.to_vec());
+        Ok(())
+    }
+
+    fn get_secret(&self) -> keyring_core::Result<Vec<u8>> {
+        self.entries()
+            .get(&self.key)
+            .cloned()
+            .ok_or(KeyError::NoEntry)
+    }
+
+    fn delete_credential(&self) -> keyring_core::Result<()> {
+        self.entries()
+            .remove(&self.key)
+            .map(|_| ())
+            .ok_or(KeyError::NoEntry)
+    }
+
+    fn get_credential(&self) -> keyring_core::Result<Option<Arc<Credential>>> {
+        if self.entries().contains_key(&self.key) {
+            Ok(None)
+        } else {
+            Err(KeyError::NoEntry)
+        }
+    }
+
+    fn get_specifiers(&self) -> Option<(String, String)> {
+        Some(self.key.clone())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl CredentialStoreApi for MemoryStore {
+    fn vendor(&self) -> String {
+        "mantle-desktop".into()
+    }
+
+    fn id(&self) -> String {
+        "this-run".into()
+    }
+
+    fn build(
+        &self,
+        service: &str,
+        user: &str,
+        _: Option<&HashMap<&str, &str>>,
+    ) -> keyring_core::Result<Entry> {
+        Ok(Entry::new_with_credential(Arc::new(MemoryEntry {
+            entries: self.entries.clone(),
+            key: (service.to_string(), user.to_string()),
+        })))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn persistence(&self) -> CredentialPersistence {
+        CredentialPersistence::ProcessOnly
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Electron's vault.test.ts, case for case where the keychain allows,
     //! on keyring-core's mock store; plus what the keychain adds: a write it
-    //! refuses is not stored, the user is told once, and never under the lock.
+    //! refuses is not stored, the user is told once, and never under the lock;
+    //! and a run with no keychain, which keeps its logins in memory.
 
     use super::*;
     use keyring_core::api::{CredentialApi, CredentialStoreApi};
     use keyring_core::{Credential, Entry};
-    use std::sync::atomic::AtomicUsize;
 
     const A: &str = "11111111-1111-4111-8111-111111111111";
     const B: &str = "22222222-2222-4222-8222-222222222222";
@@ -522,19 +686,19 @@ mod tests {
         dir: PathBuf,
         store: Arc<keyring_core::mock::Store>,
         refuse: Arc<Refuse>,
-        told: Arc<AtomicUsize>,
+        told: Arc<Mutex<Vec<Unavailable>>>,
     }
 
     impl Fixture {
         fn new() -> Self {
             let dir =
-                std::env::temp_dir().join(format!("mantle-desktop-vault-{}", uuid::Uuid::new_v4()));
+                std::env::temp_dir().join(format!("mantle-tauri-vault-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&dir).unwrap();
             Self {
                 dir,
                 store: keyring_core::mock::Store::new().unwrap(),
                 refuse: Arc::new(Refuse::default()),
-                told: Arc::new(AtomicUsize::new(0)),
+                told: Arc::new(Mutex::new(Vec::new())),
             }
         }
 
@@ -552,8 +716,8 @@ mod tests {
                 SERVICE,
                 &self.dir,
                 store,
-                Box::new(move || {
-                    told.fetch_add(1, Ordering::SeqCst);
+                Box::new(move |why| {
+                    told.lock().unwrap().push(why);
                 }),
                 false,
             )
@@ -568,7 +732,16 @@ mod tests {
         }
 
         fn told(&self) -> usize {
-            self.told.load(Ordering::SeqCst)
+            self.told.lock().unwrap().len()
+        }
+
+        fn told_why(&self) -> Vec<Unavailable> {
+            self.told.lock().unwrap().clone()
+        }
+
+        /// Every entry the mock keychain holds for this service, by user.
+        fn keychain_has_any(&self, users: &[&str]) -> bool {
+            users.iter().any(|u| self.keychain(u).is_some())
         }
 
         /// Every byte the vault wrote to disk, to show no token is in it.
@@ -910,21 +1083,121 @@ mod tests {
     }
 
     #[test]
-    fn no_store_at_all_stores_nothing_and_writes_nothing_to_disk() {
+    fn a_failing_keychain_is_told_as_a_failure_not_as_no_keychain() {
+        let f = Fixture::new();
+        let vault = f.vault();
+        assert!(!vault.this_run_only());
+        f.refuse.writes.store(true, Ordering::SeqCst);
+        vault.set_for(A, "s1", "a.one", now());
+        assert_eq!(f.told_why(), vec![Unavailable::KeychainFailed]);
+    }
+
+    // ── no keychain: this run only ──────────────────────────────────────────
+
+    /// A run with no keychain: the same calls, the same answers, all in
+    /// memory. Nothing reaches the disk, and the next run starts empty.
+    #[test]
+    fn no_keychain_keeps_logins_for_this_run_only_and_writes_nothing_to_disk() {
         let f = Fixture::new();
         let vault = f.vault_with(None);
-        assert!(!vault.has_store());
-        vault.set_for(A, "s1", "a.one", now());
+        assert!(vault.this_run_only());
+        let t = now();
+
+        // A sign-in works, and reads back from the one copy.
+        vault.set_for(A, "s1", "a.one", t);
+        assert_eq!(vault.get_for(A, "s1").as_deref(), Some("a.one"));
+        vault.set_for(A, "s1", "a.rotated", t);
+        assert_eq!(vault.get_for(A, "s1").as_deref(), Some("a.rotated"));
+        vault.set_for(B, "s1", "b.one", t);
+        assert_eq!(vault.get_for(B, "s1").as_deref(), Some("b.one"));
+
+        // The page's id is still not trusted.
+        vault.set_for(A, "../b", "x", t);
+        assert_eq!(vault.get_for(A, "../b"), None);
+        vault.set_for(A, "s9", &"t".repeat(MAX_TOKEN_BYTES + 1), t);
+        assert_eq!(vault.get_for(A, "s9"), None);
+
+        // adopt is a move, and a login with its own bearer keeps it.
         vault.set(A, "legacy");
-        assert_eq!(vault.get_for(A, "s1"), None);
+        assert_eq!(vault.adopt(A, "s1", t).as_deref(), Some("a.rotated"));
+        assert_eq!(vault.get(A).as_deref(), Some("legacy"));
+        assert_eq!(vault.adopt(A, "s2", t).as_deref(), Some("legacy"));
         assert_eq!(vault.get(A), None);
-        assert_eq!(vault.adopt(A, "s1", now()), None);
+        assert_eq!(vault.get_for(A, "s2").as_deref(), Some("legacy"));
+
+        // keepOnly walks the in-memory index with the same grace.
+        vault.set_for(A, "copy", "a.rotated", t);
+        vault.keep_only(
+            A,
+            &["s1".into(), "s2".into()],
+            &["a.rotated".into()],
+            t + 60_000,
+        );
+        assert_eq!(vault.get_for(A, "copy").as_deref(), Some("a.rotated"));
+        vault.keep_only(
+            A,
+            &["s1".into(), "s2".into()],
+            &["a.rotated".into()],
+            t + LATER,
+        );
+        assert_eq!(vault.get_for(A, "copy"), None);
+        assert_eq!(vault.get_for(A, "s1").as_deref(), Some("a.rotated"));
+
+        // clearFor and removing a brain.
+        vault.clear_for(A, "s2");
+        assert_eq!(vault.get_for(A, "s2"), None);
+        vault.remove_profile(A);
+        assert_eq!(vault.get_for(A, "s1"), None);
+        assert_eq!(vault.get_for(B, "s1").as_deref(), Some("b.one"));
+
+        // Nothing on disk: no index, no bearer.
+        assert!(!f.dir.join("vault").exists());
         assert_eq!(f.disk(), "");
+
+        // The next run starts with nothing.
+        let next = f.vault_with(None);
+        assert_eq!(next.get_for(B, "s1"), None);
+        assert_eq!(next.get(A), None);
+
         // The shell tells the user at start; the calls do not repeat it.
         assert_eq!(f.told(), 0);
         vault.tell_unavailable();
         vault.tell_unavailable();
-        assert_eq!(f.told(), 1);
+        assert_eq!(f.told_why(), vec![Unavailable::NoKeychain]);
+    }
+
+    /// A keychain that is there but will not answer when the vault is made
+    /// counts as none: memory for the run, and the keychain is never written.
+    #[test]
+    fn a_keychain_that_fails_at_start_is_replaced_by_memory_for_the_run() {
+        let f = Fixture::new();
+        f.refuse.all.store(true, Ordering::SeqCst);
+        let vault = f.vault();
+        assert!(vault.this_run_only());
+        // It answers again later in the run: still not used, the memory store
+        // is this run's only copy.
+        f.refuse.all.store(false, Ordering::SeqCst);
+        vault.set_for(A, "s1", "a.one", now());
+        vault.set(A, "legacy");
+        assert_eq!(vault.get_for(A, "s1").as_deref(), Some("a.one"));
+        assert_eq!(vault.get(A).as_deref(), Some("legacy"));
+        assert!(!f.keychain_has_any(&[A, &format!("{A}/s1"), PROBE_USER]));
+        assert_eq!(f.disk(), "");
+        assert_eq!(f.told(), 0, "nothing failed during the run");
+        vault.tell_unavailable();
+        assert_eq!(f.told_why(), vec![Unavailable::NoKeychain]);
+    }
+
+    /// Only a read that fails makes the keychain count as none: an empty
+    /// keychain, or one holding logins already, is used.
+    #[test]
+    fn a_keychain_that_answers_at_start_is_used() {
+        let f = Fixture::new();
+        f.vault().set_for(A, "s1", "a.one", now());
+        let vault = f.vault();
+        assert!(!vault.this_run_only());
+        assert_eq!(vault.get_for(A, "s1").as_deref(), Some("a.one"));
+        assert_eq!(f.keychain(PROBE_USER), None, "the probe writes nothing");
     }
 
     /// The notice is never shown under the lock: a callback that calls back
@@ -944,7 +1217,7 @@ mod tests {
             SERVICE,
             &f.dir,
             Some(store as Arc<CredentialStore>),
-            Box::new(move || {
+            Box::new(move |_| {
                 let vault = inner.lock().unwrap().clone().unwrap();
                 let _ = vault.get_for(A, "s1");
                 flag.store(true, Ordering::SeqCst);
