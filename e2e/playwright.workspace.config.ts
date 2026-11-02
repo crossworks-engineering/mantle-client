@@ -48,6 +48,12 @@ export default defineConfig({
   reporter: [['list']],
   // The first request compiles the route in dev; the specs themselves are fast.
   timeout: 120_000,
+  // A click to a route nobody has opened yet waits for that compile too, and
+  // on a 4-CPU machine (a GitHub runner) it can pass expect's 5 s default.
+  // next dev on Bun also waits about 10 ms per request, so a page of 45 files
+  // comes later still (docs/bun-tooling.md). The Bun lane waits up to 15 s;
+  // the Node lane keeps the default.
+  ...(runtime === 'bun' ? { expect: { timeout: 15_000 } } : {}),
   use: {
     baseURL,
     trace: 'retain-on-failure',
