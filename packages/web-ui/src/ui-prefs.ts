@@ -48,19 +48,29 @@ function dropCookie(name: string): void {
   document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
-/** A cookie from an earlier build: keep its value here for `maxAgeSeconds`
- *  (the cookie's own end is not readable) and drop the cookie. */
-function adoptCookie(name: string, maxAgeSeconds: number): string | undefined {
+/** A cookie from an earlier build: keep its value here and drop the cookie.
+ *  The cookie goes only once the value is kept: with storage full, it stays
+ *  and is read again next time, rather than lost. */
+function adoptCookie(name: string): string | undefined {
   const value = cookieValue(name);
   if (value === undefined) return undefined;
-  writePref(name, value, maxAgeSeconds);
-  dropCookie(name);
+  if (writePref(name, value, adoptedMaxAge(name))) dropCookie(name);
   return value;
 }
 
-/** How long a value moved over from a cookie is kept: the longest Max-Age
- *  any of them was written with. */
-const ADOPTED_MAX_AGE = 60 * 60 * 24 * 365;
+const DAY = 60 * 60 * 24;
+
+/** How long a value moved over from a cookie is kept, by the Max-Age its
+ *  cookie was written with (that cookie's own end is not readable): the
+ *  presence flag 30 days, the sidebar a week, the panel layouts until
+ *  cleared (they were session cookies, and are written without an end now),
+ *  and the layout state a year. */
+function adoptedMaxAge(name: string): number | undefined {
+  if (name === PRESENCE_PREF) return 30 * DAY;
+  if (name === 'sidebar:state') return 7 * DAY;
+  if (name.startsWith('react-resizable-panels:')) return undefined;
+  return 365 * DAY;
+}
 
 /** The value, or undefined when there is none or it has ended. */
 export function readPref(name: string): string | undefined {
@@ -74,7 +84,7 @@ export function readPref(name: string): string | undefined {
   }
   if (raw === null) {
     try {
-      return adoptCookie(name, ADOPTED_MAX_AGE);
+      return adoptCookie(name);
     } catch {
       return undefined;
     }
@@ -92,18 +102,21 @@ export function readPref(name: string): string | undefined {
   }
 }
 
-/** Keep a value, for `maxAgeSeconds` when given (else until cleared). */
-export function writePref(name: string, value: string, maxAgeSeconds?: number): void {
+/** Keep a value, for `maxAgeSeconds` when given (else until cleared). False
+ *  when it could not be kept: no storage, or storage full or refused. */
+export function writePref(name: string, value: string, maxAgeSeconds?: number): boolean {
   const ls = storage();
-  if (!ls) return;
+  if (!ls) return false;
   const stored: Stored =
     maxAgeSeconds === undefined
       ? { v: value }
       : { v: value, exp: Date.now() + maxAgeSeconds * 1000 };
   try {
     ls.setItem(PREFIX + name, JSON.stringify(stored));
+    return true;
   } catch {
     /* storage full or refused: the preference just won't persist */
+    return false;
   }
 }
 

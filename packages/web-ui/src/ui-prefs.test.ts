@@ -81,6 +81,49 @@ describe('ui-prefs', () => {
     expect(readPref('mantle_nav_collapsed')).toBe('1');
   });
 
+  it('keeps the cookie when its value could not be stored, so nothing is lost', () => {
+    const { storage, jar } = setup({ cookies: { mantle_authed: '1' } });
+    storage.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    expect(readPref('mantle_authed')).toBe('1');
+    expect(jar.get('mantle_authed')).toBe('1');
+    expect(readPref('mantle_authed')).toBe('1');
+  });
+
+  it('writePref says whether the value was kept', () => {
+    const { storage } = setup();
+    expect(writePref('a', '1')).toBe(true);
+    storage.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    expect(writePref('b', '1')).toBe(false);
+    vi.stubGlobal('window', undefined);
+    expect(writePref('c', '1')).toBe(false);
+  });
+
+  it('a moved-over cookie keeps the lifetime its name was written with', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const day = 24 * 60 * 60 * 1000;
+    const { storage } = setup({
+      cookies: {
+        mantle_authed: '1',
+        mantle_nav_w: '288',
+        'sidebar:state': 'true',
+        'react-resizable-panels:collapsed': 'false',
+      },
+    });
+    const expOf = (name: string) => {
+      readPref(name);
+      return JSON.parse(storage.map.get(`mantle_pref:${name}`)!).exp;
+    };
+    expect(expOf('mantle_authed')).toBe(1_000_000 + 30 * day);
+    expect(expOf('mantle_nav_w')).toBe(1_000_000 + 365 * day);
+    expect(expOf('sidebar:state')).toBe(1_000_000 + 7 * day);
+    expect(expOf('react-resizable-panels:collapsed')).toBeUndefined();
+  });
+
   it('a stored value wins over a leftover cookie', () => {
     setup({
       storage: { 'mantle_pref:mantle_spend_range': JSON.stringify({ v: 'week' }) },
