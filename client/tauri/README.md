@@ -83,12 +83,21 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   after setup, and never from under the vault's lock. The only native dialog
   left is the modal alert for a start that cannot go on.
 - **Removing a brain** deletes its keychain entries and index, closes its
-  window and removes its data store (`commands.rs`, `windows.rs`). A store
-  still in use is listed in `pending-removals.json` and retried at the next
-  start, as a task: setup never waits for it. On macOS WebKit's store calls
-  answer on the main thread's run loop, so a main thread blocked on them
-  never gets the answer (the app hung at start that way). No window can use
-  a removed brain's store meanwhile: the brain is not listed.
+  window and removes its data store (`commands.rs`, `windows.rs`). When a
+  store is still in use, or the keychain refuses to delete a login (or to
+  search for them), the brain is listed in `pending-removals.json`, and the
+  next start retries, as a task: the logins first, then the store, and the
+  brain stays listed until both are done. Setup never waits for it. On
+  macOS WebKit's store calls answer on the main thread's run loop, so a
+  main thread blocked on them never gets the answer (the app hung at start
+  that way). No window can use a removed brain's store or logins
+  meanwhile: the brain is not listed. A window opened for a brain while it
+  was being removed is checked against the list once it is built: if the
+  brain is gone it is destroyed, and the brain is listed for the retry,
+  which removes the store that window made.
+- **Adding a brain** probes it with no lock held, then takes the profile
+  list's lock only to load, merge and save: opening a brain takes that lock
+  on the main thread.
 - **Capabilities** (`capabilities/`): the profile commands, granted to the
   `connect` window for the app's own page only. No other window gets any
   command. A test runs them, and the vault endpoint's refusals, on Tauri's
