@@ -57,11 +57,7 @@ function originEnv(name: string): string {
   return url.origin;
 }
 
-const appearanceOf = appearanceCache(async (url, signal) => {
-  const res = await fetch(url, { signal, cache: 'no-store' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-});
+const appearanceOf = appearanceCache(fetch);
 
 const host = createStaticHost({
   uiDir: process.env.UI_DIR || join(here, 'out'),

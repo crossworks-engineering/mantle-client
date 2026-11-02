@@ -171,6 +171,8 @@ describe('createStaticHost', () => {
 });
 
 describe('appearanceCache', () => {
+  const json = (value: unknown) => new Response(JSON.stringify(value));
+
   it('caches a success for 30 s and a failure for 5 s, keeping the last good value', async () => {
     let t = 0;
     let calls = 0;
@@ -179,7 +181,7 @@ describe('appearanceCache', () => {
       async () => {
         calls++;
         if (fail) throw new Error('down');
-        return { siteName: `v${calls}` };
+        return json({ siteName: `v${calls}` });
       },
       () => t,
     );
@@ -199,9 +201,54 @@ describe('appearanceCache', () => {
   });
 
   it('keeps each brain apart', async () => {
-    const cached = appearanceCache(async (url) => ({ from: url }));
+    const cached = appearanceCache(async (url) => json({ from: url }));
     expect(await cached('https://a.example')).toEqual({ from: 'https://a.example/api/appearance' });
     expect(await cached('https://b.example')).toEqual({ from: 'https://b.example/api/appearance' });
+  });
+
+  it('asks for no redirect and no cookie', async () => {
+    let seen: RequestInit | undefined;
+    const cached = appearanceCache(async (_url, init) => {
+      seen = init;
+      return json({});
+    });
+    await cached('https://b.example');
+    expect(seen).toMatchObject({ redirect: 'error', credentials: 'omit' });
+  });
+
+  it('refuses an array, a non-object, a huge body and an error status', async () => {
+    for (const res of [
+      json([1, 2]),
+      json('text'),
+      json(null),
+      new Response('x'.repeat(70 * 1024)),
+      new Response('{}', { status: 500 }),
+    ]) {
+      expect(await appearanceCache(async () => res)('https://b.example')).toBeNull();
+    }
+  });
+
+  it('never follows a redirect off the brain, with the real fetch', async () => {
+    const { createServer } = await import('node:http');
+    let reached = false;
+    const target = createServer((_req, res) => {
+      reached = true;
+      res.end('{"siteName":"lan"}');
+    });
+    await new Promise<void>((r) => target.listen(0, '127.0.0.1', r));
+    const targetPort = (target.address() as { port: number }).port;
+    const brain = createServer((_req, res) => {
+      res.writeHead(302, { location: `http://127.0.0.1:${targetPort}/x.json` }).end();
+    });
+    await new Promise<void>((r) => brain.listen(0, '127.0.0.1', r));
+    const brainPort = (brain.address() as { port: number }).port;
+    try {
+      expect(await appearanceCache(fetch)(`http://127.0.0.1:${brainPort}`)).toBeNull();
+      expect(reached).toBe(false);
+    } finally {
+      brain.close();
+      target.close();
+    }
   });
 });
 

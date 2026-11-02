@@ -1,4 +1,4 @@
-import { originOf, UI_ORIGIN } from '@mantle/client-host/static-host';
+import { originOf, plainHost, UI_ORIGIN } from '@mantle/client-host/static-host';
 
 /**
  * The request headers the shell drops on the way to the configured brain, so
@@ -127,3 +127,29 @@ export const BRAIN_PASSTHROUGH = {
   redirect: 'manual',
   credentials: 'omit',
 } as const;
+
+/** URL → origin. Unlike the mobile app, a bare host gets https:// prefixed.
+ *  The origin goes into the window's CSP as written (static-host.ts), so its
+ *  host must be plain (no `*`, `;` or `,`). */
+export function normalizeOrigin(input: string): string {
+  const trimmed = input.trim().replace(/\/+$/, '');
+  if (!trimmed) throw new Error('empty URL');
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const url = new URL(withScheme);
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(`unsupported protocol ${url.protocol}`);
+  }
+  if (!plainHost(url)) throw new Error(`unsupported host ${url.hostname}`);
+  return url.origin;
+}
+
+/** Whether an address read back from profiles.json is exactly one
+ *  normalizeOrigin would save today. */
+export function savedOriginOk(origin: unknown): boolean {
+  if (typeof origin !== 'string') return false;
+  try {
+    return normalizeOrigin(origin) === origin;
+  } catch {
+    return false;
+  }
+}

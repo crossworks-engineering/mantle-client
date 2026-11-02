@@ -6,7 +6,9 @@ import {
   brainRequestFilter,
   frameNavigationAllowed,
   httpRouteOf,
+  normalizeOrigin,
   permissionAllowed,
+  savedOriginOk,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
 import { UI_ORIGIN } from '@mantle/client-host/static-host';
@@ -237,5 +239,39 @@ describe('httpRouteOf', () => {
 describe('BRAIN_PASSTHROUGH', () => {
   it('sends an http brain request with no cookies and follows no redirect', () => {
     expect(BRAIN_PASSTHROUGH).toMatchObject({ redirect: 'manual', credentials: 'omit' });
+  });
+});
+
+describe('normalizeOrigin', () => {
+  it('turns what a user types into an origin', () => {
+    expect(normalizeOrigin('brain.example/')).toBe('https://brain.example');
+    expect(normalizeOrigin(' http://127.0.0.1:3000/x ')).toBe('http://127.0.0.1:3000');
+  });
+
+  it('refuses another scheme and a host that is not plain', () => {
+    for (const bad of ['ftp://b.example', 'https://*', 'https://*.x.com', 'https://a;b.com', '']) {
+      expect(() => normalizeOrigin(bad), bad).toThrow();
+    }
+  });
+});
+
+describe('savedOriginOk', () => {
+  it('takes an address exactly as normalizeOrigin saves it', () => {
+    expect(savedOriginOk('https://brain.example')).toBe(true);
+    expect(savedOriginOk('http://127.0.0.1:3000')).toBe(true);
+  });
+
+  it('refuses what an older build or a hand edit could leave', () => {
+    for (const bad of [
+      'https://*.attacker.example',
+      'brain.example',
+      'https://brain.example/',
+      'HTTPS://BRAIN.EXAMPLE',
+      'https://a;b.com',
+      undefined,
+      42,
+    ]) {
+      expect(savedOriginOk(bad), String(bad)).toBe(false);
+    }
   });
 });

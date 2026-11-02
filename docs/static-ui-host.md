@@ -80,6 +80,10 @@ window.__MANTLE_ENV__ = {
   still correct it after mount. Never block or fail the page on it.
 - Cache the appearance for a short time (30 s when it worked, 5 s when it
   failed), per brain.
+- Fetch it from the configured origin only: follow no redirect, send no
+  cookie, and take only a JSON object under 64 KB (`appearanceCache` in
+  `static-host.ts`, the one place both hosts fetch it). The host hands the
+  body to every visitor, so it must never be something a redirect found.
 
 ## 3. Headers
 

@@ -22,14 +22,15 @@ import {
   brainRequestFilter,
   frameNavigationAllowed,
   httpRouteOf,
+  normalizeOrigin,
   permissionAllowed,
+  savedOriginOk,
   stripBrowserOnlyHeaders,
 } from './brain-fence';
 import {
   appearanceCache,
   createStaticHost,
   originOf,
-  plainHost,
   UI_ORIGIN,
 } from '@mantle/client-host/static-host';
 import { createVault, type Vault } from './vault';
@@ -73,9 +74,13 @@ function writeJson(path: string, value: unknown): void {
 }
 
 const profilesPath = () => join(app.getPath('userData'), 'profiles.json');
+// Every read checks each address again, not only when a brain is added: the
+// origin goes into the window's CSP and the fence, and a file saved by an
+// older build or edited by hand never passed today's check. A profile that
+// fails is left out (and dropped from the file at the next save).
 const loadProfiles = () => {
   const parsed = readJson<Profile[]>(profilesPath(), []);
-  return Array.isArray(parsed) ? parsed : [];
+  return Array.isArray(parsed) ? parsed.filter((p) => savedOriginOk(p?.origin)) : [];
 };
 const saveProfiles = (profiles: Profile[]) => writeJson(profilesPath(), profiles);
 
@@ -111,20 +116,6 @@ function vaultProfileFor(
 
 // ── Profile helpers ──────────────────────────────────────────────────────────
 
-/** URL → origin. Unlike the mobile app, a bare host gets https:// prefixed. */
-function normalizeOrigin(input: string): string {
-  const trimmed = input.trim().replace(/\/+$/, '');
-  if (!trimmed) throw new Error('empty URL');
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  const url = new URL(withScheme);
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error(`unsupported protocol ${url.protocol}`);
-  }
-  // The origin goes into the window's CSP as written (static-host.ts).
-  if (!plainHost(url)) throw new Error(`unsupported host ${url.hostname}`);
-  return url.origin;
-}
-
 /** Probe-before-save, the mobile pattern: GET /api/version, require a version
  *  string. net.fetch runs in the main process — native HTTP, no CORS. */
 async function probeBrain(origin: string): Promise<string> {
@@ -155,11 +146,7 @@ const ICON_PATH = join(__dirname, '../../resources/icon.png').replace(
 
 /** The brain's public appearance for each window's /env.js. net.fetch runs in
  *  the main process: native HTTP, no CORS. */
-const brainAppearance = appearanceCache(async (url, signal) => {
-  const res = await net.fetch(url, { signal, cache: 'no-store' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-});
+const brainAppearance = appearanceCache((url, init) => net.fetch(url, init));
 
 /** The URL a brain window loads: the dev override, or the shell's own scheme. */
 function rendererUrlFor(): string {

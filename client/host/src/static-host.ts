@@ -260,7 +260,7 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
  * and never fail over it.
  */
 export function appearanceCache(
-  fetchJson: (url: string, signal: AbortSignal) => Promise<unknown>,
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
   now: () => number = Date.now,
 ): (brainOrigin: string) => Promise<unknown> {
   const cache = new Map<string, { at: number; ok: boolean; value: unknown }>();
@@ -268,7 +268,7 @@ export function appearanceCache(
     const hit = cache.get(brainOrigin);
     if (hit && now() - hit.at < (hit.ok ? 30_000 : 5_000)) return hit.value;
     try {
-      const value = await fetchJson(`${brainOrigin}/api/appearance`, AbortSignal.timeout(2_000));
+      const value = await fetchAppearance(fetchImpl, brainOrigin, AbortSignal.timeout(2_000));
       cache.set(brainOrigin, { at: now(), ok: true, value });
       return value;
     } catch {
@@ -277,4 +277,37 @@ export function appearanceCache(
       return value;
     }
   };
+}
+
+/** Bigger than any real appearance (a few hundred bytes), small enough that a
+ *  brain cannot swell every page's env.js. */
+const APPEARANCE_MAX_BYTES = 64 * 1024;
+
+/**
+ * One read of `${brainOrigin}/api/appearance`, the one place both hosts fetch
+ * it. The host, not the page, sends it (no CORS) and hands the body to every
+ * visitor in env.js, so it reads only the configured origin: no redirect is
+ * followed, no cookie is sent, and only a JSON object of modest size passes.
+ * Anything else throws, and the caller keeps its last good value or null.
+ */
+async function fetchAppearance(
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
+  brainOrigin: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const res = await fetchImpl(`${brainOrigin}/api/appearance`, {
+    signal,
+    cache: 'no-store',
+    redirect: 'error',
+    credentials: 'omit',
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (res.url && originOf(res.url) !== brainOrigin) throw new Error('off-origin answer');
+  const text = await res.text();
+  if (text.length > APPEARANCE_MAX_BYTES) throw new Error('appearance too large');
+  const value: unknown = JSON.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('appearance is not an object');
+  }
+  return value;
 }
