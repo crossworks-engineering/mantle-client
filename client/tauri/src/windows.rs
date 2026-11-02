@@ -149,7 +149,7 @@ fn send_back_to_ui<R: Runtime>(webview: WebviewWindow<R>) {
 }
 
 /// The ONE function that builds a brain window.
-fn build_brain_window<R: Runtime>(
+pub fn build_brain_window<R: Runtime>(
     app: &AppHandle<R>,
     profile: &Profile,
 ) -> Result<WebviewWindow<R>, String> {
@@ -218,12 +218,47 @@ pub fn open_brain<R: Runtime>(app: &AppHandle<R>, profile_id: &str) -> Result<()
     if let Some(win) = app.get_webview_window(&label_for(&profile.id)) {
         reveal(&win);
     } else {
-        build_brain_window(app, &profile)?;
+        let win = build_brain_window(app, &profile)?;
+        if !keep_if_listed(app, win, &profile.id) {
+            return Err("Unknown brain. Refresh the list.".into());
+        }
         shell.trace(|| format!("window {} opened at {}", label_for(&profile.id), ui_root()));
     }
     shell.set_front(Some(profile.id.clone()));
     rebuild_menu(app);
     Ok(())
+}
+
+/// A brain window that was just built, checked against the list again: the
+/// list was read under `edits`, but the window is built after that lock is
+/// released, and a removal (commands.rs) may have come in between. It then
+/// found no window to close, and removed the store before this window made
+/// it again. Asked under `edits`, so a removal after this answer finds the
+/// window. A window for a brain gone meanwhile is destroyed, and the brain
+/// listed in pending-removals.json: the store it made is removed at the next
+/// start (it is in use until the window is gone, and on macOS WebKit's store
+/// calls need the main thread, so none is made here). Its page has no vault
+/// meanwhile: the vault asks the list too. The window is destroyed with the
+/// lock released, since destroying it from another thread waits on the main
+/// thread, which may be waiting for `edits`.
+pub fn keep_if_listed<R: Runtime>(
+    app: &AppHandle<R>,
+    win: WebviewWindow<R>,
+    profile_id: &str,
+) -> bool {
+    let shell = app.state::<Shell>();
+    {
+        let _edit = shell.edits.lock().unwrap_or_else(|e| e.into_inner());
+        if shell.profiles.find(profile_id).is_some() {
+            return true;
+        }
+        list_pending_removal(&shell, profile_id.to_string());
+    }
+    let label = win.label().to_string();
+    let _ = win.destroy();
+    shell.unregister_window(&label);
+    eprintln!("[mantle-desktop] {label}: its brain was removed while it opened; closed");
+    false
 }
 
 pub fn open_connect<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
