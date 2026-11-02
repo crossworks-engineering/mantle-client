@@ -30,6 +30,11 @@ const runtime = process.env.E2E_NEXT_RUNTIME || 'node';
 if (runtime !== 'node' && runtime !== 'bun') {
   throw new Error(`E2E_NEXT_RUNTIME must be node or bun, not ${runtime}`);
 }
+// With E2E_WORKSPACE_URL nothing is started here, so a Bun run would test a
+// server on whatever runtime it was started with and still be called Bun.
+if (runtime === 'bun' && external) {
+  throw new Error('E2E_NEXT_RUNTIME=bun starts its own next dev; unset E2E_WORKSPACE_URL');
+}
 const devCommand =
   runtime === 'bun'
     ? `../scripts/bun.sh --cwd ../client/web boot && ../scripts/bun.sh --cwd ../client/web next dev --port ${PORT}`
