@@ -1,8 +1,8 @@
 //! The two requests the shell itself sends to a brain: its public appearance
 //! for env.js, and the version probe before a brain is saved. Both go out as
 //! a native client's request: no cookie (ureq keeps none without its
-//! `cookies` feature), no redirect followed, a short timeout and a capped
-//! body. The page's own requests never pass through here; WebKit sends them.
+//! `cookies` feature), no redirect followed, a short timeout, a capped body,
+//! and TLS checked against the OS trust store. The page's own requests never pass through here; WebKit sends them.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -19,6 +19,14 @@ pub const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn agent(timeout: Duration) -> Agent {
     Agent::config_builder()
+        // The OS's own trust store (rustls-platform-verifier), as WebKit
+        // uses it: a brain on a private CA the computer trusts works for the
+        // shell's two requests exactly as it does for the page's.
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+                .build(),
+        )
         .timeout_global(Some(timeout))
         // 0: a 3xx is the answer, and it fails the status check below.
         .max_redirects(0)
