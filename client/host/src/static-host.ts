@@ -197,6 +197,10 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
 
   async function find(segments: string[], routes: HostManifest) {
     const tryPath = async (rel: string) => {
+      // A name Windows reads as another file (`invite.html.`, `invite.html `,
+      // `invite.html::$DATA`) would be served with the wrong type and no CSP.
+      // The export names none: a `:` or a trailing dot or space finds nothing.
+      if (rel.split('/').some((seg) => seg.includes(':') || /[. ]$/.test(seg))) return null;
       for (const candidate of [rel, `${rel}.html`, join(rel, 'index.html')]) {
         const full = normalize(join(opts.uiDir, candidate));
         if (full.startsWith(root) && (await isFile(full))) return full;
@@ -237,7 +241,10 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
     const hit = segments ? await find(segments, routes) : null;
     if (!hit) return new Response('Not found', { status: 404, headers: NOSNIFF });
 
-    const type = TYPES[extname(hit.file)] ?? 'application/octet-stream';
+    // Lower-cased: on a case-insensitive disk (an unpacked Mac or Windows
+    // build) `/Invite.HTML` finds invite.html, and must still be HTML with
+    // its CSP, not a download.
+    const type = TYPES[extname(hit.file).toLowerCase()] ?? 'application/octet-stream';
     const headers: Record<string, string> = { 'content-type': type, ...NOSNIFF };
     if (type.startsWith('text/html')) {
       headers['content-security-policy'] = csp;

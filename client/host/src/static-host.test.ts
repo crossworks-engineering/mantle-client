@@ -86,6 +86,7 @@ describe('createStaticHost', () => {
     put('index.html', 'home');
     put('login.html', 'login');
     put('invite.html', 'invite');
+    put('Shout.HTML', 'shout');
     put('notes/_.html', 'note page');
     put('notes/_.txt', 'note data');
     put('404.html', 'not here');
@@ -162,6 +163,26 @@ describe('createStaticHost', () => {
     const asset = await get('/_next/static/chunks/missing.js');
     expect(asset.status).toBe(404);
     expect(await asset.text()).toBe('Not found');
+  });
+
+  it('types a file by its extension in any case: an upper-case .HTML is HTML, with its CSP', async () => {
+    const res = await get('/Shout.HTML');
+    expect(await res.text()).toBe('shout');
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(res.headers.get('content-security-policy')).toContain('https://b.example');
+  });
+
+  it('finds no file by a name Windows reads as another one', async () => {
+    for (const path of ['/invite.html.', '/invite.html%20', '/invite.html::$DATA', '/invite.']) {
+      const res = await get(path);
+      expect(res.status, path).toBe(404);
+      expect(await res.text(), path).not.toBe('invite');
+    }
+  });
+
+  it('still maps a route value holding a colon or a trailing dot to its page', async () => {
+    expect(await (await get('/notes/turn:abc')).text()).toBe('note page');
+    expect(await (await get('/notes/v1.')).text()).toBe('note page');
   });
 
   it('never serves a file outside the UI tree', async () => {

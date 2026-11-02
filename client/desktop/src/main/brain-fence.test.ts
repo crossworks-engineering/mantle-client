@@ -186,19 +186,30 @@ describe('permissionAllowed', () => {
     ).toBe(false);
     expect(permissionAllowed('media', { mediaTypes: ['audio'] }, renderer)).toBe(false);
   });
-  it('every other permission keeps the answer it had before: granted', () => {
+  it('grants the app page what it uses, and nothing else', () => {
     for (const p of [
       'fullscreen',
       'clipboard-sanitized-write',
       'clipboard-read',
       'fileSystem',
       'geolocation',
-      'pointerLock',
       'notifications',
-      'display-capture',
+      'openExternal',
     ]) {
-      expect(permissionAllowed(p, main, renderer)).toBe(true);
-      expect(permissionAllowed(p, { ...main, isMainFrame: false }, renderer)).toBe(true);
+      expect(permissionAllowed(p, main, renderer), p).toBe(true);
+    }
+    for (const p of ['pointerLock', 'display-capture', 'midiSysex', 'hid', 'usb', 'unknown']) {
+      expect(permissionAllowed(p, main, renderer), p).toBe(false);
+    }
+  });
+  it('grants a sub-frame, another origin or no origin nothing at all', () => {
+    for (const p of ['fullscreen', 'clipboard-sanitized-write', 'notifications', 'openExternal']) {
+      expect(permissionAllowed(p, { ...main, isMainFrame: false }, renderer), p).toBe(false);
+      expect(
+        permissionAllowed(p, { ...main, requestingUrl: 'https://brain.example/app/x' }, renderer),
+        p,
+      ).toBe(false);
+      expect(permissionAllowed(p, { isMainFrame: true }, renderer), p).toBe(false);
     }
   });
 });

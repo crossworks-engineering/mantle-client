@@ -222,10 +222,10 @@ function fenceBrainSession(
     callback({ responseHeaders });
   });
 
-  // The microphone, for a call (calls P1): audio only, for the app's own
-  // page; every other permission keeps the answer it had before a handler
-  // was set (granted). Both halves, as Electron asks: the check (the
-  // page's query) and the request (the prompt).
+  // The app's own page gets what it uses (permissionAllowed): the microphone
+  // for a call (audio only), the clipboard, fullscreen and the like. Any
+  // other frame or origin gets nothing. Both halves, as Electron asks: the
+  // check (the page's query) and the request (the prompt).
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     callback(permissionAllowed(permission, details, rendererOrigin));
   });

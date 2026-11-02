@@ -74,27 +74,41 @@ export function frameNavigationAllowed(
 }
 
 /**
+ * What the app's own page asks for, besides the microphone: copy and paste,
+ * fullscreen for a presentation or a canvas, the assistant's location, a
+ * notification, Excalidraw's file save, and a mailto: or tel: link handed
+ * to the system.
+ */
+const UI_PERMISSIONS: ReadonlySet<string> = new Set([
+  'clipboard-read',
+  'clipboard-sanitized-write',
+  'fullscreen',
+  'geolocation',
+  'notifications',
+  'fileSystem',
+  'openExternal',
+]);
+
+/**
  * The answer to a page's permission request or check in a brain window.
- * Before calls, no handler was set and Electron granted everything, which
- * the app relies on (the clipboard, fullscreen for a presentation, the
- * assistant's location, Excalidraw's file save): every permission but
- * `media` keeps that answer. A `media` request (calls P1, plan section
- * 10) is granted for audio only, from the app's own main frame on the
- * renderer origin (the shell's own `http://mantle-ui.localhost`; the main
- * frame never leaves it). Video is not asked for in P1 and is refused; a sandboxed app or
- * canvas frame (a sub-frame) never gets a device. Pure, so it is tested
- * without Electron.
+ * Only the app's own main frame on the renderer origin (the shell's own
+ * `http://mantle-ui.localhost`; the main frame never leaves it) gets
+ * anything, and only what it uses (UI_PERMISSIONS). A `media` request (calls
+ * P1, plan section 10) is granted for audio only; video is not asked for in
+ * P1 and is refused. Any other frame (a sandboxed app or canvas frame, an
+ * embed) or origin gets nothing. Before this, every frame got every
+ * permission but `media`. Pure, so it is tested without Electron.
  */
 export function permissionAllowed(
   permission: string,
   details: { requestingUrl?: string; isMainFrame?: boolean; mediaTypes?: readonly string[] },
   rendererOrigin: string,
 ): boolean {
-  if (permission !== 'media') return true;
   if (details.isMainFrame === false) return false;
+  if (originOf(details.requestingUrl ?? '') !== rendererOrigin) return false;
+  if (permission !== 'media') return UI_PERMISSIONS.has(permission);
   const types = details.mediaTypes ?? [];
-  if (types.length === 0 || types.some((t) => t !== 'audio')) return false;
-  return originOf(details.requestingUrl ?? '') === rendererOrigin;
+  return types.length > 0 && types.every((t) => t === 'audio');
 }
 
 /**
