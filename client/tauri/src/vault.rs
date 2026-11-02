@@ -429,38 +429,51 @@ impl Vault {
     /// case the index missed one: keyring-core's search, which the macOS
     /// keychain, the Secret Service, the mock and the memory store all
     /// answer. A store that cannot search is left to the index.
-    pub fn remove_profile(&self, profile: &str) {
+    ///
+    /// Answers whether nothing of the brain is left: false when the keychain
+    /// refused a delete or a search, or its index could not be written. The
+    /// caller then lists the brain in pending-removals.json, and the next
+    /// start calls this again (windows.rs, retry_removals) until it answers
+    /// true. Safe to call again: what is already gone is not an error.
+    pub fn remove_profile(&self, profile: &str) -> bool {
         self.with_lock(|f| {
-            self.delete(&Self::slot(profile), f);
+            let mut all_gone = self.delete(&Self::slot(profile), f);
             let mut index = self.read_index(profile);
             let held: Vec<String> = index.sessions.keys().cloned().collect();
             for session in held {
                 if self.delete(&Self::login(profile, &session), f) {
                     index.sessions.remove(&session);
+                } else {
+                    all_gone = false;
                 }
             }
-            self.sweep(profile, f);
-            // What could not be deleted stays listed, for a later removal.
-            // Best effort, as index_remove.
-            let _ = self.write_index(profile, &index);
-        });
+            all_gone &= self.sweep(profile, f);
+            // What could not be deleted stays in the index, so the retry
+            // finds it again by name as well as by the sweep.
+            all_gone &= self.write_index(profile, &index).is_ok();
+            all_gone
+        })
     }
 
     /// Deletes every entry of this service whose user is `<profile>/...`.
-    fn sweep(&self, profile: &str, failures: &mut Failures) {
+    /// Whether nothing under that prefix is left, as far as the store can
+    /// tell: a store that cannot search answers true (the index is all
+    /// there is), one whose search or delete fails answers false.
+    fn sweep(&self, profile: &str, failures: &mut Failures) -> bool {
         let prefix = format!("{profile}/");
         let spec = HashMap::from([("service", self.service.as_str())]);
         let found = match self.store.search(&spec) {
             Ok(found) => found,
-            Err(KeyError::NotSupportedByStore(_)) => return,
+            Err(KeyError::NotSupportedByStore(_)) => return true,
             Err(e) => {
                 // Not a login that failed to be kept: the trace only.
                 if self.trace {
                     eprintln!("[mantle-desktop] vault: search: {e}");
                 }
-                return;
+                return false;
             }
         };
+        let mut all_gone = true;
         for entry in found {
             let Some((service, user)) = entry.get_specifiers() else {
                 continue;
@@ -471,9 +484,11 @@ impl Vault {
             if let Err(e) = entry.delete_credential() {
                 if !matches!(e, KeyError::NoEntry) {
                     failures.note("delete", &e);
+                    all_gone = false;
                 }
             }
         }
+        all_gone
     }
 }
 
@@ -1139,7 +1154,7 @@ mod tests {
         vault.set_for(A, "s1", "a.one", now());
         vault.set_for(A, "s2", "a.two", now());
         vault.set_for(B, "s1", "b.one", now());
-        vault.remove_profile(A);
+        assert!(vault.remove_profile(A), "everything went");
         assert_eq!(f.keychain(A), None);
         assert_eq!(f.keychain(&format!("{A}/s1")), None);
         assert_eq!(f.keychain(&format!("{A}/s2")), None);
@@ -1200,6 +1215,43 @@ mod tests {
         assert_eq!(vault.get_for(A, "s1"), None);
         assert_eq!(vault.get_for(A, "unindexed"), None);
         assert_eq!(vault.get_for(B, "s1").as_deref(), Some("b.one"));
+    }
+
+    /// A delete the keychain refuses: the removal says it is not done, the
+    /// login stays in the index, and the next call (the start's retry)
+    /// finishes it. Calling it again once all is gone is harmless.
+    #[test]
+    fn a_removal_the_keychain_refuses_once_says_so_and_a_retry_finishes_it() {
+        let f = Fixture::new();
+        let vault = f.vault();
+        vault.set(A, "legacy");
+        vault.set_for(A, "s1", "a.one", now());
+        vault.set_for(A, "s2", "a.two", now());
+        vault.set_for(B, "s1", "b.one", now());
+        let s1 = format!("{A}/s1");
+        *f.refuse.deletes_of.lock().unwrap() = Some(s1.clone());
+        assert!(!vault.remove_profile(A), "a refused delete is not done");
+        assert_eq!(f.keychain(&s1).as_deref(), Some("a.one"));
+        assert_eq!(f.indexed(A), vec!["s1".to_string()]);
+        assert_eq!(f.keychain(A), None);
+        assert_eq!(f.keychain(&format!("{A}/s2")), None);
+
+        // The keychain answers again: the retry removes what was left.
+        *f.refuse.deletes_of.lock().unwrap() = None;
+        assert!(vault.remove_profile(A));
+        assert_eq!(f.keychain(&s1), None);
+        assert!(f.indexed(A).is_empty());
+        assert!(!f.dir.join("vault").join(format!("{A}.json")).exists());
+        assert!(vault.remove_profile(A), "again, with nothing left");
+        assert_eq!(vault.get_for(B, "s1").as_deref(), Some("b.one"));
+
+        // A keychain that will not search cannot say the sweep is done.
+        vault.set_for(A, "s3", "a.three", now());
+        f.refuse.all.store(true, Ordering::SeqCst);
+        assert!(!vault.remove_profile(A));
+        f.refuse.all.store(false, Ordering::SeqCst);
+        assert!(vault.remove_profile(A));
+        assert_eq!(f.keychain(&format!("{A}/s3")), None);
     }
 
     /// `when` asks under the lock: a call it allows finishes before a

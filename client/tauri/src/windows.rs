@@ -403,14 +403,29 @@ pub fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
 }
 
 /// Removes what a removed brain kept in WebKit: its data store (macOS) or
-/// its folder. A store still in use cannot go yet; it is listed and retried
-/// at the next start (retry_removals). Called from an async command, off the
-/// main thread: see retry_removals for why that matters.
-pub async fn remove_brain_store<R: Runtime>(app: AppHandle<R>, profile_id: String) {
+/// its folder. A store still in use cannot go yet, and neither can logins
+/// the keychain would not delete (`logins_gone` false, from
+/// Vault::remove_profile): the brain is then listed and both are retried at
+/// the next start (retry_removals). Only ever adds to the list: a window
+/// built for this brain while it was being removed (open_brain) may have
+/// listed it already, for a store made after this one went. Called from an
+/// async command, off the main thread: see retry_removals for why that
+/// matters.
+pub async fn remove_brain_store<R: Runtime>(
+    app: AppHandle<R>,
+    profile_id: String,
+    logins_gone: bool,
+) {
     let removed = remove_store_now(&app, &profile_id).await;
-    app.state::<Shell>().update_pending_removals(|pending| {
-        pending.retain(|id| id != &profile_id);
-        if !removed {
+    if !(removed && logins_gone) {
+        list_pending_removal(&app.state::<Shell>(), profile_id);
+    }
+}
+
+/// Lists a brain for the start's retry, once.
+fn list_pending_removal(shell: &Shell, profile_id: String) {
+    shell.update_pending_removals(|pending| {
+        if !pending.contains(&profile_id) {
             pending.push(profile_id);
         }
     });
@@ -440,7 +455,8 @@ async fn remove_store_now<R: Runtime>(app: &AppHandle<R>, profile_id: &str) -> b
     }
 }
 
-/// At start: finish removing the stores an earlier run could not. Started
+/// At start: finish the removals an earlier run could not: the logins the
+/// keychain would not delete, then the store. Started
 /// from setup as a task, NEVER awaited there (no block_on): on macOS both
 /// WebKit calls (fetchAllDataStoreIdentifiers, removeDataStoreForIdentifier)
 /// are queued to the main thread and answer on its run loop, so a main
@@ -458,7 +474,22 @@ async fn retry_removals<R: Runtime>(app: AppHandle<R>) {
     let pending = app.state::<Shell>().pending_removals();
     for id in pending {
         let still_listed = app.state::<Shell>().profiles.find(&id).is_some();
-        if still_listed || remove_store_now(&app, &id).await {
+        let done = still_listed || {
+            // The keychain calls block (an unlock prompt can hold them), so
+            // on a blocking thread, not this task's.
+            let vault_app = app.clone();
+            let vault_id = id.clone();
+            let logins_gone = tauri::async_runtime::spawn_blocking(move || {
+                vault_app.state::<Shell>().vault.remove_profile(&vault_id)
+            })
+            .await
+            .unwrap_or(false);
+            // The store even when the logins are not done: each step is
+            // safe to repeat, and the id stays listed until both are.
+            let store_gone = remove_store_now(&app, &id).await;
+            logins_gone && store_gone
+        };
+        if done {
             app.state::<Shell>()
                 .update_pending_removals(|left| left.retain(|x| x != &id));
         }
