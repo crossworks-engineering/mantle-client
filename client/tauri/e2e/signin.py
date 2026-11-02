@@ -16,6 +16,11 @@ two profiles, so two windows' data folders and two keychain namespaces.
   c  brain B last used: B's window is on /login, holds nothing of A's;
      signs in there too
   d  brain A last used again: A still signed in, nothing of B's in it
+  f  brain A last used, the shell tracing: A's window goes to /invite (a
+     link-code page, served with its own Referrer-Policy) and reads the
+     active session's bearer through tokenVault there, as the invite page
+     does when it signs someone in; the shell must answer it, and the test
+     prints the Origin the shell saw on that request
   e  no keychain (a dbus session with no Secret Service): the app starts
      and says at once, in a notice window that does not block, that logins
      last until you quit; its OK closes it; a sign-in WORKS for that run,
@@ -192,7 +197,7 @@ def app_pids():
 class App:
     """One run of the app: tauri-driver, a WebDriver session, the window."""
 
-    def __init__(self, home, bus, log_name):
+    def __init__(self, home, bus, log_name, trace=False):
         if app_pids():
             raise RuntimeError(f"an app process is still running ({app_pids()})")
         self.log_path = os.path.join(SCRATCH, log_name)
@@ -207,7 +212,7 @@ class App:
                 "--native-driver",
                 shutil.which("WebKitWebDriver") or "/usr/bin/WebKitWebDriver",
             ],
-            env=home.env(bus),
+            env=dict(home.env(bus), **({"MANTLE_DESKTOP_TRACE": "1"} if trace else {})),
             stdout=self.log,
             stderr=subprocess.STDOUT,
         )
@@ -600,6 +605,37 @@ def main():
         vault_checks(app, "d", ORIGIN_A, email, expect_ids=ids_a)
         held = app.vault_report(ORIGIN_A, email, ids_b) or {}
         check("d: A's vault holds none of B's logins", held.get("probed") == [], held.get("error") or "")
+    finally:
+        app.quit()
+
+    # f (before e: e has a home of its own; this one is A's, signed in)
+    print("== f: an invite page in A's signed-in window", flush=True)
+    app = App(home, bus, "run-f.log", trace=True)
+    try:
+        path = app.landed()
+        check("f: A is still signed in (lands off /login)", not path.startswith("/login"), f"landed on {path}")
+        active = app.js("return localStorage.getItem('mantle_active_session')")
+        app.cmd("POST", "/url", {"url": "mantle-ui://localhost/invite"})
+        path = app.landed(quiet=2.0)
+        check("f: the window is on /invite", path.startswith("/invite"), f"on {path}")
+        mark = len(app.log_text())
+        held = app.js(
+            "var v = window.mantleDesktop && window.mantleDesktop.tokenVault;"
+            " return !!v && !!arguments[0] && v.getFor(arguments[0]) !== null;",
+            active,
+        )
+        time.sleep(0.5)
+        seen = [
+            line.split("(origin ", 1)[1].split(")", 1)[0]
+            for line in app.log_text()[mark:].splitlines()
+            if "[mantle-desktop] vault" in line and "(origin " in line
+        ]
+        note(f"f: the Origin the shell saw on the vault call from /invite: {', '.join(seen) or '(no trace line)'}")
+        check(
+            "f: the vault answers on /invite (an invite sign-in is kept)",
+            held is True,
+            f"origin {', '.join(seen) or '?'}",
+        )
     finally:
         app.quit()
 
