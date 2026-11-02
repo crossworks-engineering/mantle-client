@@ -17,9 +17,11 @@ two profiles, so two windows' data folders and two keychain namespaces.
      signs in there too
   d  brain A last used again: A still signed in, nothing of B's in it
   e  no keychain (a dbus session with no Secret Service): the app starts
-     and says at once, in a notice that does not block, that logins are not
-     saved; a sign-in holds no bearer anywhere (the keychain is the only
-     copy), the notice is shown once, and the next run says it again
+     and says at once, in a notice window that does not block, that logins
+     last until you quit; its OK closes it; a sign-in WORKS for that run,
+     the bearer held by the shell only (in memory: not in localStorage, not
+     on disk); the notice is shown once in the run; the next run is back on
+     /login, holds nothing, and says it again
 
 The vault is read the way the page reads it: through
 window.mantleDesktop.tokenVault, the synchronous API, which asks the shell
@@ -27,7 +29,9 @@ on every call.
 
 Prints a PASS or FAIL line per check and exits non-zero on any failure.
 Never prints a password, a setup code or a bearer: the checks on those are
-made in the page and come back as booleans.
+made in the page and come back as booleans, except step e's disk scan,
+which holds the bearer in this process to look for it in the app's files
+and never prints it.
 """
 
 import json
@@ -44,7 +48,8 @@ import uuid
 
 IDENTIFIER = "engineering.crossworks.mantleos-desktop"
 ELEMENT = "element-6066-11e4-a456-4a8e5e1e1b69"
-NOTICE = "Logins are not saved"
+# The keychain notice's window title (windows.rs, notice_page).
+NOTICE = "Logins last until you quit"
 
 BIN = os.environ.get("MANTLE_DESKTOP_BIN", "/work/target/release/mantle-desktop")
 PORT = os.environ["MANTLE_TEST_BRAIN_PORT"]
@@ -215,11 +220,13 @@ class App:
         caps = {"capabilities": {"alwaysMatch": {"tauri:options": {"application": BIN}}}}
         self.session = wd("POST", f"{self.base}/session", caps)["sessionId"]
         self.started = time.time()
-        # The app's one native alert (the keychain notice) is a GTK dialog,
-        # which WebDriver cannot see. While it is up the app's main thread
-        # waits on it, so a watcher answers it the way a user would: it
-        # focuses the dialog and presses Return. Each dialog seen is counted.
+        # The keychain notice is a window of the app's own, which WebDriver
+        # cannot reach (automation is the first web context's only). A
+        # watcher answers it the way a user would: it focuses the window and
+        # presses Return, which is the autofocused OK. Each notice seen is
+        # counted, and so is each one that went away after its OK.
         self.notices = set()
+        self.closed = set()
         self.watching = threading.Event()
         self.watcher = threading.Thread(target=self.answer_notices, daemon=True)
         self.watcher.start()
@@ -231,10 +238,15 @@ class App:
                     ["xdotool", "search", "--onlyvisible", "--name", NOTICE],
                     capture_output=True, text=True, timeout=5,
                 ).stdout.split()
+                for window in self.notices - set(found) - self.closed:
+                    self.closed.add(window)
+                    note("the notice window is gone after its OK")
                 for window in found:
                     if window not in self.notices:
                         self.notices.add(window)
-                        note(f"the native notice is up ({NOTICE!r}); pressing OK")
+                        note(f"the notice window is up ({NOTICE!r}); pressing OK")
+                        # Its page loads after the window maps.
+                        time.sleep(1.5)
                     subprocess.run(["xdotool", "windowfocus", "--sync", window], timeout=5,
                                    capture_output=True)
                     subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], timeout=5,
@@ -242,6 +254,14 @@ class App:
             except (OSError, subprocess.SubprocessError):
                 pass
             time.sleep(0.5)
+
+    def wait_notice_closed(self, timeout=20):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.notices and self.notices <= self.closed:
+                return True
+            time.sleep(0.3)
+        return False
 
     def cmd(self, method, path, body=None, timeout=120):
         return wd(method, f"{self.base}/session/{self.session}{path}", body, timeout)
@@ -345,7 +365,7 @@ var active = localStorage.getItem('mantle_active_session');
 var token = active ? v.getFor(active) : null;
 var out = {
   ids: ids, probed: probed, activeHeld: !!token, leaked: leaked,
-  asyncApi: 'tokenVaultAsync' in d, whoami: null, sameEmail: null
+  whoami: null, sameEmail: null
 };
 if (!token) { done(out); return; }
 fetch(origin + '/api/auth/whoami', { headers: { authorization: 'Bearer ' + token } })
@@ -356,6 +376,15 @@ fetch(origin + '/api/auth/whoami', { headers: { authorization: 'Bearer ' + token
             origin,
             email,
             list(probe_ids),
+        )
+
+    def active_bearer(self):
+        """The active session's bearer, for the disk scan only. Kept in this
+        process, never printed."""
+        return self.js(
+            "var v = window.mantleDesktop && window.mantleDesktop.tokenVault;"
+            " var a = localStorage.getItem('mantle_active_session');"
+            " return v && a ? v.getFor(a) : null;"
         )
 
     def quit(self):
@@ -457,7 +486,6 @@ def vault_checks(app, label, origin, email, expect_ids=None):
     report = app.vault_report(origin, email) or {}
     if report.get("error"):
         return check(f"{label}: the vault answers", False, report["error"])
-    check(f"{label}: the page has the synchronous vault and no async one", report.get("asyncApi") is False)
     check(f"{label}: the active session's bearer is in the vault", report.get("activeHeld") is True)
     check(f"{label}: no bearer is also in localStorage", report.get("leaked") is False)
     check(
@@ -583,6 +611,8 @@ def main():
         bare = Home("home-no-keychain")
         id_e = str(uuid.uuid4())
         bare.write_profiles([{"id": id_e, "origin": ORIGIN_A, "name": "Brain A", "lastUsedAt": now}])
+        bearer = None
+        ids_e = []
         app = App(bare, NO_KEYCHAIN_BUS, "run-e1.log")
         try:
             path = app.landed()
@@ -590,33 +620,64 @@ def main():
             # Said at start, before any sign-in, and without blocking: the
             # page loaded and settled while the notice was up.
             check("e: the notice is up at start, before any sign-in", len(app.notices) == 1,
-                  f"{len(app.notices)} dialog(s)")
-            if submit_login(app, email, password, setup_code, "e"):
-                time.sleep(8)
+                  f"{len(app.notices)} notice(s)")
+            check("e: the notice's OK closes it", app.wait_notice_closed(),
+                  f"{len(app.closed)} of {len(app.notices)} closed")
+            if sign_in(app, email, password, setup_code, "e"):
+                time.sleep(2)
                 report = app.vault_report(ORIGIN_A, email) or {}
                 check("e: the vault answers", not report.get("error"), report.get("error") or "")
-                check("e: no bearer is held (the keychain is the only copy)",
-                      report.get("activeHeld") is False and report.get("ids") == [])
+                check("e: the active session's bearer is held by the shell for this run",
+                      report.get("activeHeld") is True)
+                check(
+                    "e: the brain accepts that bearer",
+                    report.get("whoami") == 200 and report.get("sameEmail") is True,
+                    f"whoami {report.get('whoami')}",
+                )
+                check("e: no bearer is also in localStorage", report.get("leaked") is False)
                 store = app.storage() or {}
                 check(
-                    "e: no bearer in localStorage either",
+                    "e: no bearer key in localStorage",
                     not any(k == "mantle_token" or k.startswith("mantle_token:") for k in store),
                 )
-                note(f"e: after the sign-in the window is on {app.path()}")
+                ids_e = report.get("ids") or []
+                bearer = app.active_bearer()
         finally:
             app.quit()
         log = app.log_text()
         check(
             "e: the notice was shown once in that run",
             len(app.notices) == 1 and log.count(f"[mantle-desktop] {NOTICE}") == 1,
-            f"{len(app.notices)} dialog(s), {log.count(NOTICE)} line(s) in the app's output",
+            f"{len(app.notices)} notice(s), {log.count(NOTICE)} line(s) in the app's output",
         )
-        check("e: no vault index was written", not os.path.exists(bare.vault_index(id_e)))
+        check("e: no vault index was written", not os.path.exists(os.path.dirname(bare.vault_index(id_e))))
+        if bearer:
+            needle = bearer.encode()
+            hits = 0
+            for top in (bare.root, os.environ.get("HOME", "")):
+                for folder, _dirs, files in os.walk(top):
+                    for name in files:
+                        try:
+                            with open(os.path.join(folder, name), "rb") as f:
+                                hits += needle in f.read()
+                        except OSError:
+                            pass
+            check("e: the bearer is in no file the app wrote", hits == 0, f"{hits} file(s)")
+            del needle, bearer
+        else:
+            check("e: the bearer is in no file the app wrote", False, "no bearer to look for")
         app = App(bare, NO_KEYCHAIN_BUS, "run-e2.log")
         try:
             path = app.landed()
-            check("e: the next run is on /login", path.startswith("/login"), f"landed on {path}")
-            check("e: the next run says so at start too", len(app.notices) == 1, f"{len(app.notices)} dialog(s)")
+            check("e: the next run is back on /login", path.startswith("/login"), f"landed on {path}")
+            check("e: the next run says so at start too", len(app.notices) == 1, f"{len(app.notices)} notice(s)")
+            held = app.vault_report(ORIGIN_A, email, ids_e) or {}
+            check(
+                "e: the next run's vault holds nothing of the last run's",
+                bool(ids_e) and held.get("probed") == [] and held.get("activeHeld") is False
+                and not held.get("error"),
+                held.get("error") or f"{len(held.get('probed') or [])} of {len(ids_e)} still held",
+            )
         finally:
             app.quit()
 
