@@ -1,7 +1,8 @@
 # The Linux build and test image for the Tauri shell: the WebKitGTK 4.1 and
 # GTK 3 headers to build it, the pinned Rust toolchain, and what the scripted
 # sign-in test (e2e/) runs on: Xvfb, one dbus session, GNOME Keyring for the
-# Secret Service, WebKitWebDriver and tauri-driver.
+# Secret Service, WebKitWebDriver and tauri-driver, and xdotool to answer the
+# app's one native alert (WebDriver reaches only the web page).
 #
 #   docker build -f client/tauri/docker/linux.Dockerfile -t mantle-tauri-linux client/tauri/docker
 #
@@ -16,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential curl ca-certificates pkg-config libssl-dev file \
       libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev \
       libsecret-1-dev gnome-keyring dbus dbus-x11 xvfb xauth python3 \
-      webkit2gtk-driver \
+      webkit2gtk-driver xdotool \
     && rm -rf /var/lib/apt/lists/*
 
 # uid 1000, so a mounted checkout and cargo cache keep their owner.
