@@ -18,8 +18,11 @@ export type DesktopShellApi = {
   /** Register the in-app navigation a notification click asks for; returns
    *  the unsubscribe. Optional: older shells predate it. */
   onNavigate?(cb: (path: string) => void): () => void;
-  /** OS-keychain-backed bearer storage (Electron safeStorage). Optional:
-   *  older shells predate it, and callers must fall back to localStorage. */
+  /** The OS-keychain vault of a desktop shell, answered synchronously
+   *  (Electron safeStorage via sendSync; the Tauri shell via a synchronous
+   *  request to its own scheme). The shell keeps exactly one page per brain,
+   *  each with its own storage area. Optional: older shells predate it, and
+   *  callers must fall back to localStorage. */
   tokenVault?: {
     get(): string | null;
     set(token: string): void;
