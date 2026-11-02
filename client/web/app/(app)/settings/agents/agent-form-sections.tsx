@@ -33,6 +33,9 @@ import {
   CORPUS_MAP_DEFAULT_CHARS,
   CORPUS_MAP_MAX_CHARS,
   CORPUS_MAP_MIN_CHARS,
+  TOOL_LOADING_OPTIONS,
+  defaultToolLoading,
+  parseToolLoading,
   type AgentErrors,
   type FormState,
 } from './agent-form-state';
@@ -113,6 +116,40 @@ export function ThinkingEffortField({ form, setForm }: { form: FormState; setFor
         effort. Inherit follows your profile; Off never reasons; a level here applies whatever your
         profile says (your live-thinking switch then only shows or hides it).
       </FieldHint>
+    </Field>
+  );
+}
+
+/** Select value for "no mode set": the brain picks. */
+const TOOL_LOADING_DEFAULT = '__default__';
+
+/** How granted tools reach the model. Default (nothing stored) follows the
+ *  brain and the option names the mode it picks for this role and model; a
+ *  loaded mode stays as it is until the person picks another. */
+export function ToolLoadingField({ form, setForm }: { form: FormState; setForm: SetFormState }) {
+  const fallback = defaultToolLoading(form.role, form.model);
+  const label = (v: string) => TOOL_LOADING_OPTIONS.find((o) => o.value === v)?.label ?? v;
+  const active = TOOL_LOADING_OPTIONS.find((o) => o.value === (form.toolLoading ?? fallback));
+  return (
+    <Field>
+      <FieldLabel htmlFor="toolLoading">Tool loading</FieldLabel>
+      <Select
+        value={form.toolLoading ?? TOOL_LOADING_DEFAULT}
+        onValueChange={(v) => setForm((f) => ({ ...f, toolLoading: parseToolLoading(v) }))}
+      >
+        <SelectTrigger id="toolLoading" className="w-64" aria-describedby={hintId('toolLoading')}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={TOOL_LOADING_DEFAULT}>Default ({label(fallback)})</SelectItem>
+          {TOOL_LOADING_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FieldHint id="toolLoading">{active?.hint}</FieldHint>
     </Field>
   );
 }
