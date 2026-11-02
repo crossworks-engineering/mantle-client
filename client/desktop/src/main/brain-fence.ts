@@ -76,8 +76,9 @@ export function frameNavigationAllowed(
 /**
  * What the app's own page asks for, besides the microphone: copy and paste,
  * fullscreen for a presentation or a canvas, the assistant's location, a
- * notification, Excalidraw's file save, and a mailto: or tel: link handed
- * to the system.
+ * notification, Excalidraw's file save, and a mailto: link handed to the
+ * system (openExternal, for that scheme only: the page shows chat and page
+ * content, and no other link may start a program).
  */
 const UI_PERMISSIONS: ReadonlySet<string> = new Set([
   'clipboard-read',
@@ -101,11 +102,17 @@ const UI_PERMISSIONS: ReadonlySet<string> = new Set([
  */
 export function permissionAllowed(
   permission: string,
-  details: { requestingUrl?: string; isMainFrame?: boolean; mediaTypes?: readonly string[] },
+  details: {
+    requestingUrl?: string;
+    isMainFrame?: boolean;
+    mediaTypes?: readonly string[];
+    externalURL?: string;
+  },
   rendererOrigin: string,
 ): boolean {
   if (details.isMainFrame === false) return false;
   if (originOf(details.requestingUrl ?? '') !== rendererOrigin) return false;
+  if (permission === 'openExternal') return /^mailto:/i.test(details.externalURL ?? '');
   if (permission !== 'media') return UI_PERMISSIONS.has(permission);
   const types = details.mediaTypes ?? [];
   return types.length > 0 && types.every((t) => t === 'audio');

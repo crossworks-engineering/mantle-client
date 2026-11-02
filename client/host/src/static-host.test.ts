@@ -173,7 +173,13 @@ describe('createStaticHost', () => {
   });
 
   it('finds no file by a name Windows reads as another one', async () => {
-    for (const path of ['/invite.html.', '/invite.html%20', '/invite.html::$DATA', '/invite.']) {
+    for (const path of [
+      '/invite.html.',
+      '/invite.html%20',
+      '/invite.html::$DATA',
+      '/invite.',
+      '/%C4%B1nv%C4%B1te',
+    ]) {
       const res = await get(path);
       expect(res.status, path).toBe(404);
       expect(await res.text(), path).not.toBe('invite');
@@ -183,6 +189,7 @@ describe('createStaticHost', () => {
   it('still maps a route value holding a colon or a trailing dot to its page', async () => {
     expect(await (await get('/notes/turn:abc')).text()).toBe('note page');
     expect(await (await get('/notes/v1.')).text()).toBe('note page');
+    expect(await (await get('/notes/%C3%BC')).text()).toBe('note page');
   });
 
   it('never serves a file outside the UI tree', async () => {
@@ -327,6 +334,58 @@ describe('appearanceCache', () => {
     expect(await appearanceCache(async () => new Response(body))('https://b.example')).toEqual({
       pad: 'x'.repeat(64 * 1024 - 10),
     });
+  });
+
+  it('ends a body that stalls under the cap at the deadline, and lets it go', async () => {
+    let cancelled = false;
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"siteName":'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const cached = appearanceCache(async () => new Response(stalled), Date.now, 50);
+    const started = Date.now();
+    expect(await cached('https://b.example')).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(cancelled).toBe(true);
+  });
+
+  it('ends every shared caller at the deadline when the fetch ignores its signal', async () => {
+    let calls = 0;
+    const cached = appearanceCache(
+      () => {
+        calls++;
+        return new Promise<Response>(() => {});
+      },
+      Date.now,
+      50,
+    );
+    expect(await Promise.all([cached('https://b.example'), cached('https://b.example')])).toEqual([
+      null,
+      null,
+    ]);
+    // The failure is cached for 5 s: no second hung read.
+    expect(await cached('https://b.example')).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  it('never keeps a read that failed before its first await', async () => {
+    let t = 0;
+    let calls = 0;
+    const cached = appearanceCache(
+      () => {
+        calls++;
+        throw new Error('sync');
+      },
+      () => t,
+    );
+    expect(await cached('https://b.example')).toBeNull();
+    t = 6_000;
+    expect(await cached('https://b.example')).toBeNull();
+    expect(calls).toBe(2);
   });
 
   it('never follows a redirect off the brain, with the real fetch', async () => {

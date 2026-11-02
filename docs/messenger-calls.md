@@ -78,8 +78,10 @@ The phone app is a later phase.
   check.
 - **Desktop.** The main process grants the microphone (audio only) to the
   app's own main frame on the renderer origin and nothing else
-  (`permissionAllowed`, `client/desktop/src/main/brain-fence.ts`); every
-  other permission keeps the answer it had before a handler existed. The CSP
+  (`permissionAllowed`, `client/desktop/src/main/brain-fence.ts`). That
+  frame gets only the few other permissions the app uses (the clipboard,
+  fullscreen, location, notifications, file save, a mailto: link); any
+  other frame or origin gets none. The CSP
   names the brain's `wss://` twin in `connect-src` for the signalling socket.
 
 ## The ICE rule (plan section 20, decision D2 amended)

@@ -194,9 +194,16 @@ describe('permissionAllowed', () => {
       'fileSystem',
       'geolocation',
       'notifications',
-      'openExternal',
     ]) {
       expect(permissionAllowed(p, main, renderer), p).toBe(true);
+    }
+    const mail = { ...main, externalURL: 'mailto:a@example.invalid' };
+    expect(permissionAllowed('openExternal', mail, renderer)).toBe(true);
+    for (const externalURL of ['ms-settings:', 'file:///etc/passwd', 'tel:123', undefined]) {
+      expect(
+        permissionAllowed('openExternal', { ...main, externalURL }, renderer),
+        String(externalURL),
+      ).toBe(false);
     }
     for (const p of ['pointerLock', 'display-capture', 'midiSysex', 'hid', 'usb', 'unknown']) {
       expect(permissionAllowed(p, main, renderer), p).toBe(false);

@@ -198,9 +198,11 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
   async function find(segments: string[], routes: HostManifest) {
     const tryPath = async (rel: string) => {
       // A name Windows reads as another file (`invite.html.`, `invite.html `,
-      // `invite.html::$DATA`) would be served with the wrong type and no CSP.
-      // The export names none: a `:` or a trailing dot or space finds nothing.
-      if (rel.split('/').some((seg) => seg.includes(':') || /[. ]$/.test(seg))) return null;
+      // `invite.html::$DATA`, `/ınvıte`, which NTFS folds to INVITE) would be
+      // served with the wrong type, or past the no-referrer match. The
+      // export's names are plain ASCII with none of these: such a name finds
+      // nothing.
+      if (rel.split('/').some((seg) => /[^\x20-\x7e]|:|[. ]$/.test(seg))) return null;
       for (const candidate of [rel, `${rel}.html`, join(rel, 'index.html')]) {
         const full = normalize(join(opts.uiDir, candidate));
         if (full.startsWith(root) && (await isFile(full))) return full;
@@ -270,10 +272,15 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
  * last good value), a 2 s timeout. A page must never wait long on branding,
  * and never fail over it. Callers that miss the cache together share one
  * fetch, so a burst of windows or visitors costs the brain one read.
+ *
+ * The timeout is the host's own, not only the fetch's: a fetch that ignores
+ * its signal, or a body that stalls under the cap, still ends for every
+ * caller at the deadline, so a shared read can never hang env.js for good.
  */
 export function appearanceCache(
   fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
   now: () => number = Date.now,
+  timeoutMs = 2_000,
 ): (brainOrigin: string) => Promise<unknown> {
   const cache = new Map<string, { at: number; ok: boolean; value: unknown }>();
   const inFlight = new Map<string, Promise<unknown>>();
@@ -282,9 +289,15 @@ export function appearanceCache(
     if (hit && now() - hit.at < (hit.ok ? 30_000 : 5_000)) return hit.value;
     const running = inFlight.get(brainOrigin);
     if (running) return running;
-    const read = (async () => {
+    // Started a turn later, so the entry is in the map before the read can
+    // end, even by a throw before its first await.
+    const read: Promise<unknown> = Promise.resolve().then(async () => {
+      const deadline = AbortSignal.timeout(timeoutMs);
       try {
-        const value = await fetchAppearance(fetchImpl, brainOrigin, AbortSignal.timeout(2_000));
+        const value = await Promise.race([
+          fetchAppearance(fetchImpl, brainOrigin, deadline),
+          whenAborted(deadline),
+        ]);
         cache.set(brainOrigin, { at: now(), ok: true, value });
         return value;
       } catch {
@@ -292,12 +305,20 @@ export function appearanceCache(
         cache.set(brainOrigin, { at: now(), ok: false, value });
         return value;
       } finally {
-        inFlight.delete(brainOrigin);
+        if (inFlight.get(brainOrigin) === read) inFlight.delete(brainOrigin);
       }
-    })();
+    });
     inFlight.set(brainOrigin, read);
     return read;
   };
+}
+
+/** Rejects once `signal` aborts. */
+function whenAborted(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
 }
 
 /** Bigger than any real appearance (a few hundred bytes), small enough that a
@@ -324,7 +345,7 @@ async function fetchAppearance(
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   if (res.url && originOf(res.url) !== brainOrigin) throw new Error('off-origin answer');
-  const value: unknown = JSON.parse(await readCapped(res, APPEARANCE_MAX_BYTES));
+  const value: unknown = JSON.parse(await readCapped(res, APPEARANCE_MAX_BYTES, signal));
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('appearance is not an object');
   }
@@ -333,25 +354,34 @@ async function fetchAppearance(
 
 /** The body as text, read no further than `max` bytes: a bigger body throws
  *  as soon as it passes the cap (or at once, when its length says so), and
- *  the rest is never read. */
-async function readCapped(res: Response, max: number): Promise<string> {
+ *  the rest is never read. On `signal`'s abort the read stops too, so a body
+ *  that stalls is let go. */
+async function readCapped(res: Response, max: number, signal: AbortSignal): Promise<string> {
   if (Number(res.headers.get('content-length') ?? 0) > max) {
     await res.body?.cancel().catch(() => {});
     throw new Error('appearance too large');
   }
   if (!res.body) return '';
   const reader = res.body.getReader();
+  const stop = () => void reader.cancel().catch(() => {});
+  if (signal.aborted) stop();
+  else signal.addEventListener('abort', stop, { once: true });
   const chunks: Uint8Array[] = [];
   let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel().catch(() => {});
-      throw new Error('appearance too large');
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (signal.aborted) throw new Error('appearance read timed out');
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) {
+        await reader.cancel().catch(() => {});
+        throw new Error('appearance too large');
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } finally {
+    signal.removeEventListener('abort', stop);
   }
   const bytes = new Uint8Array(size);
   let at = 0;
