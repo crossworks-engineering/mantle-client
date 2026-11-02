@@ -9,6 +9,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 
+/** The contract's PasswordRule (@crossworks/client-types, dto/workspaces.ts),
+ *  written out here until this repo pins a client-types with its new fields;
+ *  keep the two the same. */
 export type PasswordRule = {
   min: number;
   commonList: boolean;

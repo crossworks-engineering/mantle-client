@@ -9,7 +9,8 @@ const BAR_TONE = ['bg-destructive', 'bg-destructive', 'bg-warning', 'bg-success'
 /**
  * Under a new-password field: a strength bar and each part of the brain's
  * rule, ticked as the person types. Point the input at it with
- * `aria-describedby={id}`. Shows nothing until the rule has loaded.
+ * `aria-describedby={id}`. Until the rule has loaded it holds the id with a
+ * short line, so the input never points at nothing.
  */
 export function PasswordStrength({
   id,
@@ -20,7 +21,13 @@ export function PasswordStrength({
   password: string;
   rule: PasswordRule | null;
 }) {
-  if (!rule) return null;
+  if (!rule) {
+    return (
+      <p id={id} className="text-muted-foreground pt-1 text-xs">
+        Checking this brain&apos;s password rule.
+      </p>
+    );
+  }
   const checks = passwordChecks(password, rule);
   const strength = passwordStrength(password);
   const filled = password ? strength.score + 1 : 0;
@@ -65,7 +72,10 @@ export function PasswordStrength({
         {rule.commonList ? (
           <li className="text-muted-foreground flex items-start gap-1.5">
             <Circle className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
-            <span>Not a common password (the brain checks this when you save)</span>
+            <span>
+              Not a common password (the brain checks this when you save)
+              <span className="sr-only">: checked when you save</span>
+            </span>
           </li>
         ) : null}
       </ul>
