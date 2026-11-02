@@ -157,7 +157,11 @@ export function envScript(env: HostEnv): string {
 /** `{brain}` / `{brain_ws}` in the build's CSP template, for this brain. */
 export function fillCsp(template: string, brainOrigin: string): string {
   const ws = brainOrigin.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-  return template.trim().replaceAll('{brain_ws}', ws).replaceAll('{brain}', brainOrigin);
+  // Replacer functions: a `$` in the value is never read as a pattern.
+  return template
+    .trim()
+    .replaceAll('{brain_ws}', () => ws)
+    .replaceAll('{brain}', () => brainOrigin);
 }
 
 async function isFile(path: string): Promise<boolean> {
@@ -257,25 +261,35 @@ export function createStaticHost(opts: StaticHostOptions): (request: Request) =>
  * The brain's public appearance for env.js, cached per brain the way the old
  * server cached it: 30 s after a success, 5 s after a failure (keeping the
  * last good value), a 2 s timeout. A page must never wait long on branding,
- * and never fail over it.
+ * and never fail over it. Callers that miss the cache together share one
+ * fetch, so a burst of windows or visitors costs the brain one read.
  */
 export function appearanceCache(
   fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
   now: () => number = Date.now,
 ): (brainOrigin: string) => Promise<unknown> {
   const cache = new Map<string, { at: number; ok: boolean; value: unknown }>();
+  const inFlight = new Map<string, Promise<unknown>>();
   return async (brainOrigin) => {
     const hit = cache.get(brainOrigin);
     if (hit && now() - hit.at < (hit.ok ? 30_000 : 5_000)) return hit.value;
-    try {
-      const value = await fetchAppearance(fetchImpl, brainOrigin, AbortSignal.timeout(2_000));
-      cache.set(brainOrigin, { at: now(), ok: true, value });
-      return value;
-    } catch {
-      const value = hit?.value ?? null;
-      cache.set(brainOrigin, { at: now(), ok: false, value });
-      return value;
-    }
+    const running = inFlight.get(brainOrigin);
+    if (running) return running;
+    const read = (async () => {
+      try {
+        const value = await fetchAppearance(fetchImpl, brainOrigin, AbortSignal.timeout(2_000));
+        cache.set(brainOrigin, { at: now(), ok: true, value });
+        return value;
+      } catch {
+        const value = cache.get(brainOrigin)?.value ?? null;
+        cache.set(brainOrigin, { at: now(), ok: false, value });
+        return value;
+      } finally {
+        inFlight.delete(brainOrigin);
+      }
+    })();
+    inFlight.set(brainOrigin, read);
+    return read;
   };
 }
 
@@ -303,11 +317,40 @@ async function fetchAppearance(
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   if (res.url && originOf(res.url) !== brainOrigin) throw new Error('off-origin answer');
-  const text = await res.text();
-  if (text.length > APPEARANCE_MAX_BYTES) throw new Error('appearance too large');
-  const value: unknown = JSON.parse(text);
+  const value: unknown = JSON.parse(await readCapped(res, APPEARANCE_MAX_BYTES));
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('appearance is not an object');
   }
   return value;
+}
+
+/** The body as text, read no further than `max` bytes: a bigger body throws
+ *  as soon as it passes the cap (or at once, when its length says so), and
+ *  the rest is never read. */
+async function readCapped(res: Response, max: number): Promise<string> {
+  if (Number(res.headers.get('content-length') ?? 0) > max) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error('appearance too large');
+  }
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      throw new Error('appearance too large');
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }

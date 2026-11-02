@@ -52,6 +52,7 @@ describe('fillCsp', () => {
       "connect-src 'self' https://b.example wss://b.example",
     );
     expect(fillCsp('{brain_ws}', 'http://127.0.0.1:9')).toBe('ws://127.0.0.1:9');
+    expect(fillCsp('{brain}', 'https://$&.example')).toBe('https://$&.example');
   });
 });
 
@@ -226,6 +227,85 @@ describe('appearanceCache', () => {
     ]) {
       expect(await appearanceCache(async () => res)('https://b.example')).toBeNull();
     }
+  });
+
+  it('shares one fetch between callers that miss the cache together', async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const cached = appearanceCache(async () => {
+      calls++;
+      await gate;
+      return json({ siteName: 'once' });
+    });
+    const all = Promise.all([1, 2, 3].map(() => cached('https://b.example')));
+    const other = cached('https://a.example');
+    release();
+    expect(await all).toEqual([{ siteName: 'once' }, { siteName: 'once' }, { siteName: 'once' }]);
+    await other;
+    expect(calls).toBe(2);
+  });
+
+  it('starts a new fetch once the shared one has failed', async () => {
+    let t = 0;
+    let calls = 0;
+    const cached = appearanceCache(
+      async () => {
+        calls++;
+        throw new Error('down');
+      },
+      () => t,
+    );
+    expect(await Promise.all([cached('https://b.example'), cached('https://b.example')])).toEqual([
+      null,
+      null,
+    ]);
+    expect(calls).toBe(1);
+    t = 6_000;
+    await cached('https://b.example');
+    expect(calls).toBe(2);
+  });
+
+  it('stops reading a body at 64 KB, without waiting for its end', async () => {
+    let sent = 0;
+    let cancelled = false;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += 16 * 1024;
+        controller.enqueue(new Uint8Array(16 * 1024).fill(0x20));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    expect(
+      await appearanceCache(async () => new Response(endless))('https://b.example'),
+    ).toBeNull();
+    expect(cancelled).toBe(true);
+    expect(sent).toBeLessThanOrEqual(128 * 1024);
+  });
+
+  it('refuses a body whose length is over 64 KB before reading it', async () => {
+    let pulled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          pulled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const res = new Response(body, { headers: { 'content-length': String(65 * 1024) } });
+    expect(await appearanceCache(async () => res)('https://b.example')).toBeNull();
+    expect(pulled).toBe(false);
+  });
+
+  it('takes a body of exactly 64 KB', async () => {
+    const body = `{"pad":"${'x'.repeat(64 * 1024 - 10)}"}`;
+    expect(body.length).toBe(64 * 1024);
+    expect(await appearanceCache(async () => new Response(body))('https://b.example')).toEqual({
+      pad: 'x'.repeat(64 * 1024 - 10),
+    });
   });
 
   it('never follows a redirect off the brain, with the real fetch', async () => {
