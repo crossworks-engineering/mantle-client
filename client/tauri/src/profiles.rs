@@ -59,7 +59,9 @@ impl Profiles {
     /// the origin goes into the window's CSP, and a file saved by an older
     /// build or edited by hand never passed today's check. A profile that
     /// fails (or is not a profile at all) is left out, and dropped from the
-    /// file at the next save.
+    /// file at the next save. So is a second profile with an id already
+    /// seen: the id names a window, a data store and keychain entries, so it
+    /// must name one brain; the first one listed is kept.
     pub fn load(&self) -> Vec<Profile> {
         let Ok(text) = std::fs::read_to_string(&self.path) else {
             return Vec::new();
@@ -67,10 +69,12 @@ impl Profiles {
         let Ok(serde_json::Value::Array(items)) = serde_json::from_str(&text) else {
             return Vec::new();
         };
+        let mut seen = std::collections::HashSet::new();
         items
             .into_iter()
             .filter_map(|item| serde_json::from_value::<Profile>(item).ok())
             .filter(|p| saved_origin_ok(&p.origin) && valid_id(&p.id))
+            .filter(|p| seen.insert(p.id.clone()))
             .collect()
     }
 
@@ -193,6 +197,32 @@ mod tests {
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].name, "ok");
         assert_eq!(profiles[0].last_used_at, Some(5));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn load_keeps_the_first_of_two_profiles_with_one_id() {
+        let dir = temp_dir("profiles-dup");
+        std::fs::write(
+            dir.join("profiles.json"),
+            serde_json::json!([
+                { "id": A, "origin": "https://first.example", "name": "first" },
+                { "id": A, "origin": "https://second.example", "name": "second" },
+                { "id": "22222222-2222-4222-8222-222222222222", "origin": "https://b.example", "name": "b" }
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        let profiles = Profiles::new(&dir);
+        let all = profiles.load();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].origin, "https://first.example");
+        assert_eq!(profiles.find(A).unwrap().name, "first");
+        // A save writes the list as loaded: the duplicate is gone for good.
+        profiles.touch(A).unwrap();
+        assert_eq!(profiles.load().len(), 2);
+        let raw = std::fs::read_to_string(dir.join("profiles.json")).unwrap();
+        assert!(!raw.contains("second.example"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
