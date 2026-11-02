@@ -127,9 +127,11 @@ fn setup<R: Runtime>(
     };
     app.manage(shell);
 
-    // Stores an earlier run could not remove go first, before any window.
-    let retry = handle.clone();
-    tauri::async_runtime::block_on(windows::retry_removals(retry));
+    // Stores an earlier run could not remove: in the background. Never
+    // block_on here: setup runs on the main thread, inside the event loop,
+    // and WebKit's store calls answer on that loop (windows.rs,
+    // start_retry_removals).
+    windows::start_retry_removals(&handle);
 
     windows::rebuild_menu(&handle);
     windows::focus_or_open(&handle);
@@ -532,6 +534,42 @@ mod acl_tests {
         assert_eq!(call(&f, &f.brain, get.clone()).0, 403);
         window.navigate(shell::ui_root()).unwrap();
         assert_eq!(value(call(&f, &f.brain, get)), "bearer.one");
+    }
+
+    /// The start's retry runs as a task (setup never waits for it, see
+    /// windows::start_retry_removals) and each id leaves the list on its
+    /// own: a removal listed while it runs is kept. The mock runtime has no
+    /// WebKit data stores (they are todo!() in it), so this runs where a
+    /// store is a folder; on macOS the comment and the absence of block_on
+    /// are what holds.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_start_retry_runs_as_a_task_and_keeps_a_removal_made_meanwhile() {
+        let f = fixture();
+        let shell = f.app.state::<Shell>();
+        let gone = uuid::Uuid::new_v4().to_string();
+        let listed = profiles::id_from_label(&f.brain).unwrap().to_string();
+        let folder = |id: &str| windows::brain_data_dir(f.app.handle(), id).unwrap();
+        std::fs::create_dir_all(folder(&gone)).unwrap();
+        std::fs::create_dir_all(folder(&listed)).unwrap();
+        shell.update_pending_removals(|ids| {
+            ids.push(gone.clone());
+            ids.push(listed.clone());
+        });
+        windows::start_retry_removals(f.app.handle());
+        let meanwhile = uuid::Uuid::new_v4().to_string();
+        shell.update_pending_removals(|ids| ids.push(meanwhile.clone()));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while shell.pending_removals() != vec![meanwhile.clone()] {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the retry did not finish: {:?}",
+                shell.pending_removals()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!folder(&gone).exists(), "an unlisted brain's store goes");
+        assert!(folder(&listed).exists(), "a listed brain's store stays");
     }
 
     #[test]
