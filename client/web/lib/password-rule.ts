@@ -29,7 +29,10 @@ export const OLD_RULE: PasswordRule = { min: 8, commonList: false };
  *  script with no capitals), capitals, digits, and anything else. The
  *  brain's own count (password-rule.ts passwordKinds). */
 export function passwordKinds(password: string): number {
-  const kinds = [/[\p{Ll}\p{Lo}\p{Lm}]/u, /[\p{Lu}\p{Lt}]/u, /\p{N}/u, /[^\p{L}\p{N}]/u];
+  // Symbols: anything a person sees that is no letter or digit. A control
+  // or format character (NUL, a zero-width space) or a lone combining mark
+  // is not one.
+  const kinds = [/[\p{Ll}\p{Lo}\p{Lm}]/u, /[\p{Lu}\p{Lt}]/u, /\p{N}/u, /[^\p{L}\p{N}\p{M}\p{C}]/u];
   return kinds.filter((k) => k.test(password)).length;
 }
 

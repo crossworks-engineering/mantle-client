@@ -17,6 +17,11 @@ describe('the password rule, as a form shows it', () => {
     expect(passwordKinds('aB3 ')).toBe(4);
     expect(passwordKinds('Привет7')).toBe(3);
     expect(passwordKinds('日本語のパス7!')).toBe(3);
+    // Invisible characters are no symbol, as on the brain.
+    expect(passwordKinds('kettleunder7\u0000')).toBe(2);
+    expect(passwordKinds('kettleunder7\u200b')).toBe(2);
+    expect(passwordKinds('kettleunder7\u0301')).toBe(2);
+    expect(passwordRuleError('kettleunder7\u200b', RULE)).toMatch(/3 of small letters/);
   });
 
   it('ticks each part as it is met', () => {

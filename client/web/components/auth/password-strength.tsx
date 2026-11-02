@@ -72,10 +72,7 @@ export function PasswordStrength({
         {rule.commonList ? (
           <li className="text-muted-foreground flex items-start gap-1.5">
             <Circle className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
-            <span>
-              Not a common password (the brain checks this when you save)
-              <span className="sr-only">: checked when you save</span>
-            </span>
+            <span>Not a common password (the brain checks this when you save)</span>
           </li>
         ) : null}
       </ul>
