@@ -152,3 +152,11 @@ Bun in the client image, is not affected.
 `member-shell.spec.ts:111` is a known flake on main (fixed apart from this
 work). It failed in 5 of 7 Bun runs and 1 of 7 Node runs; with the fix
 applied, both passed 30 of 30.
+
+In `e2e:workspace:bun`, a check waits up to 15 s (Playwright's `expect`), not
+5 s. The first visit to a route makes `next dev` compile it, and on a 4-CPU
+machine such as a GitHub runner that can take more than 5 s. It does on Node
+too: at 4 CPUs on the workstation, `admin-shell.spec.ts:30` failed on Node
+and on Bun, and the Node `e2e-workspace` job on main failed 4 times in 14
+runs. Bun's extra 10 ms per request makes it more likely. The Node lane keeps
+the 5 s default.
