@@ -588,15 +588,22 @@ document.body.appendChild(f);
         ORIGIN_A,
     )
     result_a = None
-    frame = app.find("iframe#mantle-probe-a", timeout=5)
-    if loaded and frame:
+    # By index into window.frames: WebKitWebDriver refuses an element
+    # reference as a frame id ("Invalid frame ID object").
+    index = app.js(
+        "var f = document.getElementById('mantle-probe-a');"
+        " return f ? Array.prototype.indexOf.call(window.frames, f.contentWindow) : -1;"
+    )
+    if loaded and isinstance(index, int) and index >= 0:
         try:
-            app.cmd("POST", "/frame", {"id": {ELEMENT: frame}})
+            app.cmd("POST", "/frame", {"id": index})
             result_a = app.js(FRAME_CALL + "return out;")
         except WebDriverError as e:
             result_a = {"error": f"webdriver: {e}"}
         finally:
             app.cmd("POST", "/frame/parent", {})
+    else:
+        result_a = {"error": f"the frame did not load (loaded {loaded}, index {index})"}
     time.sleep(0.5)
     shell_a = trace_lines(app, mark)
     note(f"g: brain-origin frame: {frame_report(result_a)}; shell saw: {'; '.join(shell_a) or 'nothing'}")
@@ -620,7 +627,7 @@ window.addEventListener('message', function heard(e) {
   done(e.data);
 });
 setTimeout(function () { done('timeout'); }, 15000);
-f.srcdoc = '<script>' + arguments[0] + 'parent.postMessage(out, "*");<\/script>';
+f.srcdoc = '<script>' + arguments[0] + 'parent.postMessage(out, "*");<' + '/script>';
 document.body.appendChild(f);
 """,
         FRAME_CALL,
