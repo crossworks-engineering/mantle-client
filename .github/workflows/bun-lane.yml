@@ -58,6 +58,11 @@ jobs:
           have="$(scripts/bun.sh node -p 'process.versions.bun ?? "NOT BUN"')"
           echo "node under bun.sh: $have (.bun-version: $want)"
           test "$have" = "$want"
+          # One level deeper, as verify:bun runs lint and tsc: bun.sh, then
+          # pnpm, then the node that pnpm finds.
+          deep="$(scripts/bun.sh pnpm exec node -p 'process.versions.bun ?? "NOT BUN"')"
+          echo "node under bun.sh and pnpm: $deep"
+          test "$deep" = "$want"
           scripts/bun.sh vitest run scripts/bun-runtime.test.ts
 
       # typecheck, lint, format:check and vitest, every one of them on Bun.

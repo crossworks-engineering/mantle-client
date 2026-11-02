@@ -33,22 +33,27 @@ starts `scripts/bun.sh`. `bun run --bun` also points `NODE` and
 
 Each run checks it too: `scripts/bun.sh` sets `MANTLE_EXPECT_RUNTIME=bun`,
 and then these fail unless they run on the pinned Bun:
-`scripts/bun-runtime.test.ts` (vitest and the `node` on PATH, for `verify:bun`
-and `test:bun`), `client/web/next.config.ts` (`next dev` and `next build`, for
+`vitest.config.ts` (vitest, for `verify:bun` and `test:bun`, with or without
+a file filter), `scripts/bun-runtime.test.ts` (also the `node` on PATH),
+`client/web/next.config.ts` (`next dev` and `next build`, for
 `dev:bun`, `build:bun` and `e2e:workspace:bun`) and
 `client/host/scripts/build.mjs` (`build:bun`). Other tools a script starts are
-not checked one by one. A plain `pnpm verify`, a Node build and the image
-build do not set the variable, and then nothing is checked.
+not checked one by one; the Bun lane checks the `node` that a nested pnpm
+finds. Only the exact value `bun` asks for a check. A plain `pnpm verify`, a
+Node build and the image build do not set the variable, and then nothing is
+checked.
 
 Bun loads `.env` files and installs missing packages on its own when it runs
 a file directly. Neither happens here, checked on 1.4.4: the scripts that
 `bun run` starts saw no `.env` value, and with `node_modules` in place a
-missing package is an error, not an install. A root `bunfig.toml` would not
+missing package is an error, not an install. `scripts/bun.sh` refuses to run
+when the root `node_modules` is missing. A root `bunfig.toml` would not
 help: Bun reads it from the working directory only, and most `:bun` scripts
 run in `client/web`.
 
-Install Bun: `scripts/install-bun.sh <dir>` on Linux x64 (it checks a pinned
-sha256), or Bun's own installer for that exact version elsewhere.
+Install Bun: `scripts/install-bun.sh <dir>` on Linux x64. It checks a pinned
+sha256. Only Linux x64 is pinned here; on another machine, install that exact
+version yourself (`bun.sh` refuses any other).
 
 ## What stays on Node, and why
 

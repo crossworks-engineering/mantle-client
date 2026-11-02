@@ -1,5 +1,20 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+
+// A `:bun` run (scripts/bun.sh sets MANTLE_EXPECT_RUNTIME=bun) must not end up
+// on Node, also when a file filter leaves scripts/bun-runtime.test.ts out.
+// Unset, as on the Node path, this does nothing.
+if (process.env.MANTLE_EXPECT_RUNTIME === 'bun') {
+  const pinned = readFileSync(new URL('./.bun-version', import.meta.url), 'utf8').trim();
+  const have = process.versions.bun;
+  if (have !== pinned) {
+    const on = have ? `Bun ${have}` : `Node ${process.versions.node}`;
+    throw new Error(
+      `MANTLE_EXPECT_RUNTIME=bun, but vitest runs on ${on} (.bun-version: ${pinned})`,
+    );
+  }
+}
 
 /**
  * Minimal vitest setup. Each package can ship `*.test.ts` files anywhere

@@ -26,12 +26,20 @@ if [ "$have" != "$want" ]; then
   echo "bun.sh: bun $have found, but .bun-version pins $want" >&2
   exit 1
 fi
+# With no node_modules, Bun resolves a missing import by fetching it from npm
+# (by the package.json range, or latest) and running it, never the lockfile's
+# version. pnpm installs; Bun only runs.
+if [ ! -d "$root/node_modules" ]; then
+  echo "bun.sh: no node_modules in $root; run pnpm install first" >&2
+  exit 1
+fi
 # Nothing here sets NODE or npm_node_execpath: the outer pnpm (on Node) sets
 # both to the real node, and `bun run --bun` replaces both with its own
 # Bun-as-node (checked on 1.4.4), so no nested tool can find Node through them.
 # MANTLE_EXPECT_RUNTIME=bun makes these fail unless they run on the pinned
-# Bun: scripts/bun-runtime.test.ts (verify:bun, test:bun), client/web's
-# next.config.ts (dev:bun, build:bun, e2e:workspace:bun) and client/host's
-# scripts/build.mjs (build:bun). Other tools a script starts are not checked.
+# Bun: vitest.config.ts and scripts/bun-runtime.test.ts (verify:bun,
+# test:bun), client/web's next.config.ts (dev:bun, build:bun,
+# e2e:workspace:bun) and client/host's scripts/build.mjs (build:bun). Other
+# tools a script starts are not checked one by one.
 export MANTLE_EXPECT_RUNTIME=bun
 exec bun run --bun "$@"
