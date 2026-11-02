@@ -26,4 +26,10 @@ if [ "$have" != "$want" ]; then
   echo "bun.sh: bun $have found, but .bun-version pins $want" >&2
   exit 1
 fi
+# Nothing here sets NODE or npm_node_execpath: the outer pnpm (on Node) sets
+# both to the real node, and `bun run --bun` replaces both with its own
+# Bun-as-node (checked on 1.4.4), so no nested tool can find Node through them.
+# MANTLE_EXPECT_RUNTIME tells scripts/bun-runtime.test.ts to fail unless it
+# runs on Bun: the proof that a `:bun` run did not end up on Node.
+export MANTLE_EXPECT_RUNTIME=bun
 exec bun run --bun "$@"
