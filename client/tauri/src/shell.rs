@@ -38,6 +38,9 @@ pub struct Shell {
     front: Mutex<Option<String>>,
     /// Profile lists are read, changed and written whole: one at a time.
     pub edits: Mutex<()>,
+    /// Held across each read-change-write of pending-removals.json: a
+    /// removal and the start's retry may run at once.
+    removals: Mutex<()>,
     trace: bool,
 }
 
@@ -62,6 +65,7 @@ impl Shell {
             windows: Mutex::new(HashMap::new()),
             front: Mutex::new(None),
             edits: Mutex::new(()),
+            removals: Mutex::new(()),
             trace,
         })
     }
@@ -108,9 +112,18 @@ impl Shell {
     }
 
     /// Ids whose data store could not be removed yet (still in use): retried
-    /// at the next start, before any window opens.
+    /// at the next start, in the background (windows.rs, retry_removals).
     fn removals_path(&self) -> PathBuf {
         self.data_dir.join("pending-removals.json")
+    }
+
+    /// Changes the list of pending removals in one step, so two changes at
+    /// once (a removal and the start's retry) do not lose one another's.
+    pub fn update_pending_removals(&self, change: impl FnOnce(&mut Vec<String>)) {
+        let _held = self.removals.lock().unwrap_or_else(|e| e.into_inner());
+        let mut ids = self.pending_removals();
+        change(&mut ids);
+        self.set_pending_removals(&ids);
     }
 
     pub fn pending_removals(&self) -> Vec<String> {
@@ -123,7 +136,7 @@ impl Shell {
             .collect()
     }
 
-    pub fn set_pending_removals(&self, ids: &[String]) {
+    fn set_pending_removals(&self, ids: &[String]) {
         if ids.is_empty() {
             let _ = std::fs::remove_file(self.removals_path());
             return;

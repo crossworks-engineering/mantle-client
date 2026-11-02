@@ -404,16 +404,16 @@ pub fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
 
 /// Removes what a removed brain kept in WebKit: its data store (macOS) or
 /// its folder. A store still in use cannot go yet; it is listed and retried
-/// at the next start, before any window opens.
+/// at the next start (retry_removals). Called from an async command, off the
+/// main thread: see retry_removals for why that matters.
 pub async fn remove_brain_store<R: Runtime>(app: AppHandle<R>, profile_id: String) {
     let removed = remove_store_now(&app, &profile_id).await;
-    let shell = app.state::<Shell>();
-    let mut pending = shell.pending_removals();
-    pending.retain(|id| id != &profile_id);
-    if !removed {
-        pending.push(profile_id);
-    }
-    shell.set_pending_removals(&pending);
+    app.state::<Shell>().update_pending_removals(|pending| {
+        pending.retain(|id| id != &profile_id);
+        if !removed {
+            pending.push(profile_id);
+        }
+    });
 }
 
 async fn remove_store_now<R: Runtime>(app: &AppHandle<R>, profile_id: &str) -> bool {
@@ -440,15 +440,27 @@ async fn remove_store_now<R: Runtime>(app: &AppHandle<R>, profile_id: &str) -> b
     }
 }
 
-/// At start: finish removing the stores an earlier run could not.
-pub async fn retry_removals<R: Runtime>(app: AppHandle<R>) {
+/// At start: finish removing the stores an earlier run could not. Started
+/// from setup as a task, NEVER awaited there (no block_on): on macOS both
+/// WebKit calls (fetchAllDataStoreIdentifiers, removeDataStoreForIdentifier)
+/// are queued to the main thread and answer on its run loop, so a main
+/// thread that waits for them waits forever, and the app would hang before
+/// its first window on every start after a removal that had to wait. Nothing
+/// needs it done first: a removed brain is not listed, so no window opens on
+/// its store meanwhile. Each id leaves the list on its own, so a removal
+/// made while this runs is kept.
+pub fn start_retry_removals<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(retry_removals(app));
+}
+
+async fn retry_removals<R: Runtime>(app: AppHandle<R>) {
     let pending = app.state::<Shell>().pending_removals();
-    let mut left = Vec::new();
     for id in pending {
         let still_listed = app.state::<Shell>().profiles.find(&id).is_some();
-        if !still_listed && !remove_store_now(&app, &id).await {
-            left.push(id);
+        if still_listed || remove_store_now(&app, &id).await {
+            app.state::<Shell>()
+                .update_pending_removals(|left| left.retain(|x| x != &id));
         }
     }
-    app.state::<Shell>().set_pending_removals(&left);
 }
