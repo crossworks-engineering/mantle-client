@@ -37,12 +37,7 @@ const appearanceOrigin = originEnv('MANTLE_APPEARANCE_ORIGIN') || brainOrigin;
 function originEnv(name: string): string {
   const raw = (process.env[name] ?? '').trim().replace(/\/+$/, '');
   if (!raw) return '';
-  let url: URL | null = null;
-  try {
-    url = new URL(raw);
-  } catch {
-    url = null;
-  }
+  const url = URL.canParse(raw) ? new URL(raw) : null;
   const bare =
     url &&
     (url.protocol === 'http:' || url.protocol === 'https:') &&
