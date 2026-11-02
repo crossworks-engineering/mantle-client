@@ -37,8 +37,17 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   login; `adopt` moves the slot's bearer to a login; `keepOnly` drops stray
   copies older than 120 s. A non-secret index per brain lists the session
   ids and when each was written. **The keychain is the only copy**: nothing
-  is held in memory, the page asks again on every read, and a write the
+  else holds a bearer, the page asks again on every read, and a write the
   keychain refuses is simply not stored (the next read tells the truth).
+- **No keychain: this run only.** When the platform has no keychain, or the
+  keychain does not answer a read when the vault is made (`Vault::new`, the
+  one place this is decided), the vault keeps that run's bearers AND its
+  index in the process's memory (`MemoryStore` in `src/vault.rs`). A sign-in
+  works and lasts until the app quits; nothing of it is written to disk, and
+  the next run starts on `/login`. The memory store answers as the keychain
+  does and is the only copy in the same way, so the synchronous reads stay
+  truthful. A keychain that answers at start and fails later in the run is
+  not swapped out: that write is not stored, as above.
 - **The page's way in** (`src/vault_endpoint.rs`): `window.mantleDesktop`
   (main frame, UI origin only) has Electron's synchronous `tokenVault`:
   `get`, `set`, `clear`, `getFor`, `setFor`, `clearFor`, `adopt`,
@@ -52,16 +61,25 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   label, never from the body. The work runs off the main thread (the
   scheme's asynchronous handler, then `spawn_blocking`), one call at a time
   under one lock per process, and nothing that shows UI runs under it.
-- **The keychain notice.** When there is no keychain at all, a notice says
-  so at start; when the keychain first fails during a run, it says so then.
-  Once per run, NON-modal (a native panel or GTK dialog that nothing waits
-  on), shown after the vault's lock is released.
+- **The keychain notice.** With no keychain, a notice says at start that
+  logins last until you quit (`connect/notice.html`); when the keychain
+  first fails during a run, it says so then (`connect/notice-failed.html`).
+  Once per run, whichever comes first. It is a small window of the app's
+  own on both platforms, label `notice`, on the connect scheme: NOT modal
+  (nothing waits on it, no nested run loop), fixed text, no script (its CSP
+  allows none), no command granted. Its OK is a form to `/notice-ok`, which
+  the window's navigation handler turns into a close; `window.close()` would
+  do nothing in wry on macOS and on Linux would take the webview out of its
+  window. The window is built on the main thread, queued there from a task
+  after setup, and never from under the vault's lock. The only native dialog
+  left is the modal alert for a start that cannot go on.
 - **Capabilities** (`capabilities/`): the profile commands, granted to the
   `connect` window for the app's own page only. No other window gets any
   command. A test runs them, and the vault endpoint's refusals, on Tauri's
   mock runtime.
 - **The connect window** (`connect/`) is a small plain page on a second
-  scheme, `mantle-connect://localhost`.
+  scheme, `mantle-connect://localhost`. That scheme serves each file to its
+  own window only: the connect page to `connect`, the notice to `notice`.
 
 ## Toolchain and pins
 
@@ -72,7 +90,7 @@ exactly (`=x.y.z`) and `Cargo.lock` is committed: tauri 2.12.5, tauri-build
 1.0.1, apple-native-keyring-store 1.0.2 (macOS), zbus-secret-service-keyring-store
 1.0.1 (Linux), and for the native alert and the macOS version check the
 versions wry already uses: objc2 0.6.5, objc2-foundation 0.3.2,
-objc2-app-kit 0.3.2 (macOS), gtk 0.18.2 (Linux).
+objc2-app-kit 0.3.2 with NSAlert only (macOS), gtk 0.18.2 (Linux).
 
 The shell's own two requests (the appearance for env.js, the version probe)
 check TLS against the OS trust store through ureq's `platform-verifier`
@@ -108,7 +126,10 @@ failure to stderr. Never a token.
 
 The Linux image (`docker/linux.Dockerfile`) installs rustup-init at a pinned
 version with its sha256 checked, and runs the scripted sign-in test
-(`e2e/`), which reads the vault through the page's own `tokenVault`.
+(`e2e/`), which reads the vault through the page's own `tokenVault`. Its
+last step runs with no Secret Service: the notice shows once and its OK
+closes it, a sign-in works for that run with the bearer in no file and not
+in localStorage, and the next run is back on `/login`.
 
 ## What T1 leaves for T2
 
