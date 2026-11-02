@@ -64,31 +64,40 @@ function clientTierImports(extra = []) {
 
 const COOKIE_MESSAGE = 'Keep UI state in @mantle/web-ui/ui-prefs, not in cookies.';
 
-/** The selectors for every way the UI could reach its origin's cookies. */
+/**
+ * The selectors for every way the UI could reach its origin's cookies. No
+ * client code but ui-prefs.ts touches a `cookie` property, so the rule asks
+ * nothing of the object: whatever it is (`document`, `doc`, a cast, a
+ * non-null assertion, an alias, `window['document']`), reading or writing its
+ * `cookie` is refused, and so is the property named to Reflect or to
+ * Object.getOwnPropertyDescriptor (the getter off Document.prototype).
+ */
 function cookieReaches() {
-  // Something that names a document: `document`, `doc`, or a property of
-  // that name (`window.document`, `frame.contentDocument`, `el.ownerDocument`).
-  const docName = '/^(document|doc|contentDocument|ownerDocument)$/';
-  const docs = [`[object.name=${docName}]`, `[object.property.name=${docName}]`];
   const cookieKey = [
     "[computed=false][property.name='cookie']",
     "[computed=true][property.value='cookie']",
     "[computed=true][property.quasis.length=1][property.quasis.0.value.cooked='cookie']",
   ];
-  const members = docs.flatMap((d) => cookieKey.map((k) => `MemberExpression${d}${k}`));
-  const destructured = [
-    // const { cookie } = document; ({ cookie } = window.document)
-    ...docs.flatMap((d) => [
-      `VariableDeclarator${d.replace('[object.', '[init.')} > ObjectPattern > Property[key.name='cookie']`,
-      `AssignmentExpression${d.replace('[object.', '[right.')} > ObjectPattern > Property[key.name='cookie']`,
-    ]),
-    // const { document: { cookie } } = window
-    `Property[key.name=${docName}] > ObjectPattern > Property[key.name='cookie']`,
+  const members = cookieKey.map((k) => `MemberExpression${k}`);
+  // The same key, its name in a string or a one-part template literal.
+  const named = [
+    "Literal[value='cookie']",
+    "TemplateLiteral[quasis.length=1][quasis.0.value.cooked='cookie']",
   ];
+  const calls = [
+    // Reflect.get(document, 'cookie'), Reflect.getOwnPropertyDescriptor(...)
+    "CallExpression[callee.type='MemberExpression'][callee.object.name='Reflect']",
+    // Object.getOwnPropertyDescriptor(Document.prototype, 'cookie')
+    "CallExpression[callee.type='MemberExpression'][callee.object.name='Object'][callee.property.name='getOwnPropertyDescriptor']",
+    // document.__lookupGetter__('cookie')
+    'CallExpression[callee.property.name=/^__lookup[GS]etter__$/]',
+  ].flatMap((call) => named.map((n) => `${call} > ${n}`));
+  // const { cookie } = document, ({ cookie } = d), const { document: { cookie } } = window
+  const destructured = ["ObjectPattern > Property[key.name='cookie']"];
   // window.cookieStore, globalThis.cookieStore (the bare global is
   // no-restricted-globals' job).
   const store = ["MemberExpression[property.name='cookieStore']"];
-  return [...members, ...destructured, ...store].map((selector) => ({
+  return [...members, ...calls, ...destructured, ...store].map((selector) => ({
     selector,
     message: COOKIE_MESSAGE,
   }));
@@ -322,9 +331,9 @@ export default tseslint.config(
     // every load. Its small preferences go through ui-prefs (localStorage),
     // the one file that still reads document.cookie, to move an older
     // build's values over. Every spelling of the same reach is refused:
-    // `document.cookie`, `window.document.cookie` (or globalThis, self, any
-    // object's), `document['cookie']`, `doc.cookie`, a destructured
-    // `{ cookie }`, and the Cookie Store API.
+    // any object's `.cookie` or `['cookie']`, a destructured `{ cookie }`,
+    // 'cookie' named to Reflect or Object.getOwnPropertyDescriptor, and the
+    // Cookie Store API.
     files: ['client/web/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
     ignores: ['packages/web-ui/src/ui-prefs.ts', '**/*.test.ts', '**/*.test.tsx'],
     rules: {
