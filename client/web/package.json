@@ -1,6 +1,6 @@
 {
   "name": "@mantle/client-web",
-  "version": "0.8.10",
+  "version": "0.8.11",
   "private": true,
   "description": "Mantle owner UI — the zero-secret client Next app. Talks to the server origin via bearer + CORS; holds no SESSION_SECRET, no DB, no server packages.",
   "scripts": {
@@ -10,7 +10,7 @@
     "dev": "next dev",
     "prebuild": "pnpm run excalidraw-assets && pnpm run boot",
     "build": "next build",
-        "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
