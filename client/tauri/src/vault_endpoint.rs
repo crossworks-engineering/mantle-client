@@ -10,8 +10,11 @@
 //!   - the method is POST, with `X-Mantle-Vault: 1`;
 //!   - `Origin` is exactly `mantle-ui://localhost` (WebKit sets it per
 //!     requesting document: a brain frame sends the brain's origin, a
-//!     sandboxed frame `null`, and neither can send a custom header across
-//!     origins without a preflight, which is refused here too);
+//!     sandboxed frame `null`). Do not count on a CORS preflight to stop
+//!     them first: WebKitGTK sends that POST, custom header and all, to
+//!     this scheme with NO preflight (the e2e test, step g, sees it arrive
+//!     as a POST), so this exact Origin check is the only refusal there
+//!     (a preflight, where one is sent, is refused too: it is no POST);
 //!   - the requesting webview's label is a brain window the shell opened,
 //!     for a brain it still lists;
 //!   - that window's current URL is on the UI origin.

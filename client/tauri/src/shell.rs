@@ -111,8 +111,10 @@ impl Shell {
         *self.front.lock().unwrap_or_else(|e| e.into_inner()) = id;
     }
 
-    /// Ids whose data store could not be removed yet (still in use): retried
-    /// at the next start, in the background (windows.rs, retry_removals).
+    /// Ids of removed brains not fully gone yet: a data store still in use,
+    /// or logins the keychain would not delete (Vault::remove_profile).
+    /// Both are retried at the next start, in the background (windows.rs,
+    /// retry_removals).
     fn removals_path(&self) -> PathBuf {
         self.data_dir.join("pending-removals.json")
     }
