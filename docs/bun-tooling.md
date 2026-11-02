@@ -129,12 +129,26 @@ The first `verify` of a fresh copy takes longer on both (61 s and 32 s):
 tsc's incremental cache was warm for the runs above.
 
 **`next dev` on Bun is slower in a browser.** It starts faster and renders
-each page as fast or faster, but it serves the page's JavaScript about ten
-times slower: the 45 files of `/dashboard` (15 MB) take 0.79 s on Bun and
-0.08 s on Node. That is Bun's `node:http` under Next's dev server, a known Bun
-gap, and it is why the workspace specs take longer on Bun. So `pnpm dev`
+each page as fast or faster. But every request waits about 10 ms for its
+first byte on Bun, and about 1 ms on Node, whatever the file (a 1.2 MB chunk
+or `favicon.ico`). The 45 files of `/dashboard` (15 MB) then take 0.79 s on
+Bun and 0.08 s on Node, and the workspace specs take longer. So `pnpm dev`
 stays the one to use day to day.
 
+The wait is inside Next's dev server when it runs on Bun, not in Bun's
+`node:http`. On the same workstation:
+
+| Test                                                          | Node  | Bun   |
+| ------------------------------------------------------------- | ----- | ----- |
+| A plain `node:http` server sends one 15 MB file               | 4 ms  | 5 ms  |
+| The same, as a file stream                                    | 15 ms | 15 ms |
+| The box host (`client/host`), all `/dashboard` files (2.3 MB) | 50 ms | 50 ms |
+| `next dev`, first byte of any file                            | 1 ms  | 10 ms |
+
+Timers, `fs` calls and small HTTP requests are as fast on Bun as on Node. The
+exact cause inside Next's dev path is not found. The box host, which runs on
+Bun in the client image, is not affected.
+
 `member-shell.spec.ts:111` is a known flake on main (fixed apart from this
-work). It failed in 2 of 3 Bun runs and 1 of 3 Node runs; with the fix
-applied, Bun passed 30 of 30.
+work). It failed in 5 of 7 Bun runs and 1 of 7 Node runs; with the fix
+applied, both passed 30 of 30.
