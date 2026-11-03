@@ -272,7 +272,7 @@ pub fn open_connect<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         CONNECT_LABEL,
         WebviewUrl::CustomProtocol(connect_root()),
     )
-    .title("MantleOS Desktop")
+    .title("MantleOS")
     .inner_size(480.0, 640.0)
     .resizable(false)
     // The connect page keeps nothing, and shares no storage with a brain.
@@ -374,7 +374,7 @@ pub fn focus_or_open<R: Runtime>(app: &AppHandle<R>) {
         None => open_connect(app),
     };
     if let Err(error) = opened {
-        crate::dialog::alert("MantleOS Desktop", &error);
+        crate::dialog::alert("MantleOS", &error);
         let _ = open_connect(app);
     }
 }
@@ -433,7 +433,7 @@ pub fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
         return;
     };
     if let Err(error) = result {
-        crate::dialog::alert("MantleOS Desktop", &error);
+        crate::dialog::alert("MantleOS", &error);
     }
 }
 

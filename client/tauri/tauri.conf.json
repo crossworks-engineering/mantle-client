@@ -1,5 +1,5 @@
 {
-  "productName": "MantleOS Desktop",
+  "productName": "MantleOS",
   "identifier": "engineering.crossworks.mantleos-desktop",
   "build": {
     "frontendDist": "../web/out"
@@ -14,7 +14,7 @@
     }
   },
   "bundle": {
-    "icon": ["icons/icon.png"],
+    "icon": ["icons/icon.png", "icons/icon.icns"],
     "macOS": {
       "minimumSystemVersion": "14.0"
     }

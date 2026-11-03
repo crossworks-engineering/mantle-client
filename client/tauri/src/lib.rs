@@ -1,4 +1,4 @@
-//! MantleOS Desktop on Tauri (T1): the static owner UI, one window per
+//! MantleOS on Tauri (T1): the static owner UI, one window per
 //! brain, each on its own WebKit data store, logins in the OS keychain.
 //!
 //!   fence.rs     where a window may go; which addresses a brain may have
@@ -89,7 +89,7 @@ fn setup<R: Runtime>(
     #[cfg(target_os = "macos")]
     if dialog::macos_major() < 14 {
         dialog::alert(
-            "MantleOS Desktop needs macOS 14 or later",
+            "MantleOS needs macOS 14 or later",
             "This version of macOS cannot keep each brain's window apart from the others. Update macOS to Sonoma (14) or later.",
         );
         std::process::exit(1);
@@ -121,7 +121,7 @@ fn setup<R: Runtime>(
     let shell = match shell {
         Ok(shell) => shell,
         Err(error) => {
-            dialog::alert("MantleOS Desktop cannot start", &error);
+            dialog::alert("MantleOS cannot start", &error);
             std::process::exit(1);
         }
     };
@@ -181,7 +181,7 @@ pub fn run() {
         })
         .setup(move |app| setup(app, ui))
         .build(context)
-        .expect("MantleOS Desktop failed to start");
+        .expect("MantleOS failed to start");
 
     app.run(|app, event| match event {
         // macOS keeps the app running with no window, as Electron's shell
