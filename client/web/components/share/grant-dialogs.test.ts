@@ -105,7 +105,7 @@ describe('a folder home move with what is inside it', () => {
 
   it('calls again while items remain, and sums the answers', async () => {
     api.answers = [part(200, 200, 3), part(4, 3, 0, [{ id: 'x', error: 'no' }])];
-    const res = await sendMove(['f'], { toWorkspaceId: 't' }, 'h', true);
+    const res = await sendMove(['f'], { toWorkspaceId: 't' }, 'h', { fromWorkspaceId: 'h' });
     expect(res.moved).toBe(204);
     expect(res.failed).toEqual([{ id: 'x', error: 'no' }]);
     expect(res.contents?.remaining).toBe(0);
@@ -116,14 +116,26 @@ describe('a folder home move with what is inside it', () => {
       confirm: true,
       keepReadableIn: 'h',
       withContents: true,
+      fromWorkspaceId: 'h',
     });
   });
 
   it('stops when a call moves nothing', async () => {
     api.answers = [part(0, 0, 5, [{ id: 'y', error: 'busy' }])];
-    const res = await sendMove(['f'], { toWorkspaceId: 't' }, null, true);
+    const res = await sendMove(['f'], { toWorkspaceId: 't' }, null, { fromWorkspaceId: 'h' });
     expect(res.moved).toBe(0);
+    expect(res.contents?.remaining).toBe(5);
     expect(api.bodies).toHaveLength(1);
+  });
+
+  it('an item that fails in two calls is counted once', async () => {
+    api.answers = [
+      part(199, 199, 2, [{ id: 'z', error: 'first' }]),
+      part(2, 1, 0, [{ id: 'z', error: 'again' }]),
+    ];
+    const res = await sendMove(['f'], { toWorkspaceId: 't' }, null, { fromWorkspaceId: 'h' });
+    expect(res.failed).toEqual([{ id: 'z', error: 'again' }]);
+    expect(res.moved).toBe(201);
   });
 
   it('without the tick: one call, no withContents', async () => {
@@ -135,7 +147,15 @@ describe('a folder home move with what is inside it', () => {
   it('says what stays where it is', () => {
     const html = renderToStaticMarkup(
       createElement(ContentsLines, {
-        contents: { move: 5, apps: 0, otherHome: 2, notAllowed: 0, hidden: 1, calls: 1 },
+        contents: {
+          move: 5,
+          apps: 0,
+          otherHome: 2,
+          notAllowed: 0,
+          removedHere: 0,
+          hidden: 1,
+          calls: 1,
+        },
       }),
     );
     expect(html).toContain(

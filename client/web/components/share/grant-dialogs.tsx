@@ -21,6 +21,7 @@ import {
   appMoveLines,
   contentsLeftText,
   contentsLines,
+  contentsUnfinishedText,
   keptLine,
   grantErrorText,
   keepReadableLabel,
@@ -114,24 +115,36 @@ export type MoveTarget = {
   onMoved?: () => void;
 };
 
-/** POST /api/grants/move/preview. `withContents`: a folder's home move
- *  with the items inside it (the answer counts them). */
-export const fetchMovePreview = (nodeIds: string[], to: MoveTo, withContents = false) =>
+/** A folder's home move with the items inside it: the folder's home as
+ *  the dialog saw it (the brain refuses once it has another). */
+export type WithContents = { fromWorkspaceId: string };
+
+const contentsBody = (c: WithContents | null) =>
+  c ? { withContents: true, fromWorkspaceId: c.fromWorkspaceId } : {};
+
+/** POST /api/grants/move/preview. With `contents` the answer counts the
+ *  items inside the folder. */
+export const fetchMovePreview = (
+  nodeIds: string[],
+  to: MoveTo,
+  contents: WithContents | null = null,
+) =>
   apiSend<MovePreview>('/api/grants/move/preview', 'POST', {
     nodeIds,
     ...to,
-    ...(withContents ? { withContents: true } : {}),
+    ...contentsBody(contents),
   });
 
 /** POST /api/grants/move: `{ moved, failed }`. The dialog showed what
- *  changes, so it goes with `confirm`. With `withContents` the brain moves
- *  at most 200 items per call: it is called again while items remain and
- *  the last call moved some, and the answers are summed. */
+ *  changes, so it goes with `confirm`. With `contents` the brain moves at
+ *  most 200 items per call: it is called again while items remain and the
+ *  last call moved some, and the answers are summed (an item that failed
+ *  in two calls counted once, with its last error). */
 export async function sendMove(
   nodeIds: string[],
   to: MoveTo,
   keepReadableIn: string | null,
-  withContents = false,
+  contents: WithContents | null = null,
 ): Promise<MoveResult> {
   const once = () =>
     apiSend<MoveResult>('/api/grants/move', 'POST', {
@@ -139,17 +152,17 @@ export async function sendMove(
       ...to,
       confirm: true,
       ...(keepReadableIn ? { keepReadableIn } : {}),
-      ...(withContents ? { withContents: true } : {}),
+      ...contentsBody(contents),
     });
   let res = await once();
-  const sum: MoveResult = { moved: res.moved, failed: [...res.failed], contents: res.contents };
-  while (withContents && (res.contents?.remaining ?? 0) > 0 && res.moved > 0) {
+  let moved = res.moved;
+  const failed = new Map(res.failed.map((f) => [f.id, f]));
+  while (contents && (res.contents?.remaining ?? 0) > 0 && res.moved > 0) {
     res = await once();
-    sum.moved += res.moved;
-    sum.failed.push(...res.failed);
-    sum.contents = res.contents;
+    moved += res.moved;
+    for (const f of res.failed) failed.set(f.id, f);
   }
-  return sum;
+  return { moved, failed: [...failed.values()], contents: res.contents };
 }
 
 /**
@@ -177,7 +190,7 @@ export function MoveGrantsDialog({
   const [busy, setBusy] = useState(false);
   // A folder's home move: the tick, and the count of the items inside (kept
   // from the answer that had it while the tick is off).
-  const offersContents = !!target?.folder && !!target && 'toWorkspaceId' in target.to;
+  const offersContents = !!target?.folder && !!target.oldHome && 'toWorkspaceId' in target.to;
   const [withContents, setWithContents] = useState(true);
   const [inside, setInside] = useState<MovePreview['contents'] | null>(null);
 
@@ -188,6 +201,9 @@ export function MoveGrantsDialog({
   }, [target]);
 
   const contents = offersContents && withContents;
+  const fromHome = target?.oldHome?.wsId;
+  const contentsArg = (): WithContents | null =>
+    contents && fromHome ? { fromWorkspaceId: fromHome } : null;
   useEffect(() => {
     if (!target) return;
     if (given) {
@@ -196,7 +212,8 @@ export function MoveGrantsDialog({
     }
     setLoaded(null);
     let live = true;
-    fetchMovePreview(target.nodeIds, target.to, contents).then(
+    const arg = contents && fromHome ? { fromWorkspaceId: fromHome } : null;
+    fetchMovePreview(target.nodeIds, target.to, arg).then(
       (p) => {
         if (!live) return;
         if (p.contents) setInside(p.contents);
@@ -211,7 +228,7 @@ export function MoveGrantsDialog({
     return () => {
       live = false;
     };
-  }, [target, given, contents, toast, onClose]);
+  }, [target, given, contents, fromHome, toast, onClose]);
 
   const preview = loaded?.target === target && loaded.contents === contents ? loaded.preview : null;
 
@@ -223,7 +240,7 @@ export function MoveGrantsDialog({
         target.nodeIds,
         target.to,
         keep && target.oldHome ? target.oldHome.wsId : null,
-        contents,
+        contentsArg(),
       );
       if (res?.failed?.length) {
         toast.error(
@@ -232,10 +249,14 @@ export function MoveGrantsDialog({
       }
       const left = contentsLeftText(res);
       if (left) toast.info(left);
+      const unfinished = contentsUnfinishedText(res);
+      if (unfinished) toast.error(unfinished);
       target.onMoved?.();
       onClose();
     } catch (e) {
       toast.error(grantErrorText(e, 'Could not move it'));
+      // A folder's move with its contents may have moved some before.
+      if (contents) target.onMoved?.();
     } finally {
       setBusy(false);
     }

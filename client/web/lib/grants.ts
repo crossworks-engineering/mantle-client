@@ -430,6 +430,11 @@ export function contentsLines(c: GrantMoveContentsPreview): string[] {
       `${itemCount(c.notAllowed)} inside cannot live in that workspace and ${c.notAllowed === 1 ? 'stays' : 'stay'} in the old home.`,
     );
   }
+  if (c.removedHere) {
+    out.push(
+      `${itemCount(c.removedHere)} inside ${c.removedHere === 1 ? 'was' : 'were'} removed from that workspace by hand, or ${c.removedHere === 1 ? 'is' : 'are'} in a folder you cannot open, and ${c.removedHere === 1 ? 'stays' : 'stay'} in the old home.`,
+    );
+  }
   if (c.apps) {
     out.push(
       c.apps === 1
@@ -445,7 +450,15 @@ export function contentsLines(c: GrantMoveContentsPreview): string[] {
 export function contentsLeftText(res: Pick<GrantMoveResponse, 'contents'>): string | null {
   const n = res.contents?.leftAloneCount ?? 0;
   if (!n) return null;
-  return `${itemCount(n)} inside stayed where ${n === 1 ? 'it was' : 'they were'}: another home, or a kind that workspace cannot hold.`;
+  return `${itemCount(n)} inside stayed where ${n === 1 ? 'it was' : 'they were'}.`;
+}
+
+/** The note when a folder's move with its contents stopped before the
+ *  end: the folder has not moved. Or null. */
+export function contentsUnfinishedText(res: Pick<GrantMoveResponse, 'contents'>): string | null {
+  const n = res.contents?.remaining ?? 0;
+  if (!n) return null;
+  return `The folder has not moved yet: ${itemCount(n)} inside still ${n === 1 ? 'waits' : 'wait'}. Try the move again.`;
 }
 
 // ── Errors ──────────────────────────────────────────────────────────────

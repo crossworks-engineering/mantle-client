@@ -9,6 +9,7 @@ import {
   appHolderLines,
   contentsLeftText,
   contentsLines,
+  contentsUnfinishedText,
   withContentsLabel,
   chipsOf,
   folderConfirmText,
@@ -274,16 +275,27 @@ describe('move', () => {
 });
 
 describe('a folder home move with what is inside it', () => {
-  const c = { move: 203, apps: 0, otherHome: 0, notAllowed: 0, hidden: 0, calls: 2 };
+  const c = {
+    move: 203,
+    apps: 0,
+    otherHome: 0,
+    notAllowed: 0,
+    removedHere: 0,
+    hidden: 0,
+    calls: 2,
+  };
   it('the tick counts the items that move', () => {
     expect(withContentsLabel(203)).toBe('Also move the 203 items inside');
     expect(withContentsLabel(1)).toBe('Also move the 1 item inside');
   });
   it('says what stays and the apps that go along', () => {
     expect(contentsLines(c)).toEqual([]);
-    expect(contentsLines({ ...c, otherHome: 3, hidden: 1, notAllowed: 1, apps: 2 })).toEqual([
+    expect(
+      contentsLines({ ...c, otherHome: 3, hidden: 1, notAllowed: 1, removedHere: 2, apps: 2 }),
+    ).toEqual([
       '3 items inside have another home and stay there, 1 of them you cannot open.',
       '1 item inside cannot live in that workspace and stays in the old home.',
+      '2 items inside were removed from that workspace by hand, or are in a folder you cannot open, and stay in the old home.',
       '2 apps inside move too: the new home sees their data.',
     ]);
     expect(contentsLines({ ...c, otherHome: 1, apps: 1 })).toEqual([
@@ -297,9 +309,13 @@ describe('a folder home move with what is inside it', () => {
       contents: { moved: 0, remaining: 0, leftAlone: [], leftAloneCount: n, hidden: 0 },
     });
     expect(contentsLeftText(res(0))).toBeNull();
-    expect(contentsLeftText(res(2))).toBe(
-      '2 items inside stayed where they were: another home, or a kind that workspace cannot hold.',
-    );
+    expect(contentsLeftText(res(2))).toBe('2 items inside stayed where they were.');
+    expect(contentsUnfinishedText(res(0))).toBeNull();
+    expect(
+      contentsUnfinishedText({
+        contents: { moved: 0, remaining: 3, leftAlone: [], leftAloneCount: 0, hidden: 0 },
+      }),
+    ).toBe('The folder has not moved yet: 3 items inside still wait. Try the move again.');
   });
 });
 
