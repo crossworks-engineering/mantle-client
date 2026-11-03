@@ -12,6 +12,32 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.5: new help topics, from the 0.500.13 contract
+
+- **Changed:** the client now uses the brain's 0.500.13 contract packages
+  (`@crossworks/share-ui`, `client-types`, `content-core` and
+  `voice-client`). Before, it used 0.400.56.
+- **Added:** the help that opens from the `?` button has 6 new topics:
+  Chats, Workspaces, Shared links, Telegram, Sessions and Changelog. New
+  screens, such as `/chats` and `/changelog`, open the right topic. 42
+  older topics were brought up to date (brain v0.500.5).
+
+## v0.9.4: the decider shows its failures
+
+- **Added:** the decider worker screen shows the last failure: when, which
+  model, and why, and whether it is still failing (brain v0.500.7).
+- **Changed:** the Test button sends one small real request, the same way a
+  turn does. It only runs when you click it.
+- **Fixed:** the privacy and zero-data-retention settings save together.
+  The alert banner and card know the decision and model-policy alerts. An
+  alert of an unknown kind no longer breaks the banner. Try again shows only
+  for embedding and extraction.
+
+## v0.9.3: docs
+
+- **Changed:** the READMEs and docs describe the static UI, the Tauri app
+  and Chats as they are now. No code changed.
+
 ## v0.9.2: the Tauri app is named MantleOS
 
 - **Changed:** the Tauri desktop app is named MantleOS: the product name,
