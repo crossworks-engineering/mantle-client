@@ -6,6 +6,7 @@
  * to the client now that the screen fetches.
  */
 import type { AiWorkerKind } from '@mantle/client-types';
+import { deciderPrivacyParams } from './decider';
 
 function str(v: FormDataEntryValue | null): string | undefined {
   if (v == null) return undefined;
@@ -117,7 +118,10 @@ export function paramsFromForm(kind: AiWorkerKind, fd: FormData): Record<string,
       }
       return {
         uses,
-        zdr: fd.get('zdr') === 'on',
+        // Both privacy keys, in step: the brain reads the stricter of the
+        // two, so writing only `zdr` would let an older `privacy: 'zdr'`
+        // keep an untick from taking effect.
+        ...deciderPrivacyParams(fd.get('zdr') === 'on'),
         timeout_ms: num(fd.get('timeout_ms')),
         defer_below: num(fd.get('defer_below')),
         act_alone_at: num(fd.get('act_alone_at')),

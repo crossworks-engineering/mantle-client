@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Embeddings or extraction failing (no credits, a refused key, a long
- * outage): a red notice at the top of the rail, above the "Needs you" one,
+ * Embeddings, extraction or the decider failing (no credits, a refused
+ * key, a long outage), or the box policy blocking a model: a red notice at the top of the rail, above the "Needs you" one,
  * for admins only. Live through GET /api/embedding/recover and the brain's
  * live event when an outage opens or closes. Renders NOTHING while all
  * works. Clicking opens the settings page with the fix. In the collapsed
@@ -12,7 +12,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
-import { alertHeadline, alertHref, alertImpact, alertTitle } from '@/lib/provider-alerts';
+import { alertHeadline, alertHref, alertImpact, alertsTitle } from '@/lib/provider-alerts';
 import { freshKeys } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
 import { useProviderAlertsState } from './use-provider-alerts';
@@ -34,7 +34,7 @@ export function ProviderAlertBanner({ onNavigate }: { onNavigate?: () => void })
   }, [keys, loaded]);
   const first = alerts[0];
   if (!first) return null;
-  const label = alerts.length > 1 ? 'Embeddings and extraction are failing' : alertTitle(first);
+  const label = alertsTitle(alerts);
   const detail = alerts.map((a) => `${alertHeadline(a)} ${alertImpact(a)}`).join('\n');
   return (
     <div className="px-3 pt-3 group-data-[nav-collapsed=true]/shell:px-2">

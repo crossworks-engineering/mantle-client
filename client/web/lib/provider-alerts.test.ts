@@ -4,6 +4,9 @@ import {
   alertHeadline,
   alertHref,
   alertImpact,
+  alertProbes,
+  alertTitle,
+  alertsTitle,
   nextTryText,
   providerAlertsOf,
   type ProviderAlert,
@@ -51,6 +54,32 @@ describe('provider alert words (the 2026-10-04 no-credits case)', () => {
     expect(alertHref(outage({ subject: 'extraction' }))).toBe('/settings/ai-workers');
   });
 
+  it('names the decider and the box policy, with their own fix and no "Try again"', () => {
+    const d = outage({
+      subject: 'decision',
+      code: 'privacy_route',
+      waiting: null,
+      paused: false,
+      nextProbeAt: null,
+    });
+    expect(alertHeadline(d, NOW)).toMatch(/^The decider is failing since /);
+    expect(alertImpact(d)).toMatch(/run without the decider/);
+    expect(alertFix(d)).toMatch(/lower its privacy level.*never lowers it by itself.*press Test/);
+    expect(alertFix({ ...d, code: 'timeout' })).toMatch(/Raise the decider's timeout/);
+    expect(alertHref(d)).toBe('/settings/ai-workers');
+    expect(alertProbes(d)).toBe(false);
+    const p = outage({ subject: 'model_policy', code: 'policy', waiting: null });
+    expect(alertTitle(p)).toBe('The box policy blocked a model');
+    expect(alertProbes(p)).toBe(false);
+    expect(alertProbes(outage())).toBe(true);
+  });
+
+  it('a subject this client does not know does not break the words', () => {
+    const u = outage({ subject: 'speech' as never, waiting: null });
+    expect(alertTitle(u)).toBe('A model provider is failing');
+    expect(alertImpact(u)).toBe('');
+  });
+
   it('says when the brain tries again', () => {
     expect(nextTryText(outage(), NOW)).toBe('The brain tries again in 20 min.');
     expect(nextTryText(outage({ nextProbeAt: null }), NOW)).toBeNull();
@@ -63,10 +92,32 @@ describe('provider alerts on GET /api/embedding/recover', () => {
     expect(providerAlertsOf({ alerts: [a] })).toEqual([a]);
   });
 
+  it('adds otherAlerts, the subjects an older client does not know', () => {
+    const a = outage();
+    const d = outage({ subject: 'decision', code: 'auth' });
+    expect(providerAlertsOf({ alerts: [a], otherAlerts: [d] })).toEqual([a, d]);
+    expect(providerAlertsOf({ alerts: [], otherAlerts: [d] })).toEqual([d]);
+    // An older brain sends no otherAlerts.
+    expect(providerAlertsOf({ alerts: [a], otherAlerts: 'x' })).toEqual([a]);
+  });
+
   it('a brain before 0230, or no answer, sends none', () => {
     expect(providerAlertsOf({})).toEqual([]);
     expect(providerAlertsOf({ alerts: 'x' })).toEqual([]);
     expect(providerAlertsOf(null)).toEqual([]);
     expect(providerAlertsOf(undefined)).toEqual([]);
+  });
+});
+
+describe('the rail label for several outages', () => {
+  it('names one subject, the embedding pair, or says something generic', () => {
+    const e = outage({ subject: 'embedding' });
+    const x = outage({ subject: 'extraction' });
+    const d = outage({ subject: 'decision' });
+    expect(alertsTitle([])).toBe('');
+    expect(alertsTitle([d])).toBe('The decider is failing');
+    expect(alertsTitle([e, x])).toBe('Embeddings and extraction are failing');
+    expect(alertsTitle([d, e])).toBe('Several model calls are failing');
+    expect(alertsTitle([d, e, x])).toBe('Several model calls are failing');
   });
 });

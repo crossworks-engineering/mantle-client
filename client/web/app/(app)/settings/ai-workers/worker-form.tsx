@@ -50,6 +50,7 @@ import { ChatTestButton } from '@/components/settings/chat-test-button';
 import { VisionTestButton } from './vision-test-button';
 import { DocumentTestButton } from './document-test-button';
 import { ImageGenTestButton } from './image-gen-test-button';
+import { DeciderLastFailure } from './decider-last-failure';
 import { DecisionTestButton } from './decision-test-button';
 import { DeciderFields } from './worker-fields-decider';
 import { SttFields, TtsFields } from './worker-fields-speech';
@@ -902,10 +903,12 @@ export function WorkerForm({
       {mode === 'edit' && worker && kind === 'decider' && (
         <section className="space-y-2 border-t border-border pt-6">
           <h3 className="text-sm font-semibold">Test a decision</h3>
+          <DeciderLastFailure model={worker.model} />
           <p className="text-xs text-muted-foreground">
-            Sends one sample message through this worker's adapter ({provider}) with three fixed
-            questions (which team, how urgent, is it a bug). Works while every use is still off — it
-            checks the key, the model and the endpoint.
+            Sends one sample message to the saved model ({provider}) with three fixed questions
+            (which team, how urgent, is it a bug), as the brain sends it: the saved privacy level,
+            timeout and the model&apos;s request limits. Save first to test a change. Works while
+            every use is still off: it checks the key, the model and the route.
           </p>
           <DecisionTestButton workerId={worker.id} />
         </section>

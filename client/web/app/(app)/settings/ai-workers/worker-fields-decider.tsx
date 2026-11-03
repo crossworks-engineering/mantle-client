@@ -13,6 +13,7 @@ import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { Field, FieldLabel } from '@mantle/web-ui/ui/field';
 import { SelectItem } from '@mantle/web-ui/ui/select';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
+import { deciderPrivacyOf } from '@/lib/decider';
 import { FormSelect } from './worker-form-select';
 
 /** The uses the server knows (mantle `DecisionUse`). Order = display order.
@@ -124,9 +125,12 @@ export function DeciderFields({ params }: { params: Record<string, unknown> }) {
         <code>decide_*</code>) and nothing else changes. Untick a use to turn it off.
       </p>
       <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
-        <strong>Privacy:</strong> the state sent to the decider leaves this box (OpenRouter →
-        TypeSafe). Zero data retention is requested on every call. Keep the worker off on a brain
-        whose owner has not opted in.
+        <strong>Privacy:</strong> the state sent to the decider leaves this box (OpenRouter → the
+        model&apos;s provider). Every call asks that the data is not used for training. With the box
+        below ticked (the default) it also asks for zero data retention; unticked, the provider may
+        keep the data for a time. A model with no zero-retention route fails under the default, and
+        the brain never lowers the level by itself: you decide. Keep the worker off on a brain whose
+        owner has not opted in.
       </p>
 
       <div className="space-y-3">
@@ -254,7 +258,7 @@ export function DeciderFields({ params }: { params: Record<string, unknown> }) {
               type="number"
               step="100"
               min="200"
-              max="10000"
+              max="5000"
               defaultValue={(params.timeout_ms as number) ?? 1500}
               aria-describedby={hintId('timeout_ms')}
             />
@@ -263,7 +267,7 @@ export function DeciderFields({ params }: { params: Record<string, unknown> }) {
             </FieldHint>
           </Field>
           <Field orientation="horizontal" className="self-end">
-            <Checkbox id="zdr" name="zdr" defaultChecked={params.zdr !== false} />
+            <Checkbox id="zdr" name="zdr" defaultChecked={deciderPrivacyOf(params) === 'zdr'} />
             <FieldLabel htmlFor="zdr" className="cursor-pointer font-normal">
               Request zero data retention on every call
             </FieldLabel>

@@ -268,6 +268,8 @@ export function AiWorkersClient() {
             <div className="space-y-4 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
               {/* The extraction model failing (no credits, a refused key). */}
               <ProviderAlertCard subject="extraction" />
+              {/* The decider failing (a refused key, no privacy route, too slow). */}
+              <ProviderAlertCard subject="decision" />
               {workersQuery.isPending ? (
                 <div className="flex flex-col items-center gap-3 px-4 py-10 text-sm text-muted-foreground">
                   <Spinner size={28} />

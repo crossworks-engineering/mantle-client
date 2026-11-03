@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { mergeParams, paramsFromForm } from './ai-worker-form';
+import { deciderPrivacyOf } from './decider';
 
 function form(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -37,6 +38,16 @@ describe('decider params from the form', () => {
     expect(uses(deciderForm('500'))!.pool).toBe(100);
     expect(uses(deciderForm('0'))!.pool).toBeUndefined();
     expect(uses(deciderForm(''))!.pool).toBeUndefined();
+  });
+
+  it('writes both privacy keys in step, so an untick wins over an old privacy key', () => {
+    const ticked = paramsFromForm('decider', deciderForm('50'));
+    expect(ticked).toMatchObject({ privacy: 'zdr', zdr: true });
+    const unticked = paramsFromForm('decider', form({ timeout_ms: '1500' }));
+    expect(unticked).toMatchObject({ privacy: 'no_training', zdr: false });
+    // A saved `privacy: 'zdr'` (written by the API) no longer outlives the untick.
+    const merged = mergeParams({ privacy: 'zdr', zdr: true }, unticked);
+    expect(deciderPrivacyOf(merged)).toBe('no_training');
   });
 
   it('a blank number field is unset, not 0', () => {
@@ -77,6 +88,7 @@ describe('mergeParams: a save keeps what the form does not show', () => {
         context_pruning: { enabled: false, mode: 'shadow', threshold: 1 },
         some_future_use: { enabled: true, mode: 'shadow', knob: 3 },
       },
+      privacy: 'zdr',
       zdr: true,
       timeout_ms: 1500,
       defer_below: 0.6,

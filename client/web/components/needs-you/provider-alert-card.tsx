@@ -7,7 +7,8 @@
  * the dashboard. Renders NOTHING while all works, for a member, and on a
  * brain before the alerts existed.
  *
- * "Try again" asks the brain to probe now (POST /api/embedding/recover).
+ * "Try again" (embeddings and extraction only: the brain probes no other
+ * subject) asks the brain to probe now (POST /api/embedding/recover).
  * When the provider works, the brain closes the alert, resumes indexing,
  * re-drives the failed jobs and sweeps the unindexed files by itself; the
  * live event (or the next read) then removes this card. No restart.
@@ -26,6 +27,7 @@ import {
   alertHeadline,
   alertHref,
   alertImpact,
+  alertProbes,
   nextTryText,
   type ProviderAlert,
 } from '@/lib/provider-alerts';
@@ -89,10 +91,12 @@ function OneAlert({ alert, showLink }: { alert: ProviderAlert; showLink: boolean
         {alertFix(alert)}
       </p>
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <Button size="sm" variant="outline" onClick={tryAgain} disabled={asking}>
-          <RotateCw className="size-3.5" />
-          Try again
-        </Button>
+        {alertProbes(alert) ? (
+          <Button size="sm" variant="outline" onClick={tryAgain} disabled={asking}>
+            <RotateCw className="size-3.5" />
+            Try again
+          </Button>
+        ) : null}
         {showLink ? (
           <Button size="sm" variant="ghost" asChild>
             <Link href={alertHref(alert)}>Fix it</Link>
