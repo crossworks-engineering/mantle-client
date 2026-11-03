@@ -1,4 +1,4 @@
-# MantleOS Desktop on Tauri (T1)
+# MantleOS on Tauri (T1)
 
 The desktop shell rebuilt on Tauri 2: the owner UI's static export
 (`client/web/out`) in one window per brain, each window on its own WebKit
@@ -57,7 +57,7 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   (main frame, UI origin only) has Electron's synchronous `tokenVault`:
   `get`, `set`, `clear`, `getFor`, `setFor`, `clearFor`, `adopt`,
   `keepOnly`. Each is a synchronous XMLHttpRequest, `POST
-  mantle-ui://localhost/_mantle/vault` with `X-Mantle-Vault: 1` and a JSON
+mantle-ui://localhost/_mantle/vault` with `X-Mantle-Vault: 1` and a JSON
   body `{op, ...args}`; the answer is `{"value": <string or null>}`. It is
   answered only for POST with that header, `Origin` exactly
   `mantle-ui://localhost`, from a `brain-<uuid>` window the shell opened for
@@ -135,11 +135,19 @@ The export must exist before any build (it is embedded, in dev builds too):
 pnpm -C client/web build
 cd client/tauri
 cargo test                  # unit tests, the shared host cases, the ACL test
-scripts/build.sh            # cargo build --release --features custom-protocol
-./target/release/mantle-desktop
+scripts/build.sh            # the release build (below)
 ```
 
-On macOS that is all. On Linux, install the WebKitGTK 4.1 and GTK 3
+On macOS, `scripts/build.sh` builds the app bundle with tauri-cli 2.12.4
+(`cargo install tauri-cli --version '=2.12.4' --locked`), unsigned:
+`open target/release/bundle/macos/MantleOS.app`. macOS takes the name in
+the menu bar and the Dock icon from the bundle; a bare binary shows its file
+name and no icon. `icons/icon.icns` is made from the Electron shell's
+1024-pixel icon (`client/desktop/build/icon.png`) with `sips` and
+`iconutil`.
+
+On Linux, `scripts/build.sh` builds the binary alone:
+`./target/release/mantle-desktop`. Install the WebKitGTK 4.1 and GTK 3
 development packages first (Debian and Ubuntu: `libwebkit2gtk-4.1-dev`,
 `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libssl-dev`,
 `build-essential`, `pkg-config`), and a Secret Service (GNOME Keyring,
@@ -178,7 +186,7 @@ in localStorage, and the next run is back on `/login`.
 - Notifications, the dock badge and `attention`: `notify` and `setBadge` are
   no-ops.
 - Downloads (WebKit cancels them without a download handler), the tray,
-  updates, signing and bundles (`tauri build`), "add a login for another
+  updates, signing, installers and the Linux bundles, "add a login for another
   brain" (`brains.openForLogin`), permission prompts (the microphone).
 - The sub-frame fence: wry asks the navigation handler for every frame
   without saying which, so the brain origin is allowed for its frames (the

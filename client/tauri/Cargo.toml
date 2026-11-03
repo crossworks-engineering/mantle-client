@@ -1,7 +1,7 @@
 [package]
 name = "mantle-desktop"
 version = "0.0.0"
-description = "MantleOS Desktop on Tauri: the static owner UI in one isolated window per brain."
+description = "MantleOS on Tauri: the static owner UI in one isolated window per brain."
 edition = "2021"
 rust-version = "1.99"
 publish = false
