@@ -4,8 +4,23 @@
  */
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { CREATE_HERE_TITLE, MOVE_TITLE, MovePreviewLines } from './grant-dialogs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  ContentsLines,
+  CREATE_HERE_TITLE,
+  MOVE_TITLE,
+  MovePreviewLines,
+  sendMove,
+} from './grant-dialogs';
+
+const api = vi.hoisted(() => ({ answers: [] as unknown[], bodies: [] as unknown[] }));
+vi.mock('@mantle/web-ui/api-fetch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  apiSend: vi.fn(async (_url: string, _method: string, body: unknown) => {
+    api.bodies.push(body);
+    return api.answers.shift();
+  }),
+}));
 
 const lines = (over: Record<string, unknown>) =>
   renderToStaticMarkup(
@@ -74,5 +89,57 @@ describe('MovePreviewLines, fix round 1', () => {
   it('a create in a folder has its own title, not Move', () => {
     expect(CREATE_HERE_TITLE).toBe('Create here and change who can see it?');
     expect(MOVE_TITLE).not.toBe(CREATE_HERE_TITLE);
+  });
+});
+
+describe('a folder home move with what is inside it', () => {
+  beforeEach(() => {
+    api.answers = [];
+    api.bodies = [];
+  });
+  const part = (moved: number, inside: number, remaining: number, failed: unknown[] = []) => ({
+    moved,
+    failed,
+    contents: { moved: inside, remaining, leftAlone: [], leftAloneCount: 1, hidden: 0 },
+  });
+
+  it('calls again while items remain, and sums the answers', async () => {
+    api.answers = [part(200, 200, 3), part(4, 3, 0, [{ id: 'x', error: 'no' }])];
+    const res = await sendMove(['f'], { toWorkspaceId: 't' }, 'h', true);
+    expect(res.moved).toBe(204);
+    expect(res.failed).toEqual([{ id: 'x', error: 'no' }]);
+    expect(res.contents?.remaining).toBe(0);
+    expect(api.bodies).toHaveLength(2);
+    expect(api.bodies[1]).toEqual({
+      nodeIds: ['f'],
+      toWorkspaceId: 't',
+      confirm: true,
+      keepReadableIn: 'h',
+      withContents: true,
+    });
+  });
+
+  it('stops when a call moves nothing', async () => {
+    api.answers = [part(0, 0, 5, [{ id: 'y', error: 'busy' }])];
+    const res = await sendMove(['f'], { toWorkspaceId: 't' }, null, true);
+    expect(res.moved).toBe(0);
+    expect(api.bodies).toHaveLength(1);
+  });
+
+  it('without the tick: one call, no withContents', async () => {
+    api.answers = [{ moved: 1, failed: [] }];
+    await sendMove(['f'], { toWorkspaceId: 't' }, null);
+    expect(api.bodies).toEqual([{ nodeIds: ['f'], toWorkspaceId: 't', confirm: true }]);
+  });
+
+  it('says what stays where it is', () => {
+    const html = renderToStaticMarkup(
+      createElement(ContentsLines, {
+        contents: { move: 5, apps: 0, otherHome: 2, notAllowed: 0, hidden: 1, calls: 1 },
+      }),
+    );
+    expect(html).toContain(
+      '2 items inside have another home and stay there, 1 of them you cannot open.',
+    );
   });
 });

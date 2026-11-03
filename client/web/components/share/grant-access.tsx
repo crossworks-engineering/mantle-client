@@ -445,6 +445,7 @@ function GrantAccessPanel({
       nodeIds: [nodeId],
       ...homeMoveWords(title, ws.name),
       to: { toWorkspaceId: ws.wsId },
+      folder: type === 'branch',
       oldHome:
         view?.home.name && view.home.wsId
           ? { wsId: view.home.wsId, name: view.home.name }

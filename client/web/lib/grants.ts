@@ -15,7 +15,9 @@
 import { ApiError } from '@mantle/web-ui/api-fetch';
 import type {
   GrantEmbedSkip,
+  GrantMoveContentsPreview,
   GrantMovePreviewResponse,
+  GrantMoveResponse,
   GrantPreviewResponse,
   GrantRow,
   GrantServedRef,
@@ -85,6 +87,9 @@ export type FolderGrantPreview = GrantPreviewResponse;
 
 /** POST /api/grants/move/preview. */
 export type MovePreview = GrantMovePreviewResponse;
+
+/** POST /api/grants/move. */
+export type MoveResult = GrantMoveResponse;
 
 export type MoveTo = { toFolderId: string | null } | { toWorkspaceId: string };
 
@@ -402,6 +407,46 @@ export const moveChangesAccess = (p: MovePreview) =>
   p.alsoVisibleTo.length > 0 || p.removedFrom.length > 0;
 
 export const keepReadableLabel = (name: string) => `Keep it readable in ${name}`;
+
+// ── A folder's home move with what is inside it ─────────────────────────
+
+const itemCount = (n: number) => (n === 1 ? '1 item' : `${n.toLocaleString('en')} items`);
+
+/** The tick on a folder's home move (on by default). */
+export const withContentsLabel = (n: number) => `Also move the ${itemCount(n)} inside`;
+
+/** What the move with the contents leaves where it is, and the apps it
+ *  takes along: one line each, or none. */
+export function contentsLines(c: GrantMoveContentsPreview): string[] {
+  const out: string[] = [];
+  if (c.otherHome) {
+    const hidden = c.hidden ? `, ${c.hidden.toLocaleString('en')} of them you cannot open` : '';
+    out.push(
+      `${itemCount(c.otherHome)} inside ${c.otherHome === 1 ? 'has' : 'have'} another home and ${c.otherHome === 1 ? 'stays' : 'stay'} there${hidden}.`,
+    );
+  }
+  if (c.notAllowed) {
+    out.push(
+      `${itemCount(c.notAllowed)} inside cannot live in that workspace and ${c.notAllowed === 1 ? 'stays' : 'stay'} in the old home.`,
+    );
+  }
+  if (c.apps) {
+    out.push(
+      c.apps === 1
+        ? 'One app inside moves too: the new home sees its data.'
+        : `${c.apps.toLocaleString('en')} apps inside move too: the new home sees their data.`,
+    );
+  }
+  return out;
+}
+
+/** The note after a folder's move with its contents: what stayed, or
+ *  null. */
+export function contentsLeftText(res: Pick<GrantMoveResponse, 'contents'>): string | null {
+  const n = res.contents?.leftAloneCount ?? 0;
+  if (!n) return null;
+  return `${itemCount(n)} inside stayed where ${n === 1 ? 'it was' : 'they were'}: another home, or a kind that workspace cannot hold.`;
+}
 
 // ── Errors ──────────────────────────────────────────────────────────────
 

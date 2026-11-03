@@ -19,11 +19,15 @@ import { apiSend } from '@mantle/web-ui/api-fetch';
 import {
   alsoVisibleLine,
   appMoveLines,
+  contentsLeftText,
+  contentsLines,
   keptLine,
   grantErrorText,
   keepReadableLabel,
   removedLine,
+  withContentsLabel,
   type MovePreview,
+  type MoveResult,
   type MoveTo,
 } from '../../lib/grants';
 
@@ -101,25 +105,52 @@ export type MoveTarget = {
    *  will read (S7, 21.8 row 13). `holders`: its workspaces after the move,
    *  when known. */
   app?: { holders?: string[] };
+  /** A folder's home move: the dialog offers "Also move the N items
+   *  inside" (ticked), the items below it that share its home. */
+  folder?: boolean;
   /** The dialog's title; a move by default. */
   title?: string;
   /** After the move is written. */
   onMoved?: () => void;
 };
 
-/** POST /api/grants/move/preview. */
-export const fetchMovePreview = (nodeIds: string[], to: MoveTo) =>
-  apiSend<MovePreview>('/api/grants/move/preview', 'POST', { nodeIds, ...to });
-
-/** POST /api/grants/move: `{ moved, failed }`. The dialog showed what
- *  changes, so it goes with `confirm`. */
-export const sendMove = (nodeIds: string[], to: MoveTo, keepReadableIn: string | null) =>
-  apiSend<{ moved: number; failed: { id: string; error: string }[] }>('/api/grants/move', 'POST', {
+/** POST /api/grants/move/preview. `withContents`: a folder's home move
+ *  with the items inside it (the answer counts them). */
+export const fetchMovePreview = (nodeIds: string[], to: MoveTo, withContents = false) =>
+  apiSend<MovePreview>('/api/grants/move/preview', 'POST', {
     nodeIds,
     ...to,
-    confirm: true,
-    ...(keepReadableIn ? { keepReadableIn } : {}),
+    ...(withContents ? { withContents: true } : {}),
   });
+
+/** POST /api/grants/move: `{ moved, failed }`. The dialog showed what
+ *  changes, so it goes with `confirm`. With `withContents` the brain moves
+ *  at most 200 items per call: it is called again while items remain and
+ *  the last call moved some, and the answers are summed. */
+export async function sendMove(
+  nodeIds: string[],
+  to: MoveTo,
+  keepReadableIn: string | null,
+  withContents = false,
+): Promise<MoveResult> {
+  const once = () =>
+    apiSend<MoveResult>('/api/grants/move', 'POST', {
+      nodeIds,
+      ...to,
+      confirm: true,
+      ...(keepReadableIn ? { keepReadableIn } : {}),
+      ...(withContents ? { withContents: true } : {}),
+    });
+  let res = await once();
+  const sum: MoveResult = { moved: res.moved, failed: [...res.failed], contents: res.contents };
+  while (withContents && (res.contents?.remaining ?? 0) > 0 && res.moved > 0) {
+    res = await once();
+    sum.moved += res.moved;
+    sum.failed.push(...res.failed);
+    sum.contents = res.contents;
+  }
+  return sum;
+}
 
 /**
  * The move dialog: what the item becomes visible to ("This will also be
@@ -137,21 +168,40 @@ export function MoveGrantsDialog({
   onClose: () => void;
 }) {
   const toast = useToast();
-  const [loaded, setLoaded] = useState<{ target: MoveTarget; preview: MovePreview } | null>(null);
+  const [loaded, setLoaded] = useState<{
+    target: MoveTarget;
+    contents: boolean;
+    preview: MovePreview;
+  } | null>(null);
   const [keep, setKeep] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A folder's home move: the tick, and the count of the items inside (kept
+  // from the answer that had it while the tick is off).
+  const offersContents = !!target?.folder && !!target && 'toWorkspaceId' in target.to;
+  const [withContents, setWithContents] = useState(true);
+  const [inside, setInside] = useState<MovePreview['contents'] | null>(null);
 
   useEffect(() => {
     setKeep(false);
+    setWithContents(true);
+    setInside(null);
+  }, [target]);
+
+  const contents = offersContents && withContents;
+  useEffect(() => {
     if (!target) return;
     if (given) {
-      setLoaded({ target, preview: given });
+      setLoaded({ target, contents, preview: given });
       return;
     }
     setLoaded(null);
     let live = true;
-    fetchMovePreview(target.nodeIds, target.to).then(
-      (p) => live && setLoaded({ target, preview: p }),
+    fetchMovePreview(target.nodeIds, target.to, contents).then(
+      (p) => {
+        if (!live) return;
+        if (p.contents) setInside(p.contents);
+        setLoaded({ target, contents, preview: p });
+      },
       (e) => {
         if (!live) return;
         toast.error(grantErrorText(e, 'Could not check who would see it'));
@@ -161,9 +211,9 @@ export function MoveGrantsDialog({
     return () => {
       live = false;
     };
-  }, [target, given, toast, onClose]);
+  }, [target, given, contents, toast, onClose]);
 
-  const preview = loaded?.target === target ? loaded.preview : null;
+  const preview = loaded?.target === target && loaded.contents === contents ? loaded.preview : null;
 
   const move = async () => {
     if (!target) return;
@@ -173,12 +223,15 @@ export function MoveGrantsDialog({
         target.nodeIds,
         target.to,
         keep && target.oldHome ? target.oldHome.wsId : null,
+        contents,
       );
       if (res?.failed?.length) {
         toast.error(
           `Could not move ${res.failed.length === 1 ? 'one item' : `${res.failed.length} items`}: ${res.failed[0]!.error}`,
         );
       }
+      const left = contentsLeftText(res);
+      if (left) toast.info(left);
       target.onMoved?.();
       onClose();
     } catch (e) {
@@ -196,19 +249,32 @@ export function MoveGrantsDialog({
           <AlertDialogDescription asChild>
             <div className="space-y-1.5">
               <p>{target?.action}</p>
+              {offersContents && inside && inside.move > 0 && (
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={withContents}
+                    disabled={busy}
+                    onCheckedChange={(v) => setWithContents(v === true)}
+                  />
+                  {withContentsLabel(inside.move)}
+                </label>
+              )}
               {!preview ? (
                 <p className="flex items-center gap-1 text-xs">
                   <Loader2 className="size-3 animate-spin" aria-hidden /> Checking…
                 </p>
               ) : (
-                <MovePreviewLines
-                  preview={preview}
-                  oldHome={target?.oldHome}
-                  app={target?.app}
-                  keep={keep}
-                  onKeep={setKeep}
-                  busy={busy}
-                />
+                <>
+                  <MovePreviewLines
+                    preview={preview}
+                    oldHome={target?.oldHome}
+                    app={target?.app}
+                    keep={keep}
+                    onKeep={setKeep}
+                    busy={busy}
+                  />
+                  {preview.contents && <ContentsLines contents={preview.contents} />}
+                </>
               )}
             </div>
           </AlertDialogDescription>
@@ -228,6 +294,19 @@ export function MoveGrantsDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/** What a folder's move with its contents leaves where it is. */
+export function ContentsLines({ contents }: { contents: NonNullable<MovePreview['contents']> }) {
+  return (
+    <>
+      {contentsLines(contents).map((l) => (
+        <p key={l} className="text-xs">
+          {l}
+        </p>
+      ))}
+    </>
   );
 }
 

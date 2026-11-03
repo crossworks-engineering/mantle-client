@@ -7,6 +7,9 @@ import { ApiError } from '@mantle/web-ui/api-fetch';
 import {
   alsoVisibleLine,
   appHolderLines,
+  contentsLeftText,
+  contentsLines,
+  withContentsLabel,
   chipsOf,
   folderConfirmText,
   folderPreviewUrl,
@@ -267,6 +270,36 @@ describe('move', () => {
     expect(moveChangesAccess(p)).toBe(true);
     expect(moveChangesAccess({ alsoVisibleTo: [], removedFrom: [] })).toBe(false);
     expect(alsoVisibleLine({ alsoVisibleTo: [] })).toBeNull();
+  });
+});
+
+describe('a folder home move with what is inside it', () => {
+  const c = { move: 203, apps: 0, otherHome: 0, notAllowed: 0, hidden: 0, calls: 2 };
+  it('the tick counts the items that move', () => {
+    expect(withContentsLabel(203)).toBe('Also move the 203 items inside');
+    expect(withContentsLabel(1)).toBe('Also move the 1 item inside');
+  });
+  it('says what stays and the apps that go along', () => {
+    expect(contentsLines(c)).toEqual([]);
+    expect(contentsLines({ ...c, otherHome: 3, hidden: 1, notAllowed: 1, apps: 2 })).toEqual([
+      '3 items inside have another home and stay there, 1 of them you cannot open.',
+      '1 item inside cannot live in that workspace and stays in the old home.',
+      '2 apps inside move too: the new home sees their data.',
+    ]);
+    expect(contentsLines({ ...c, otherHome: 1, apps: 1 })).toEqual([
+      '1 item inside has another home and stays there.',
+      'One app inside moves too: the new home sees its data.',
+    ]);
+  });
+  it('after the move: what stayed, or nothing', () => {
+    expect(contentsLeftText({})).toBeNull();
+    const res = (n: number) => ({
+      contents: { moved: 0, remaining: 0, leftAlone: [], leftAloneCount: n, hidden: 0 },
+    });
+    expect(contentsLeftText(res(0))).toBeNull();
+    expect(contentsLeftText(res(2))).toBe(
+      '2 items inside stayed where they were: another home, or a kind that workspace cannot hold.',
+    );
   });
 });
 

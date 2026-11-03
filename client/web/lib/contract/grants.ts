@@ -1,10 +1,10 @@
 /**
- * The Grant Access panel on the wire (workspaces plan page 4887b8e7, phase
- * W5b2): /api/grants. An item is shared by a grant to a workspace; each
- * grant has its own Write switch. Every item has ONE home workspace (R1):
- * only Moderators of the home manage the item's grants. Folders pass their
- * grants to what is inside them (rows "via folder"); a row taken away from
- * a folder-derived grant stays as "Removed here" until restored.
+ * The Grant Access panel on the wire: /api/grants. An item is shared by a
+ * grant to a workspace; each grant has its own Write switch. Every item has
+ * ONE home workspace: only Moderators of the home manage the item's grants.
+ * Folders pass their grants to what is inside them (rows "via folder"); a
+ * row taken away from a folder-derived grant stays as "Removed here" until
+ * restored.
  *
  * Permissions are set in exactly two places: the workspace screen and this
  * panel. Every refusal is `{ error, code }` with 400, 403, 404 or 409; an
@@ -96,7 +96,7 @@ export type GrantsResponse = {
   app?: { mcpAccess: boolean };
   /** Folders, when the caller may add items there: every workspace a new
    *  item placed in it takes (its rows not removed there, the home's
-   *  included), named even where the caller is not a user (S6). */
+   *  included), named even where the caller is not a user. */
   placesInto?: GrantWorkspaceRef[];
 };
 
@@ -149,23 +149,76 @@ export type GrantPreviewResponse = {
 /** POST /api/grants/move/preview and POST /api/grants/move: change the home
  *  (`toWorkspaceId`: Moderator of the old home and of the new one) or the
  *  folder (`toFolderId`, null = the kind's root: items only, of one tree
- *  kind). `keepReadableIn` (the old home only) keeps a read grant there. */
+ *  kind). `keepReadableIn` (the old home only) keeps a read grant there.
+ *
+ *  `withContents` (a home move of one folder, with `confirm`): the items
+ *  below the folder that share its old home move too, each on its own by
+ *  the same rules and the same `keepReadableIn`. An item homed elsewhere,
+ *  or of a kind the new home may not hold, stays. At most 200 of them move
+ *  per call, deepest first; while `contents.remaining` is above 0, call
+ *  again with the same body. The folder itself moves in the call that moves
+ *  the last of them. */
 export type GrantMoveBody = {
   nodeIds: string[];
   toWorkspaceId?: string;
   toFolderId?: string | null;
   keepReadableIn?: string;
   confirm?: boolean;
+  withContents?: boolean;
+};
+
+/** What a home move of a folder with its contents takes along (the
+ *  preview with `withContents`). */
+export type GrantMoveContentsPreview = {
+  /** The items below the folder with its home: they move with it. */
+  move: number;
+  /** Apps among `move`: each new holder sees its data (21.8 row 13). */
+  apps: number;
+  /** The items below it homed in another workspace (not the target): they
+   *  stay where they are. `hidden` included. */
+  otherHome: number;
+  /** The items with its home of a kind the target may not hold: they stay. */
+  notAllowed: number;
+  /** Of `otherHome`, the items the caller cannot open. */
+  hidden: number;
+  /** How many calls the move takes (200 items per call). */
+  calls: number;
 };
 
 export type GrantMovePreviewResponse = {
   alsoVisibleTo: GrantWorkspaceRef[];
   removedFrom: GrantWorkspaceRef[];
+  /** A home move of one folder with `withContents`. */
+  contents?: GrantMoveContentsPreview;
+};
+
+/** One item a folder's move left where it was: another home, or a kind
+ *  the new home may not hold. */
+export type GrantMoveLeftAlone = {
+  id: string;
+  title: string;
+  reason: 'other_home' | 'kind_not_allowed';
 };
 
 export type GrantMoveResponse = {
+  /** Every item moved by this call (a folder's contents and the folder). */
   moved: number;
   failed: Array<{ id: string; error: string }>;
+  /** A home move of a folder with `withContents`. */
+  contents?: {
+    /** Items below the folder moved by this call. */
+    moved: number;
+    /** Items still to move: call again with the same body. The folder
+     *  itself has not moved while this is above 0. */
+    remaining: number;
+    /** The items left where they are, the first 200 (`hidden` ones never
+     *  named). */
+    leftAlone: GrantMoveLeftAlone[];
+    /** All of them, `hidden` included. */
+    leftAloneCount: number;
+    /** Items below the folder the caller cannot open: they stay. */
+    hidden: number;
+  };
 };
 
 /** Every `code` a /api/grants refusal carries. */
@@ -184,19 +237,21 @@ export type GrantErrorCode =
   | 'confirm_required'
   | 'too_big'
   | 'same_home'
-  | 'mixed_kinds';
+  | 'mixed_kinds'
+  /** A folder's contents item whose home or folder changed while the
+   *  folder moved: it stays. */
+  | 'changed';
 
 export type GrantError = { error: string; code: GrantErrorCode };
 
-// ── Lists (W5b2 contract changes 5 and 14) ───────────────────────────────────
+// ── Lists ────────────────────────────────────────────────────────────────────
 
 /** A workspace chip on a list row, with the workspace's look (its colour
  *  and icon, WorkspaceLook) from a brain that has one. */
 export type ListWorkspace = WorkspaceLook & { id: string; name: string };
 
 /**
- * What the caller may do with an item, and what the item is (W6b fix round
- * 1): on every list row and item response of pages, notes, drawings,
+ * What the caller may do with an item, and what the item is: on every list row and item response of pages, notes, drawings,
  * tables, files and apps, on the tree's items and folders, and on GET
  * /api/nodes/:id. Set by the server on each of those; optional in the type
  * only so older shapes still parse.
@@ -213,8 +268,9 @@ export type ItemCaps = {
   readOnly?: true;
   /** The brain item a read-only copy copies (the accepted item). */
   snapshotOf?: string;
-  /** A member app that was in its author's trash when the spaces were
-   *  folded (W6b): show it as "was in your trash" with Delete. */
+  /** A member app that was in its author's trash when the personal spaces
+   *  were folded into workspaces: show it as "was in your trash" with
+   *  Delete. */
   trashedBeforeFold?: true;
 };
 

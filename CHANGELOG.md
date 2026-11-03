@@ -12,6 +12,16 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## Unreleased
+
+- **Added:** when you move a folder to another home, the move dialog
+  offers "Also move the N items inside", ticked. The sub-folders and files
+  below it with the same home move with it, at any depth. The dialog says
+  how many items inside have another home and stay there. A big folder
+  moves in several calls of 200 items; the dialog makes them for you. It
+  needs a brain with `withContents` on the move (the next brain release):
+  an older brain moves the folder alone, as before.
+
 ## v0.9.5: new help topics, from the 0.500.13 contract
 
 - **Changed:** the client now uses the brain's 0.500.13 contract packages
