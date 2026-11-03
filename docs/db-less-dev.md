@@ -1,8 +1,8 @@
 # Split frontend + brain: setup guide
 
 Run the owner UI (`client/web`) on your laptop against a **deployed** Mantle
-brain's HTTP API, no local Docker, Postgres, MinIO, or workers. `client/web` is
-a zero-secret Next app: it holds no database connection and no session secret, so
+brain's HTTP API, no local Docker, Postgres, object store, or workers. `client/web` is
+a zero-secret Next app (a static export in production): it holds no database connection and no session secret, so
 it is **natively detached**: it always talks to the server named by
 `MANTLE_SERVER_ORIGIN`. "Detached dev" is simply pointing that at a remote box.
 This is the topology delivered by the frontend/backend split, described in
@@ -11,7 +11,7 @@ This is the topology delivered by the frontend/backend split, described in
 ```
 ┌─────────────── laptop ───────────────┐      ┌────────── brain (box) ──────────┐
 │  client/web (pnpm dev:fe)            │      │  full stack: web API, Postgres, │
-│  · serves the owner UI bundle        │      │  MinIO, workers, Caddy/HTTPS    │
+│  · serves the owner UI bundle        │      │  RustFS, workers, Caddy/HTTPS   │
 │  · MANTLE_SERVER_ORIGIN → remote     │      │                                 │
 │  · NO database, NO session secret    │      │  MANTLE_API_CORS_ORIGINS        │
 │                                      │      │  allowlists the laptop origin   │

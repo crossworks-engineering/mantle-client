@@ -4,7 +4,7 @@
 device in front of the person, so the engine, the palette and the event wiring
 all live in mantle-client (`client/web`). The brain needs one small piece: a
 per-login preference so the on/off choice follows the person between browsers
-and devices. That piece is now built (mantle branch `feat/profile-sounds`), and
+and devices. That piece is now in the brain (`GET/PUT /api/profile/sounds`), and
 the client falls back to the browser's copy on a brain without it.
 
 ## Where it belongs
@@ -202,10 +202,10 @@ Left out on purpose:
 
 ## Next steps
 
-1. Land mantle `feat/profile-sounds` (its database sweeps run on CI or the
-   workstation), release it, then bump `@mantle/client-types` here when the
-   client wants the shared `SoundPreference` type. The client keeps its own copy
-   of the type until then.
+1. Done on the brain: the route shipped, and the shared `SoundPreference` type
+   is in `@crossworks/client-types` (0.400.56, the version pinned here). The
+   client still keeps its own copy (`SoundPrefs` in `lib/sounds/prefs.ts`);
+   switch to the shared type when that file is next touched.
 2. Task done, once the brain says who finished a task (see above).
 3. Electron `autoplayPolicy` for the desktop window.
 4. Render the recipes to `.wav` for mantle-mobile.

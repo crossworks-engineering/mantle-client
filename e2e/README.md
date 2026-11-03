@@ -79,6 +79,15 @@ else is a plain 404.
   land on a bare `/login`; old review links land on the home.
 - `login-brains.spec.ts`: the sign-in screen against more than one brain (the
   desktop shell's per-window brain header) and after every way a sign-in fails.
+- `landing.spec.ts`: Home shows the current workspace's landing page and
+  changes with the switcher (the Desk, or the workspace's home app); "All my
+  workspaces" shows all of them; an Admin user finds the Dashboard in the menu.
+- `desk.spec.ts`: the Desk saved on the login's profile (`GET`/`PUT
+  /api/profile/home-desk`, compare-and-set on a version): a change is saved
+  once, read back after a reload, and when another device saved first its
+  desk shows with one quiet toast.
+- `sounds.spec.ts`: a change to the UI sounds is saved at once
+  (`PUT /api/profile/sounds`) and names the login the tab shows (`loginId`).
 
 CI runs them on every push and pull request (the `e2e-workspace` job in
 `.github/workflows/verify.yml`), with no brain and nothing configured.
@@ -96,7 +105,7 @@ here because the route list has to be derived from the screens beside it.
 
 ```sh
 pnpm e2e:routes -- https://demo.example                 # the target admits visitors (demo edge)
-ROUTES_BEARER=<owner token> pnpm e2e:routes -- https://app.example   # split topology: seeds the bearer + presence cookie
+ROUTES_BEARER=<owner token> pnpm e2e:routes -- https://app.example   # split topology: seeds the bearer + presence flag
 ROUTES_ONLY=/journal,/traces pnpm e2e:routes -- …       # narrow the sweep
 ```
 

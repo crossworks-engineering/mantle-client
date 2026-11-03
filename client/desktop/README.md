@@ -83,9 +83,14 @@ reproduces the CI ad-hoc build.
   (`client/web/components/desktop/desktop-bridge.tsx`) feature-detects
   `window.mantleDesktop` and forwards assistant outbound pings
   (`/api/assistant/stream`) to OS notifications while the window is hidden.
-  Clicking one focuses the app.
-- **Tray**: open / switch brain / quit. A badge API (`setBadge`) is exposed
-  for later wiring.
+  Chats does the same for a new message (`messenger-shell.tsx`) and the
+  ringer for an incoming call. Clicking a notice focuses the app; a chat's
+  notice also opens that chat.
+- **Badge and attention**: the Chats unread count is the app's badge
+  (`setBadge`). An incoming call asks for attention (`attention`): on macOS
+  the dock icon bounces, elsewhere the taskbar entry flashes, until the
+  window is focused.
+- **Tray**: open / switch brain / quit.
 
 ## What the shell does (and doesn't)
 

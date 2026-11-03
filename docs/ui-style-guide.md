@@ -846,9 +846,10 @@ all is an invisible one.
 **Fixed rails use `<RailHandle>` instead** (`ui/rail-handle`). The nav and
 activity columns are `position: fixed` and publish their width as a CSS
 variable that six other surfaces read; they are not flex children of a panel
-group, so panels cannot wrap them. Widths persist to a **cookie**, not
-localStorage, and are seeded server-side in `app/(app)/layout.tsx` so the rail
-does not jump on load. A **collapsed rail has no handle** — the toggle owns
+group, so panels cannot wrap them. Widths persist through **ui-prefs**
+(`packages/web-ui/src/ui-prefs.ts`, localStorage; the UI keeps no cookies), and
+`app/(app)/layout.tsx` reads them once before the shell frame mounts, so the
+rail does not jump on load. A **collapsed rail has no handle**: the toggle owns
 that width.
 
 `RailHandle` meets the grip rule the same way `ResizableHandle` does: it draws

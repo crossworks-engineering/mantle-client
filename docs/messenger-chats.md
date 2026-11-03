@@ -17,8 +17,9 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
 - **The list** (`chats-client.tsx`, `chat-row.tsx`): the item tree's column
   (Files, Notes, Contacts): the dim column surface edge to edge, no card and
   no title (the nav says Chats), the search and New (+) on one row at the
-  top, then the rows (rounded, the accent fill on the open one, no rule
-  between them). Each row's text is no taller than its 44 px avatar at the
+  top, then the rows (`ListCard`s, as on the Peers screen: the open one has
+  a soft accent tint under normal text, with the primary ring and border;
+  no rule between them). Each row's text is no taller than its 44 px avatar at the
   default interface size (see Avatars; a green dot while the other person
   is online): the name, up to two lines of the last message (in rem, so it
   scales with the interface size), and at the right the time with the marks and the unread pill under
@@ -45,7 +46,10 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
     still sends it when opened again while Chats stays open; leaving Chats
     or reloading before then drops it. Open chat goes there
     without a message. The people are the logins that share a workspace
-    with me, online first.
+    with me, online first. Under each name is the person's description (who
+    they are to the team: a job title, a role), and the search matches it
+    too. A login sets its own on the Profile screen; an admin sets anyone's
+    on the Users screen.
   - An agent opens its thread at once: it is the assistant's own thread,
     not a messenger chat. A line typed here becomes that composer's draft
     (when it has none of its own), sent from there.
@@ -86,7 +90,7 @@ still mounted. An assistant thread opens at `/chats/agent:<agent id>`.
   transcript instead, opens only from Details (taking the focus) and closes
   on Escape or when the room widens. The group's face (an admin clicks it
   for the look popup: icon and colour), the title (an admin renames a group), the
-  people with admin marks (an admin adds them inline, no dialog, and
+  people with admin marks and their descriptions (an admin adds them inline, no dialog, and
   removes them), Mute and Pin,
   Clear for me, Leave group, Delete history (admins). Every destructive one
   confirms.

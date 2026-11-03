@@ -31,7 +31,9 @@ at the root of this repo). It is one container, the image
 `titanwest/mantle-client:<tag>`, which joins the server stack's network
 (`mantle_default`) so the server's Caddy can front it. The only configuration
 it takes is the server's public origin, `MANTLE_SERVER_ORIGIN`, read from the
-stack's `.env`.
+stack's `.env`. The container runs no Next server: it serves the owner UI as
+static files from one small host (`client/host`) on Bun, which fills in the
+brain's origin and appearance (`docs/static-ui-host.md`).
 
 ```sh
 # from the mantle stack directory, next to the server's .env
@@ -60,20 +62,25 @@ Each release carries one asset per platform:
 - macOS: `.dmg` and `.zip` (Apple Silicon, arm64)
 - Windows: `Setup.exe`
 
-macOS builds are unsigned: on first launch, right-click the app and choose
-Open. Being unsigned, the app cannot update itself on macOS; fetch the next
-release by hand. On Linux and Windows it checks Releases on launch and every 4
-hours, downloads in the background, and installs when you quit.
+macOS release builds are Developer ID signed and notarized, so they open with
+no warning. The app checks Releases on launch and every 4 hours, downloads in
+the background, and installs when you quit. Signing details are in
+`client/desktop/README.md`.
 
 On first launch the connect screen asks for your brain's URL and probes
 `GET /api/version` before saving it. Then log in as usual; each brain keeps its
 own login. Details in `client/desktop/README.md`.
 
+A second desktop shell, built on Tauri, lives in `client/tauri`. It is in its
+first stage: you build it from source (its README says how), and it has no
+installers, updates or signing yet.
+
 **Version pairing.** Client and server release on separate streams (mantle-client
-v0.7.x, mantle v0.232.x). Which client goes with which server is recorded on
+v0.9.x, mantle v0.500.x). Which client goes with which server is recorded on
 the mantle side: `client-pair.tag` names the mantle-client tag that mantle release
-was tested with (for example mantle v0.232.188 pairs with v0.6.110). Run the web
+was tested with (for example mantle v0.500.0 pairs with v0.9.0). Run the web
 image at that tag; the desktop build of the same version pairs the same way.
+What changed in each client release is in `CHANGELOG.md`.
 
 ## Develop it
 
@@ -108,9 +115,12 @@ has the commands, what stays on Node and why, and the numbers.
 
 ## Layout
 
-- `client/web`: the owner UI (Next.js). `pnpm dev:fe` runs it against the
-  brain named by `MANTLE_REMOTE` (see `docs/db-less-dev.md`).
+- `client/web`: the owner UI (Next.js, built as a static export). `pnpm dev:fe`
+  runs it against the brain named by `MANTLE_REMOTE` (see `docs/db-less-dev.md`).
+- `client/host`: the host that serves the static UI, on the box and inside the
+  Electron shell (`docs/static-ui-host.md`).
 - `client/desktop`: the Electron shell wrapping the same UI.
+- `client/tauri`: the Tauri shell (Rust), beside the Electron one.
 - `packages/web-ui`: the UI kit (components, providers, hooks).
 - `e2e`: the UI end-to-end suite (drives a running brain).
 
