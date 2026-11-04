@@ -129,9 +129,11 @@ describe('API access: create body', () => {
 
   it('with a company sign-in to confirm, asks for no password and sends none', () => {
     const ok = createBody(form({ password: '' }), { maxExpiryDays: 90 }, 'company');
-    expect('body' in ok && 'password' in ok.body).toBe(false);
+    if (!('body' in ok)) throw new Error('refused');
+    expect('password' in ok.body).toBe(false);
     const typed = createBody(form({ password: 'left over' }), { maxExpiryDays: 90 }, 'company');
-    expect('body' in typed && 'password' in typed.body).toBe(false);
+    if (!('body' in typed)) throw new Error('refused');
+    expect('password' in typed.body).toBe(false);
   });
 
   it('always asks for the password (needsPassword is always true since W8)', () => {

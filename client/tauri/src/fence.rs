@@ -294,6 +294,27 @@ pub fn oidc_deep_link(link: &str) -> Option<OidcDeepLink> {
     })
 }
 
+/// How long a brain window waits for a company sign-in it sent out.
+pub const OIDC_ARMED_MS: u64 = 15 * 60_000;
+
+/// The profile whose window a `mantle://oidc` link goes to, or None to drop it
+/// with no window moved. Any app can open such a link, so only a window that
+/// sent a sign-in out to the browser takes one: the one for the brain the link
+/// names, else the last that went out, whose page sees that the brain differs
+/// and spends nothing. `armed`: (profile id, its origin, when its wait ends).
+/// Port of oidcArrivalProfile in brain-fence.ts.
+pub fn oidc_arrival_profile(
+    armed: &[(String, String, u64)],
+    iss: &str,
+    now: u64,
+) -> Option<String> {
+    let live: Vec<&(String, String, u64)> = armed.iter().filter(|a| a.2 > now).collect();
+    live.iter()
+        .find(|a| a.1 == iss)
+        .or_else(|| live.iter().max_by_key(|a| a.2))
+        .map(|a| a.0.clone())
+}
+
 /// `raw`, parsed, when it starts a company sign-in on this window's brain, the
 /// only URL the page may ask the shell to open this way. Exactly the brain's
 /// origin and the start path. Port of oidcStartUrl in brain-fence.ts.
@@ -547,6 +568,29 @@ mod tests {
         ] {
             assert_eq!(oidc_deep_link(&link), None, "{link}");
         }
+    }
+
+    #[test]
+    fn oidc_arrival_goes_only_to_a_window_that_waits() {
+        let a = "https://a.example";
+        let b = "https://b.example";
+        let armed = |id: &str, origin: &str, until| (id.to_string(), origin.to_string(), until);
+        // No window sent a sign-in out, or the wait is over: dropped.
+        assert_eq!(oidc_arrival_profile(&[], a, 10), None);
+        assert_eq!(oidc_arrival_profile(&[armed("a", a, 10)], a, 10), None);
+        let both = [armed("a", a, 100), armed("b", b, 200)];
+        // The brain the link names, if it waits.
+        assert_eq!(oidc_arrival_profile(&both, a, 10).as_deref(), Some("a"));
+        // Else the last that went out, whose page refuses it.
+        assert_eq!(
+            oidc_arrival_profile(&both, "https://alias.example", 10).as_deref(),
+            Some("b")
+        );
+        // A named brain that is not waiting is not woken.
+        assert_eq!(
+            oidc_arrival_profile(&[armed("a", a, 100)], b, 10).as_deref(),
+            Some("a")
+        );
     }
 
     #[test]

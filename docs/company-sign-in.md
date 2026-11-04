@@ -49,10 +49,26 @@ client reads them for the request's own credential and works out nothing from ho
 session signed in. So an SSO session whose password is no way in is never asked to
 change it.
 
+## Limits to know
+
+- A web flow's way back is this tab. A provider step that opens another tab (an
+  email link) ends with "This sign-in has ended", so a provider used here must
+  finish its sign-in in the tab it began in.
+- `mantle://` belongs to whichever app the system picked. With both desktop apps
+  installed, a flow started in one can come back to the other, which spends nothing
+  and drops it. Install one.
+- Any app can open a `mantle://oidc` link, so a window takes one only while it waits
+  for its own sign-in. Someone who holds a waiting flow's start URL (a proxy log, a
+  synced browser history), and gets the person to click a link of theirs in that
+  time, could finish that flow with their own provider account. The person is told
+  of a link made, it is audited, and web tabs cannot be reached this way.
+
 ## The desktop shells
 
 `window.mantleDesktop.oidc.open(url)` opens a sign-in in the system browser. Each
 shell takes only this brain's `/api/auth/oidc/start`, whatever the page asks
 (`oidcStartUrl` in `client/desktop/src/main/brain-fence.ts`, `oidc_start_url` in
 `client/tauri/src/fence.rs`). A shell without it shows "Update this app" instead of
-the button.
+the button. A window takes a `mantle://oidc` link only once it has sent a sign-in out,
+once, within 15 minutes (`oidcArrivalProfile`); any other link moves nothing. A fresh
+sign-in the person walks away from clears what waits (the dialog's Cancel).

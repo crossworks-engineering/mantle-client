@@ -158,6 +158,15 @@ export function saveKeyDraft(form: CreateForm): void {
   }
 }
 
+/** The person left the dialog: nothing may come back to it. */
+export function clearKeyDraft(): void {
+  try {
+    window.sessionStorage.removeItem(KEY_DRAFT);
+  } catch {
+    /* nothing kept to clear */
+  }
+}
+
 /** The form that waited, read once. */
 export function takeKeyDraft(): CreateForm | null {
   try {

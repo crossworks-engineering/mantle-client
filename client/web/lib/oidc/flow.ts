@@ -190,13 +190,17 @@ export function flowStoppedMessage(result: string): string {
 }
 
 /**
- * Whether the menu offers "Change password": not where the password is no way
- * in (required mode, a linked login) and not where there is none. The brain
- * says so; nothing here works it out from how this session signed in. Whether
- * a change is DUE is the brain's too, for this request's own credential
- * (`mustChangePassword` on GET /api/auth/whoami): an SSO session of such a login
- * never gets it.
+ * Whether the menu offers "Change password": not while the brain's answer is
+ * unknown, not where the password is no way in (required mode, a linked login)
+ * or there is none, and never from a session company sign-in made, whose own
+ * credential a password change would end. Whether a change is DUE is the
+ * brain's alone, for this request's own credential (`mustChangePassword` on GET
+ * /api/auth/whoami).
  */
-export function changePasswordOffered(status: OidcStatusDTO): boolean {
+export function changePasswordOffered(
+  status: OidcStatusDTO | undefined,
+  companySession: boolean,
+): boolean {
+  if (!status || companySession) return false;
   return status.mode === 'off' || status.passwordConfirms;
 }

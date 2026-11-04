@@ -70,6 +70,7 @@ import {
   expiryChoicesFor,
   expiryLabel,
   offersRiskyTools,
+  clearKeyDraft,
   saveKeyDraft,
   scopeLine,
   sortKeys,
@@ -79,7 +80,7 @@ import {
 } from './api-access-model';
 import { useReturnReset } from '@/components/oidc/use-return-reset';
 import { startFresh } from '@/lib/oidc/actions';
-import { flowStoppedMessage, takeOutcome } from '@/lib/oidc/flow';
+import { clearPendingFlow, flowStoppedMessage, takeOutcome } from '@/lib/oidc/flow';
 import { useOidcStatus } from '@/lib/oidc/use-oidc';
 import { signInErrorMessage } from '@/lib/sign-in-error';
 
@@ -471,9 +472,22 @@ function CreateKeyDialog({
         setPending(false);
       }
     } catch (err) {
+      clearKeyDraft();
       setError({ field: 'company', message: signInErrorMessage(err) });
       setPending(false);
     }
+  };
+
+  /** Closing forgets the whole form, the password above all, and any sign-in
+   *  still out in the browser: nothing makes a key the person walked away from. */
+  const leave = () => {
+    setError(null);
+    setForm(blank());
+    setInBrowser(false);
+    setPending(false);
+    clearKeyDraft();
+    clearPendingFlow();
+    endKeyResume();
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -486,12 +500,7 @@ function CreateKeyDialog({
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        // Closing forgets the whole form, the password above all.
-        if (!o) {
-          setError(null);
-          setForm(blank());
-          endKeyResume();
-        }
+        if (!o) leave();
         onOpenChange(o);
       }}
     >
@@ -507,107 +516,111 @@ function CreateKeyDialog({
           {/* eslint-disable-next-line house/no-raw-form-control -- a hidden autofill hint, not a control */}
           <input type="text" autoComplete="username" hidden readOnly value="" />
           <FieldGroup>
-            <Field data-invalid={error?.field === 'name' || undefined}>
-              <FieldLabel htmlFor="key-name">Name</FieldLabel>
-              <Input
-                id="key-name"
-                autoComplete="off"
-                value={form.name}
-                onChange={(e) => set({ name: e.target.value })}
-                placeholder="Backup script"
-                aria-invalid={error?.field === 'name' || undefined}
-                aria-describedby={error?.field === 'name' ? 'key-name-error' : undefined}
-              />
-              <FieldError id="key-name-error">
-                {error?.field === 'name' ? error.message : null}
-              </FieldError>
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="key-access">Access</FieldLabel>
-                <Select
-                  value={form.access}
-                  onValueChange={(v) => set({ access: v as CreateForm['access'] })}
-                >
-                  <SelectTrigger id="key-access">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="read">{ACCESS_LABEL.read}</SelectItem>
-                    <SelectItem value="read_write">{ACCESS_LABEL.read_write}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="key-expiry">Expires</FieldLabel>
-                <Select value={form.expiry} onValueChange={(v) => set({ expiry: v })}>
-                  <SelectTrigger id="key-expiry">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {expiryChoicesFor(rules.maxExpiryDays).map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {expiryLabel(c)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-
-            <Field data-invalid={error?.field === 'areas' || undefined}>
-              <div className="flex items-center justify-between gap-2">
-                <FieldLabel htmlFor="key-all-areas">All areas</FieldLabel>
-                <Switch
-                  id="key-all-areas"
-                  checked={form.allAreas}
-                  onCheckedChange={(v) => set({ allAreas: v })}
-                />
-              </div>
-              {!form.allAreas && (
-                <div className="grid grid-cols-2 gap-2 pt-1" role="group" aria-label="Areas">
-                  {areas.map((a) => (
-                    <label key={a} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={form.areas.includes(a)}
-                        onCheckedChange={(v) =>
-                          set({
-                            areas: v ? [...form.areas, a] : form.areas.filter((x) => x !== a),
-                          })
-                        }
-                      />
-                      {AREA_LABEL[a]}
-                    </label>
-                  ))}
-                </div>
-              )}
-              <FieldDescription>
-                Off: the key reaches only the areas you tick. Search finds every kind of item, email
-                and journal included. Some routes and tools belong to no area; they need All areas.
-              </FieldDescription>
-              <FieldError>{error?.field === 'areas' ? error.message : null}</FieldError>
-            </Field>
-
-            {risky && (
-              <Field data-invalid={error?.field === 'riskyTools' || undefined}>
-                <FieldLabel htmlFor="key-risky">Risky MCP tools allowed</FieldLabel>
+            {/* While a sign-in is out in the browser the form is what it was
+                when it left: what comes back makes that key. */}
+            <fieldset disabled={inBrowser} className="contents">
+              <Field data-invalid={error?.field === 'name' || undefined}>
+                <FieldLabel htmlFor="key-name">Name</FieldLabel>
                 <Input
-                  id="key-risky"
-                  value={form.riskyTools}
-                  onChange={(e) => set({ riskyTools: e.target.value })}
-                  placeholder="web_search, email_send"
-                  aria-invalid={error?.field === 'riskyTools' || undefined}
-                  aria-describedby="key-risky-description"
+                  id="key-name"
+                  autoComplete="off"
+                  value={form.name}
+                  onChange={(e) => set({ name: e.target.value })}
+                  placeholder="Backup script"
+                  aria-invalid={error?.field === 'name' || undefined}
+                  aria-describedby={error?.field === 'name' ? 'key-name-error' : undefined}
                 />
-                <FieldDescription id="key-risky-description">
-                  Tools that send, spend or publish stay blocked for a key until you name them here.
-                  Leave it empty if you are not sure.
-                </FieldDescription>
-                <FieldError>{error?.field === 'riskyTools' ? error.message : null}</FieldError>
+                <FieldError id="key-name-error">
+                  {error?.field === 'name' ? error.message : null}
+                </FieldError>
               </Field>
-            )}
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="key-access">Access</FieldLabel>
+                  <Select
+                    value={form.access}
+                    onValueChange={(v) => set({ access: v as CreateForm['access'] })}
+                  >
+                    <SelectTrigger id="key-access">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="read">{ACCESS_LABEL.read}</SelectItem>
+                      <SelectItem value="read_write">{ACCESS_LABEL.read_write}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="key-expiry">Expires</FieldLabel>
+                  <Select value={form.expiry} onValueChange={(v) => set({ expiry: v })}>
+                    <SelectTrigger id="key-expiry">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expiryChoicesFor(rules.maxExpiryDays).map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {expiryLabel(c)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <Field data-invalid={error?.field === 'areas' || undefined}>
+                <div className="flex items-center justify-between gap-2">
+                  <FieldLabel htmlFor="key-all-areas">All areas</FieldLabel>
+                  <Switch
+                    id="key-all-areas"
+                    checked={form.allAreas}
+                    onCheckedChange={(v) => set({ allAreas: v })}
+                  />
+                </div>
+                {!form.allAreas && (
+                  <div className="grid grid-cols-2 gap-2 pt-1" role="group" aria-label="Areas">
+                    {areas.map((a) => (
+                      <label key={a} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={form.areas.includes(a)}
+                          onCheckedChange={(v) =>
+                            set({
+                              areas: v ? [...form.areas, a] : form.areas.filter((x) => x !== a),
+                            })
+                          }
+                        />
+                        {AREA_LABEL[a]}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <FieldDescription>
+                  Off: the key reaches only the areas you tick. Search finds every kind of item,
+                  email and journal included. Some routes and tools belong to no area; they need All
+                  areas.
+                </FieldDescription>
+                <FieldError>{error?.field === 'areas' ? error.message : null}</FieldError>
+              </Field>
+
+              {risky && (
+                <Field data-invalid={error?.field === 'riskyTools' || undefined}>
+                  <FieldLabel htmlFor="key-risky">Risky MCP tools allowed</FieldLabel>
+                  <Input
+                    id="key-risky"
+                    value={form.riskyTools}
+                    onChange={(e) => set({ riskyTools: e.target.value })}
+                    placeholder="web_search, email_send"
+                    aria-invalid={error?.field === 'riskyTools' || undefined}
+                    aria-describedby="key-risky-description"
+                  />
+                  <FieldDescription id="key-risky-description">
+                    Tools that send, spend or publish stay blocked for a key until you name them
+                    here. Leave it empty if you are not sure.
+                  </FieldDescription>
+                  <FieldError>{error?.field === 'riskyTools' ? error.message : null}</FieldError>
+                </Field>
+              )}
+            </fieldset>
             {viaCompany ? (
               <Field data-invalid={error?.field === 'company' || undefined}>
                 <FieldDescription>
@@ -652,7 +665,14 @@ function CreateKeyDialog({
             )}
 
             <div className="flex justify-end gap-2 border-t border-border pt-4">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  leave();
+                  onOpenChange(false);
+                }}
+              >
                 Cancel
               </Button>
               <SubmitButton pending={pending}>

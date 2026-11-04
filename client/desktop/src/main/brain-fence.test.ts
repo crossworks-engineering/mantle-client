@@ -7,6 +7,7 @@ import {
   frameNavigationAllowed,
   httpRouteOf,
   normalizeOrigin,
+  oidcArrivalProfile,
   oidcDeepLink,
   oidcStartUrl,
   permissionAllowed,
@@ -364,6 +365,36 @@ describe('oidcDeepLink', () => {
     ]) {
       expect(oidcDeepLink(link), link).toBeNull();
     }
+  });
+});
+
+describe('oidcArrivalProfile', () => {
+  const profiles = [
+    { id: 'a', origin: 'https://a.example' },
+    { id: 'b', origin: 'https://b.example' },
+  ];
+  it('drops a link when no window sent a sign-in out', () => {
+    expect(oidcArrivalProfile(new Map(), profiles, 'https://a.example', 10)).toBeNull();
+  });
+  it('drops a link once the wait is over', () => {
+    expect(oidcArrivalProfile(new Map([['a', 10]]), profiles, 'https://a.example', 10)).toBeNull();
+  });
+  it('a window that waits takes the link that names its brain', () => {
+    const armed = new Map([
+      ['a', 100],
+      ['b', 200],
+    ]);
+    expect(oidcArrivalProfile(armed, profiles, 'https://a.example', 10)).toBe('a');
+  });
+  it('a link that names no waiting brain goes to the last that went out', () => {
+    const armed = new Map([
+      ['a', 100],
+      ['b', 200],
+    ]);
+    expect(oidcArrivalProfile(armed, profiles, 'https://alias.example', 10)).toBe('b');
+  });
+  it('never wakes a brain that is not waiting, though the link names it', () => {
+    expect(oidcArrivalProfile(new Map([['a', 100]]), profiles, 'https://b.example', 10)).toBe('a');
   });
 });
 

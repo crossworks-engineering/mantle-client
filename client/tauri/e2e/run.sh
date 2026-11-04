@@ -28,6 +28,15 @@ if [[ "${1:-}" != --inside ]]; then
   bin="${MANTLE_DESKTOP_BIN:-${CARGO_TARGET_DIR:-$here/../target}/release/mantle-desktop}"
   export MANTLE_DESKTOP_BIN="$bin"
 
+  # The system browser, for step h: it only keeps the address it was given.
+  mkdir -p "$scratch/fake-browser"
+  cat >"$scratch/fake-browser/xdg-open" <<EOF
+#!/bin/sh
+printf '%s\n' "\$1" >>"$scratch/opened-urls"
+EOF
+  chmod +x "$scratch/fake-browser/xdg-open"
+  export PATH="$scratch/fake-browser:$PATH"
+
   # One X server for every run of the app. No TCP listener: the container
   # shares the host's network.
   display=":$(( 100 + RANDOM % 800 ))"

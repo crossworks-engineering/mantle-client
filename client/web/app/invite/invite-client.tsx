@@ -28,7 +28,7 @@ import { usePasswordRule } from '@/lib/password-rule';
 import { UNEXPECTED_RESPONSE, signInErrorMessage } from '@/lib/sign-in-error';
 import { signInAfterInvite } from '@/lib/invite-sign-in';
 import { LinkStep } from '@/components/oidc/link-step';
-import { useOidcConfig } from '@/lib/oidc/use-oidc';
+import { companyLabel, useOidcConfig } from '@/lib/oidc/use-oidc';
 
 type Preview =
   | { kind: 'idle' }
@@ -220,9 +220,9 @@ export function InviteClient({
         // not read yet: no flash of the code form before "Checking your invite".
         data-link-code-wait={preview.kind === 'idle' ? '' : undefined}
       >
-        {heldTicket && oidc.mode !== 'off' ? (
+        {heldTicket ? (
           <LinkStep
-            label={oidc.label}
+            label={companyLabel(oidc)}
             held={{ ticket: heldTicket }}
             onEnded={() => window.location.assign('/login')}
           />

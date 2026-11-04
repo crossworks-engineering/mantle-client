@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { destinationAfterSignIn } from '@/lib/sign-in-destination';
 import { goAfterSignIn } from '@/lib/oauth-consent';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { tokenStore } from '@mantle/web-ui/token-store';
 import { useSessions } from '@mantle/web-ui/use-sessions';
@@ -14,7 +14,7 @@ import { LinkStep } from '@/components/oidc/link-step';
 import { companySignInWorksHere } from '@/lib/oidc/actions';
 import { flowStoppedMessage } from '@/lib/oidc/flow';
 import { browserUsesCompanySignIn } from '@/lib/oidc/linked-browser';
-import { useOidcConfig } from '@/lib/oidc/use-oidc';
+import { OIDC_CONFIG_KEY, companyLabel, useOidcConfig } from '@/lib/oidc/use-oidc';
 import { LoginForm } from './login-form';
 import { LoginServer } from './login-server';
 
@@ -112,6 +112,10 @@ export function LoginClient({
   // Company sign-in, read after mount: the desktop shell and the browser's own
   // hint are not there in the server pass.
   const config = useOidcConfig();
+  const queryClient = useQueryClient();
+  // The brain refused a password for company sign-in's sake, so it is on,
+  // whatever an earlier read of the mode said.
+  const readModeAgain = () => void queryClient.invalidateQueries({ queryKey: OIDC_CONFIG_KEY });
   const [usable, setUsable] = useState(false);
   const [first, setFirst] = useState(false);
   useEffect(() => {
@@ -121,8 +125,9 @@ export function LoginClient({
   const companyFirst = config.mode === 'required' || (config.mode === 'optional' && first);
   const [heldTicket, setHeldTicket] = useState<string>();
   const [heldEnded, setHeldEnded] = useState<string>();
-  const shownError =
-    heldEnded ?? error ?? (oidc && oidc !== 'linked' ? flowStoppedMessage(oidc) : undefined);
+  const oidcWords =
+    config.mode !== 'off' && oidc && oidc !== 'linked' ? flowStoppedMessage(oidc) : undefined;
+  const shownError = heldEnded ?? error ?? oidcWords;
 
   const company =
     config.mode !== 'off' && !firstRun ? (
@@ -165,15 +170,15 @@ export function LoginClient({
             both.
           </p>
         )}
-        {heldTicket && config.mode !== 'off' ? (
+        {heldTicket ? (
           <LinkStep
-            label={config.label}
+            label={companyLabel(config)}
             held={{ ticket: heldTicket }}
             {...(next ? { next } : {})}
             {...(add ? { add } : {})}
             onEnded={() => {
               setHeldTicket(undefined);
-              setHeldEnded('That step ended. Sign in with your password again.');
+              setHeldEnded('That step ended. Sign in again.');
             }}
           />
         ) : (
@@ -191,8 +196,14 @@ export function LoginClient({
               setupCodeRequired={setupCodeRequired}
               add={add}
               initialEmail={target?.email ?? hintEmail}
-              onHeld={setHeldTicket}
-              onCompanyOnly={() => setFirst(true)}
+              onHeld={(ticket) => {
+                setHeldTicket(ticket);
+                readModeAgain();
+              }}
+              onCompanyOnly={() => {
+                setFirst(true);
+                readModeAgain();
+              }}
             />
             {!companyFirst && company && (
               <>

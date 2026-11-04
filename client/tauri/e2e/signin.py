@@ -44,10 +44,12 @@ two profiles, so two windows' data folders and two keychain namespaces.
      on disk); the notice is shown once in the run; the next run is back on
      /login, holds nothing, and says it again
 
-  h  in that same window: the page has oidc.open, the shell refuses another
-     address, and a second process given a mantle://oidc link hands it over
-     and leaves; the window goes to /auth/oidc, keeps nothing of the flow in
-     the address, and spends nothing, since nothing waits for it
+  h  in that same window: the page has oidc.open and the shell refuses another
+     address. A second process given a mantle://oidc link hands it over and
+     leaves; with no sign-in sent out no window moves. With one sent out (a
+     fake browser keeps the URL), the window goes to /auth/oidc, finds its flow
+     in sessionStorage across the shell's navigation, and moves on with nothing
+     of the flow in the address. The same link again moves nothing.
 
 The vault is read the way the page reads it: through
 window.mantleDesktop.tokenVault, the synchronous API, which asks the shell
@@ -762,25 +764,65 @@ def oidc_checks(app, home, bus):
         ".then(done, function () { done('threw'); });"
     )
     check("h: the shell opens no other address", answer is False, f"answered {answer!r}")
-    # A second process, as the OS starts for a mantle:// link on Linux, hands
-    # the link to the app and leaves. Nothing waits in the page, so it spends
-    # nothing and says so.
-    fragment = urllib.parse.urlencode({"oidc": "cancelled", "iss": ORIGIN_A})
-    env = home.env(bus)
-    env.pop("TAURI_WEBVIEW_AUTOMATION", None)
-    second = subprocess.run([BIN, f"mantle://oidc#{fragment}"], env=env, timeout=60, capture_output=True)
+    def hand_over(result):
+        # A second process, as the OS starts for a mantle:// link on Linux,
+        # hands the link to the app and leaves.
+        fragment = urllib.parse.urlencode({"oidc": result, "iss": ORIGIN_A})
+        env = home.env(bus)
+        env.pop("TAURI_WEBVIEW_AUTOMATION", None)
+        return subprocess.run([BIN, f"mantle://oidc#{fragment}"], env=env, timeout=60, capture_output=True)
+
+    # Any app can open such a link: a window that sent nothing out does not move.
+    before = app.path()
+    second = hand_over("cancelled")
     check("h: the second process hands over and leaves", second.returncode == 0, f"exit {second.returncode}")
+    time.sleep(3)
+    check("h: a link nothing waits for moves no window", app.path() == before, f"on {app.path()}")
+
+    # A sign-in sent out. The fake browser (run.sh's xdg-open) keeps the URL.
+    start = f"{ORIGIN_A}/api/auth/oidc/start?redirect=mantle%3A%2F%2Foidc"
+    app.js(
+        "window.sessionStorage.setItem('mantle.oidc.flow', JSON.stringify({ purpose: 'signin',"
+        " verifier: 'v'.repeat(43), brain: arguments[0], startedAt: Date.now() }));",
+        ORIGIN_A,
+    )
+    opened = app.js_async(
+        "var done = arguments[arguments.length - 1];"
+        " window.mantleDesktop.oidc.open(arguments[0]).then(done, function () { done('threw'); });",
+        start,
+    )
+    check("h: the shell opens this brain's start URL", opened is True, f"answered {opened!r}")
+    deadline = time.time() + 10
+    seen = ""
+    while time.time() < deadline and start not in seen:
+        try:
+            with open(os.path.join(SCRATCH, "opened-urls"), encoding="utf-8") as f:
+                seen = f.read()
+        except OSError:
+            pass
+        time.sleep(0.2)
+    check("h: and the browser got exactly that", start in seen)
+    second = hand_over("cancelled")
+    check("h: the way back hands over too", second.returncode == 0, f"exit {second.returncode}")
+    # The page finds its flow across the shell's navigation (sessionStorage),
+    # so it goes on to the sign-in screen, not to "This sign-in has ended"; a
+    # signed-in window then goes on home.
     deadline = time.time() + 30
-    while time.time() < deadline and not (app.path() or "").startswith("/auth/oidc"):
+    gone = None
+    while time.time() < deadline:
+        gone = app.js("return window.sessionStorage.getItem('mantle.oidc.flow')")
+        if gone is None and not (app.path() or "").startswith("/auth/oidc"):
+            break
         time.sleep(0.5)
-    path = app.path() or ""
-    check("h: the window goes to /auth/oidc", path.startswith("/auth/oidc"), f"on {path}")
-    said = ""
-    while time.time() < deadline and "ended" not in said:
-        said = app.js("return document.body.innerText") or ""
-        time.sleep(0.5)
-    check("h: an answer nothing waits for spends nothing", "This sign-in has ended" in said)
+    check("h: the page found its flow, across the shell's navigation", gone is None, f"on {app.path()}")
+    check("h: and left the page", not (app.path() or "").startswith("/auth/oidc"), f"on {app.path()}")
     check("h: the address keeps nothing of the flow", "#" not in (app.url() or ""), app.url() or "")
+
+    # Once only: the same link again moves nothing.
+    before = app.path()
+    hand_over("cancelled")
+    time.sleep(3)
+    check("h: a window takes one link for one sign-in", app.path() == before, f"on {app.path()}")
 
 
 def main():

@@ -186,7 +186,11 @@ export function LoginForm({
           onHeld(data.ticket);
           return;
         }
-        if (data.code === 'sso-required') onCompanyOnly?.();
+        if (data.code === 'sso-required') {
+          // It was right, and it is no way in here: it does not stay on screen.
+          setPassword('');
+          onCompanyOnly?.();
+        }
         setError(data.error ?? 'Sign-in failed.');
         return;
       }

@@ -20,6 +20,9 @@ import { challengeFor, newVerifier } from './pkce';
  * every 401 as a dead session (lib/member-password.ts has the same story).
  */
 
+/** The brain's words for a wrong password at a link start. */
+const WRONG_PASSWORD = 'Current password is incorrect.';
+
 /** Where the desktop shell's flows end. */
 const APP_TARGET = 'mantle://oidc';
 
@@ -34,20 +37,18 @@ function target(): string {
   return desktopShell()?.oidc ? APP_TARGET : `${window.location.origin}/auth/oidc`;
 }
 
-/** GET /api/auth/oidc/config. A brain from before company sign-in, or one that
- *  cannot be read, is off: the sign-in screen stays as it is. */
+/** GET /api/auth/oidc/config. A brain from before company sign-in answers 404:
+ *  off, and the sign-in screen stays as it is. A read that fails says nothing
+ *  and throws, so it is asked again and never kept as an answer. */
 export async function readOidcConfig(): Promise<OidcConfigDTO> {
-  try {
-    const res = await fetch(apiUrl('/api/auth/oidc/config'), {
-      credentials: 'omit',
-      signal: AbortSignal.timeout(SIGN_IN_TIMEOUT_MS),
-    });
-    if (!res.ok) return { mode: 'off' };
-    const body = (await res.json()) as OidcConfigDTO;
-    return body.mode === 'optional' || body.mode === 'required' ? body : { mode: 'off' };
-  } catch {
-    return { mode: 'off' };
-  }
+  const res = await fetch(apiUrl('/api/auth/oidc/config'), {
+    credentials: 'omit',
+    signal: AbortSignal.timeout(SIGN_IN_TIMEOUT_MS),
+  });
+  if (res.status === 404) return { mode: 'off' };
+  if (!res.ok) throw new Error(`config ${res.status}`);
+  const body = (await res.json()) as OidcConfigDTO;
+  return body.mode === 'optional' || body.mode === 'required' ? body : { mode: 'off' };
 }
 
 /** A flow's next step: on its way (a web page is leaving for the provider), or
@@ -74,7 +75,8 @@ async function goToProvider(raw: string): Promise<FlowStarted> {
     window.location.assign(url.href);
     return 'leaving';
   }
-  if (!(await oidc.open(url.href))) {
+  const opened = await oidc.open(url.href).catch(() => false);
+  if (!opened) {
     clearPendingFlow();
     throw new Error('The browser did not open. Try again.');
   }
@@ -159,11 +161,12 @@ export async function startLink(opts: {
   if (res.status === 401 && answer.code === 'password-needed') {
     return { kind: 'password-needed', message: answer.error ?? '' };
   }
-  if (res.status === 401) {
-    return opts.password
-      ? { kind: 'wrong-password', message: 'That is not your password.' }
-      : { kind: 'signed-out' };
+  // A dead session answers 401 too, whatever was typed: only the brain's own
+  // words mean a wrong password (lib/member-password.ts has the same split).
+  if (res.status === 401 && answer.error === WRONG_PASSWORD) {
+    return { kind: 'wrong-password', message: 'That is not your password.' };
   }
+  if (res.status === 401) return { kind: 'signed-out' };
   if (res.status === 409 && answer.code === 'already-linked') return { kind: 'already-linked' };
   // A right password the box's password rule holds, or anything else.
   return {
@@ -238,6 +241,12 @@ export type Unlink = { ok: true } | { ok: false; message: string };
 export async function unlinkSelf(): Promise<Unlink> {
   const res = await fetch(apiUrl('/api/auth/oidc/link'), withAuth({ method: 'DELETE' }));
   if (res.ok) return { ok: true };
+  if (res.status === 409) {
+    return {
+      ok: false,
+      message: 'This login has no password. Ask an admin to set one, then remove the link.',
+    };
+  }
   const body = (await res.json().catch(() => ({}))) as { error?: string };
   return { ok: false, message: body.error ?? 'Could not remove the link. Try again.' };
 }

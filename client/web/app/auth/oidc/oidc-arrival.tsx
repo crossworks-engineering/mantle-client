@@ -81,7 +81,8 @@ export function OidcArrival() {
     if (window.location.hash) {
       window.history.replaceState(window.history.state, '', window.location.pathname);
     }
-    setEnd({ end: flowEnd, code });
+    // Keep the first read: a second run of this effect finds the address clean.
+    setEnd((first) => first ?? { end: flowEnd, code });
   }, []);
 
   useEffect(() => {

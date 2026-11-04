@@ -16,15 +16,14 @@ pub const MENU_BRAIN_PREFIX: &str = "brain:";
 
 /// Hand a URL to the OS (the browser, the mail app): http, https and mailto
 /// only, checked here whatever the caller already checked.
-pub fn open_outside<R: Runtime>(app: &AppHandle<R>, url: &Url) {
+pub fn open_outside<R: Runtime>(app: &AppHandle<R>, url: &Url) -> bool {
     if !fence::may_open_outside(url) {
-        return;
+        return false;
     }
     // The plugin's own JS commands are granted to no window: only this
     // Rust side opens anything.
-    if let Some(opener) = app.try_state::<tauri_plugin_opener::Opener<R>>() {
-        let _ = opener.open_url(url.as_str(), None::<&str>);
-    }
+    app.try_state::<tauri_plugin_opener::Opener<R>>()
+        .is_some_and(|opener| opener.open_url(url.as_str(), None::<&str>).is_ok())
 }
 
 fn reveal<R: Runtime>(win: &WebviewWindow<R>) {
@@ -186,7 +185,7 @@ pub fn build_brain_window<R: Runtime>(
         // A popup the page asked for, tied by WebKit to a user gesture: the
         // only way anything is opened outside.
         .on_new_window(move |url, _features| {
-            open_outside(&new_app, &url);
+            let _ = open_outside(&new_app, &url);
             NewWindowResponse::Deny
         })
         // The page names itself after its brain; the window list follows.
@@ -232,37 +231,21 @@ pub fn open_brain<R: Runtime>(app: &AppHandle<R>, profile_id: &str) -> Result<()
     Ok(())
 }
 
-/// A company sign-in came back as `mantle://oidc`. It goes to the window of the
-/// brain it names, on the page the web app ends on (/auth/oidc); that page
-/// compares the brain again and holds the verifier. A brain this shell holds
-/// under another address goes to the window in front, whose page says so and
-/// spends nothing.
+/// A company sign-in came back as `mantle://oidc`. It goes to a window that
+/// sent one out, on the page the web app ends on (/auth/oidc), which compares
+/// the brain again and holds the verifier. Any other link moves nothing: any
+/// app can open a `mantle://` link (fence.rs oidc_arrival_profile).
 pub fn deliver_oidc<R: Runtime>(app: &AppHandle<R>, link: &OidcDeepLink) {
     let Ok(target) = Url::parse(&format!("{UI_ORIGIN}/auth/oidc#{}", link.fragment)) else {
         return;
     };
     let shell = app.state::<Shell>();
-    let named = shell
-        .profiles
-        .load()
-        .into_iter()
-        .find(|p| p.origin == link.iss)
-        .map(|p| p.id);
-    let id = match named {
-        Some(id) => {
-            if open_brain(app, &id).is_err() {
-                return;
-            }
-            Some(id)
-        }
-        None => shell.front(),
+    let Some(id) = shell.take_oidc_arrival(&link.iss, crate::profiles::now_ms()) else {
+        return;
     };
-    match id.and_then(|id| app.get_webview_window(&label_for(&id))) {
-        Some(win) => {
-            reveal(&win);
-            let _ = win.navigate(target);
-        }
-        None => focus_or_open(app),
+    if let Some(win) = app.get_webview_window(&label_for(&id)) {
+        reveal(&win);
+        let _ = win.navigate(target);
     }
 }
 

@@ -30,6 +30,22 @@ export function tokenExpEpoch(token: string): number | null {
 }
 
 /**
+ * Whether company sign-in made this token (its `so` claim). Not verified, like
+ * everything here: it decides only what a screen offers, and the brain judges
+ * the credential on every request.
+ */
+export function tokenFromCompanySignIn(token: string): boolean {
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return false;
+  try {
+    const payload = token.slice(0, dot).replace(/-/g, '+').replace(/_/g, '/');
+    return (JSON.parse(atob(payload)) as { so?: unknown }).so === 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Which login a signed token was minted for: its `act` claim when it has one,
  * else its `uid`. A token minted for a login that is not the brain's anchor
  * can carry the anchor as `uid` and the login as `act`, so `uid` alone does

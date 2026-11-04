@@ -128,11 +128,18 @@ describe('changePasswordOffered', () => {
     passwordConfirms: true,
   };
   it('off, and where the password is a way in: yes', () => {
-    expect(changePasswordOffered({ mode: 'off' })).toBe(true);
-    expect(changePasswordOffered(on)).toBe(true);
+    expect(changePasswordOffered({ mode: 'off' }, false)).toBe(true);
+    expect(changePasswordOffered(on, false)).toBe(true);
   });
   it('required mode with a linked login, or no password at all: no', () => {
-    expect(changePasswordOffered({ ...on, mode: 'required', passwordConfirms: false })).toBe(false);
-    expect(changePasswordOffered({ ...on, passwordConfirms: false })).toBe(false);
+    expect(changePasswordOffered({ ...on, mode: 'required', passwordConfirms: false }, false)).toBe(
+      false,
+    );
+    expect(changePasswordOffered({ ...on, passwordConfirms: false }, false)).toBe(false);
+  });
+  it('never from a company sign-in session, and not while the answer is unknown', () => {
+    expect(changePasswordOffered(on, true)).toBe(false);
+    expect(changePasswordOffered({ mode: 'off' }, true)).toBe(false);
+    expect(changePasswordOffered(undefined, false)).toBe(false);
   });
 });

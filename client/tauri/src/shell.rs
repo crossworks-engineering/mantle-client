@@ -34,6 +34,9 @@ pub struct Shell {
     /// Brain window label -> the brain origin it was opened for. A window's
     /// brain is fixed for its life: the scheme reads it here, per request.
     windows: Mutex<HashMap<String, String>>,
+    /// Profile id -> when its window stops waiting for a company sign-in it
+    /// sent out to the browser (fence.rs oidc_arrival_profile).
+    oidc_armed: Mutex<HashMap<String, u64>>,
     /// The brain whose window was in front last (the menu's check mark).
     front: Mutex<Option<String>>,
     /// Profile lists are read, changed and written whole: one at a time.
@@ -63,6 +66,7 @@ impl Shell {
             appearance: AppearanceCache::new(),
             data_dir: data_dir.to_path_buf(),
             windows: Mutex::new(HashMap::new()),
+            oidc_armed: Mutex::new(HashMap::new()),
             front: Mutex::new(None),
             edits: Mutex::new(()),
             removals: Mutex::new(()),
@@ -101,6 +105,27 @@ impl Shell {
             .unwrap_or_else(|e| e.into_inner())
             .get(label)
             .cloned()
+    }
+
+    pub fn arm_oidc(&self, profile_id: &str, until: u64) {
+        self.oidc_armed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(profile_id.to_string(), until);
+    }
+
+    /// The window a `mantle://oidc` link goes to, its wait over with this link.
+    pub fn take_oidc_arrival(&self, iss: &str, now: u64) -> Option<String> {
+        let mut armed = self.oidc_armed.lock().unwrap_or_else(|e| e.into_inner());
+        let waiting: Vec<(String, String, u64)> = self
+            .profiles
+            .load()
+            .into_iter()
+            .filter_map(|p| armed.get(&p.id).map(|until| (p.id, p.origin, *until)))
+            .collect();
+        let id = crate::fence::oidc_arrival_profile(&waiting, iss, now)?;
+        armed.remove(&id);
+        Some(id)
     }
 
     pub fn front(&self) -> Option<String> {

@@ -23,6 +23,8 @@ import {
   frameNavigationAllowed,
   httpRouteOf,
   normalizeOrigin,
+  OIDC_ARMED_MS,
+  oidcArrivalProfile,
   oidcDeepLink,
   oidcStartUrl,
   permissionAllowed,
@@ -340,32 +342,20 @@ function inAppUrl(path: string, rendererUrl: string): string | null {
   }
 }
 
+/** Profile id to when its window stops waiting for a company sign-in. */
+const oidcArmed = new Map<string, number>();
+
 /**
- * A company sign-in came back. It goes to the window of the brain it names, on
- * the same page the web app ends on (/auth/oidc); that page compares the brain
- * again and holds the verifier. A brain this shell holds under another address
- * goes to the window in front, whose page says so and spends nothing.
+ * A company sign-in came back. It goes to a window that sent one out, on the page
+ * the web app ends on (/auth/oidc), which compares the brain again and holds the
+ * verifier. Any other link moves nothing: any app can open a `mantle://` link
+ * (brain-fence.ts oidcArrivalProfile).
  */
-function deliverOidc(link: OidcDeepLink): void {
-  // macOS can deliver the link before the app is ready to make a window.
-  if (!app.isReady()) {
-    void app.whenReady().then(() => deliverOidc(link));
-    return;
-  }
-  const { iss, fragment } = link;
-  const path = `/auth/oidc#${fragment}`;
-  const profile = loadProfiles().find((p) => p.origin === iss);
-  if (profile) {
-    openBrain(profile.id, path).catch(reportWindowError);
-    return;
-  }
-  if (appWindow && !appWindow.isDestroyed() && appRendererUrl) {
-    reveal(appWindow);
-    const target = inAppUrl(path, appRendererUrl);
-    if (target) void appWindow.loadURL(target);
-  } else {
-    focusOrOpen();
-  }
+function deliverOidc({ iss, fragment }: OidcDeepLink): void {
+  const id = oidcArrivalProfile(oidcArmed, loadProfiles(), iss, Date.now());
+  if (!id) return;
+  oidcArmed.delete(id);
+  openBrain(id, `/auth/oidc#${fragment}`).catch(reportWindowError);
 }
 
 function handleDeepLink(link: string): void {
@@ -586,8 +576,13 @@ function registerIpc(): void {
     const id = vaultProfileFor(event);
     const profile = id ? loadProfiles().find((p) => p.id === id) : undefined;
     const url = profile ? oidcStartUrl(raw, profile.origin) : null;
-    if (!url) return false;
-    await shell.openExternal(url);
+    if (!profile || !url) return false;
+    try {
+      await shell.openExternal(url);
+    } catch {
+      return false;
+    }
+    oidcArmed.set(profile.id, Date.now() + OIDC_ARMED_MS);
     return true;
   });
 
@@ -880,16 +875,16 @@ if (!app.requestSingleInstanceLock()) {
 
     // A cold start via deep link carries the URL in argv (Linux/Windows).
     const link = deepLinkInArgv(process.argv);
-    const coldOidc = link ? oidcDeepLink(link) : null;
-    if (link && !coldOidc) pendingDeepLinkPath = deepLinkToPath(link);
+    // No window has sent a sign-in out yet, so a company sign-in's link is not
+    // for this start.
+    if (link && !oidcDeepLink(link)) pendingDeepLinkPath = deepLinkToPath(link);
 
     // Relaunch lands you back in the brain you were using; the persisted
     // partition still holds the bearer, so no re-login.
     const lastUsed = loadProfiles()
       .filter((p) => p.lastUsedAt)
       .sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))[0];
-    if (coldOidc) deliverOidc(coldOidc);
-    else if (lastUsed) openAppWindow(lastUsed).catch(reportWindowError);
+    if (lastUsed) openAppWindow(lastUsed).catch(reportWindowError);
     else openConnectWindow();
 
     app.on('activate', () => {

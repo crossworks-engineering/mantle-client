@@ -236,6 +236,32 @@ export function oidcDeepLink(link: string): OidcDeepLink | null {
   return { iss, fragment: out.toString() };
 }
 
+/** How long a brain window waits for a company sign-in it sent out. */
+export const OIDC_ARMED_MS = 15 * 60_000;
+
+/**
+ * The profile whose window a `mantle://oidc` link goes to, or null to drop it
+ * with no window moved. Any app can open such a link, so only a window that sent
+ * a sign-in out to the browser takes one: the one for the brain the link names,
+ * else the last that went out, whose page sees that the brain differs and spends
+ * nothing. `armed`: profile id to when its wait ends.
+ */
+export function oidcArrivalProfile(
+  armed: ReadonlyMap<string, number>,
+  profiles: readonly { id: string; origin: string }[],
+  iss: string,
+  now: number,
+): string | null {
+  const live = profiles.filter((p) => (armed.get(p.id) ?? 0) > now);
+  const named = live.find((p) => p.origin === iss);
+  if (named) return named.id;
+  let latest: string | null = null;
+  for (const p of live) {
+    if (latest === null || armed.get(p.id)! > armed.get(latest)!) latest = p.id;
+  }
+  return latest;
+}
+
 /**
  * `raw` when it starts a company sign-in on this window's brain, the only URL
  * the page may ask the shell to open this way. Exactly the brain's origin and

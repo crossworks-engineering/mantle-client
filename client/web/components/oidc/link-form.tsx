@@ -90,7 +90,9 @@ export function LinkForm({
           else bounceToLogin();
           break;
         case 'already-linked':
-          void queryClient.invalidateQueries({ queryKey: OIDC_STATUS_KEY });
+          // Linked in another tab: a held step has nothing left to do here.
+          if (onEnded) onEnded();
+          else void queryClient.invalidateQueries({ queryKey: OIDC_STATUS_KEY });
           break;
         case 'error':
           setError(res.message);

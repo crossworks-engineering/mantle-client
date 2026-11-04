@@ -33,7 +33,7 @@
 use tauri::http::{self, header};
 use tauri::{AppHandle, Manager, Runtime};
 
-use crate::fence::{is_ui_url, oidc_start_url, UI_ORIGIN};
+use crate::fence::{is_ui_url, oidc_start_url, OIDC_ARMED_MS, UI_ORIGIN};
 use crate::profiles::id_from_label;
 use crate::shell::Shell;
 use crate::vault::Held;
@@ -198,8 +198,9 @@ fn traced_origin(req: &http::Request<Vec<u8>>) -> String {
 
 /// `oidcOpen`: a company sign-in on this window's brain, in the system browser.
 /// Not a vault call and no keychain: it shares the endpoint for its refusals.
-/// Only this brain's start URL, whatever the page asks (fence.rs).
-fn oidc_open<R: Runtime>(app: &AppHandle<R>, label: &str, body: &[u8]) -> bool {
+/// Only this brain's start URL, whatever the page asks (fence.rs). Its window
+/// then waits for the flow's way back.
+fn oidc_open<R: Runtime>(app: &AppHandle<R>, profile: &str, label: &str, body: &[u8]) -> bool {
     let shell = app.state::<Shell>();
     let raw = serde_json::from_slice::<serde_json::Value>(body)
         .ok()
@@ -208,13 +209,15 @@ fn oidc_open<R: Runtime>(app: &AppHandle<R>, label: &str, body: &[u8]) -> bool {
     let url = shell
         .brain_of_window(label)
         .and_then(|brain| oidc_start_url(&raw, &brain));
-    match url {
-        Some(url) => {
-            crate::windows::open_outside(app, &url);
-            true
-        }
-        None => false,
+    let Some(url) = url else {
+        return false;
+    };
+    let opened = crate::windows::open_outside(app, &url);
+    if opened {
+        let until = crate::profiles::now_ms() + OIDC_ARMED_MS;
+        shell.arm_oidc(profile, until);
     }
+    opened
 }
 
 /// Answers a request to VAULT_PATH from the webview `label`.
@@ -242,7 +245,7 @@ pub fn serve<R: Runtime>(
     };
     let op = op_name(req.body());
     if op == "oidcOpen" {
-        let opened = oidc_open(app, label, req.body());
+        let opened = oidc_open(app, &profile, label, req.body());
         shell.trace(|| format!("vault {op} from {label} -> {opened}"));
         return answer(if opened { Some("1".to_string()) } else { None });
     }

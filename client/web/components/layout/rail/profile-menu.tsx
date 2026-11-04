@@ -65,7 +65,9 @@ import {
 import { MemberPasswordDialog } from '@/components/member/member-password-dialog';
 import { CompanySignInSection } from '@/components/oidc/company-sign-in-section';
 import { changePasswordOffered } from '@/lib/oidc/flow';
-import { useOidcStatus } from '@/lib/oidc/use-oidc';
+import { useOidcStatus, useOidcStatusKnown } from '@/lib/oidc/use-oidc';
+import { tokenFromCompanySignIn } from '@mantle/web-ui/token-claims';
+import { tokenStore } from '@mantle/web-ui/token-store';
 import { MemberDescriptionDialog } from '@/components/member/member-description-dialog';
 import { EVERYWHERE_CONFIRM_TEXT, signOutEverywhere } from '@/lib/sign-out-everywhere';
 
@@ -157,7 +159,12 @@ export function ProfileMenu({
   // serves every login): no owner screen offers a self-serve change.
   const member = useShellRole() === 'member';
   const oidc = useOidcStatus();
+  const oidcKnown = useOidcStatusKnown();
   const [companyOpen, setCompanyOpen] = useState(false);
+  const [companySession, setCompanySession] = useState(false);
+  useEffect(() => {
+    setCompanySession(tokenFromCompanySignIn(tokenStore.get() ?? ''));
+  }, []);
   const { primary, initials } = identityOf(identity);
   const { avatar, email, photoVersion } = identity;
   const { colorTheme } = useColorTheme();
@@ -313,7 +320,7 @@ export function ProfileMenu({
             <Building2 className="size-4" /> Company sign-in
           </DropdownMenuItem>
         ) : null}
-        {member && changePasswordOffered(oidc) ? (
+        {member && changePasswordOffered(oidcKnown, companySession) ? (
           <DropdownMenuItem onSelect={() => setPasswordOpen(true)} className="cursor-pointer">
             <KeyRound className="size-4" /> Change password
           </DropdownMenuItem>

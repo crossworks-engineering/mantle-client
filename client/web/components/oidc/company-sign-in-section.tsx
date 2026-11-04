@@ -27,7 +27,8 @@ import { LinkForm } from './link-form';
  *
  * Linking is the person's choice and unlinking is too, in optional mode: the
  * password then is the only way in (corporate plan section 17.4). A login with
- * no password has to get one first, or it would have no way back in.
+ * no password has to get one first, or it would have no way back in: the brain
+ * refuses that unlink, and the screen says what to do.
  */
 export function CompanySignInSection() {
   const status = useOidcStatus();
@@ -73,10 +74,6 @@ export function CompanySignInSection() {
           {!status.canUnlink ? (
             <p className="text-xs text-muted-foreground">
               This site requires {label}. Ask an admin to remove the link.
-            </p>
-          ) : !status.passwordConfirms ? (
-            <p className="text-xs text-muted-foreground">
-              This login has no password. Ask an admin to set one before you remove the link.
             </p>
           ) : (
             <Button type="button" variant="outline" onClick={() => setConfirming(true)}>
