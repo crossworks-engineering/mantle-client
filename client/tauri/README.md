@@ -120,7 +120,8 @@ mantle-ui://localhost/_mantle/vault` with `X-Mantle-Vault: 1` and a JSON
 Rust 1.99.1 (`rust-toolchain.toml`; rustup picks it up). Every crate is pinned
 exactly (`=x.y.z`) and `Cargo.lock` is committed: tauri 2.12.5, tauri-build
 2.7.4, tauri-plugin-opener 2.7.2, tauri-plugin-deep-link 2.6.2,
-tauri-plugin-single-instance 2.5.4, serde 1.0.229, serde_json 1.0.154, ureq
+tauri-plugin-single-instance 2.5.4 (`rust-ini` is held at 0.21.1 in
+`Cargo.lock`: the deep-link plugin does not build on Linux with 0.21.3), serde 1.0.229, serde_json 1.0.154, ureq
 3.5.0 (rustls only, no cookie store), uuid 1.29.0, url 2.5.8, keyring-core
 1.0.1, apple-native-keyring-store 1.0.2 (macOS), zbus-secret-service-keyring-store
 1.0.1 (Linux), and for the native alert and the macOS version check the

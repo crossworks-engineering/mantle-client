@@ -775,12 +775,12 @@ def oidc_checks(app, home, bus):
         time.sleep(0.5)
     path = app.path() or ""
     check("h: the window goes to /auth/oidc", path.startswith("/auth/oidc"), f"on {path}")
-    check("h: the address keeps nothing of the flow", "#" not in (app.url() or ""), app.url() or "")
     said = ""
     while time.time() < deadline and "ended" not in said:
         said = app.js("return document.body.innerText") or ""
         time.sleep(0.5)
     check("h: an answer nothing waits for spends nothing", "This sign-in has ended" in said)
+    check("h: the address keeps nothing of the flow", "#" not in (app.url() or ""), app.url() or "")
 
 
 def main():
