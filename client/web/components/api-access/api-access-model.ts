@@ -105,6 +105,9 @@ export function offersRiskyTools(rules: CreateRules): boolean {
 export function createBody(
   form: CreateForm,
   rules: CreateRules,
+  /** How the person confirms: the password typed here, or a fresh company
+   *  sign-in (a linked login), whose proof goes in when it is back. */
+  confirm: 'password' | 'company' = 'password',
 ):
   | { body: AccessKeyCreateInput }
   | { error: string; field: 'name' | 'areas' | 'riskyTools' | 'expiry' | 'password' } {
@@ -126,7 +129,7 @@ export function createBody(
   if (!expiryChoicesFor(rules.maxExpiryDays).includes(form.expiry)) {
     return { error: `Your keys can last at most ${rules.maxExpiryDays} days.`, field: 'expiry' };
   }
-  if (!form.password) {
+  if (confirm === 'password' && !form.password) {
     return { error: 'Type your password to make a key.', field: 'password' };
   }
   return {
@@ -136,9 +139,35 @@ export function createBody(
       areas: form.allAreas ? null : [...new Set(form.areas)],
       expiresInDays: form.expiry === 'never' ? null : Number(form.expiry),
       ...(risky.length ? { riskyTools: [...new Set(risky)] } : {}),
-      password: form.password,
+      ...(confirm === 'password' ? { password: form.password } : {}),
     },
   };
+}
+
+const KEY_DRAFT = 'mantle.oidc.key-draft';
+
+/**
+ * A fresh company sign-in leaves this page and comes back: the form waits in
+ * this tab, with no password in it.
+ */
+export function saveKeyDraft(form: CreateForm): void {
+  try {
+    window.sessionStorage.setItem(KEY_DRAFT, JSON.stringify({ ...form, password: '' }));
+  } catch {
+    /* the person fills the form in again */
+  }
+}
+
+/** The form that waited, read once. */
+export function takeKeyDraft(): CreateForm | null {
+  try {
+    const raw = window.sessionStorage.getItem(KEY_DRAFT);
+    if (!raw) return null;
+    window.sessionStorage.removeItem(KEY_DRAFT);
+    return { ...(JSON.parse(raw) as CreateForm), password: '' };
+  } catch {
+    return null;
+  }
 }
 
 /** What a key may do, in one line. */

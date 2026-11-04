@@ -21,9 +21,10 @@
 /** Paths that render without a session: login itself, the runtime env,
  *  `/pair` (the static page a browser lands on when it scans the phone
  *  sign-in QR; it holds no data and never reads the code in the fragment),
- *  and `/invite`, where a person redeems an invite. Public paths pass before
+ *  `/invite`, where a person redeems an invite, and `/auth/oidc`, where a
+ *  company sign-in comes back. Public paths pass before
  *  presence is read, so a signed-in browser is never sent away from them. */
-const PUBLIC_PREFIXES: readonly string[] = ['/login', '/env.js', '/pair', '/invite'];
+const PUBLIC_PREFIXES: readonly string[] = ['/login', '/env.js', '/pair', '/invite', '/auth/oidc'];
 
 /** Retired pages and where they go now, for everyone and before the presence
  *  gate, to a fresh URL: no `next`, and nothing of the old address carried

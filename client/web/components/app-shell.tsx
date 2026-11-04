@@ -54,6 +54,8 @@ import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { MessengerShell } from '@/components/messenger/messenger-shell';
 import { CallDock } from '@/components/calls/call-dock';
 import { RingCard } from '@/components/calls/ring-card';
+import { LinkGate } from '@/components/oidc/link-gate';
+import { OfferCard } from '@/components/oidc/offer-card';
 import { ProviderAlertBanner } from '@/components/needs-you/provider-alert-banner';
 import { PickMode } from '@/components/assistant/pick-mode';
 import { ZenModeContext } from '@/components/layout/zen-mode';
@@ -198,7 +200,9 @@ export function AppShell(props: {
               <AssistantDockProvider>
                 <HelpRailProvider>
                   <TourProvider>
-                    <ShellFrame {...props} shell={data} />
+                    <LinkGate>
+                      <ShellFrame {...props} shell={data} />
+                    </LinkGate>
                   </TourProvider>
                 </HelpRailProvider>
               </AssistantDockProvider>
@@ -757,6 +761,7 @@ function ShellFrame({
           {/* The call this tab is in, and an incoming call's ring (calls P1). */}
           {role === 'admin' || role === 'member' ? <CallDock /> : null}
           {role === 'admin' || role === 'member' ? <RingCard /> : null}
+          <OfferCard />
           <UploadDock />
         </div>
       </div>

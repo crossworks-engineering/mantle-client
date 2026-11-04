@@ -11,10 +11,15 @@
  * revoke, every key on the brain. Not the outbound "API keys" screen
  * (/settings/keys): those are keys this brain uses to call other services.
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
-import type { AccessKeyCreated, AccessKeyList, AccessKeyView } from '@mantle/client-types';
+import type {
+  AccessKeyCreated,
+  AccessKeyList,
+  AccessKeyView,
+  OidcFreshProof,
+} from '@mantle/client-types';
 import { apiFetch, apiSend, apiUrl, ApiError } from '@mantle/web-ui/api-fetch';
 import {
   AlertDialog,
@@ -65,13 +70,23 @@ import {
   expiryChoicesFor,
   expiryLabel,
   offersRiskyTools,
+  saveKeyDraft,
   scopeLine,
   sortKeys,
+  takeKeyDraft,
   type CreateForm,
   type CreateRules,
 } from './api-access-model';
+import { useReturnReset } from '@/components/oidc/use-return-reset';
+import { startFresh } from '@/lib/oidc/actions';
+import { flowStoppedMessage, takeOutcome } from '@/lib/oidc/flow';
+import { useOidcStatus } from '@/lib/oidc/use-oidc';
+import { signInErrorMessage } from '@/lib/sign-in-error';
 
 const QUERY_KEY = ['access-keys'];
+
+/** A form back from a fresh company sign-in: its proof, or why there is none. */
+type KeyResume = { form: CreateForm; proof?: OidcFreshProof; problem?: string };
 
 /** The brain's origin, for the example commands: the API base in the split
  *  topology, this page's origin otherwise. */
@@ -91,6 +106,22 @@ export function ApiAccessClient() {
   const [revoking, setRevoking] = useState<AccessKeyView | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: QUERY_KEY });
+
+  const oidc = useOidcStatus();
+  // Back from a fresh company sign-in: the form that waited opens again. After
+  // mount: this tab's storage is not there in the first render.
+  const [resume, setResume] = useState<KeyResume | null>(null);
+  useEffect(() => {
+    const form = takeKeyDraft();
+    const outcome = takeOutcome('fresh');
+    if (!form) return;
+    setResume({
+      form,
+      ...(outcome && 'proof' in outcome ? { proof: outcome.proof } : {}),
+      ...(outcome && 'result' in outcome ? { problem: flowStoppedMessage(outcome.result) } : {}),
+    });
+    setCreating(true);
+  }, []);
 
   const revoke = async (key: AccessKeyView) => {
     try {
@@ -153,8 +184,17 @@ export function ApiAccessClient() {
 
       {data && (
         <CreateKeyDialog
+          key={resume ? 'resumed' : 'new'}
           open={creating}
           onOpenChange={setCreating}
+          resume={resume}
+          // A linked login confirms with a fresh company sign-in; the brain says
+          // whether its password may stand in (GET /api/auth/oidc/status).
+          company={
+            oidc.mode !== 'off' && oidc.linked
+              ? { label: oidc.label, passwordToo: oidc.passwordConfirms }
+              : null
+          }
           // Every login re-types its password (W8); the longest expiry
           // follows the brain's maxExpiryDays (its keys area).
           rules={{ maxExpiryDays: data.maxExpiryDays }}
@@ -286,6 +326,8 @@ function CreateKeyDialog({
   areas,
   defaultExpiryDays,
   onCreated,
+  resume,
+  company,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -293,6 +335,8 @@ function CreateKeyDialog({
   areas: AccessKeyList['areas'];
   defaultExpiryDays: number;
   onCreated: (made: AccessKeyCreated & { name: string }) => Promise<void>;
+  resume: KeyResume | null;
+  company: { label: string; passwordToo: boolean } | null;
 }) {
   const toast = useToast();
   const risky = offersRiskyTools(rules);
@@ -305,14 +349,25 @@ function CreateKeyDialog({
     riskyTools: '',
     password: '',
   });
-  const [form, setForm] = useState<CreateForm>(blank);
-  const [error, setError] = useState<{ field: string; message: string } | null>(null);
+  const [form, setForm] = useState<CreateForm>(() => resume?.form ?? blank());
+  const [error, setError] = useState<{ field: string; message: string } | null>(
+    resume?.problem ? { field: 'company', message: resume.problem } : null,
+  );
   const [pending, setPending] = useState(false);
+  const [inBrowser, setInBrowser] = useState(false);
+  // A linked login may type its password instead where the brain allows it.
+  const [usePassword, setUsePassword] = useState(false);
+  const viaCompany = usePassword ? null : company;
   const set = (patch: Partial<CreateForm>) => setForm((f) => ({ ...f, ...patch }));
+  useReturnReset(useCallback(() => setPending(false), []));
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const built = createBody(form, rules);
+  /** Send the create. One proof buys one request, so a failure asks again. */
+  const send = async (
+    form: CreateForm,
+    confirm: 'password' | 'company',
+    fresh?: OidcFreshProof,
+  ) => {
+    const built = createBody(form, rules, confirm);
     if ('error' in built) {
       setError({ field: built.field, message: built.error });
       return;
@@ -320,7 +375,10 @@ function CreateKeyDialog({
     setError(null);
     setPending(true);
     try {
-      const made = await apiSend<AccessKeyCreated>('/api/access-keys', 'POST', built.body);
+      const made = await apiSend<AccessKeyCreated>('/api/access-keys', 'POST', {
+        ...built.body,
+        ...(fresh ? { fresh } : {}),
+      });
       await onCreated({ ...made, name: built.body.name });
       setForm(blank());
     } catch (err) {
@@ -331,10 +389,52 @@ function CreateKeyDialog({
         setError({ field: 'password', message: err.message });
         return;
       }
+      if (err instanceof ApiError && err.status === 403 && err.body?.reason === 'fresh-sign-in') {
+        setError({ field: 'company', message: err.message });
+        return;
+      }
       toast.error(err instanceof ApiError ? err.message : 'Could not make the key');
     } finally {
       setPending(false);
     }
+  };
+
+  // Back with a proof: the person already pressed the button, so it goes now.
+  const sentResume = useRef(false);
+  useEffect(() => {
+    if (!resume?.proof || sentResume.current) return;
+    sentResume.current = true;
+    void send(resume.form, 'company', resume.proof);
+    // Once, for the form it came back with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resume]);
+
+  const confirmWithCompany = async () => {
+    const built = createBody(form, rules, 'company');
+    if ('error' in built) {
+      setError({ field: built.field, message: built.error });
+      return;
+    }
+    setError(null);
+    setPending(true);
+    setInBrowser(false);
+    saveKeyDraft(form);
+    try {
+      const how = await startFresh(window.location.pathname);
+      if (how === 'in-browser') {
+        setInBrowser(true);
+        setPending(false);
+      }
+    } catch (err) {
+      setError({ field: 'company', message: signInErrorMessage(err) });
+      setPending(false);
+    }
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (viaCompany) await confirmWithCompany();
+    else await send(form, 'password');
   };
 
   return (
@@ -462,27 +562,56 @@ function CreateKeyDialog({
               </Field>
             )}
 
-            <Field data-invalid={error?.field === 'password' || undefined}>
-              <FieldLabel htmlFor="key-password">Your password</FieldLabel>
-              <Input
-                id="key-password"
-                type="password"
-                autoComplete="current-password"
-                value={form.password}
-                onChange={(e) => set({ password: e.target.value })}
-                aria-invalid={error?.field === 'password' || undefined}
-                aria-describedby={error?.field === 'password' ? 'key-password-error' : undefined}
-              />
-              <FieldError id="key-password-error">
-                {error?.field === 'password' ? error.message : null}
-              </FieldError>
-            </Field>
+            {viaCompany ? (
+              <Field data-invalid={error?.field === 'company' || undefined}>
+                <FieldDescription>
+                  To make a key, sign in with {viaCompany.label} again. Then the key is made.
+                </FieldDescription>
+                {inBrowser && (
+                  <FieldDescription>
+                    Finish signing in in your browser. This window comes back when you are done.
+                  </FieldDescription>
+                )}
+                <FieldError>{error?.field === 'company' ? error.message : null}</FieldError>
+                {viaCompany.passwordToo && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto justify-start p-0 text-xs"
+                    onClick={() => {
+                      setUsePassword(true);
+                      setError(null);
+                    }}
+                  >
+                    Use my password instead
+                  </Button>
+                )}
+              </Field>
+            ) : (
+              <Field data-invalid={error?.field === 'password' || undefined}>
+                <FieldLabel htmlFor="key-password">Your password</FieldLabel>
+                <Input
+                  id="key-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={form.password}
+                  onChange={(e) => set({ password: e.target.value })}
+                  aria-invalid={error?.field === 'password' || undefined}
+                  aria-describedby={error?.field === 'password' ? 'key-password-error' : undefined}
+                />
+                <FieldError id="key-password-error">
+                  {error?.field === 'password' ? error.message : null}
+                </FieldError>
+              </Field>
+            )}
 
             <div className="flex justify-end gap-2 border-t border-border pt-4">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <SubmitButton pending={pending}>Make key</SubmitButton>
+              <SubmitButton pending={pending}>
+                {viaCompany ? `Sign in with ${viaCompany.label}` : 'Make key'}
+              </SubmitButton>
             </div>
           </FieldGroup>
         </form>

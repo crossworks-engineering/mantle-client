@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { OidcRefusal } from '@mantle/client-types';
 import { destinationAfterSignIn } from '@/lib/sign-in-destination';
 import { goAfterSignIn } from '@/lib/oauth-consent';
 import { useRouter } from 'next/navigation';
@@ -8,7 +9,7 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
 import { Label } from '@mantle/web-ui/ui/label';
-import { apiUrl, resetCookieUpgrade, upgradeOwnerCookie } from '@mantle/web-ui/api-fetch';
+import { apiUrl } from '@mantle/web-ui/api-fetch';
 import { isCrossOrigin } from '@mantle/web-ui/runtime-env';
 import { currentBrainOrigin } from '@mantle/web-ui/session-registry';
 import { tokenStore } from '@mantle/web-ui/token-store';
@@ -17,9 +18,10 @@ import {
   SIGN_IN_TIMEOUT_MS,
   UNEXPECTED_RESPONSE,
   readBearer,
-  settleWithin,
   signInErrorMessage,
 } from '@/lib/sign-in-error';
+import { rememberOfferTicket } from '@/lib/oidc/offer-ticket';
+import { settleSessionCookie } from '@/lib/oidc/settle';
 import { SetupCodeField, isSetupCodeRefusal } from './setup-code-field';
 import { PasswordStrength } from '@/components/auth/password-strength';
 import { passwordRuleError, usePasswordRule } from '@/lib/password-rule';
@@ -56,6 +58,11 @@ import { passwordRuleError, usePasswordRule } from '@/lib/password-rule';
  * is typed there, in the window of the brain it is for, because a window only
  * ever reaches its own brain's logins. The browser never shows the field: a
  * web client talks to the one brain it was deployed for.
+ *
+ * With company sign-in on, a right password can still be refused (OidcRefusal):
+ * a login that must link goes to the one link step (`onHeld`), and one that signs
+ * in with the company account only is told so (`onCompanyOnly`). A password
+ * sign-in that works answers the ticket "Link now" starts on.
  */
 export function LoginForm({
   mode = 'login',
@@ -64,6 +71,8 @@ export function LoginForm({
   setupCodeRequired = false,
   add = false,
   initialEmail,
+  onHeld,
+  onCompanyOnly,
 }: {
   mode?: 'login' | 'signup';
   next?: string;
@@ -75,6 +84,10 @@ export function LoginForm({
   /** The login being signed back in to. Arrives after mount, from the device's
    *  own list, so it fills the field once rather than seeding the state. */
   initialEmail?: string;
+  /** Required mode: the password was right, and this login must link first. */
+  onHeld?: (ticket: string) => void;
+  /** Required mode: this login signs in with the company account only. */
+  onCompanyOnly?: () => void;
 }) {
   const router = useRouter();
   const isSignup = mode === 'signup';
@@ -167,10 +180,24 @@ export function LoginForm({
         signal: AbortSignal.timeout(SIGN_IN_TIMEOUT_MS),
       });
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        const data = (await res.json().catch(() => ({}))) as Partial<OidcRefusal>;
+        if (data.code === 'sso-link-required' && data.ticket && onHeld) {
+          setPassword('');
+          onHeld(data.ticket);
+          return;
+        }
+        if (data.code === 'sso-required') onCompanyOnly?.();
         setError(data.error ?? 'Sign-in failed.');
         return;
       }
+      rememberOfferTicket(
+        (
+          (await res
+            .clone()
+            .json()
+            .catch(() => null)) as { oidcTicket?: unknown } | null
+        )?.oidcTicket,
+      );
       const token = await readBearer(res);
       if (!token) {
         setError(UNEXPECTED_RESPONSE);
@@ -178,26 +205,8 @@ export function LoginForm({
       }
       tokenStore.signIn({ email, token });
       if (!split) {
-        // The upgrade resolves a cookie BEFORE a bearer, so a cookie left by
-        // another login (a sign-out that never reached the brain) would be
-        // renewed instead of replaced, and assets would load as that person.
-        // Drop it first. Sent without the bearer: this revokes nothing. Not
-        // after a signup, whose cookie is this very login's.
-        //
-        // Every step here is best effort with the bearer already held, and
-        // each has the same 20 s limit as the sign-in itself: a hang must not
-        // keep the button disabled.
-        if (!isSignup) {
-          await fetch(apiUrl('/api/auth/logout'), {
-            method: 'POST',
-            credentials: 'include',
-            signal: AbortSignal.timeout(SIGN_IN_TIMEOUT_MS),
-          }).catch(() => undefined);
-        }
-        // Whatever an earlier visit to this tab memoised is about someone
-        // else's session; this one has not been upgraded yet.
-        resetCookieUpgrade();
-        await settleWithin(upgradeOwnerCookie(), SIGN_IN_TIMEOUT_MS, undefined);
+        // Not after a signup, whose cookie is this very login's.
+        await settleSessionCookie({ keepCookie: isSignup });
       }
 
       if (add) {

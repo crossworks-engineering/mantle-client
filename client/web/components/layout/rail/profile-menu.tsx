@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import {
+  Building2,
   ChevronsUpDown,
   Dices,
   IdCard,
@@ -54,7 +55,17 @@ import { agentInitials } from '@/lib/agent-color';
 import { hasArea } from '@/lib/workspaces';
 import { useViewerAreas } from '@/components/workspaces/use-shell-workspaces';
 import { useShellRole } from '@/components/layout/shell-role';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@mantle/web-ui/ui/dialog';
 import { MemberPasswordDialog } from '@/components/member/member-password-dialog';
+import { CompanySignInSection } from '@/components/oidc/company-sign-in-section';
+import { changePasswordOffered } from '@/lib/oidc/flow';
+import { useOidcStatus } from '@/lib/oidc/use-oidc';
 import { MemberDescriptionDialog } from '@/components/member/member-description-dialog';
 import { EVERYWHERE_CONFIRM_TEXT, signOutEverywhere } from '@/lib/sign-out-everywhere';
 
@@ -145,6 +156,8 @@ export function ProfileMenu({
   // A member's account is its password (POST /api/auth/change-password
   // serves every login): no owner screen offers a self-serve change.
   const member = useShellRole() === 'member';
+  const oidc = useOidcStatus();
+  const [companyOpen, setCompanyOpen] = useState(false);
   const { primary, initials } = identityOf(identity);
   const { avatar, email, photoVersion } = identity;
   const { colorTheme } = useColorTheme();
@@ -294,7 +307,13 @@ export function ProfileMenu({
             <IdCard className="size-4" /> Your description
           </DropdownMenuItem>
         ) : null}
-        {member ? (
+        {/* A login with no Profile screen finds its company sign-in here. */}
+        {!manages && oidc.mode !== 'off' ? (
+          <DropdownMenuItem onSelect={() => setCompanyOpen(true)} className="cursor-pointer">
+            <Building2 className="size-4" /> Company sign-in
+          </DropdownMenuItem>
+        ) : null}
+        {member && changePasswordOffered(oidc) ? (
           <DropdownMenuItem onSelect={() => setPasswordOpen(true)} className="cursor-pointer">
             <KeyRound className="size-4" /> Change password
           </DropdownMenuItem>
@@ -403,6 +422,17 @@ export function ProfileMenu({
       {member ? <MemberPasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} /> : null}
       {!manages ? (
         <MemberDescriptionDialog open={descriptionOpen} onOpenChange={setDescriptionOpen} />
+      ) : null}
+      {!manages && oidc.mode !== 'off' ? (
+        <Dialog open={companyOpen} onOpenChange={setCompanyOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Company sign-in</DialogTitle>
+              <DialogDescription>How this login signs in with {oidc.label}.</DialogDescription>
+            </DialogHeader>
+            <CompanySignInSection />
+          </DialogContent>
+        </Dialog>
       ) : null}
       <AlertDialog open={everywhereOpen} onOpenChange={(o) => !busy && setEverywhereOpen(o)}>
         <AlertDialogContent>

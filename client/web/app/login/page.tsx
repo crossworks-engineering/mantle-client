@@ -27,7 +27,7 @@ import { useHydrated } from '@/lib/use-hydrated';
  * already right, boot.js painted it. It reads no session and stays
  * zero-secret.
  */
-type Query = { next?: string; error?: string; add?: string; session?: string };
+type Query = { next?: string; error?: string; oidc?: string; add?: string; session?: string };
 
 /** The brain's own origin, from the host's runtime env: '' when same-origin. */
 function brainOriginNow(): string {
@@ -72,6 +72,7 @@ function LoginPageView({ params }: { params: Query }) {
             // the raw parameter was an open redirect (lib/safe-next.ts).
             next={safeNext(params.next)}
             error={params.error}
+            oidc={params.oidc}
             // `add=1`: someone already signed in is adding another login, so the
             // usual bounce back into the app must not happen. `session`: which
             // held login is being signed back in to. Both are ids and flags the

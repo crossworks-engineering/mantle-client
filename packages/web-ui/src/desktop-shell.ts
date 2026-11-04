@@ -53,6 +53,13 @@ export type DesktopShellApi = {
     /** The email to prefill, once, when this window was opened by the above. */
     takeLoginHint(): Promise<{ email: string } | null>;
   };
+  /** Company sign-in (newer shells only): open a sign-in on this window's brain
+   *  in the system browser. The flow comes back as `mantle://oidc`, and the
+   *  shell loads it on this window's /auth/oidc. False: not opened (the shell
+   *  takes only this brain's sign-in start). */
+  oidc?: {
+    open(url: string): Promise<boolean>;
+  };
 };
 
 declare global {

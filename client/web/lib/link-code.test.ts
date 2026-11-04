@@ -138,9 +138,9 @@ describe('takeLinkCode (the page, in its first effect)', () => {
 });
 
 describe('Referrer-Policy on the link pages (served by the host)', () => {
-  it('lists /client-signin and /invite (and below) for the no-referrer header', () => {
+  it('lists /auth/oidc, /client-signin and /invite (and below) for the no-referrer header', () => {
     expect([...LINK_CODE_PAGES].sort()).toEqual(
-      ['/client-signin', '/client-signin/:path*', '/invite', '/invite/:path*'].sort(),
+      ['/auth/oidc', '/client-signin', '/client-signin/:path*', '/invite', '/invite/:path*'].sort(),
     );
   });
 });

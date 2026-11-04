@@ -9,6 +9,12 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { tokenStore } from '@mantle/web-ui/token-store';
 import { useSessions } from '@mantle/web-ui/use-sessions';
+import { CompanySignInButton, OrRule } from '@/components/oidc/company-sign-in-button';
+import { LinkStep } from '@/components/oidc/link-step';
+import { companySignInWorksHere } from '@/lib/oidc/actions';
+import { flowStoppedMessage } from '@/lib/oidc/flow';
+import { browserUsesCompanySignIn } from '@/lib/oidc/linked-browser';
+import { useOidcConfig } from '@/lib/oidc/use-oidc';
 import { LoginForm } from './login-form';
 import { LoginServer } from './login-server';
 
@@ -21,11 +27,16 @@ import { LoginServer } from './login-server';
  * arrives here as a prop rather than being rendered above this component,
  * because it shares one centred block with the strapline: separating them would
  * put the page's 32px rhythm between two lines that belong 8px apart.
+ *
+ * With company sign-in on, "Sign in with {label}" stands beside the password
+ * form, first where this browser's login uses it (or the site requires it).
+ * With it off the screen is what it always was.
  */
 export function LoginClient({
   mark,
   next,
   error,
+  oidc,
   add = false,
   sessionId,
   serverOrigin,
@@ -35,6 +46,8 @@ export function LoginClient({
   mark: React.ReactNode;
   next?: string;
   error?: string;
+  /** Why a company sign-in came back here (`?oidc=`). */
+  oidc?: string;
   /** Someone already signed in is adding another login. */
   add?: boolean;
   /** The held login being signed back in to (an id from this device's list). */
@@ -96,6 +109,37 @@ export function LoginClient({
       .catch(() => undefined);
   }, [add]);
 
+  // Company sign-in, read after mount: the desktop shell and the browser's own
+  // hint are not there in the server pass.
+  const config = useOidcConfig();
+  const [usable, setUsable] = useState(false);
+  const [first, setFirst] = useState(false);
+  useEffect(() => {
+    setUsable(companySignInWorksHere());
+    setFirst(browserUsesCompanySignIn());
+  }, []);
+  const companyFirst = config.mode === 'required' || (config.mode === 'optional' && first);
+  const [heldTicket, setHeldTicket] = useState<string>();
+  const [heldEnded, setHeldEnded] = useState<string>();
+  const shownError =
+    heldEnded ?? error ?? (oidc && oidc !== 'linked' ? flowStoppedMessage(oidc) : undefined);
+
+  const company =
+    config.mode !== 'off' && !firstRun ? (
+      usable ? (
+        <CompanySignInButton
+          label={config.label}
+          primary={companyFirst}
+          {...(next ? { next } : {})}
+          {...(add ? { add } : {})}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Update this app to sign in with {config.label}.
+        </p>
+      )
+    ) : null;
+
   const strapline = firstRun
     ? 'Create your login to begin.'
     : target
@@ -121,14 +165,43 @@ export function LoginClient({
             both.
           </p>
         )}
-        <LoginForm
-          mode={firstRun ? 'signup' : 'login'}
-          next={next}
-          error={error}
-          setupCodeRequired={setupCodeRequired}
-          add={add}
-          initialEmail={target?.email ?? hintEmail}
-        />
+        {heldTicket && config.mode !== 'off' ? (
+          <LinkStep
+            label={config.label}
+            held={{ ticket: heldTicket }}
+            {...(next ? { next } : {})}
+            {...(add ? { add } : {})}
+            onEnded={() => {
+              setHeldTicket(undefined);
+              setHeldEnded('That step ended. Sign in with your password again.');
+            }}
+          />
+        ) : (
+          <>
+            {companyFirst && company && (
+              <>
+                {company}
+                <OrRule />
+              </>
+            )}
+            <LoginForm
+              mode={firstRun ? 'signup' : 'login'}
+              next={next}
+              error={shownError}
+              setupCodeRequired={setupCodeRequired}
+              add={add}
+              initialEmail={target?.email ?? hintEmail}
+              onHeld={setHeldTicket}
+              onCompanyOnly={() => setFirst(true)}
+            />
+            {!companyFirst && company && (
+              <>
+                <OrRule />
+                {company}
+              </>
+            )}
+          </>
+        )}
         {/* Only when there is an app to go back to: a brain window opened just
             to sign in has nobody signed in behind this screen. */}
         {add && (held.active || replacesCurrent) && (

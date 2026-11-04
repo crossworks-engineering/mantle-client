@@ -1,6 +1,7 @@
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ProfileClient } from './profile-client';
 import { SoundSettings } from '@/components/settings/sound-settings';
+import { CompanySignInSection } from '@/components/oidc/company-sign-in-section';
 
 /**
  * /settings/profile — the operator's own preferences (auth gate only).
@@ -15,6 +16,7 @@ export default async function ProfilePage() {
     <div className="space-y-6 px-6 py-8">
       <SetPageTitle title="Profile" />
       <ProfileClient />
+      <CompanySignInSection />
       <SoundSettings />
     </div>
   );

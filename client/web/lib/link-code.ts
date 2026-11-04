@@ -1,6 +1,6 @@
 /**
- * The code an invite link (/invite) carries, and how it leaves the address
- * bar. /client-signin stays in the no-referrer list below: an old client
+ * The code an invite link (/invite) carries, or a company sign-in's way back
+ * (/auth/oidc), and how it leaves the address bar. /client-signin stays in the no-referrer list below: an old client
  * sign-in link still lands there before the page-load guard
  * (lib/route-guard.ts) sends it to /login.
  *
@@ -22,6 +22,7 @@
  *  query code (links issued before the fragment) never rides out in a Referer
  *  header. docs/static-ui-host.md lists them for hosts. */
 export const LINK_CODE_PAGES = [
+  '/auth/oidc',
   '/client-signin',
   '/client-signin/:path*',
   '/invite',

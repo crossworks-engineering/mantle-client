@@ -1,3 +1,4 @@
+import type { OidcRefusal } from '@mantle/client-types';
 import { apiUrl } from '@mantle/web-ui/api-fetch';
 import { tokenStore } from '@mantle/web-ui/token-store';
 import { readBearer } from './sign-in-error';
@@ -9,7 +10,9 @@ export type InviteSignIn =
   /** Same-origin, no bearer: the accept answer's cookie is the session. */
   | { kind: 'cookie' }
   /** Split, no bearer: nothing signs this browser in; the login is ready. */
-  | { kind: 'sign-in-at-login'; message: string };
+  | { kind: 'sign-in-at-login'; message: string }
+  /** Required mode: the login must link before it has a session. */
+  | { kind: 'held'; ticket: string };
 
 /**
  * Sign in as the member an invite just made, the way the sign-in form does in
@@ -36,6 +39,12 @@ export async function signInAfterInvite(
     body: JSON.stringify({ email, password, deviceName: 'Web client' }),
     credentials: 'omit',
   }).catch(() => null);
+  if (res?.status === 403) {
+    const refused = (await res.json().catch(() => null)) as Partial<OidcRefusal> | null;
+    if (refused?.code === 'sso-link-required' && refused.ticket) {
+      return { kind: 'held', ticket: refused.ticket };
+    }
+  }
   const token = res?.ok ? await readBearer(res) : null;
   if (token) {
     tokenStore.signIn({ email, token });

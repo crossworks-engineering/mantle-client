@@ -27,6 +27,8 @@ import { takeLinkCode } from '@/lib/link-code';
 import { usePasswordRule } from '@/lib/password-rule';
 import { UNEXPECTED_RESPONSE, signInErrorMessage } from '@/lib/sign-in-error';
 import { signInAfterInvite } from '@/lib/invite-sign-in';
+import { LinkStep } from '@/components/oidc/link-step';
+import { useOidcConfig } from '@/lib/oidc/use-oidc';
 
 type Preview =
   | { kind: 'idle' }
@@ -95,6 +97,9 @@ export function InviteClient({
   const [errors, setErrors] = useState<InviteFormErrors>({});
   const [formError, setFormError] = useState<string>();
   const [pending, setPending] = useState(false);
+  // Required mode: the login is made, and it links before it has a session.
+  const oidc = useOidcConfig();
+  const [heldTicket, setHeldTicket] = useState<string>();
   // Read once, before the first paint: the code leaves the address bar (and
   // so the history); the inline script already took it (lib/link-code.ts).
   useLayoutEffect(() => {
@@ -161,6 +166,10 @@ export function InviteClient({
 
       // A bearer, held as one of this device's logins (see signInAfterInvite).
       const signedIn = await signInAfterInvite(email, password, split);
+      if (signedIn.kind === 'held') {
+        setHeldTicket(signedIn.ticket);
+        return;
+      }
       if (signedIn.kind === 'sign-in-at-login') {
         setFormError(signedIn.message);
         return;
@@ -211,7 +220,13 @@ export function InviteClient({
         // not read yet: no flash of the code form before "Checking your invite".
         data-link-code-wait={preview.kind === 'idle' ? '' : undefined}
       >
-        {invite ? (
+        {heldTicket && oidc.mode !== 'off' ? (
+          <LinkStep
+            label={oidc.label}
+            held={{ ticket: heldTicket }}
+            onEnded={() => window.location.assign('/login')}
+          />
+        ) : invite ? (
           <form onSubmit={accept} noValidate>
             <FieldGroup>
               <Field>
