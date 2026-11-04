@@ -305,6 +305,7 @@ pub const OIDC_ARMED_MS: u64 = 15 * 60_000;
 ///   - a link naming a brain this shell does not hold goes to the last that went
 ///     out, whose page sees that the brain differs (a brain reached by an alias)
 ///     and spends nothing. Its wait goes on: the real way back may still come.
+///
 /// A link naming another listed brain that is not waiting moves nothing.
 /// `armed`: (profile id, its origin, when its wait ends). `iss_listed`: the brain
 /// the link names is one this shell holds. Port of oidcArrival in brain-fence.ts.
