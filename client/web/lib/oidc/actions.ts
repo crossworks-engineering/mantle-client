@@ -9,9 +9,17 @@ import type {
 } from '@mantle/client-types';
 import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
+import { onSignOut } from '@mantle/web-ui/session-reset';
+import { tokenStore } from '@mantle/web-ui/token-store';
 import { currentBrainOrigin } from '@mantle/web-ui/session-registry';
 import { SIGN_IN_TIMEOUT_MS } from '@/lib/sign-in-error';
-import { clearPendingFlow, savePendingFlow, type PendingFlow } from './flow';
+import {
+  clearFlowTab,
+  clearPendingFlow,
+  readPendingFlow,
+  savePendingFlow,
+  type PendingFlow,
+} from './flow';
 import { challengeFor, newVerifier } from './pkce';
 
 /**
@@ -51,12 +59,24 @@ export async function readOidcConfig(): Promise<OidcConfigDTO> {
   return body.mode === 'optional' || body.mode === 'required' ? body : { mode: 'off' };
 }
 
-/** The person walked away from a sign-in still out in the browser: nothing here
- *  waits for it now, and a desktop window will not move when it comes back. */
-export function abandonFlow(): void {
+/**
+ * The person stopped waiting for a sign-in still out in the browser: nothing here
+ * waits for it now, so its code is never spent, and a desktop window will not move
+ * when it comes back. `purpose`: only a flow for that; others go on.
+ */
+export function abandonFlow(purpose?: PendingFlow['purpose']): void {
+  const flow = readPendingFlow();
+  if (purpose && flow && flow.purpose !== purpose) return;
   clearPendingFlow();
   desktopShell()?.oidc?.cancel?.();
 }
+
+// A sign-out or a switch of login: what was out in the browser was the last
+// login's, and it must not finish for whoever comes next.
+onSignOut(() => {
+  abandonFlow();
+  clearFlowTab();
+});
 
 /** A flow's next step: on its way (a web page is leaving for the provider), or
  *  waiting for the person in the browser the desktop shell opened. */
@@ -142,7 +162,9 @@ export async function startLink(opts: {
   const handoff = await beginFlow({
     purpose: 'link',
     ...(opts.next ? { next: opts.next } : {}),
-    ...(opts.add ? { add: true } : {}),
+    // A held login's link that stops goes back to the sign-in screen, and a
+    // login already on this device must not answer that screen for it.
+    ...(opts.add || (opts.held && tokenStore.get()) ? { add: true } : {}),
     ...(opts.held ? { held: true } : {}),
   });
   const body = JSON.stringify({

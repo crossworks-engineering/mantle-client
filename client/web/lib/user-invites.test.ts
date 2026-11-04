@@ -156,6 +156,13 @@ describe('the link code leaves the address at once (B12)', () => {
 });
 
 describe('acceptOutcome', () => {
+  it('carries a login that must link', () => {
+    expect(acceptOutcome(200, { ok: true, email: 's@example.com', linkRequired: true })).toEqual({
+      kind: 'ok',
+      email: 's@example.com',
+      linkRequired: true,
+    });
+  });
   it('is ok on a 200, with the login email', () => {
     expect(acceptOutcome(200, { ok: true, email: 'sam@example.com' })).toEqual({
       kind: 'ok',

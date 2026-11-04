@@ -16,6 +16,8 @@ import { safeNext } from '@/lib/safe-next';
 
 const FLOW_KEY = 'mantle.oidc.flow';
 const OUTCOME_KEY = 'mantle.oidc.outcome';
+/** The key form a fresh sign-in leaves behind (api-access-model.ts). */
+export const KEY_DRAFT = 'mantle.oidc.key-draft';
 
 /** A flow past this age is forgotten: the brain's own flow lasts 10 minutes. */
 const FLOW_MAX_AGE_MS = 15 * 60_000;
@@ -81,6 +83,16 @@ export function readPendingFlow(now = Date.now()): PendingFlow | null {
 export function clearPendingFlow(): void {
   try {
     tab()?.removeItem(FLOW_KEY);
+  } catch {
+    /* nothing kept to clear */
+  }
+}
+
+/** All a flow kept in this tab. */
+export function clearFlowTab(): void {
+  try {
+    const store = tab();
+    for (const key of [FLOW_KEY, OUTCOME_KEY, KEY_DRAFT]) store?.removeItem(key);
   } catch {
     /* nothing kept to clear */
   }
@@ -194,8 +206,8 @@ export function flowStoppedMessage(result: string): string {
  * unknown, not where the password is no way in (required mode, a linked login)
  * or there is none, and never from a session company sign-in made, whose own
  * credential a password change would end. Whether a change is DUE is the
- * brain's alone, for this request's own credential (`mustChangePassword` on GET
- * /api/auth/whoami).
+ * brain's alone (`mustChangePassword` on GET /api/auth/whoami): this client has
+ * no forced change screen yet, so nothing here reads it.
  */
 export function changePasswordOffered(
   status: OidcStatusDTO | undefined,

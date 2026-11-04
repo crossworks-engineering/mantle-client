@@ -84,6 +84,17 @@ describe('startLink: a held login', () => {
   });
 });
 
+describe('startLink: a held login on a device that holds another', () => {
+  it('a stop goes back to a sign-in screen that login does not answer', async () => {
+    const { tokenStore } = await import('@mantle/web-ui/token-store');
+    tokenStore.signIn({ email: 'other@example.com', token: 'other.sig' });
+    const { startLink } = await load();
+    await startLink({ held: { ticket: 'held.t' } });
+    const kept = JSON.parse(store.get('mantle.oidc.flow')!) as { add?: boolean };
+    expect(kept.add).toBe(true);
+  });
+});
+
 describe('startLink: what the brain answers', () => {
   it('a session sends its own bearer', async () => {
     const { tokenStore } = await import('@mantle/web-ui/token-store');
@@ -160,6 +171,50 @@ describe('a desktop shell', () => {
     (window as unknown as { mantleDesktop: unknown }).mantleDesktop = {};
     const { companySignInWorksHere } = await load();
     expect(companySignInWorksHere()).toBe(false);
+  });
+});
+
+describe('abandonFlow', () => {
+  const pending = (purpose: string) =>
+    store.set(
+      'mantle.oidc.flow',
+      JSON.stringify({ purpose, verifier: 'v', brain: BRAIN, startedAt: Date.now() }),
+    );
+
+  it('forgets the flow and tells the shell', async () => {
+    const cancel = vi.fn();
+    (window as unknown as { mantleDesktop: unknown }).mantleDesktop = {
+      oidc: { open: vi.fn(), cancel },
+    };
+    pending('signin');
+    const { abandonFlow } = await load();
+    abandonFlow();
+    expect(store.has('mantle.oidc.flow')).toBe(false);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('for one purpose, leaves another flow going', async () => {
+    const cancel = vi.fn();
+    (window as unknown as { mantleDesktop: unknown }).mantleDesktop = {
+      oidc: { open: vi.fn(), cancel },
+    };
+    pending('link');
+    const { abandonFlow } = await load();
+    abandonFlow('fresh');
+    expect(store.has('mantle.oidc.flow')).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
+    abandonFlow('link');
+    expect(store.has('mantle.oidc.flow')).toBe(false);
+  });
+
+  it('a sign-out or a switch forgets what the last login had out', async () => {
+    pending('link');
+    store.set('mantle.oidc.key-draft', '{}');
+    store.set('mantle.oidc.outcome', '{}');
+    await load();
+    const { runSignOutResets } = await import('@mantle/web-ui/session-reset');
+    runSignOutResets();
+    expect(store.size).toBe(0);
   });
 });
 

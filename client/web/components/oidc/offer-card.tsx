@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@mantle/web-ui/ui/button';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { dismissOffer } from '@/lib/oidc/actions';
+import { abandonFlow, dismissOffer } from '@/lib/oidc/actions';
 import { flowStoppedMessage, takeOutcome } from '@/lib/oidc/flow';
 import { OIDC_STATUS_KEY, useOidcStatus } from '@/lib/oidc/use-oidc';
 import { LinkForm } from './link-form';
@@ -46,6 +46,8 @@ export function OfferCard() {
           variant="ghost"
           onClick={() => {
             setHidden(true);
+            // A link still out in the browser stops here too.
+            abandonFlow('link');
             void dismissOffer().then(() =>
               queryClient.invalidateQueries({ queryKey: OIDC_STATUS_KEY }),
             );

@@ -7,6 +7,7 @@
   "exports": {
     "./agent-invalidation": "./src/agent-invalidation.ts",
     "./api-fetch": "./src/api-fetch.ts",
+    "./session-reset": "./src/session-reset.ts",
     "./appearance": "./src/appearance.ts",
     "./desktop-shell": "./src/desktop-shell.ts",
     "./ui-prefs": "./src/ui-prefs.ts",

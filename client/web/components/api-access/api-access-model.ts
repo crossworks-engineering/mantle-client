@@ -3,6 +3,7 @@
  * the create body, the order of the list, and the example commands shown
  * with a new key. No React, so api-access-model.test.ts can pin it.
  */
+import { KEY_DRAFT } from '@/lib/oidc/flow';
 import type {
   AccessKeyAccess,
   AccessKeyArea,
@@ -143,8 +144,6 @@ export function createBody(
     },
   };
 }
-
-const KEY_DRAFT = 'mantle.oidc.key-draft';
 
 /**
  * A fresh company sign-in leaves this page and comes back: the form waits in

@@ -20,6 +20,7 @@ import {
   readBearer,
   signInErrorMessage,
 } from '@/lib/sign-in-error';
+import { abandonFlow } from '@/lib/oidc/actions';
 import { rememberOfferTicket } from '@/lib/oidc/offer-ticket';
 import { settleSessionCookie } from '@/lib/oidc/settle';
 import { SetupCodeField, isSetupCodeRefusal } from './setup-code-field';
@@ -208,6 +209,9 @@ export function LoginForm({
         return;
       }
       tokenStore.signIn({ email, token });
+      // The person came in with the password: a company sign-in still out in the
+      // browser must not finish behind this session.
+      abandonFlow();
       if (!split) {
         // Not after a signup, whose cookie is this very login's.
         await settleSessionCookie({ keepCookie: isSignup });

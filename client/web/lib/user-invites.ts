@@ -123,7 +123,8 @@ export function validateInviteForm(f: InviteForm, rule: PasswordRule = OLD_RULE)
 }
 
 export type AcceptOutcome =
-  | { kind: 'ok'; email: string }
+  /** `linkRequired`: the login is made and holds no session yet (required mode). */
+  | { kind: 'ok'; email: string; linkRequired?: true }
   /** The code redeems nothing: stay on the page and say so. */
   | { kind: 'bad-code'; message: string }
   /** A rule, the rate limit, the brain down: say it. */
@@ -132,10 +133,17 @@ export type AcceptOutcome =
 /** What POST /api/auth/invite/accept's answer means. A 401 is never "signed
  *  out" here: nobody is signed in yet. */
 export function acceptOutcome(status: number, body: unknown): AcceptOutcome {
-  const b = body && typeof body === 'object' ? (body as { error?: unknown; email?: unknown }) : {};
+  const b =
+    body && typeof body === 'object'
+      ? (body as { error?: unknown; email?: unknown; linkRequired?: unknown })
+      : {};
   const error = typeof b.error === 'string' && b.error ? b.error : null;
   if (status >= 200 && status < 300) {
-    return { kind: 'ok', email: typeof b.email === 'string' ? b.email : '' };
+    return {
+      kind: 'ok',
+      email: typeof b.email === 'string' ? b.email : '',
+      ...(b.linkRequired === true ? { linkRequired: true as const } : {}),
+    };
   }
   if (status === 401) return { kind: 'bad-code', message: CODE_NOT_VALID };
   if (status === 429)

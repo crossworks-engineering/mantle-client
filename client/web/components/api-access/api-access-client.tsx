@@ -81,7 +81,7 @@ import {
 import { useReturnReset } from '@/components/oidc/use-return-reset';
 import { abandonFlow, startFresh } from '@/lib/oidc/actions';
 import { flowStoppedMessage, takeOutcome } from '@/lib/oidc/flow';
-import { useOidcStatus } from '@/lib/oidc/use-oidc';
+import { OIDC_STATUS_KEY, useOidcStatus } from '@/lib/oidc/use-oidc';
 import { signInErrorMessage } from '@/lib/sign-in-error';
 
 const QUERY_KEY = ['access-keys'];
@@ -362,6 +362,7 @@ function CreateKeyDialog({
   company: { label: string; passwordToo: boolean } | null;
 }) {
   const toast = useToast();
+  const qc = useQueryClient();
   const risky = offersRiskyTools(rules);
   const blank = (): CreateForm => ({
     name: '',
@@ -400,6 +401,8 @@ function CreateKeyDialog({
     }
     if (err instanceof ApiError && err.status === 403 && err.body?.reason === 'fresh-sign-in') {
       setError({ field: 'company', message: err.message });
+      // The brain says this login is linked: the button comes with that.
+      void qc.invalidateQueries({ queryKey: OIDC_STATUS_KEY });
       return;
     }
     toast.error(err instanceof ApiError ? err.message : 'Could not make the key');
@@ -410,7 +413,8 @@ function CreateKeyDialog({
   const forgetSignIn = () => {
     setInBrowser(false);
     clearKeyDraft();
-    abandonFlow();
+    // Only its own: a link may be out in the browser too.
+    abandonFlow('fresh');
   };
 
   const send = async () => {

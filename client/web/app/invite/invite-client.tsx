@@ -27,6 +27,7 @@ import { takeLinkCode } from '@/lib/link-code';
 import { usePasswordRule } from '@/lib/password-rule';
 import { UNEXPECTED_RESPONSE, signInErrorMessage } from '@/lib/sign-in-error';
 import { signInAfterInvite } from '@/lib/invite-sign-in';
+import { tokenStore } from '@mantle/web-ui/token-store';
 import { LinkStep } from '@/components/oidc/link-step';
 import { companyLabel, useOidcConfig } from '@/lib/oidc/use-oidc';
 
@@ -165,7 +166,7 @@ export function InviteClient({
       const email = outcome.email || preview.invite.email;
 
       // A bearer, held as one of this device's logins (see signInAfterInvite).
-      const signedIn = await signInAfterInvite(email, password, split);
+      const signedIn = await signInAfterInvite(email, password, split, outcome.linkRequired);
       if (signedIn.kind === 'held') {
         setPassword('');
         setConfirm('');
@@ -226,7 +227,7 @@ export function InviteClient({
           <LinkStep
             label={companyLabel(oidc)}
             held={{ ticket: heldTicket }}
-            onEnded={() => window.location.assign('/login')}
+            onEnded={() => window.location.assign(tokenStore.get() ? '/login?add=1' : '/login')}
           />
         ) : invite ? (
           <form onSubmit={accept} noValidate>

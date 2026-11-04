@@ -32,6 +32,8 @@ export async function signInAfterInvite(
   email: string,
   password: string,
   split: boolean,
+  /** The accept set no cookie (company sign-in in required mode). */
+  linkRequired = false,
 ): Promise<InviteSignIn> {
   const res = await fetch(apiUrl('/api/auth/token'), {
     method: 'POST',
@@ -50,7 +52,7 @@ export async function signInAfterInvite(
     tokenStore.signIn({ email, token });
     return { kind: 'bearer' };
   }
-  if (split) {
+  if (split || linkRequired) {
     return {
       kind: 'sign-in-at-login',
       message: `Your login is ready. Sign in at /login with ${email} and your password.`,

@@ -92,6 +92,18 @@ describe('signInAfterInvite · company sign-in required', () => {
   });
 });
 
+describe('signInAfterInvite · a login with no session yet', () => {
+  it('a failed exchange drops nothing: the accept set no cookie to stand on', async () => {
+    const { registry, signInAfterInvite, admin, spies } = await withAdminSignedIn();
+    tokenAnswer = refused;
+    const out = await signInAfterInvite('m@example.com', 'pw-12345678', false, true);
+    expect(out.kind).toBe('sign-in-at-login');
+    expect(spies.clear).not.toHaveBeenCalled();
+    expect(spies.markPresence).not.toHaveBeenCalled();
+    expect(registry.sessionToken(admin.id)).toBe('admin.sig');
+  });
+});
+
 describe('signInAfterInvite · split', () => {
   it('holds the member bearer as a login of its own; the admin keeps theirs', async () => {
     const { registry, signInAfterInvite, admin, spies } = await withAdminSignedIn();

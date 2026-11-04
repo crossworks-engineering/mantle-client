@@ -45,8 +45,9 @@ no password in it, and comes back to it.
 
 Which password rule holds, whether a change is due, and whether a login may unlink
 are the brain's answers (`GET /api/auth/oidc/status`, `GET /api/auth/whoami`). The
-client reads them for the request's own credential. So an SSO session whose password
-is no way in is never asked to change it. There is one thing it reads for itself: the
+client has no forced change-password screen yet (the brain's Phase 1 step), so nothing
+reads `mustChangePassword` today; that screen must follow it, for the request's own
+credential. There is one thing it reads for itself: the
 account menu offers no "Change password" from a session company sign-in made, read from
 the bearer's own `so` claim, since a change would end that session. That decides only
 what the menu offers; the brain still judges every request. The status does not say how
@@ -57,6 +58,11 @@ a session signed in, so this stays here until it does.
 - A web flow's way back is this tab. A provider step that opens another tab (an
   email link) ends with "This sign-in has ended", so a provider used here must
   finish its sign-in in the tab it began in.
+- Any app can open a `mantle://oidc` link. While a window waits, a link naming its
+  brain with `oidc=cancelled` ends that wait (the person starts again), and a link
+  naming a brain the shell does not hold reloads the window on that page, whose
+  unsaved typing may go. Nothing leaks and no code is spent. Outside a wait, links
+  move nothing.
 - `mantle://` belongs to whichever app the system picked. With both desktop apps
   installed, a flow started in one can come back to the other, which spends nothing
   and drops it. Install one.
@@ -75,4 +81,7 @@ shell takes only this brain's `/api/auth/oidc/start`, whatever the page asks
 `client/tauri/src/fence.rs`). A shell without it shows "Update this app" instead of
 the button. A window takes a `mantle://oidc` link only once it has sent a sign-in out,
 within 15 minutes (`oidcArrival`); any other link moves nothing. A fresh sign-in the
-person walks away from (Cancel, or "Use my password instead") ends the wait.
+person walks away from (Cancel, "Use my password instead", "Not now", a password
+sign-in, a sign-out or a switch of login) ends the wait. `link-gate.tsx` is a
+backstop: the brain holds such a session, so a person normally meets the link step at
+sign-in.

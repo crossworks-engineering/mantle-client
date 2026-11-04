@@ -44,7 +44,7 @@ export function useOidcStatusKnown(): OidcStatusDTO | undefined {
       }
     },
     staleTime: 60_000,
-    retry: false,
+    retry: 2,
   });
   const linked = data !== undefined && data.mode !== 'off' && data.linked;
   useEffect(() => {

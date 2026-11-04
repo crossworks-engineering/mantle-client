@@ -76,13 +76,28 @@ export function OidcArrival() {
   // Before the first paint: nothing of the flow stays in the address (and so
   // in the history).
   useLayoutEffect(() => {
-    const code = takeLinkCode(window, document.documentElement);
-    const flowEnd = readFlowEnd(window.location.hash);
-    if (window.location.hash) {
-      window.history.replaceState(window.history.state, '', window.location.pathname);
-    }
+    const read = () => {
+      const code = takeLinkCode(window, document.documentElement);
+      const flowEnd = readFlowEnd(window.location.hash);
+      if (window.location.hash) {
+        window.history.replaceState(window.history.state, '', window.location.pathname);
+      }
+      return { end: flowEnd, code };
+    };
+    const first = read();
     // Keep the first read: a second run of this effect finds the address clean.
-    setEnd((first) => first ?? { end: flowEnd, code });
+    setEnd((held) => held ?? first);
+    // A desktop shell delivering to a window already on this page changes only
+    // the fragment: no load, so the page reads it itself.
+    const onHash = () => {
+      const next = read();
+      if (!next.end) return;
+      acted.current = false;
+      setProblem(undefined);
+      setEnd(next);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
   useEffect(() => {
