@@ -70,6 +70,28 @@ async function withAdminSignedIn() {
   return { registry, signInAfterInvite, admin, spies };
 }
 
+describe('signInAfterInvite · company sign-in required', () => {
+  it('a login that must link gets its held ticket, and nothing else changes', async () => {
+    const { signInAfterInvite, spies } = await withAdminSignedIn();
+    tokenAnswer = () =>
+      Promise.resolve({
+        ok: false,
+        status: 403,
+        json: () =>
+          Promise.resolve({ error: 'Link first.', code: 'sso-link-required', ticket: 'held.t' }),
+      } as Response);
+
+    expect(await signInAfterInvite('m@example.com', 'pw-12345678', false)).toEqual({
+      kind: 'held',
+      ticket: 'held.t',
+    });
+    // The admin who holds this browser stays: no bearer dropped, no presence set.
+    expect(spies.clear).not.toHaveBeenCalled();
+    expect(spies.markPresence).not.toHaveBeenCalled();
+    expect(spies.signIn).not.toHaveBeenCalled();
+  });
+});
+
 describe('signInAfterInvite · split', () => {
   it('holds the member bearer as a login of its own; the admin keeps theirs', async () => {
     const { registry, signInAfterInvite, admin, spies } = await withAdminSignedIn();
