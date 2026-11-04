@@ -13,7 +13,7 @@ function rel(iso: string | null): string {
   try {
     return formatDistanceToNow(new Date(iso), { addSuffix: true });
   } catch {
-    return '—';
+    return 'none';
   }
 }
 
@@ -38,7 +38,7 @@ export function OpsPanels({
   recentFailures: RecentFailure[];
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 @2xl/dashboard:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 @2xl/status:grid-cols-2">
       {/* Email sync */}
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
@@ -168,7 +168,7 @@ export function OpsPanels({
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           {topErrors.length === 0 ? (
-            <Empty>No errors in the last 7 days. 🎉</Empty>
+            <Empty>No errors in the last 7 days.</Empty>
           ) : (
             <ul className="space-y-1 text-xs">
               {topErrors.map((e) => (

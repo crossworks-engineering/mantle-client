@@ -161,7 +161,13 @@ describe('the one line per service card', () => {
       expect(line.length).toBeLessThan(120);
       expect(line).not.toMatch(/[\u2013\u2014]/);
     }
-    expect(Object.keys(SERVICE_ENABLES).sort()).toEqual(['helpers', 'local-embedder', 'sandboxes']);
+    expect(Object.keys(SERVICE_ENABLES).sort()).toEqual([
+      'calls',
+      'documents',
+      'helpers',
+      'local-embedder',
+      'sandboxes',
+    ]);
   });
 });
 

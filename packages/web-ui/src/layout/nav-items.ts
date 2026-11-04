@@ -1,4 +1,4 @@
-import { LayoutDashboard, Layers, Link2, MessagesSquare, Power, Send } from 'lucide-react';
+import { Activity, Layers, Link2, MessagesSquare, Power, Send } from 'lucide-react';
 import {
   NAV_GROUPS as SHARED_NAV_GROUPS,
   navItemMatches,
@@ -61,11 +61,12 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     item: { name: 'Shared links', href: '/settings/shared-links', icon: Link2 },
   },
   {
-    // The brain health Dashboard (task d78e7bde): `/` is every login's
-    // landing page now, so the Dashboard has its own screen, first in System.
+    // Status: the whole box at a glance (vitals, brain, spend, queues,
+    // sidecars, providers, version), first in System. It replaced the
+    // Dashboard, which `/dashboard` now redirects to.
     group: 'System',
     after: '',
-    item: { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    item: { name: 'Status', href: '/status', icon: Activity },
   },
   {
     // The messenger (Messenger V1 Phase 2): every login's chats, after Home.

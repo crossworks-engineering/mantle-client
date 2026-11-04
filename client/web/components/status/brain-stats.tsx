@@ -32,16 +32,19 @@ export function BrainStats({
           label="Nodes embedded"
           value={`${formatCount(vectors.nodesIndexed)} / ${formatCount(vectors.nodesTotal)}`}
           pct={pct(vectors.nodesIndexed, vectors.nodesTotal)}
+          scale="coverage"
         />
         <VitalsBar
           label="Facts embedded"
           value={`${formatCount(vectors.factsIndexed)} / ${formatCount(vectors.factsTotal)}`}
           pct={pct(vectors.factsIndexed, vectors.factsTotal)}
+          scale="coverage"
         />
         <VitalsBar
           label="Entities embedded"
           value={`${formatCount(vectors.entitiesIndexed)} / ${formatCount(vectors.entitiesTotal)}`}
           pct={pct(vectors.entitiesIndexed, vectors.entitiesTotal)}
+          scale="coverage"
         />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(4.5rem,1fr))] gap-2 border-t pt-3 text-center">
           <Stat
