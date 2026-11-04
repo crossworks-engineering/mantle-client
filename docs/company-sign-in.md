@@ -45,9 +45,12 @@ no password in it, and comes back to it.
 
 Which password rule holds, whether a change is due, and whether a login may unlink
 are the brain's answers (`GET /api/auth/oidc/status`, `GET /api/auth/whoami`). The
-client reads them for the request's own credential and works out nothing from how a
-session signed in. So an SSO session whose password is no way in is never asked to
-change it.
+client reads them for the request's own credential. So an SSO session whose password
+is no way in is never asked to change it. There is one thing it reads for itself: the
+account menu offers no "Change password" from a session company sign-in made, read from
+the bearer's own `so` claim, since a change would end that session. That decides only
+what the menu offers; the brain still judges every request. The status does not say how
+a session signed in, so this stays here until it does.
 
 ## Limits to know
 
@@ -61,7 +64,8 @@ change it.
   for its own sign-in. Someone who holds a waiting flow's start URL (a proxy log, a
   synced browser history), and gets the person to click a link of theirs in that
   time, could finish that flow with their own provider account. The person is told
-  of a link made, it is audited, and web tabs cannot be reached this way.
+  of a link made, and it is audited. A web tab is harder to reach (the crafted link
+  must land in the very tab that waits) but it is the same limit.
 
 ## The desktop shells
 
@@ -70,5 +74,5 @@ shell takes only this brain's `/api/auth/oidc/start`, whatever the page asks
 (`oidcStartUrl` in `client/desktop/src/main/brain-fence.ts`, `oidc_start_url` in
 `client/tauri/src/fence.rs`). A shell without it shows "Update this app" instead of
 the button. A window takes a `mantle://oidc` link only once it has sent a sign-in out,
-once, within 15 minutes (`oidcArrivalProfile`); any other link moves nothing. A fresh
-sign-in the person walks away from clears what waits (the dialog's Cancel).
+within 15 minutes (`oidcArrival`); any other link moves nothing. A fresh sign-in the
+person walks away from (Cancel, or "Use my password instead") ends the wait.

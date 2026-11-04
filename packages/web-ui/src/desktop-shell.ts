@@ -59,6 +59,8 @@ export type DesktopShellApi = {
    *  takes only this brain's sign-in start). */
   oidc?: {
     open(url: string): Promise<boolean>;
+    /** This window waits for no sign-in now: a link coming back moves nothing. */
+    cancel?(): void;
   };
 };
 

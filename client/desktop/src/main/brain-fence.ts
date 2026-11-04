@@ -240,26 +240,43 @@ export function oidcDeepLink(link: string): OidcDeepLink | null {
 export const OIDC_ARMED_MS = 15 * 60_000;
 
 /**
- * The profile whose window a `mantle://oidc` link goes to, or null to drop it
- * with no window moved. Any app can open such a link, so only a window that sent
- * a sign-in out to the browser takes one: the one for the brain the link names,
- * else the last that went out, whose page sees that the brain differs and spends
- * nothing. `armed`: profile id to when its wait ends.
+ * The window a `mantle://oidc` link goes to, or null to drop it with no window
+ * moved. Any app can open such a link, so only a window that sent a sign-in out
+ * to the browser takes one:
+ *  - the one for the brain the link names (`named`): that was its way back, and
+ *    its wait is over;
+ *  - a link naming a brain this shell does not hold goes to the last that went
+ *    out, whose page sees that the brain differs (a brain reached by an alias)
+ *    and spends nothing. Its wait goes on: the real way back may still come.
+ * A link naming another listed brain that is not waiting moves nothing.
+ * `armed`: profile id to when its wait ends.
  */
-export function oidcArrivalProfile(
+export function oidcArrival(
   armed: ReadonlyMap<string, number>,
   profiles: readonly { id: string; origin: string }[],
   iss: string,
   now: number,
-): string | null {
+): { id: string; named: boolean } | null {
   const live = profiles.filter((p) => (armed.get(p.id) ?? 0) > now);
   const named = live.find((p) => p.origin === iss);
-  if (named) return named.id;
+  if (named) return { id: named.id, named: true };
+  if (profiles.some((p) => p.origin === iss)) return null;
   let latest: string | null = null;
   for (const p of live) {
     if (latest === null || armed.get(p.id)! > armed.get(latest)!) latest = p.id;
   }
-  return latest;
+  return latest === null ? null : { id: latest, named: false };
+}
+
+/** Whether a link is addressed to company sign-in at all: such a link never
+ *  takes the path of an in-app deep link, whatever its fragment holds. */
+export function isOidcLink(link: string): boolean {
+  try {
+    const url = new URL(link);
+    return url.protocol === 'mantle:' && url.host === 'oidc';
+  } catch {
+    return false;
+  }
 }
 
 /**

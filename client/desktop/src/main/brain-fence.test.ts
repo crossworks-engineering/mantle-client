@@ -7,7 +7,8 @@ import {
   frameNavigationAllowed,
   httpRouteOf,
   normalizeOrigin,
-  oidcArrivalProfile,
+  isOidcLink,
+  oidcArrival,
   oidcDeepLink,
   oidcStartUrl,
   permissionAllowed,
@@ -368,33 +369,44 @@ describe('oidcDeepLink', () => {
   });
 });
 
-describe('oidcArrivalProfile', () => {
+describe('oidcArrival', () => {
   const profiles = [
     { id: 'a', origin: 'https://a.example' },
     { id: 'b', origin: 'https://b.example' },
   ];
+  const both = new Map([
+    ['a', 100],
+    ['b', 200],
+  ]);
   it('drops a link when no window sent a sign-in out', () => {
-    expect(oidcArrivalProfile(new Map(), profiles, 'https://a.example', 10)).toBeNull();
+    expect(oidcArrival(new Map(), profiles, 'https://a.example', 10)).toBeNull();
+    expect(oidcArrival(new Map(), profiles, 'https://alias.example', 10)).toBeNull();
   });
   it('drops a link once the wait is over', () => {
-    expect(oidcArrivalProfile(new Map([['a', 10]]), profiles, 'https://a.example', 10)).toBeNull();
+    expect(oidcArrival(new Map([['a', 10]]), profiles, 'https://a.example', 10)).toBeNull();
   });
   it('a window that waits takes the link that names its brain', () => {
-    const armed = new Map([
-      ['a', 100],
-      ['b', 200],
-    ]);
-    expect(oidcArrivalProfile(armed, profiles, 'https://a.example', 10)).toBe('a');
+    expect(oidcArrival(both, profiles, 'https://a.example', 10)).toEqual({ id: 'a', named: true });
   });
-  it('a link that names no waiting brain goes to the last that went out', () => {
-    const armed = new Map([
-      ['a', 100],
-      ['b', 200],
-    ]);
-    expect(oidcArrivalProfile(armed, profiles, 'https://alias.example', 10)).toBe('b');
+  it('a link naming no brain held here goes to the last that went out, not as its way back', () => {
+    expect(oidcArrival(both, profiles, 'https://alias.example', 10)).toEqual({
+      id: 'b',
+      named: false,
+    });
   });
-  it('never wakes a brain that is not waiting, though the link names it', () => {
-    expect(oidcArrivalProfile(new Map([['a', 100]]), profiles, 'https://b.example', 10)).toBe('a');
+  it('a link naming another brain held here that does not wait moves nothing', () => {
+    expect(oidcArrival(new Map([['a', 100]]), profiles, 'https://b.example', 10)).toBeNull();
+  });
+});
+
+describe('isOidcLink', () => {
+  it('is any link addressed to company sign-in, however malformed', () => {
+    expect(isOidcLink('mantle://oidc')).toBe(true);
+    expect(isOidcLink('mantle://oidc#oidc=code')).toBe(true);
+    expect(isOidcLink('mantle://oidc/more?x=1')).toBe(true);
+    expect(isOidcLink('mantle://n/abc')).toBe(false);
+    expect(isOidcLink('https://oidc')).toBe(false);
+    expect(isOidcLink('not a link')).toBe(false);
   });
 });
 

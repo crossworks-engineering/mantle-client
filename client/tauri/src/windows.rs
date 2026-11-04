@@ -89,7 +89,8 @@ pub fn page_api_script() -> String {
     notify: function () {{}},
     setBadge: function () {{}},
     oidc: Object.freeze({{
-      open: function (url) {{ return Promise.resolve(call('oidcOpen', {{ url: url }}) === '1'); }}
+      open: function (url) {{ return Promise.resolve(call('oidcOpen', {{ url: url }}) === '1'); }},
+      cancel: function () {{ call('oidcCancel'); }}
     }})
   }});
   Object.defineProperty(window, 'mantleDesktop', {{ value: api, writable: false, configurable: false }});
@@ -234,7 +235,8 @@ pub fn open_brain<R: Runtime>(app: &AppHandle<R>, profile_id: &str) -> Result<()
 /// A company sign-in came back as `mantle://oidc`. It goes to a window that
 /// sent one out, on the page the web app ends on (/auth/oidc), which compares
 /// the brain again and holds the verifier. Any other link moves nothing: any
-/// app can open a `mantle://` link (fence.rs oidc_arrival_profile).
+/// app can open a `mantle://` link (fence.rs oidc_arrival). A window closed in
+/// the meantime opens again: its page has lost the flow, and says so.
 pub fn deliver_oidc<R: Runtime>(app: &AppHandle<R>, link: &OidcDeepLink) {
     let Ok(target) = Url::parse(&format!("{UI_ORIGIN}/auth/oidc#{}", link.fragment)) else {
         return;
@@ -243,8 +245,10 @@ pub fn deliver_oidc<R: Runtime>(app: &AppHandle<R>, link: &OidcDeepLink) {
     let Some(id) = shell.take_oidc_arrival(&link.iss, crate::profiles::now_ms()) else {
         return;
     };
+    if open_brain(app, &id).is_err() {
+        return;
+    }
     if let Some(win) = app.get_webview_window(&label_for(&id)) {
-        reveal(&win);
         let _ = win.navigate(target);
     }
 }

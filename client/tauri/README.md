@@ -106,8 +106,8 @@ mantle-ui://localhost/_mantle/vault` with `X-Mantle-Vault: 1` and a JSON
   keeps only the fields the flow's end can hold and loads them on the window's
   `/auth/oidc`, the page the web app ends on, which compares the brain and holds
   the verifier (`src/fence.rs`, `src/windows.rs`). Any app can open such a link,
-  so only a window that sent a sign-in out takes one, once, within 15 minutes;
-  any other moves nothing. Other `mantle://` links are
+  so only a window that sent a sign-in out takes one, within 15 minutes, and the
+  page's Cancel ends the wait; any other moves nothing. Other `mantle://` links are
   still T2's. Neither plugin's JS command is granted to any window.
 - **Capabilities** (`capabilities/`): the profile commands, granted to the
   `connect` window for the app's own page only. No other window gets any

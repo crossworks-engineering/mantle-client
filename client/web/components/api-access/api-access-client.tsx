@@ -79,8 +79,8 @@ import {
   type CreateRules,
 } from './api-access-model';
 import { useReturnReset } from '@/components/oidc/use-return-reset';
-import { startFresh } from '@/lib/oidc/actions';
-import { clearPendingFlow, flowStoppedMessage, takeOutcome } from '@/lib/oidc/flow';
+import { abandonFlow, startFresh } from '@/lib/oidc/actions';
+import { flowStoppedMessage, takeOutcome } from '@/lib/oidc/flow';
 import { useOidcStatus } from '@/lib/oidc/use-oidc';
 import { signInErrorMessage } from '@/lib/sign-in-error';
 
@@ -381,6 +381,10 @@ function CreateKeyDialog({
   // A linked login may type its password instead where the brain allows it.
   const [usePassword, setUsePassword] = useState(false);
   const viaCompany = usePassword ? null : company;
+  // With the password field on screen, the brain's answer about confirming (a
+  // linked login may be told to use its company sign-in) belongs there too.
+  const confirmError =
+    error?.field === 'password' || error?.field === 'company' ? error.message : null;
   const set = (patch: Partial<CreateForm>) => setForm((f) => ({ ...f, ...patch }));
   useReturnReset(useCallback(() => setPending(false), []));
 
@@ -401,6 +405,14 @@ function CreateKeyDialog({
     toast.error(err instanceof ApiError ? err.message : 'Could not make the key');
   };
 
+  /** Any sign-in still out in the browser: nothing makes a key the person
+   *  walked away from, or made another way. */
+  const forgetSignIn = () => {
+    setInBrowser(false);
+    clearKeyDraft();
+    abandonFlow();
+  };
+
   const send = async () => {
     const built = createBody(form, rules, 'password');
     if ('error' in built) {
@@ -409,6 +421,7 @@ function CreateKeyDialog({
     }
     setError(null);
     setPending(true);
+    forgetSignIn();
     try {
       const made = await apiSend<AccessKeyCreated>('/api/access-keys', 'POST', built.body);
       await onCreated({ ...made, name: built.body.name });
@@ -478,15 +491,12 @@ function CreateKeyDialog({
     }
   };
 
-  /** Closing forgets the whole form, the password above all, and any sign-in
-   *  still out in the browser: nothing makes a key the person walked away from. */
+  /** Closing forgets the whole form, the password above all. */
   const leave = () => {
     setError(null);
     setForm(blank());
-    setInBrowser(false);
     setPending(false);
-    clearKeyDraft();
-    clearPendingFlow();
+    forgetSignIn();
     endKeyResume();
   };
 
@@ -638,6 +648,8 @@ function CreateKeyDialog({
                     variant="link"
                     className="h-auto justify-start p-0 text-xs"
                     onClick={() => {
+                      forgetSignIn();
+                      setPending(false);
                       setUsePassword(true);
                       setError(null);
                     }}
@@ -647,7 +659,7 @@ function CreateKeyDialog({
                 )}
               </Field>
             ) : (
-              <Field data-invalid={error?.field === 'password' || undefined}>
+              <Field data-invalid={confirmError ? true : undefined}>
                 <FieldLabel htmlFor="key-password">Your password</FieldLabel>
                 <Input
                   id="key-password"
@@ -655,12 +667,10 @@ function CreateKeyDialog({
                   autoComplete="current-password"
                   value={form.password}
                   onChange={(e) => set({ password: e.target.value })}
-                  aria-invalid={error?.field === 'password' || undefined}
-                  aria-describedby={error?.field === 'password' ? 'key-password-error' : undefined}
+                  aria-invalid={confirmError ? true : undefined}
+                  aria-describedby={confirmError ? 'key-password-error' : undefined}
                 />
-                <FieldError id="key-password-error">
-                  {error?.field === 'password' ? error.message : null}
-                </FieldError>
+                <FieldError id="key-password-error">{confirmError}</FieldError>
               </Field>
             )}
 

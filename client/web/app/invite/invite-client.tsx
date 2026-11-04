@@ -167,6 +167,8 @@ export function InviteClient({
       // A bearer, held as one of this device's logins (see signInAfterInvite).
       const signedIn = await signInAfterInvite(email, password, split);
       if (signedIn.kind === 'held') {
+        setPassword('');
+        setConfirm('');
         setHeldTicket(signedIn.ticket);
         return;
       }

@@ -30,6 +30,12 @@ describe('safeNext', () => {
     expect(safeNext('//\nevil.example')).toBeUndefined();
   });
 
+  it('refuses a path that parses back into a scheme-relative one', () => {
+    for (const next of ['/.//evil.example', '/x/..//evil.example', '/./\\evil.example']) {
+      expect(safeNext(next), next).toBeUndefined();
+    }
+  });
+
   it('normalises what it returns, so no control character survives', () => {
     expect(safeNext('/ta\nsks')).toBe('/tasks');
     expect(safeNext('/a/../b')).toBe('/b');

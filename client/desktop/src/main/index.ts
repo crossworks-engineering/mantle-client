@@ -24,7 +24,8 @@ import {
   httpRouteOf,
   normalizeOrigin,
   OIDC_ARMED_MS,
-  oidcArrivalProfile,
+  isOidcLink,
+  oidcArrival,
   oidcDeepLink,
   oidcStartUrl,
   permissionAllowed,
@@ -349,19 +350,19 @@ const oidcArmed = new Map<string, number>();
  * A company sign-in came back. It goes to a window that sent one out, on the page
  * the web app ends on (/auth/oidc), which compares the brain again and holds the
  * verifier. Any other link moves nothing: any app can open a `mantle://` link
- * (brain-fence.ts oidcArrivalProfile).
+ * (brain-fence.ts oidcArrival).
  */
 function deliverOidc({ iss, fragment }: OidcDeepLink): void {
-  const id = oidcArrivalProfile(oidcArmed, loadProfiles(), iss, Date.now());
-  if (!id) return;
-  oidcArmed.delete(id);
-  openBrain(id, `/auth/oidc#${fragment}`).catch(reportWindowError);
+  const arrival = oidcArrival(oidcArmed, loadProfiles(), iss, Date.now());
+  if (!arrival) return;
+  if (arrival.named) oidcArmed.delete(arrival.id);
+  openBrain(arrival.id, `/auth/oidc#${fragment}`).catch(reportWindowError);
 }
 
 function handleDeepLink(link: string): void {
-  const oidc = oidcDeepLink(link);
-  if (oidc) {
-    deliverOidc(oidc);
+  if (isOidcLink(link)) {
+    const oidc = oidcDeepLink(link);
+    if (oidc) deliverOidc(oidc);
     return;
   }
   const path = deepLinkToPath(link);
@@ -584,6 +585,10 @@ function registerIpc(): void {
     }
     oidcArmed.set(profile.id, Date.now() + OIDC_ARMED_MS);
     return true;
+  });
+  ipcMain.on('oidc:cancel', (event) => {
+    const id = vaultProfileFor(event);
+    if (id) oidcArmed.delete(id);
   });
 
   // Fired by the UI's DesktopBridge and NeedsYouWatcher — only while its
@@ -877,7 +882,7 @@ if (!app.requestSingleInstanceLock()) {
     const link = deepLinkInArgv(process.argv);
     // No window has sent a sign-in out yet, so a company sign-in's link is not
     // for this start.
-    if (link && !oidcDeepLink(link)) pendingDeepLinkPath = deepLinkToPath(link);
+    if (link && !isOidcLink(link)) pendingDeepLinkPath = deepLinkToPath(link);
 
     // Relaunch lands you back in the brain you were using; the persisted
     // partition still holds the bearer, so no re-login.

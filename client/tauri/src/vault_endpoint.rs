@@ -92,6 +92,7 @@ pub fn op_name(body: &[u8]) -> &'static str {
         Some("adopt") => "adopt",
         Some("keepOnly") => "keepOnly",
         Some("oidcOpen") => "oidcOpen",
+        Some("oidcCancel") => "oidcCancel",
         _ => "unknown",
     }
 }
@@ -248,6 +249,11 @@ pub fn serve<R: Runtime>(
         let opened = oidc_open(app, &profile, label, req.body());
         shell.trace(|| format!("vault {op} from {label} -> {opened}"));
         return answer(if opened { Some("1".to_string()) } else { None });
+    }
+    if op == "oidcCancel" {
+        shell.disarm_oidc(&profile);
+        shell.trace(|| format!("vault {op} from {label}"));
+        return answer(None);
     }
     let Some(call) = parse(req.body()) else {
         shell.trace(|| format!("vault {op} from {label} -> 400"));

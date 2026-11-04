@@ -51,6 +51,13 @@ export async function readOidcConfig(): Promise<OidcConfigDTO> {
   return body.mode === 'optional' || body.mode === 'required' ? body : { mode: 'off' };
 }
 
+/** The person walked away from a sign-in still out in the browser: nothing here
+ *  waits for it now, and a desktop window will not move when it comes back. */
+export function abandonFlow(): void {
+  clearPendingFlow();
+  desktopShell()?.oidc?.cancel?.();
+}
+
 /** A flow's next step: on its way (a web page is leaving for the provider), or
  *  waiting for the person in the browser the desktop shell opened. */
 export type FlowStarted = 'leaving' | 'in-browser';

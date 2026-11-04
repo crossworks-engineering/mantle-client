@@ -33,6 +33,9 @@ export function safeNext(next: string | undefined | null): string | undefined {
   try {
     const url = new URL(next, BASE);
     if (url.origin !== BASE) return undefined;
+    // A path segment can parse back into two slashes (`/.//evil.example`): the
+    // base keeps the origin above, but what comes out is scheme-relative.
+    if (/^\/[/\\]/.test(url.pathname)) return undefined;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return undefined;

@@ -74,5 +74,6 @@ contextBridge.exposeInMainWorld('mantleDesktop', {
   // which the shell loads on this window's /auth/oidc.
   oidc: {
     open: (url: string): Promise<boolean> => ipcRenderer.invoke('oidc:open', url),
+    cancel: () => ipcRenderer.send('oidc:cancel'),
   },
 });

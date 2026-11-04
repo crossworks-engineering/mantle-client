@@ -297,22 +297,33 @@ pub fn oidc_deep_link(link: &str) -> Option<OidcDeepLink> {
 /// How long a brain window waits for a company sign-in it sent out.
 pub const OIDC_ARMED_MS: u64 = 15 * 60_000;
 
-/// The profile whose window a `mantle://oidc` link goes to, or None to drop it
-/// with no window moved. Any app can open such a link, so only a window that
-/// sent a sign-in out to the browser takes one: the one for the brain the link
-/// names, else the last that went out, whose page sees that the brain differs
-/// and spends nothing. `armed`: (profile id, its origin, when its wait ends).
-/// Port of oidcArrivalProfile in brain-fence.ts.
-pub fn oidc_arrival_profile(
+/// The window a `mantle://oidc` link goes to, or None to drop it with no window
+/// moved. Any app can open such a link, so only a window that sent a sign-in out
+/// to the browser takes one:
+///   - the one for the brain the link names (second value true): that was its
+///     way back, and its wait is over;
+///   - a link naming a brain this shell does not hold goes to the last that went
+///     out, whose page sees that the brain differs (a brain reached by an alias)
+///     and spends nothing. Its wait goes on: the real way back may still come.
+/// A link naming another listed brain that is not waiting moves nothing.
+/// `armed`: (profile id, its origin, when its wait ends). `iss_listed`: the brain
+/// the link names is one this shell holds. Port of oidcArrival in brain-fence.ts.
+pub fn oidc_arrival(
     armed: &[(String, String, u64)],
     iss: &str,
+    iss_listed: bool,
     now: u64,
-) -> Option<String> {
+) -> Option<(String, bool)> {
     let live: Vec<&(String, String, u64)> = armed.iter().filter(|a| a.2 > now).collect();
+    if let Some(named) = live.iter().find(|a| a.1 == iss) {
+        return Some((named.0.clone(), true));
+    }
+    if iss_listed {
+        return None;
+    }
     live.iter()
-        .find(|a| a.1 == iss)
-        .or_else(|| live.iter().max_by_key(|a| a.2))
-        .map(|a| a.0.clone())
+        .max_by_key(|a| a.2)
+        .map(|a| (a.0.clone(), false))
 }
 
 /// `raw`, parsed, when it starts a company sign-in on this window's brain, the
@@ -574,23 +585,25 @@ mod tests {
     fn oidc_arrival_goes_only_to_a_window_that_waits() {
         let a = "https://a.example";
         let b = "https://b.example";
+        let alias = "https://alias.example";
         let armed = |id: &str, origin: &str, until| (id.to_string(), origin.to_string(), until);
         // No window sent a sign-in out, or the wait is over: dropped.
-        assert_eq!(oidc_arrival_profile(&[], a, 10), None);
-        assert_eq!(oidc_arrival_profile(&[armed("a", a, 10)], a, 10), None);
+        assert_eq!(oidc_arrival(&[], a, true, 10), None);
+        assert_eq!(oidc_arrival(&[], alias, false, 10), None);
+        assert_eq!(oidc_arrival(&[armed("a", a, 10)], a, true, 10), None);
         let both = [armed("a", a, 100), armed("b", b, 200)];
-        // The brain the link names, if it waits.
-        assert_eq!(oidc_arrival_profile(&both, a, 10).as_deref(), Some("a"));
-        // Else the last that went out, whose page refuses it.
+        // The brain the link names, as its way back.
         assert_eq!(
-            oidc_arrival_profile(&both, "https://alias.example", 10).as_deref(),
-            Some("b")
+            oidc_arrival(&both, a, true, 10),
+            Some(("a".to_string(), true))
         );
-        // A named brain that is not waiting is not woken.
+        // A brain this shell does not hold: the last that went out, its wait on.
         assert_eq!(
-            oidc_arrival_profile(&[armed("a", a, 100)], b, 10).as_deref(),
-            Some("a")
+            oidc_arrival(&both, alias, false, 10),
+            Some(("b".to_string(), false))
         );
+        // Another listed brain that does not wait moves nothing.
+        assert_eq!(oidc_arrival(&[armed("a", a, 100)], b, true, 10), None);
     }
 
     #[test]

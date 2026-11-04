@@ -114,17 +114,27 @@ impl Shell {
             .insert(profile_id.to_string(), until);
     }
 
-    /// The window a `mantle://oidc` link goes to, its wait over with this link.
+    pub fn disarm_oidc(&self, profile_id: &str) {
+        self.oidc_armed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(profile_id);
+    }
+
+    /// The window a `mantle://oidc` link goes to. A link that names its brain
+    /// ends its wait (fence.rs oidc_arrival).
     pub fn take_oidc_arrival(&self, iss: &str, now: u64) -> Option<String> {
         let mut armed = self.oidc_armed.lock().unwrap_or_else(|e| e.into_inner());
-        let waiting: Vec<(String, String, u64)> = self
-            .profiles
-            .load()
+        let profiles = self.profiles.load();
+        let listed = profiles.iter().any(|p| p.origin == iss);
+        let waiting: Vec<(String, String, u64)> = profiles
             .into_iter()
             .filter_map(|p| armed.get(&p.id).map(|until| (p.id, p.origin, *until)))
             .collect();
-        let id = crate::fence::oidc_arrival_profile(&waiting, iss, now)?;
-        armed.remove(&id);
+        let (id, named) = crate::fence::oidc_arrival(&waiting, iss, listed, now)?;
+        if named {
+            armed.remove(&id);
+        }
         Some(id)
     }
 
