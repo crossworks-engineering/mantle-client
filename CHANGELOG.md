@@ -12,6 +12,13 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.8: the Status screen
+
+- A Status screen replaces the Dashboard: `/status`, first in the System menu. `/dashboard` redirects to it. It uses the standard master-detail layout: on the left a card per section with health and one number, on the right what needs attention, tiles, compute, brain, spend, queues and workers, sidecars, providers, version, updates and backups.
+- Each switchable sidecar links to its card in Settings > Services.
+- Memory index bars no longer go red at 98%. The old Dashboard's journal gaps panel is gone.
+- It reads `GET /api/box-status`, which comes with brain v0.500.20. Against an older brain it says what it cannot show.
+
 ## v0.9.7: company sign-in
 
 - **Added:** when a brain has company sign-in on, the sign-in screen shows
