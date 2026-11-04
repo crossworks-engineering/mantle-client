@@ -191,8 +191,8 @@ in localStorage, and the next run is back on `/login`.
 
 ## What T1 leaves for T2
 
-- Deep links (`mantle://`): `deep_link_to_path` and `in_app_url` are ported
-  with Electron's rules but not wired; single instance with them.
+- Deep links (`mantle://`) other than a company sign-in's: `deep_link_to_path`
+  and `in_app_url` are ported with Electron's rules but not wired.
 - Notifications, the dock badge and `attention`: `notify` and `setBadge` are
   no-ops.
 - Downloads (WebKit cancels them without a download handler), the tray,

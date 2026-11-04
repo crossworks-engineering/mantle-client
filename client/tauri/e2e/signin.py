@@ -44,6 +44,11 @@ two profiles, so two windows' data folders and two keychain namespaces.
      on disk); the notice is shown once in the run; the next run is back on
      /login, holds nothing, and says it again
 
+  h  in that same window: the page has oidc.open, the shell refuses another
+     address, and a second process given a mantle://oidc link hands it over
+     and leaves; the window goes to /auth/oidc, keeps nothing of the flow in
+     the address, and spends nothing, since nothing waits for it
+
 The vault is read the way the page reads it: through
 window.mantleDesktop.tokenVault, the synchronous API, which asks the shell
 on every call.
@@ -64,6 +69,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -742,6 +748,41 @@ Promise.all([
         )
 
 
+def oidc_checks(app, home, bus):
+    report = app.js(
+        "var o = window.mantleDesktop && window.mantleDesktop.oidc;"
+        " return { open: !!o && typeof o.open === 'function',"
+        " subtle: !!(window.crypto && window.crypto.subtle), secure: window.isSecureContext };"
+    )
+    check("h: the page has the shell's oidc.open", bool(report) and report.get("open") is True)
+    note(f"h: secure context {report and report.get('secure')}, WebCrypto digest {report and report.get('subtle')}")
+    answer = app.js_async(
+        "var done = arguments[arguments.length - 1];"
+        " window.mantleDesktop.oidc.open('https://evil.example/api/auth/oidc/start')"
+        ".then(done, function () { done('threw'); });"
+    )
+    check("h: the shell opens no other address", answer is False, f"answered {answer!r}")
+    # A second process, as the OS starts for a mantle:// link on Linux, hands
+    # the link to the app and leaves. Nothing waits in the page, so it spends
+    # nothing and says so.
+    fragment = urllib.parse.urlencode({"oidc": "cancelled", "iss": ORIGIN_A})
+    env = home.env(bus)
+    env.pop("TAURI_WEBVIEW_AUTOMATION", None)
+    second = subprocess.run([BIN, f"mantle://oidc#{fragment}"], env=env, timeout=60, capture_output=True)
+    check("h: the second process hands over and leaves", second.returncode == 0, f"exit {second.returncode}")
+    deadline = time.time() + 30
+    while time.time() < deadline and not (app.path() or "").startswith("/auth/oidc"):
+        time.sleep(0.5)
+    path = app.path() or ""
+    check("h: the window goes to /auth/oidc", path.startswith("/auth/oidc"), f"on {path}")
+    check("h: the address keeps nothing of the flow", "#" not in (app.url() or ""), app.url() or "")
+    said = ""
+    while time.time() < deadline and "ended" not in said:
+        said = app.js("return document.body.innerText") or ""
+        time.sleep(0.5)
+    check("h: an answer nothing waits for spends nothing", "This sign-in has ended" in said)
+
+
 def main():
     email, password, setup_code = read_login()
     bus = os.environ["DBUS_SESSION_BUS_ADDRESS"]
@@ -875,6 +916,10 @@ def main():
         # g, in the same signed-in window, still tracing.
         print("== g: frames inside the UI page, and no Tauri command", flush=True)
         frame_checks(app)
+
+        # h, in the same window.
+        print("== h: a company sign-in coming back", flush=True)
+        oidc_checks(app, home, bus)
     finally:
         app.quit()
 
