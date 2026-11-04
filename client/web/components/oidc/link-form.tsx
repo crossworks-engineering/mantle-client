@@ -10,6 +10,7 @@ import { startLink } from '@/lib/oidc/actions';
 import { takeOfferTicket } from '@/lib/oidc/offer-ticket';
 import { OIDC_STATUS_KEY } from '@/lib/oidc/use-oidc';
 import { signInErrorMessage } from '@/lib/sign-in-error';
+import { InBrowserNote } from './in-browser-note';
 import { useReturnReset } from './use-return-reset';
 
 /**
@@ -124,11 +125,7 @@ export function LinkForm({
         </Field>
       )}
       {error && <FieldError>{error}</FieldError>}
-      {inBrowser && (
-        <p className="text-xs text-muted-foreground">
-          Finish signing in in your browser. This window comes back when you are done.
-        </p>
-      )}
+      {inBrowser && <InBrowserNote onStop={() => setInBrowser(false)} />}
       <div
         className={`flex flex-wrap items-center gap-2 ${start ? 'justify-start' : 'justify-end'}`}
       >

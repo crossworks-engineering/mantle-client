@@ -578,13 +578,15 @@ function registerIpc(): void {
     const profile = id ? loadProfiles().find((p) => p.id === id) : undefined;
     const url = profile ? oidcStartUrl(raw, profile.origin) : null;
     if (!profile || !url) return false;
+    // Before the browser opens: the way back can be that quick.
+    oidcArmed.set(profile.id, Date.now() + OIDC_ARMED_MS);
     try {
       await shell.openExternal(url);
+      return true;
     } catch {
+      oidcArmed.delete(profile.id);
       return false;
     }
-    oidcArmed.set(profile.id, Date.now() + OIDC_ARMED_MS);
-    return true;
   });
   ipcMain.on('oidc:cancel', (event) => {
     const id = vaultProfileFor(event);

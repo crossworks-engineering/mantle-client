@@ -103,6 +103,9 @@ function keyResumeOnce(): KeyResume | null {
   if (resumed !== undefined) return resumed;
   const form = takeKeyDraft();
   const outcome = takeOutcome('fresh');
+  // The page came back with the sign-in still out (a reload): the form is back,
+  // so the person presses the button again, and the old sign-in goes nowhere.
+  if (form && !outcome) abandonFlow('fresh');
   resumed = form && {
     form,
     ...(outcome && 'proof' in outcome ? { proof: outcome.proof } : {}),
@@ -400,8 +403,13 @@ function CreateKeyDialog({
       return;
     }
     if (err instanceof ApiError && err.status === 403 && err.body?.reason === 'fresh-sign-in') {
-      setError({ field: 'company', message: err.message });
-      // The brain says this login is linked: the button comes with that.
+      // The brain's way for this login is its company sign-in. A typed password
+      // that got here was wrong, or is no way in: the button comes back with that.
+      setUsePassword(false);
+      setError({
+        field: 'company',
+        message: viaCompany ? err.message : `That password did not work. ${err.message}`,
+      });
       void qc.invalidateQueries({ queryKey: OIDC_STATUS_KEY });
       return;
     }
@@ -455,6 +463,7 @@ function CreateKeyDialog({
           if (!live) return;
           endKeyResume();
           await onCreated({ ...made, name: built.body.name });
+          setForm(blank());
         },
         (err: unknown) => {
           if (!live) return;
@@ -500,6 +509,7 @@ function CreateKeyDialog({
     setError(null);
     setForm(blank());
     setPending(false);
+    setUsePassword(false);
     forgetSignIn();
     endKeyResume();
   };

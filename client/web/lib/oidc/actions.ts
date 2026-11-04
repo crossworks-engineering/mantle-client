@@ -80,7 +80,7 @@ onSignOut(() => {
 
 /** A flow's next step: on its way (a web page is leaving for the provider), or
  *  waiting for the person in the browser the desktop shell opened. */
-export type FlowStarted = 'leaving' | 'in-browser';
+export type FlowStarted = 'leaving' | 'in-browser' | 'stopped';
 
 const NOT_THIS_ADDRESS =
   "Company sign-in works only at this brain's public address. Open it there, and try again.";
@@ -89,9 +89,11 @@ const NOT_THIS_ADDRESS =
  * Take the person to the provider. A web page leaves; the desktop shell asks
  * the system's browser. The way there starts on the brain this page talks to,
  * or the flow could not come back here anyway (`iss` would name another
- * address): say so now, not after the provider.
+ * address): say so now, not after the provider. A flow the person stopped while
+ * the brain was answering goes nowhere.
  */
-async function goToProvider(raw: string): Promise<FlowStarted> {
+async function goToProvider(raw: string, verifier: string): Promise<FlowStarted> {
+  if (readPendingFlow()?.verifier !== verifier) return 'stopped';
   const url = new URL(raw, window.location.href);
   if (url.origin !== currentBrainOrigin()) {
     clearPendingFlow();
@@ -121,14 +123,14 @@ async function beginFlow(flow: Omit<PendingFlow, 'verifier' | 'brain' | 'started
     startedAt: Date.now(),
   });
   if (!kept) throw new Error('This browser is keeping nothing for this site. Allow site data.');
-  return { redirect: target(), challenge };
+  return { verifier, handoff: { redirect: target(), challenge } };
 }
 
 /** Sign in with the company account. */
 export async function startSignIn(opts: { next?: string; add?: boolean }): Promise<FlowStarted> {
-  const { redirect, challenge } = await beginFlow({ purpose: 'signin', ...opts });
-  const q = new URLSearchParams({ redirect, challenge });
-  return goToProvider(apiUrl(`/api/auth/oidc/start?${q.toString()}`));
+  const { verifier, handoff } = await beginFlow({ purpose: 'signin', ...opts });
+  const q = new URLSearchParams(handoff);
+  return goToProvider(apiUrl(`/api/auth/oidc/start?${q.toString()}`), verifier);
 }
 
 /** What a link start came to. */
@@ -159,7 +161,7 @@ export async function startLink(opts: {
   next?: string;
   add?: boolean;
 }): Promise<LinkStart> {
-  const handoff = await beginFlow({
+  const { verifier, handoff } = await beginFlow({
     purpose: 'link',
     ...(opts.next ? { next: opts.next } : {}),
     // A held login's link that stops goes back to the sign-in screen, and a
@@ -185,8 +187,12 @@ export async function startLink(opts: {
   const answer = (await res.json().catch(() => ({}))) as Partial<OidcRefusal & OidcLinkStarted> & {
     message?: string;
   };
-  if (res.ok && answer.url) return { kind: 'started', how: await goToProvider(answer.url) };
+  if (res.ok && answer.url) {
+    return { kind: 'started', how: await goToProvider(answer.url, verifier) };
+  }
   clearPendingFlow();
+  // The brain takes a flow only back to its own public address.
+  if (res.status === 400) return { kind: 'error', message: NOT_THIS_ADDRESS };
   if (res.status === 401 && answer.code === 'password-needed') {
     return { kind: 'password-needed', message: answer.error ?? '' };
   }
@@ -206,7 +212,7 @@ export async function startLink(opts: {
 
 /** POST /api/auth/oidc/fresh: confirm who this is with a new company sign-in. */
 export async function startFresh(next: string): Promise<FlowStarted> {
-  const handoff = await beginFlow({ purpose: 'fresh', next });
+  const { verifier, handoff } = await beginFlow({ purpose: 'fresh', next });
   const res = await fetch(
     apiUrl('/api/auth/oidc/fresh'),
     withAuth({
@@ -221,9 +227,13 @@ export async function startFresh(next: string): Promise<FlowStarted> {
   };
   if (!res.ok || !answer.url) {
     clearPendingFlow();
-    throw new Error(answer.error ?? 'Could not start the company sign-in. Try again.');
+    throw new Error(
+      res.status === 400
+        ? NOT_THIS_ADDRESS
+        : (answer.error ?? 'Could not start the company sign-in. Try again.'),
+    );
   }
-  return goToProvider(answer.url);
+  return goToProvider(answer.url, verifier);
 }
 
 /** The refusal of a spent code, or what it bought. */

@@ -180,8 +180,11 @@ pub fn run() {
         // One instance, as Electron's shell: a `mantle://` link on Linux starts a
         // second process, which hands the link over (the plugin's `deep-link`
         // feature) and leaves. Must be the first plugin.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            windows::focus_or_open(app);
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // A link is judged where it is delivered, and may move nothing.
+            if !argv.iter().any(|a| a.starts_with("mantle://")) {
+                windows::focus_or_open(app);
+            }
         }))
         .plugin(tauri_plugin_deep_link::init())
         // Opens links outside, from Rust only. Its click script is off: it

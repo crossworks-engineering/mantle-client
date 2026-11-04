@@ -213,10 +213,11 @@ fn oidc_open<R: Runtime>(app: &AppHandle<R>, profile: &str, label: &str, body: &
     let Some(url) = url else {
         return false;
     };
+    // Before the browser opens: the way back can be that quick.
+    shell.arm_oidc(profile, crate::profiles::now_ms() + OIDC_ARMED_MS);
     let opened = crate::windows::open_outside(app, &url);
-    if opened {
-        let until = crate::profiles::now_ms() + OIDC_ARMED_MS;
-        shell.arm_oidc(profile, until);
+    if !opened {
+        shell.disarm_oidc(profile);
     }
     opened
 }

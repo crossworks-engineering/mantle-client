@@ -95,6 +95,18 @@ describe('startLink: a held login on a device that holds another', () => {
   });
 });
 
+describe('a flow stopped while the brain answers', () => {
+  it('goes nowhere', async () => {
+    const { startFresh, abandonFlow } = await load();
+    answer = () => {
+      abandonFlow();
+      return json(200, { url: `${BRAIN}/api/auth/oidc/start?ticket=t` });
+    };
+    expect(await startFresh('/settings')).toBe('stopped');
+    expect(assign).not.toHaveBeenCalled();
+  });
+});
+
 describe('startLink: what the brain answers', () => {
   it('a session sends its own bearer', async () => {
     const { tokenStore } = await import('@mantle/web-ui/token-store');
@@ -120,6 +132,16 @@ describe('startLink: what the brain answers', () => {
     expect(res.kind).toBe(kind);
     expect(store.has('mantle.oidc.flow')).toBe(false);
     expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('a client at another address than the public one is told so', async () => {
+    answer = () => json(400, { error: 'Invalid input.' });
+    const { startLink, startFresh } = await load();
+    expect(await startLink({})).toMatchObject({
+      kind: 'error',
+      message: expect.stringMatching(/public address/),
+    });
+    await expect(startFresh('/settings')).rejects.toThrow(/public address/);
   });
 
   it('says the words the password rule gave, not its code', async () => {

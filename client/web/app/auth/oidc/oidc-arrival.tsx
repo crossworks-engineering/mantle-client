@@ -9,6 +9,7 @@ import { takeLinkCode } from '@/lib/link-code';
 import { goAfterSignIn } from '@/lib/oauth-consent';
 import { spendCode, whoamiOf } from '@/lib/oidc/actions';
 import {
+  clearFlowTab,
   clearPendingFlow,
   decideArrival,
   readFlowEnd,
@@ -56,6 +57,8 @@ async function spend(flow: PendingFlow, code: string): Promise<string | null> {
   }
   // A bearer. It names a login id; the device files its logins by email.
   const { token } = spent.answer;
+  // Whoever signed in now: what the tab kept was for the session before.
+  clearFlowTab();
   const who = await whoamiOf(token);
   if (!who) return 'Could not finish signing in. Try again.';
   tokenStore.signIn({ email: who.email, token, loginId: who.loginId });

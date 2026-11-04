@@ -59,10 +59,12 @@ a session signed in, so this stays here until it does.
   email link) ends with "This sign-in has ended", so a provider used here must
   finish its sign-in in the tab it began in.
 - Any app can open a `mantle://oidc` link. While a window waits, a link naming its
-  brain with `oidc=cancelled` ends that wait (the person starts again), and a link
-  naming a brain the shell does not hold reloads the window on that page, whose
-  unsaved typing may go. Nothing leaks and no code is spent. Outside a wait, links
-  move nothing.
+  brain ends that wait (the person starts again; a code it carries is spent with the
+  waiting verifier and refused), and a link naming a brain the shell does not hold
+  reloads the window on that page, whose unsaved typing may go. Nothing leaks and no
+  session results. Outside a wait, links move nothing.
+- One flow at a time in a window. Starting a second replaces the first, and the first's
+  way back then ends the wait with "This sign-in has ended". Start again.
 - `mantle://` belongs to whichever app the system picked. With both desktop apps
   installed, a flow started in one can come back to the other, which spends nothing
   and drops it. Install one.
@@ -81,7 +83,8 @@ shell takes only this brain's `/api/auth/oidc/start`, whatever the page asks
 `client/tauri/src/fence.rs`). A shell without it shows "Update this app" instead of
 the button. A window takes a `mantle://oidc` link only once it has sent a sign-in out,
 within 15 minutes (`oidcArrival`); any other link moves nothing. A fresh sign-in the
-person walks away from (Cancel, "Use my password instead", "Not now", a password
-sign-in, a sign-out or a switch of login) ends the wait. `link-gate.tsx` is a
+person walks away from (Stop, Cancel, "Use my password instead", "Not now", a password
+sign-in, a sign-out or a switch of login) ends the wait. Only leaving the screen does
+not: it ends on its own after 15 minutes. `link-gate.tsx` is a
 backstop: the brain holds such a session, so a person normally meets the link step at
 sign-in.
