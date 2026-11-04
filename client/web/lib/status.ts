@@ -119,13 +119,15 @@ export type BoxStatusView = {
   core: boolean | null;
 };
 
-/** A container's reading: absent is `idle` (this box does not run it). */
+/** A container's reading: absent is `idle` (this box does not run it);
+ *  a word the updater could not vouch for (`unknown`) is not known. */
 export function containerLevel(c: BoxContainerState | null | undefined): Level {
-  if (!c) return 'unknown';
+  if (!c || c.container === 'unknown') return 'unknown';
   if (c.container === 'absent') return 'idle';
   if (c.container === 'running') {
     if (c.health === 'unhealthy') return 'crit';
     if (c.health === 'starting') return 'warn';
+    if (c.health === 'unknown') return 'unknown';
     return 'ok';
   }
   if (c.container === 'restarting' || c.container === 'created') return 'warn';
@@ -134,17 +136,59 @@ export function containerLevel(c: BoxContainerState | null | undefined): Level {
 
 /** "Running", "Unhealthy", "Starting", "Restarting", "Stopped", "Not on this box". */
 export function containerLabel(c: BoxContainerState): string {
+  if (c.container === 'unknown') return 'Not reported';
   if (c.container === 'absent') return 'Not on this box';
   if (c.container === 'running') {
     return c.health === 'unhealthy'
       ? 'Unhealthy'
       : c.health === 'starting'
         ? 'Starting'
-        : 'Running';
+        : c.health === 'unknown'
+          ? 'Not reported'
+          : 'Running';
   }
   if (c.container === 'restarting') return 'Restarting';
   if (c.container === 'created') return 'Created';
   return 'Stopped';
+}
+
+/** How long after the stack a container must start to count as restarted. */
+const RESTART_GAP_MS = 2 * 60_000;
+/** How long a restart stays on the board. */
+const RESTART_SHOWN_MS = 30 * 60_000;
+
+/**
+ * Minutes since a container restarted on its own, or null. docker's restart
+ * count misses autoheal's restarts (`docker restart` keeps the container),
+ * so the signal is its start time: running, started recently, and well
+ * after the web container (a roll or a reboot starts them all together, and
+ * that is not a restart).
+ */
+export function restartedMinutesAgo(
+  c: BoxContainerState | null | undefined,
+  baseline: string | null | undefined,
+  now: number = Date.now(),
+): number | null {
+  if (!c || c.container !== 'running' || !c.startedAt || !baseline) return null;
+  const started = Date.parse(c.startedAt);
+  const base = Date.parse(baseline);
+  if (!Number.isFinite(started) || !Number.isFinite(base)) return null;
+  if (started - base < RESTART_GAP_MS || now - started > RESTART_SHOWN_MS) return null;
+  return Math.max(0, Math.round((now - started) / 60_000));
+}
+
+/** The level and label of a container, a recent restart included. */
+function readContainer(
+  c: BoxContainerState,
+  baseline: string | null | undefined,
+  now: number,
+): { level: Level; label: string } {
+  const level = containerLevel(c);
+  const ago = level === 'ok' ? restartedMinutesAgo(c, baseline, now) : null;
+  if (ago !== null) {
+    return { level: 'warn', label: ago === 0 ? 'Restarted just now' : `Restarted ${ago} min ago` };
+  }
+  return { level, label: containerLabel(c) };
 }
 
 // ── Sidecars ────────────────────────────────────────────────────────────
@@ -301,6 +345,8 @@ export type SidecarInputs = {
   updaterUp: boolean | null;
   /** /api/box-status `containers`, null from a brain before it. */
   containers?: Record<string, BoxContainerState> | null;
+  /** For the restart signal; Date.now() when absent. */
+  now?: number;
 };
 
 function fromBool(up: boolean | null | undefined, offWhenNull = false): Level {
@@ -375,14 +421,14 @@ export function sidecarState(def: SidecarDef, inp: SidecarInputs): SidecarState 
   // or stopped is a problem whatever the app's own probe last saw. An
   // absent container on a switched-off service is just off.
   const c = inp.containers?.[def.container];
-  const cLevel = containerLevel(c);
-  if (c && cLevel !== 'unknown') {
-    if (level === 'unknown' || (cLevel === 'idle' && level !== 'crit')) {
-      level = cLevel;
-      label = cLevel === 'idle' ? (svc ? 'Off' : 'Not on this box') : containerLabel(c);
-    } else if (cLevel === 'crit' || cLevel === 'warn') {
-      level = worst(level, cLevel);
-      label = containerLabel(c);
+  const read = c ? readContainer(c, inp.containers?.web?.startedAt, inp.now ?? Date.now()) : null;
+  if (c && read && read.level !== 'unknown') {
+    if (level === 'unknown' || (read.level === 'idle' && level !== 'crit')) {
+      level = read.level;
+      label = read.level === 'idle' ? (svc ? 'Off' : 'Not on this box') : read.label;
+    } else if (read.level === 'crit' || read.level === 'warn') {
+      level = worst(level, read.level);
+      label = read.label;
     }
   }
 
@@ -452,6 +498,11 @@ export const PROCESSES: readonly ProcessDef[] = [
   { id: 'worker_telegram', title: 'Telegram', role: 'Polls Telegram for messages' },
   { id: 'worker_push', title: 'Push', role: 'Notifications to phones' },
   { id: 'client_web', title: 'Interface', role: 'Serves this interface' },
+  {
+    id: 'client_caddy',
+    title: 'Interface front door',
+    role: 'TLS for the interface on its own box',
+  },
 ];
 
 export type ProcessState = ProcessDef & {
@@ -465,13 +516,16 @@ export type ProcessState = ProcessDef & {
  *  nothing (no updater, or one before the containers field). */
 export function processStates(
   containers: Record<string, BoxContainerState> | null | undefined,
+  now: number = Date.now(),
 ): ProcessState[] {
+  const baseline = containers?.web?.startedAt;
   return PROCESSES.map((p) => {
     const c = containers?.[p.id];
+    const read = c ? readContainer(c, baseline, now) : null;
     return {
       ...p,
-      level: containerLevel(c),
-      label: c ? containerLabel(c) : 'Not reported',
+      level: read?.level ?? 'unknown',
+      label: read?.label ?? 'Not reported',
       restarts: c && c.container !== 'absent' ? c.restarts : null,
       startedAt: c?.startedAt ?? null,
     };
@@ -514,23 +568,22 @@ export function statusIssues(inp: IssueInputs): Issue[] {
     add(pctLevel(h.disk?.usedPct), 'compute', `Disk at ${Math.round(h.disk?.usedPct ?? 0)}%`);
   }
   for (const s of inp.sidecars) {
-    if (s.level === 'crit')
-      out.push({ level: 'crit', section: 'sidecars', text: `${s.title} is not answering` });
+    if (s.level === 'crit') {
+      const what = s.label === 'Not answering' ? 'is not answering' : `is ${s.label.toLowerCase()}`;
+      out.push({ level: 'crit', section: 'sidecars', text: `${s.title} ${what}` });
+    } else if (s.level === 'warn') {
+      const what = s.label.startsWith('Restarted')
+        ? s.label.toLowerCase()
+        : `is ${s.label.toLowerCase()}`;
+      out.push({ level: 'warn', section: 'sidecars', text: `${s.title} ${what}` });
+    }
   }
   for (const p of inp.processes ?? []) {
-    if (p.level === 'crit') {
-      out.push({
-        level: 'crit',
-        section: 'queues',
-        text: `The ${p.title} process is ${p.label.toLowerCase()}`,
-      });
-    } else if (p.level === 'warn') {
-      out.push({
-        level: 'warn',
-        section: 'queues',
-        text: `The ${p.title} process is ${p.label.toLowerCase()}`,
-      });
-    }
+    if (p.level !== 'crit' && p.level !== 'warn') continue;
+    const what = p.label.startsWith('Restarted')
+      ? p.label.toLowerCase()
+      : `is ${p.label.toLowerCase()}`;
+    out.push({ level: p.level, section: 'queues', text: `The ${p.title} process ${what}` });
   }
   if (inp.capacityZone === 'watch') {
     out.push({ level: 'warn', section: 'brain', text: 'Brain capacity is in the watch zone' });

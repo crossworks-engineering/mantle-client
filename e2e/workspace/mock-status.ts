@@ -68,6 +68,7 @@ export function healthyContainers(): Record<string, MockContainer> {
     worker_runs: run(),
     worker_push: run(),
     client_web: run('none'),
+    client_caddy: absent(),
   };
 }
 
