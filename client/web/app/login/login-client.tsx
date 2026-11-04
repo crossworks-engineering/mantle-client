@@ -125,8 +125,9 @@ export function LoginClient({
   const companyFirst = config.mode === 'required' || (config.mode === 'optional' && first);
   const [heldTicket, setHeldTicket] = useState<string>();
   const [heldEnded, setHeldEnded] = useState<string>();
-  const oidcWords =
-    config.mode !== 'off' && oidc && oidc !== 'linked' ? flowStoppedMessage(oidc) : undefined;
+  // Fixed words, whatever the query says, and shown whether or not the mode has
+  // been read: why a sign-in stopped must not wait on another request.
+  const oidcWords = oidc && oidc !== 'linked' ? flowStoppedMessage(oidc) : undefined;
   const shownError = heldEnded ?? error ?? oidcWords;
 
   const company =
