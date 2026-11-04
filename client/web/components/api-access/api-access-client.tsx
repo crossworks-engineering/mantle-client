@@ -11,7 +11,7 @@
  * revoke, every key on the brain. Not the outbound "API keys" screen
  * (/settings/keys): those are keys this brain uses to call other services.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
 import type {
@@ -88,6 +88,33 @@ const QUERY_KEY = ['access-keys'];
 /** A form back from a fresh company sign-in: its proof, or why there is none. */
 type KeyResume = { form: CreateForm; proof?: OidcFreshProof; problem?: string };
 
+/**
+ * Outside the screen, for this page load: the settings pane remounts its
+ * children once it knows the window's width, and what comes back from the
+ * sign-in can be read only once. So can its proof be spent, and a new key's
+ * secret is shown once: the one request is made here, and whichever mount is
+ * alive when it answers shows the answer.
+ */
+let resumed: KeyResume | null | undefined;
+let resumedSend: Promise<AccessKeyCreated> | null = null;
+
+function keyResumeOnce(): KeyResume | null {
+  if (resumed !== undefined) return resumed;
+  const form = takeKeyDraft();
+  const outcome = takeOutcome('fresh');
+  resumed = form && {
+    form,
+    ...(outcome && 'proof' in outcome ? { proof: outcome.proof } : {}),
+    ...(outcome && 'result' in outcome ? { problem: flowStoppedMessage(outcome.result) } : {}),
+  };
+  return resumed;
+}
+
+function endKeyResume(): void {
+  resumed = null;
+  resumedSend = null;
+}
+
 /** The brain's origin, for the example commands: the API base in the split
  *  topology, this page's origin otherwise. */
 function brainOrigin(): string {
@@ -112,14 +139,9 @@ export function ApiAccessClient() {
   // mount: this tab's storage is not there in the first render.
   const [resume, setResume] = useState<KeyResume | null>(null);
   useEffect(() => {
-    const form = takeKeyDraft();
-    const outcome = takeOutcome('fresh');
-    if (!form) return;
-    setResume({
-      form,
-      ...(outcome && 'proof' in outcome ? { proof: outcome.proof } : {}),
-      ...(outcome && 'result' in outcome ? { problem: flowStoppedMessage(outcome.result) } : {}),
-    });
+    const back = keyResumeOnce();
+    if (!back) return;
+    setResume(back);
     setCreating(true);
   }, []);
 
@@ -361,13 +383,25 @@ function CreateKeyDialog({
   const set = (patch: Partial<CreateForm>) => setForm((f) => ({ ...f, ...patch }));
   useReturnReset(useCallback(() => setPending(false), []));
 
-  /** Send the create. One proof buys one request, so a failure asks again. */
-  const send = async (
-    form: CreateForm,
-    confirm: 'password' | 'company',
-    fresh?: OidcFreshProof,
-  ) => {
-    const built = createBody(form, rules, confirm);
+  /** What a refused create means. One proof buys one request, so a failure
+   *  asks again. */
+  const refused = (err: unknown) => {
+    // The password is never kept after a try, whatever the answer.
+    set({ password: '' });
+    // A wrong password is the field's problem, not a toast.
+    if (err instanceof ApiError && err.status === 403 && err.body?.reason === 'password') {
+      setError({ field: 'password', message: err.message });
+      return;
+    }
+    if (err instanceof ApiError && err.status === 403 && err.body?.reason === 'fresh-sign-in') {
+      setError({ field: 'company', message: err.message });
+      return;
+    }
+    toast.error(err instanceof ApiError ? err.message : 'Could not make the key');
+  };
+
+  const send = async () => {
+    const built = createBody(form, rules, 'password');
     if ('error' in built) {
       setError({ field: built.field, message: built.error });
       return;
@@ -375,36 +409,47 @@ function CreateKeyDialog({
     setError(null);
     setPending(true);
     try {
-      const made = await apiSend<AccessKeyCreated>('/api/access-keys', 'POST', {
-        ...built.body,
-        ...(fresh ? { fresh } : {}),
-      });
+      const made = await apiSend<AccessKeyCreated>('/api/access-keys', 'POST', built.body);
       await onCreated({ ...made, name: built.body.name });
       setForm(blank());
     } catch (err) {
-      // The password is never kept after a try, whatever the answer.
-      set({ password: '' });
-      // A wrong password is the field's problem, not a toast.
-      if (err instanceof ApiError && err.status === 403 && err.body?.reason === 'password') {
-        setError({ field: 'password', message: err.message });
-        return;
-      }
-      if (err instanceof ApiError && err.status === 403 && err.body?.reason === 'fresh-sign-in') {
-        setError({ field: 'company', message: err.message });
-        return;
-      }
-      toast.error(err instanceof ApiError ? err.message : 'Could not make the key');
+      refused(err);
     } finally {
       setPending(false);
     }
   };
 
   // Back with a proof: the person already pressed the button, so it goes now.
-  const sentResume = useRef(false);
   useEffect(() => {
-    if (!resume?.proof || sentResume.current) return;
-    sentResume.current = true;
-    void send(resume.form, 'company', resume.proof);
+    const proof = resume?.proof;
+    if (!resume || !proof) return;
+    const built = createBody(resume.form, rules, 'company');
+    if ('error' in built) return;
+    let live = true;
+    setPending(true);
+    resumedSend ??= apiSend<AccessKeyCreated>('/api/access-keys', 'POST', {
+      ...built.body,
+      fresh: proof,
+    });
+    resumedSend
+      .then(
+        async (made) => {
+          if (!live) return;
+          endKeyResume();
+          await onCreated({ ...made, name: built.body.name });
+        },
+        (err: unknown) => {
+          if (!live) return;
+          endKeyResume();
+          refused(err);
+        },
+      )
+      .finally(() => {
+        if (live) setPending(false);
+      });
+    return () => {
+      live = false;
+    };
     // Once, for the form it came back with.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resume]);
@@ -434,7 +479,7 @@ function CreateKeyDialog({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (viaCompany) await confirmWithCompany();
-    else await send(form, 'password');
+    else await send();
   };
 
   return (
@@ -445,6 +490,7 @@ function CreateKeyDialog({
         if (!o) {
           setError(null);
           setForm(blank());
+          endKeyResume();
         }
         onOpenChange(o);
       }}

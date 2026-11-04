@@ -54,20 +54,29 @@ export async function readOidcConfig(): Promise<OidcConfigDTO> {
  *  waiting for the person in the browser the desktop shell opened. */
 export type FlowStarted = 'leaving' | 'in-browser';
 
-const NOT_OPENED =
-  'The browser did not open. Use the address this brain gives as its public address, and try again.';
+const NOT_THIS_ADDRESS =
+  "Company sign-in works only at this brain's public address. Open it there, and try again.";
 
-/** Take the person to the provider. A web page leaves; the desktop shell asks
- *  the system's browser. */
-async function goToProvider(url: string): Promise<FlowStarted> {
+/**
+ * Take the person to the provider. A web page leaves; the desktop shell asks
+ * the system's browser. The way there starts on the brain this page talks to,
+ * or the flow could not come back here anyway (`iss` would name another
+ * address): say so now, not after the provider.
+ */
+async function goToProvider(raw: string): Promise<FlowStarted> {
+  const url = new URL(raw, window.location.href);
+  if (url.origin !== currentBrainOrigin()) {
+    clearPendingFlow();
+    throw new Error(NOT_THIS_ADDRESS);
+  }
   const oidc = desktopShell()?.oidc;
   if (!oidc) {
-    window.location.assign(url);
+    window.location.assign(url.href);
     return 'leaving';
   }
-  if (!(await oidc.open(new URL(url, window.location.href).toString()))) {
+  if (!(await oidc.open(url.href))) {
     clearPendingFlow();
-    throw new Error(NOT_OPENED);
+    throw new Error('The browser did not open. Try again.');
   }
   return 'in-browser';
 }

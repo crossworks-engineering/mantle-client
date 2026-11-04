@@ -64,7 +64,9 @@ export function LinkForm({
         ...(held ? { held } : {}),
         ...(ticket ? { ticket } : {}),
         ...(typed ? { password: typed } : {}),
-        next: next ?? window.location.pathname + window.location.search,
+        // Back to this screen. A held login has no session yet, so this screen
+        // (the sign-in or the invite) is not where it goes on to.
+        next: next ?? (held ? '/' : window.location.pathname + window.location.search),
         ...(add ? { add } : {}),
       });
       switch (res.kind) {
