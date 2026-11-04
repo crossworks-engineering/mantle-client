@@ -35,7 +35,7 @@ function stopped(flow: PendingFlow, result: string) {
     window.location.replace(signInStoppedPath(flow, result));
     return;
   }
-  saveOutcome({ purpose: flow.purpose, result: result as never });
+  saveOutcome({ purpose: flow.purpose, result });
   window.location.replace(safeNext(flow.next) ?? '/');
 }
 

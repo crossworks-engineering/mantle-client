@@ -6,7 +6,7 @@ use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use url::Url;
 
-use crate::fence::{self, Navigation, NoticeNavigation};
+use crate::fence::{self, Navigation, NoticeNavigation, OidcDeepLink, UI_ORIGIN};
 use crate::profiles::{label_for, Profile};
 use crate::shell::{connect_root, ui_root, Shell, CONNECT_LABEL, NOTICE_LABEL};
 use crate::vault::Unavailable;
@@ -88,7 +88,10 @@ pub fn page_api_script() -> String {
     platform: {platform:?},
     tokenVault: vault,
     notify: function () {{}},
-    setBadge: function () {{}}
+    setBadge: function () {{}},
+    oidc: Object.freeze({{
+      open: function (url) {{ return Promise.resolve(call('oidcOpen', {{ url: url }}) === '1'); }}
+    }})
   }});
   Object.defineProperty(window, 'mantleDesktop', {{ value: api, writable: false, configurable: false }});
 
@@ -227,6 +230,40 @@ pub fn open_brain<R: Runtime>(app: &AppHandle<R>, profile_id: &str) -> Result<()
     shell.set_front(Some(profile.id.clone()));
     rebuild_menu(app);
     Ok(())
+}
+
+/// A company sign-in came back as `mantle://oidc`. It goes to the window of the
+/// brain it names, on the page the web app ends on (/auth/oidc); that page
+/// compares the brain again and holds the verifier. A brain this shell holds
+/// under another address goes to the window in front, whose page says so and
+/// spends nothing.
+pub fn deliver_oidc<R: Runtime>(app: &AppHandle<R>, link: &OidcDeepLink) {
+    let Ok(target) = Url::parse(&format!("{UI_ORIGIN}/auth/oidc#{}", link.fragment)) else {
+        return;
+    };
+    let shell = app.state::<Shell>();
+    let named = shell
+        .profiles
+        .load()
+        .into_iter()
+        .find(|p| p.origin == link.iss)
+        .map(|p| p.id);
+    let id = match named {
+        Some(id) => {
+            if open_brain(app, &id).is_err() {
+                return;
+            }
+            Some(id)
+        }
+        None => shell.front(),
+    };
+    match id.and_then(|id| app.get_webview_window(&label_for(&id))) {
+        Some(win) => {
+            reveal(&win);
+            let _ = win.navigate(target);
+        }
+        None => focus_or_open(app),
+    }
 }
 
 /// A brain window that was just built, checked against the list again: the

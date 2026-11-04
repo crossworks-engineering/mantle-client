@@ -188,3 +188,65 @@ export function savedOriginOk(origin: unknown): boolean {
     return false;
   }
 }
+
+/** A company sign-in's way back to the shell, parsed (brain docs/oidc-sign-in.md). */
+export type OidcDeepLink = { iss: string; fragment: string };
+
+const OIDC_RESULT = /^[a-z-]{1,32}$/;
+const OIDC_CODE = /^[A-Za-z0-9_-]{1,128}$/;
+const OIDC_PURPOSE = new Set(['signin', 'link', 'fresh']);
+
+/**
+ * `mantle://oidc#oidc=...&iss=...`, or null for anything else. Any app can open
+ * a `mantle://` link, so only what the flow's end can hold is taken, rebuilt
+ * from its parts: what reaches the page is exactly these fields. The page then
+ * refuses a code it is not waiting for, and a code is worth nothing without its
+ * verifier.
+ */
+export function oidcDeepLink(link: string): OidcDeepLink | null {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'mantle:' || url.host !== 'oidc') return null;
+  if ((url.pathname !== '' && url.pathname !== '/') || url.search) return null;
+  const q = new URLSearchParams(url.hash.replace(/^#/, ''));
+  const result = q.get('oidc');
+  const issRaw = q.get('iss');
+  if (!result || !issRaw || !OIDC_RESULT.test(result)) return null;
+  let iss: string;
+  try {
+    const parsed = new URL(issRaw);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    iss = parsed.origin;
+  } catch {
+    return null;
+  }
+  const out = new URLSearchParams({ oidc: result });
+  if (result === 'code') {
+    const code = q.get('code');
+    const purpose = q.get('purpose');
+    if (!code || !OIDC_CODE.test(code) || !purpose || !OIDC_PURPOSE.has(purpose)) return null;
+    out.set('code', code);
+    out.set('purpose', purpose);
+  }
+  out.set('iss', iss);
+  return { iss, fragment: out.toString() };
+}
+
+/**
+ * `raw` when it starts a company sign-in on this window's brain, the only URL
+ * the page may ask the shell to open this way. Exactly the brain's origin and
+ * the start path: a page cannot use it to open anything else on the machine.
+ */
+export function oidcStartUrl(raw: unknown, brainOrigin: string): string | null {
+  if (typeof raw !== 'string' || raw.length > 4096) return null;
+  try {
+    const url = new URL(raw);
+    return url.origin === brainOrigin && url.pathname === '/api/auth/oidc/start' ? url.href : null;
+  } catch {
+    return null;
+  }
+}

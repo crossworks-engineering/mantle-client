@@ -70,4 +70,9 @@ contextBridge.exposeInMainWorld('mantleDesktop', {
       ipcRenderer.invoke('brains:openForLogin', url, email),
     takeLoginHint: () => ipcRenderer.invoke('brains:takeLoginHint'),
   },
+  // Company sign-in runs in the system browser and comes back as mantle://oidc,
+  // which the shell loads on this window's /auth/oidc.
+  oidc: {
+    open: (url: string): Promise<boolean> => ipcRenderer.invoke('oidc:open', url),
+  },
 });

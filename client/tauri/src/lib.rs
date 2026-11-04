@@ -30,6 +30,8 @@ use tauri::utils::assets::{AssetKey, AssetsIter, CspHash};
 use tauri::RunEvent;
 use tauri::{Manager, Runtime, WindowEvent};
 
+use tauri_plugin_deep_link::DeepLinkExt;
+
 use crate::host::FileSource;
 use crate::shell::Shell;
 
@@ -78,6 +80,30 @@ pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
         ])
         .register_asynchronous_uri_scheme_protocol(fence::UI_SCHEME, shell::serve_ui)
         .register_asynchronous_uri_scheme_protocol(fence::CONNECT_SCHEME, shell::serve_connect)
+}
+
+/// `mantle://oidc`: a company sign-in coming back (fence.rs oidc_deep_link).
+/// Every other `mantle://` link is T2's. The rest of the plugin (its JS
+/// commands) is granted to no window.
+fn listen_for_deep_links<R: Runtime>(app: &tauri::App<R>) {
+    let links = app.deep_link();
+    // Linux has no bundle to name the scheme: it is registered at run time.
+    #[cfg(target_os = "linux")]
+    let _ = links.register("mantle");
+    let deliver = |app: &tauri::AppHandle<R>, urls: Vec<url::Url>| {
+        for url in urls {
+            if let Some(link) = fence::oidc_deep_link(url.as_str()) {
+                let handle = app.clone();
+                // Windows are built on the main thread, queued from here.
+                let _ = app.run_on_main_thread(move || windows::deliver_oidc(&handle, &link));
+            }
+        }
+    };
+    if let Ok(Some(urls)) = links.get_current() {
+        deliver(app.handle(), urls);
+    }
+    let handle = app.handle().clone();
+    links.on_open_url(move |event| deliver(&handle, event.urls()));
 }
 
 fn setup<R: Runtime>(
@@ -135,6 +161,7 @@ fn setup<R: Runtime>(
 
     windows::rebuild_menu(&handle);
     windows::focus_or_open(&handle);
+    listen_for_deep_links(app);
 
     // No keychain: logins last for this run only. Say so now, not at the
     // first sign-in, or a restart would sign the user out without a word.
@@ -150,6 +177,13 @@ pub fn run() {
     let mut context = tauri::generate_context!();
     let ui: Box<dyn FileSource> = Box::new(EmbeddedFiles(context.set_assets(Box::new(NoAssets))));
     let app = configure(tauri::Builder::default())
+        // One instance, as Electron's shell: a `mantle://` link on Linux starts a
+        // second process, which hands the link over (the plugin's `deep-link`
+        // feature) and leaves. Must be the first plugin.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            windows::focus_or_open(app);
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         // Opens links outside, from Rust only. Its click script is off: it
         // would call the plugin's JS command, which no window is granted.
         .plugin(

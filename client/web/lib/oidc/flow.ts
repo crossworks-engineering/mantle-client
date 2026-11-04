@@ -1,5 +1,4 @@
 import type {
-  OidcCallbackResult,
   OidcFreshProof,
   OidcHandoffPurpose,
   OidcStatusDTO,
@@ -42,7 +41,7 @@ export type PendingFlow = {
 /** What a flow that began in a screen came to, for that screen to read. */
 export type FlowOutcome =
   | { purpose: 'link'; linked: true }
-  | { purpose: 'link' | 'fresh'; result: OidcCallbackResult }
+  | { purpose: 'link' | 'fresh'; result: string }
   | { purpose: 'fresh'; proof: OidcFreshProof };
 
 function tab(): Storage | null {

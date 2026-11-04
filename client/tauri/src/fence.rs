@@ -230,6 +230,82 @@ pub fn deep_link_to_path(link: &str) -> Option<String> {
     }
 }
 
+/// A company sign-in's way back to the shell, parsed (brain
+/// docs/oidc-sign-in.md).
+#[derive(Debug, PartialEq, Eq)]
+pub struct OidcDeepLink {
+    pub iss: String,
+    pub fragment: String,
+}
+
+fn oidc_result_ok(result: &str) -> bool {
+    (1..=32).contains(&result.len()) && result.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')
+}
+
+fn oidc_code_ok(code: &str) -> bool {
+    (1..=128).contains(&code.len())
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// `mantle://oidc#oidc=...&iss=...`, or None for anything else. Any app can
+/// open a `mantle://` link, so only what the flow's end can hold is taken,
+/// rebuilt from its parts: what reaches the page is exactly these fields. The
+/// page then refuses a code it is not waiting for, and a code is worth nothing
+/// without its verifier. Port of oidcDeepLink in brain-fence.ts.
+pub fn oidc_deep_link(link: &str) -> Option<OidcDeepLink> {
+    let url = Url::parse(link).ok()?;
+    if url.scheme() != "mantle" || url.host_str() != Some("oidc") || url.port().is_some() {
+        return None;
+    }
+    if !matches!(url.path(), "" | "/") || url.query().is_some() {
+        return None;
+    }
+    let pairs: Vec<(String, String)> =
+        url::form_urlencoded::parse(url.fragment().unwrap_or("").as_bytes())
+            .into_owned()
+            .collect();
+    let get = |key: &str| {
+        pairs
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+            .filter(|v| !v.is_empty())
+    };
+    let result = get("oidc").filter(|r| oidc_result_ok(r))?;
+    let iss_url = Url::parse(get("iss")?).ok()?;
+    if !matches!(iss_url.scheme(), "http" | "https") {
+        return None;
+    }
+    let iss = iss_url.origin().ascii_serialization();
+    let mut out = url::form_urlencoded::Serializer::new(String::new());
+    out.append_pair("oidc", result);
+    if result == "code" {
+        let code = get("code").filter(|c| oidc_code_ok(c))?;
+        let purpose = get("purpose").filter(|p| matches!(*p, "signin" | "link" | "fresh"))?;
+        out.append_pair("code", code);
+        out.append_pair("purpose", purpose);
+    }
+    out.append_pair("iss", &iss);
+    Some(OidcDeepLink {
+        iss,
+        fragment: out.finish(),
+    })
+}
+
+/// `raw`, parsed, when it starts a company sign-in on this window's brain, the
+/// only URL the page may ask the shell to open this way. Exactly the brain's
+/// origin and the start path. Port of oidcStartUrl in brain-fence.ts.
+pub fn oidc_start_url(raw: &str, brain_origin: &str) -> Option<Url> {
+    if raw.len() > 4096 {
+        return None;
+    }
+    let url = Url::parse(raw).ok()?;
+    (url.origin().ascii_serialization() == brain_origin && url.path() == "/api/auth/oidc/start")
+        .then_some(url)
+}
+
 /// The one place an in-app path becomes a URL for a window to load: whatever
 /// the path looked like, the result must sit on the UI's own origin, or it is
 /// not loaded at all.
@@ -419,6 +495,80 @@ mod tests {
             connect_navigation(&url("mailto:a@b.example")),
             Navigation::Refuse
         );
+    }
+
+    #[test]
+    fn oidc_deep_link_takes_a_code_a_purpose_and_the_brain_and_nothing_else() {
+        let iss = "https%3A%2F%2Fbrain.example";
+        assert_eq!(
+            oidc_deep_link(&format!(
+                "mantle://oidc#oidc=code&code=abc_-1&purpose=signin&iss={iss}&evil=1"
+            )),
+            Some(OidcDeepLink {
+                iss: "https://brain.example".into(),
+                fragment: format!("oidc=code&code=abc_-1&purpose=signin&iss={iss}"),
+            })
+        );
+        // A flow that stopped: no code rides along.
+        assert_eq!(
+            oidc_deep_link(&format!("mantle://oidc#oidc=cancelled&code=x&iss={iss}")),
+            Some(OidcDeepLink {
+                iss: "https://brain.example".into(),
+                fragment: format!("oidc=cancelled&iss={iss}"),
+            })
+        );
+        // The brain as an origin: no path or query reaches the page.
+        assert_eq!(
+            oidc_deep_link("mantle://oidc#oidc=failed&iss=https%3A%2F%2Fbrain.example%2Fx%3Fy%3D1")
+                .map(|l| l.iss),
+            Some("https://brain.example".to_string())
+        );
+    }
+
+    #[test]
+    fn oidc_deep_link_refuses_anything_that_is_not_the_flows_end() {
+        let iss = "https%3A%2F%2Fbrain.example";
+        for link in [
+            "mantle://n/abc".to_string(),
+            "mantle://oidc".to_string(),
+            "mantle://oidc#oidc=code".to_string(),
+            format!("mantle://oidc/more#oidc=failed&iss={iss}"),
+            format!("mantle://oidc?x=1#oidc=failed&iss={iss}"),
+            format!("mantle://other#oidc=failed&iss={iss}"),
+            format!("https://oidc#oidc=failed&iss={iss}"),
+            format!("mantle://oidc#oidc=code&code=abc&purpose=other&iss={iss}"),
+            format!("mantle://oidc#oidc=code&code=a%20b&purpose=link&iss={iss}"),
+            format!("mantle://oidc#oidc=code&purpose=link&iss={iss}"),
+            format!("mantle://oidc#oidc=%3Cb%3E&iss={iss}"),
+            "mantle://oidc#oidc=failed".to_string(),
+            "mantle://oidc#oidc=failed&iss=javascript:alert(1)".to_string(),
+            "mantle://oidc#oidc=failed&iss=not%20a%20url".to_string(),
+            "not a link".to_string(),
+        ] {
+            assert_eq!(oidc_deep_link(&link), None, "{link}");
+        }
+    }
+
+    #[test]
+    fn oidc_start_url_takes_this_brains_start_path_only() {
+        let brain = "https://brain.example";
+        let good = format!("{brain}/api/auth/oidc/start?ticket=abc");
+        assert_eq!(
+            oidc_start_url(&good, brain).map(|u| u.to_string()),
+            Some(good)
+        );
+        for raw in [
+            "https://evil.example/api/auth/oidc/start".to_string(),
+            format!("{brain}/api/auth/oidc/callback"),
+            format!("{brain}.evil.example/api/auth/oidc/start"),
+            "file:///etc/passwd".to_string(),
+            "mantle://oidc".to_string(),
+            "/api/auth/oidc/start".to_string(),
+            String::new(),
+            format!("{brain}/api/auth/oidc/start?x={}", "a".repeat(5000)),
+        ] {
+            assert_eq!(oidc_start_url(&raw, brain), None, "{raw}");
+        }
     }
 
     #[test]

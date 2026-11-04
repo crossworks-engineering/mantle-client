@@ -98,6 +98,15 @@ mantle-ui://localhost/_mantle/vault` with `X-Mantle-Vault: 1` and a JSON
 - **Adding a brain** probes it with no lock held, then takes the profile
   list's lock only to load, merge and save: opening a brain takes that lock
   on the main thread.
+- **Company sign-in.** The page opens the brain's start URL in the system
+  browser (`mantleDesktop.oidc.open`, the vault endpoint's `oidcOpen`: that
+  brain's `/api/auth/oidc/start` and nothing else). The flow comes back as
+  `mantle://oidc#...`, through the deep-link plugin (and, on Linux, the
+  single-instance plugin, which hands a second process's link over). The shell
+  keeps only the fields the flow's end can hold and loads them on the window's
+  `/auth/oidc`, the page the web app ends on, which compares the brain and holds
+  the verifier (`src/fence.rs`, `src/windows.rs`). Other `mantle://` links are
+  still T2's. Neither plugin's JS command is granted to any window.
 - **Capabilities** (`capabilities/`): the profile commands, granted to the
   `connect` window for the app's own page only. No other window gets any
   command. A test runs them, and the vault endpoint's refusals, on Tauri's
@@ -110,7 +119,8 @@ mantle-ui://localhost/_mantle/vault` with `X-Mantle-Vault: 1` and a JSON
 
 Rust 1.99.1 (`rust-toolchain.toml`; rustup picks it up). Every crate is pinned
 exactly (`=x.y.z`) and `Cargo.lock` is committed: tauri 2.12.5, tauri-build
-2.7.4, tauri-plugin-opener 2.7.2, serde 1.0.229, serde_json 1.0.154, ureq
+2.7.4, tauri-plugin-opener 2.7.2, tauri-plugin-deep-link 2.6.2,
+tauri-plugin-single-instance 2.5.4, serde 1.0.229, serde_json 1.0.154, ureq
 3.5.0 (rustls only, no cookie store), uuid 1.29.0, url 2.5.8, keyring-core
 1.0.1, apple-native-keyring-store 1.0.2 (macOS), zbus-secret-service-keyring-store
 1.0.1 (Linux), and for the native alert and the macOS version check the

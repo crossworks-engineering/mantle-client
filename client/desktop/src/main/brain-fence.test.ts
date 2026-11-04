@@ -7,6 +7,8 @@ import {
   frameNavigationAllowed,
   httpRouteOf,
   normalizeOrigin,
+  oidcDeepLink,
+  oidcStartUrl,
   permissionAllowed,
   savedOriginOk,
   stripBrowserOnlyHeaders,
@@ -318,6 +320,73 @@ describe('savedOriginOk', () => {
       42,
     ]) {
       expect(savedOriginOk(bad), String(bad)).toBe(false);
+    }
+  });
+});
+
+describe('oidcDeepLink', () => {
+  const iss = encodeURIComponent('https://brain.example');
+  it('takes a code, a purpose and the brain, and nothing else', () => {
+    expect(
+      oidcDeepLink(`mantle://oidc#oidc=code&code=abc_-1&purpose=signin&iss=${iss}&evil=1`),
+    ).toEqual({
+      iss: 'https://brain.example',
+      fragment: `oidc=code&code=abc_-1&purpose=signin&iss=${iss}`,
+    });
+  });
+  it('takes a flow that stopped, with no code riding along', () => {
+    expect(oidcDeepLink(`mantle://oidc#oidc=cancelled&code=x&iss=${iss}`)).toEqual({
+      iss: 'https://brain.example',
+      fragment: `oidc=cancelled&iss=${iss}`,
+    });
+  });
+  it('keeps the brain as an origin: no path or query reaches the page', () => {
+    const link = `mantle://oidc#oidc=failed&iss=${encodeURIComponent('https://brain.example/x?y=1')}`;
+    expect(oidcDeepLink(link)?.iss).toBe('https://brain.example');
+  });
+  it('refuses anything that is not the flow s end', () => {
+    for (const link of [
+      'mantle://n/abc',
+      'mantle://oidc',
+      'mantle://oidc#oidc=code',
+      `mantle://oidc/more#oidc=failed&iss=${iss}`,
+      `mantle://oidc?x=1#oidc=failed&iss=${iss}`,
+      `mantle://other#oidc=failed&iss=${iss}`,
+      `https://oidc#oidc=failed&iss=${iss}`,
+      `mantle://oidc#oidc=code&code=abc&purpose=other&iss=${iss}`,
+      `mantle://oidc#oidc=code&code=a%20b&purpose=link&iss=${iss}`,
+      `mantle://oidc#oidc=code&purpose=link&iss=${iss}`,
+      `mantle://oidc#oidc=<b>&iss=${iss}`,
+      'mantle://oidc#oidc=failed',
+      'mantle://oidc#oidc=failed&iss=javascript:alert(1)',
+      'mantle://oidc#oidc=failed&iss=not%20a%20url',
+      'not a link',
+    ]) {
+      expect(oidcDeepLink(link), link).toBeNull();
+    }
+  });
+});
+
+describe('oidcStartUrl', () => {
+  const brain = 'https://brain.example';
+  it('takes this brain s start path', () => {
+    const url = `${brain}/api/auth/oidc/start?ticket=abc`;
+    expect(oidcStartUrl(url, brain)).toBe(url);
+  });
+  it('refuses anything else', () => {
+    for (const url of [
+      'https://evil.example/api/auth/oidc/start',
+      `${brain}/api/auth/oidc/callback`,
+      `${brain}.evil.example/api/auth/oidc/start`,
+      'file:///etc/passwd',
+      'mantle://oidc',
+      '/api/auth/oidc/start',
+      '',
+      42,
+      null,
+      `${brain}/api/auth/oidc/start?x=${'a'.repeat(5000)}`,
+    ]) {
+      expect(oidcStartUrl(url, brain), String(url)).toBeNull();
     }
   });
 });

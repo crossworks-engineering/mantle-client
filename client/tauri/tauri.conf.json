@@ -13,6 +13,11 @@
       "capabilities": ["connect"]
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["mantle"] }
+    }
+  },
   "bundle": {
     "icon": ["icons/icon.png", "icons/icon.icns"],
     "macOS": {
