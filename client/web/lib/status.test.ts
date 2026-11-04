@@ -8,6 +8,7 @@ import {
   overallText,
   processStates,
   pushSample,
+  restartedMinutesAgo,
   sectionLevel,
   sidecarState,
   sidecarStates,
@@ -307,5 +308,68 @@ describe('pushSample', () => {
     list = pushSample(list, { t: HISTORY_SAMPLES + 4, cpu: -1, mem: null, disk: null });
     expect(list).toHaveLength(HISTORY_SAMPLES);
     expect(list[list.length - 1]?.cpu).toBe(-1);
+  });
+});
+
+describe('the restart signal (docker does not count autoheal restarts)', () => {
+  const now = Date.parse('2026-11-04T06:10:00Z');
+  const web = { ...running(), startedAt: '2026-11-04T01:00:00Z' };
+
+  it('a worker that started well after the stack, recently, restarted', () => {
+    const c = { ...running(), startedAt: '2026-11-04T06:06:00Z' };
+    expect(restartedMinutesAgo(c, web.startedAt, now)).toBe(4);
+    const list = processStates({ web, worker_email: c }, now);
+    expect(list.find((p) => p.id === 'worker_email')).toMatchObject({
+      level: 'warn',
+      label: 'Restarted 4 min ago',
+    });
+    const issues = statusIssues({
+      health: health(),
+      box: null,
+      sidecars: [],
+      processes: list,
+      capacityZone: 'green',
+      providerAlerts: [],
+      updateAvailable: false,
+      backup: null,
+      backupsEnabled: null,
+      contractMismatch: false,
+    });
+    expect(issues.map((i) => i.text)).toContain('The Email process restarted 4 min ago');
+  });
+
+  it('not a restart: started with the stack, long ago, or not running', () => {
+    expect(
+      restartedMinutesAgo({ ...running(), startedAt: '2026-11-04T01:01:00Z' }, web.startedAt, now),
+    ).toBeNull();
+    expect(
+      restartedMinutesAgo({ ...running(), startedAt: '2026-11-04T05:00:00Z' }, web.startedAt, now),
+    ).toBeNull();
+    expect(
+      restartedMinutesAgo(
+        { ...running(), container: 'exited', startedAt: '2026-11-04T06:06:00Z' },
+        web.startedAt,
+        now,
+      ),
+    ).toBeNull();
+    expect(
+      restartedMinutesAgo({ ...running(), startedAt: '2026-11-04T06:06:00Z' }, null, now),
+    ).toBeNull();
+  });
+
+  it('a sidecar that restarted is to watch, and says so', () => {
+    const s = sidecarState(def('objectstore'), {
+      health: health(),
+      services: null,
+      updaterUp: null,
+      containers: { web, objectstore: { ...running(), startedAt: '2026-11-04T06:09:00Z' } },
+      now,
+    });
+    expect(s).toMatchObject({ level: 'warn', label: 'Restarted 1 min ago' });
+  });
+
+  it('a word the updater could not vouch for is not known', () => {
+    expect(containerLevel({ ...running(), container: 'unknown' })).toBe('unknown');
+    expect(containerLevel(running('unknown'))).toBe('unknown');
   });
 });
