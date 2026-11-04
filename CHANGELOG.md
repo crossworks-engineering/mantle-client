@@ -12,6 +12,25 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.7: company sign-in
+
+- **Added:** when a brain has company sign-in on, the sign-in screen shows
+  "Sign in with {label}", first on a browser whose login uses it. Password
+  sign-in stays. With it off, nothing changes.
+- **Added:** after a password sign-in, an unlinked login sees one card:
+  "Sign in with {label} next time." One click links it. "Not now" hides the
+  card for 7 days.
+- **Added:** Settings > Profile links and removes the link. A login with no
+  Profile screen finds the same thing in its account menu.
+- **Added:** where the brain requires company sign-in, a login that is not
+  linked gets one "Link your company sign-in" step and no other screen until it
+  is done, at sign-in and on an invite.
+- **Changed:** a linked login confirms a new API key with a new company
+  sign-in in place of its password.
+- **Added:** the desktop apps run company sign-in in the system browser and take
+  it back through `mantle://oidc`. The Tauri app gets its first deep link and
+  one instance at a time.
+
 ## v0.9.6: a folder's home move takes its contents
 
 - **Added:** when you move a folder to another home, the move dialog

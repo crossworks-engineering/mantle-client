@@ -1,8 +1,4 @@
-import type {
-  OidcFreshProof,
-  OidcHandoffPurpose,
-  OidcStatusDTO,
-} from '@mantle/client-types';
+import type { OidcFreshProof, OidcHandoffPurpose, OidcStatusDTO } from '@mantle/client-types';
 import { safeNext } from '@/lib/safe-next';
 
 /**

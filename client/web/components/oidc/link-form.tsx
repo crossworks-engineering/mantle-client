@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { bounceToLogin } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -27,6 +27,7 @@ export function LinkForm({
   next,
   add,
   onEnded,
+  start = false,
   children,
 }: {
   label: string;
@@ -38,10 +39,13 @@ export function LinkForm({
   add?: boolean;
   /** A held ticket ended: the person signs in again. */
   onEnded?: () => void;
+  /** The button at the start of its row, where the form sits in a page. */
+  start?: boolean;
   /** A button beside this one ("Not now"). */
   children?: React.ReactNode;
 }) {
   const queryClient = useQueryClient();
+  const passwordId = useId();
   const [asks, setAsks] = useState(false);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -103,9 +107,9 @@ export function LinkForm({
     <form onSubmit={(e) => void submit(e)} className="space-y-3" noValidate>
       {asks && (
         <Field data-invalid={error ? true : undefined}>
-          <FieldLabel htmlFor="oidc-link-password">Your password</FieldLabel>
+          <FieldLabel htmlFor={passwordId}>Your password</FieldLabel>
           <SecretInput
-            id="oidc-link-password"
+            id={passwordId}
             autoComplete="current-password"
             autoFocus
             value={password}
@@ -123,7 +127,9 @@ export function LinkForm({
           Finish signing in in your browser. This window comes back when you are done.
         </p>
       )}
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div
+        className={`flex flex-wrap items-center gap-2 ${start ? 'justify-start' : 'justify-end'}`}
+      >
         {children}
         <Button type="submit" disabled={busy || (asks && !password)}>
           {action}

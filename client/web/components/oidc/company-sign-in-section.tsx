@@ -94,7 +94,7 @@ export function CompanySignInSection() {
             Sign in with {label} next time. Your password keeps working.
           </p>
           <div className="max-w-sm">
-            <LinkForm label={label} action="Link now" />
+            <LinkForm label={label} action="Link now" start />
           </div>
         </>
       )}
