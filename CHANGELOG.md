@@ -12,7 +12,7 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
-## Unreleased
+## v0.9.6: a folder's home move takes its contents
 
 - **Added:** when you move a folder to another home, the move dialog
   offers "Also move the N items inside", ticked. The sub-folders and files
