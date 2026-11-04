@@ -8,7 +8,7 @@ import type { BrainCapacity, CapacityZone } from '@mantle/client-types';
  *  rides `primary` like the vitals scheme; watch/split mirror warn/crit. */
 const ZONE_STROKE: Record<CapacityZone, string> = {
   green: 'stroke-primary',
-  watch: 'stroke-amber-500',
+  watch: 'stroke-warning',
   split: 'stroke-destructive',
 };
 const ZONE_FILL: Record<CapacityZone, string> = {
@@ -22,9 +22,9 @@ const ZONE_TEXT: Record<CapacityZone, string> = {
   split: 'text-destructive-ink',
 };
 const ZONE_LABEL: Record<CapacityZone, string> = {
-  green: 'green — no action',
-  watch: 'watch — run recall checks',
-  split: 'split — break out a brain',
+  green: 'green: no action',
+  watch: 'watch: run recall checks',
+  split: 'split: break out a brain',
 };
 
 /** The dial: an SVG donut showing worst-axis fill vs the split budget.
@@ -140,7 +140,7 @@ export function CapacityDial({ capacity }: { capacity: BrainCapacity }) {
           Brain capacity
         </CardTitle>
         <CardDescription>
-          Corpus vs the split policy — zone{' '}
+          Corpus against the split policy, zone{' '}
           <span className={cn('font-medium', ZONE_TEXT[capacity.zone])}>
             {ZONE_LABEL[capacity.zone]}
           </span>

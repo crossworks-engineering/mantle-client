@@ -119,8 +119,9 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/sandboxes', 'settings'],
   ['/traces', 'settings'],
   ['/debug', 'settings'],
-  // The brain health Dashboard (task d78e7bde: no longer the home; every
-  // login lands on its workspace's landing page at `/`).
+  // Status, the box's health screen (it replaced the Dashboard; every login
+  // lands on its workspace's landing page at `/`). `/dashboard` redirects.
+  ['/status', 'settings'],
   ['/dashboard', 'settings'],
   // /changelog reads GET /api/changelog, which the brain answers for an
   // admin only: the rail shows a login without this area the build as

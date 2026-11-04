@@ -98,7 +98,7 @@ test.describe('arrow keys move the selection in role=radio groups', () => {
     ownerPage,
   }) => {
     await ownerPage.setViewportSize({ width: 1280, height: 900 });
-    await ownerPage.goto('/dashboard');
+    await ownerPage.goto('/status');
 
     // The spend chart's range picker, chosen deliberately: it is a single-select
     // ToggleGroup that holds its own component state, keeps its DOM across every

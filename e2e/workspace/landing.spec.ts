@@ -14,7 +14,7 @@ import { scopedNav } from './shell-nav';
  * landing page of the current workspace and changes when the login switches
  * at `/`: Desk with that workspace's pages, or the
  * home app a spec names; "All my workspaces" shows all of them. An
- * Admin user lands there too: the brain health Dashboard is in the menu.
+ * Admin user lands there too: the box's Status screen is in the menu.
  * In-memory brain, no real one.
  */
 
@@ -75,14 +75,14 @@ test('an Admin user switches at Desk: the landing page follows the pick', async 
   await expect(newest(page).getByText(PAGES.policy.title, { exact: true })).toBeVisible();
 });
 
-test('the Dashboard is in the menu, and opens on its own screen', async ({ page }) => {
+test('Status is in the menu, and opens on its own screen', async ({ page }) => {
   await signIn(page, 'admin');
   const work = await scopedNav(page, 'Work');
   await expect(work.getByRole('link', { name: 'Desk', exact: true })).toBeVisible();
-  // The Dashboard is a System row, so the Admin scope holds it.
+  // Status is a System row, so the Admin scope holds it.
   const admin = await scopedNav(page, 'Admin');
-  await admin.getByRole('link', { name: 'Dashboard', exact: true }).click();
-  await expect(page).toHaveURL((u) => u.pathname === '/dashboard');
+  await admin.getByRole('link', { name: 'Status', exact: true }).click();
+  await expect(page).toHaveURL((u) => u.pathname === '/status');
   await expect(page.getByRole('main').getByRole('link', { name: 'Operator view' })).toBeVisible();
 });
 
@@ -97,8 +97,9 @@ test('a member lands on its workspace, and never on one it is not in', async ({ 
   await expect(newest(page).getByText(PAGES.survey.title, { exact: true })).toBeVisible();
   await expect(newest(page).getByText(PAGES.handbook.title, { exact: true })).toHaveCount(0);
   expect(homeWs('member')).toEqual([null, WORKSPACES.field.id]);
-  // The member never asks for the Dashboard or the old member home.
+  // The member never asks for the Status numbers or the old member home.
   expect(api.asked('member')).not.toContain('GET /api/dashboard');
+  expect(api.asked('member')).not.toContain('GET /api/box-status');
   expect(api.asked('member')).not.toContain('GET /api/member/home');
 });
 
@@ -136,9 +137,12 @@ test('a home app that does not load falls back to the built-in Desk', async ({ p
   await expect(page.getByRole('main').getByRole('button', { name: 'Team board' })).toHaveCount(0);
 });
 
-test('a member is refused the Dashboard', async ({ page }) => {
+test('a member is refused Status, and the old Dashboard address', async ({ page }) => {
   await signIn(page, 'member');
+  await page.goto('/status');
+  await expect(page.getByText('You cannot manage this part of the brain.')).toBeVisible();
   await page.goto('/dashboard');
   await expect(page.getByText('You cannot manage this part of the brain.')).toBeVisible();
   expect(api.asked('member')).not.toContain('GET /api/dashboard');
+  expect(api.asked('member')).not.toContain('GET /api/box-status');
 });

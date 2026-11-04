@@ -7,7 +7,7 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { formatMicroUsd } from '@mantle/web-ui/traces-format';
 import type { AgentContext, SpendRange } from '@mantle/client-types';
 import { UsageCardPills } from '@/components/usage-card-pills';
-import { VitalsBar, vitalsLevel, type VitalsLevel } from '@/components/dashboard/vitals-bar';
+import { VitalsBar, vitalsLevel, type VitalsLevel } from '@/components/status/vitals-bar';
 
 type Spend = { range: SpendRange; costMicroUsd: number; runs: number };
 type UsagePayload = { spend: Spend; contexts: AgentContext[] };

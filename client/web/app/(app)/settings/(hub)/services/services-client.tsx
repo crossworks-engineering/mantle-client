@@ -29,6 +29,7 @@ import {
   runLabel,
   stateLabel,
   SERVICE_ENABLES,
+  serviceAnchor,
   type ServiceInfo,
   type ServiceRunPoll,
   type ServiceRunStatus,
@@ -147,6 +148,8 @@ function ServicesScreen({ view }: { view: ServicesView }) {
     }
   }
 
+  const target = useLinkedService(view);
+
   const progress = settling ?? (runBusy(run) ? run : null);
   const busy = following || settling !== null;
   const lastError = !busy && run && run.phase === 'error' ? run : null;
@@ -163,7 +166,14 @@ function ServicesScreen({ view }: { view: ServicesView }) {
         const warning = !on ? memoryWarning(view, svc) : null;
         const working = progress && progress.service === svc.name ? progress : null;
         return (
-          <Card key={svc.name}>
+          <Card
+            key={svc.name}
+            id={serviceAnchor(svc.name)}
+            className={cn(
+              'scroll-mt-6',
+              target === svc.name && 'border-primary ring-1 ring-primary',
+            )}
+          >
             <CardHeader>
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1.5">
@@ -227,6 +237,32 @@ function ServicesScreen({ view }: { view: ServicesView }) {
       />
     </div>
   );
+}
+
+/**
+ * The service a link named (`#service-documents`, from the Status sidecars):
+ * scrolled into view once the cards exist, and ringed so the eye lands on
+ * its switch. Null when the hash names none.
+ */
+function useLinkedService(view: ServicesView): string | null {
+  const [target, setTarget] = useState<string | null>(null);
+  const scrolled = useRef(false);
+  useEffect(() => {
+    const read = () => {
+      const id = window.location.hash.slice(1);
+      const svc = view.services.find((s) => serviceAnchor(s.name) === id);
+      setTarget(svc ? svc.name : null);
+      return svc ? id : null;
+    };
+    const id = read();
+    if (id && !scrolled.current) {
+      scrolled.current = true;
+      document.getElementById(id)?.scrollIntoView({ block: 'start' });
+    }
+    window.addEventListener('hashchange', read);
+    return () => window.removeEventListener('hashchange', read);
+  }, [view.services]);
+  return target;
 }
 
 function ConfirmSwitch({

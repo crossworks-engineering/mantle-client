@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { expect, type Page } from '@playwright/test';
 import { GONE_ROUTE, MEMBER_OPEN } from './shell-nav';
+import { newMockStatus, statusAnswer, type MockStatus } from './mock-status';
 
 /**
  * An in-memory brain for the workspace specs (phase W5c: one shell for every
@@ -202,6 +203,9 @@ export type MockWorkspaceApi = {
    *  null, so the client keeps its default). PUT stores it, and a body naming
    *  another login, or none, is the brain's 403 login-mismatch, as the Desk's. */
   sounds: Partial<Record<Role, { enabled: boolean; volume: number }>>;
+  /** What the Status screen's routes answer (mock-status.ts): a spec
+   *  changes a container to break it. */
+  status: MockStatus;
   close: () => Promise<void>;
 };
 
@@ -227,6 +231,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     homeApps: {},
     desks: {},
     sounds: {},
+    status: newMockStatus(),
     close: async () => undefined,
   };
 
@@ -602,6 +607,9 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     // and the agents a personal assistant copies from.
     if (path === '/api/team-admin/invites') return (json(res, 200, { invites: [] }), true);
     if (path === '/api/agents') return (json(res, 200, { agents: [] }), true);
+    // Status (the box's health screen): its reads, in the brain's shapes.
+    const status = statusAnswer(path, state.status);
+    if (status !== null) return (json(res, 200, status), true);
     return false;
   };
 

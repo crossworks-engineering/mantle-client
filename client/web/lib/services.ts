@@ -45,7 +45,21 @@ export const SERVICE_ENABLES: Partial<Record<ServiceName, string>> = {
   'local-embedder':
     'Lets the brain index and search your text on this box, with no online embedder.',
   helpers: 'Lets the brain make PDF exports of pages.',
+  calls: 'Lets the people of this brain call each other from a chat in Messages.',
+  documents:
+    'Lets agents, apps and exports turn Office files into PDF and merge, split and stamp PDFs.',
 };
+
+/** The id of a service's card on Settings > Services, so another screen (the
+ *  Status sidecars) can link straight to its switch: `/settings/services#…`. */
+export function serviceAnchor(name: string): string {
+  return `service-${name}`;
+}
+
+/** The link to one service's switch. */
+export function serviceSwitchHref(name: string): string {
+  return `/settings/services#${serviceAnchor(name)}`;
+}
 
 /** Every service the brain can list. The union keeps this file compiling
  *  against client-types from before the two newer names (a no-op after). */
