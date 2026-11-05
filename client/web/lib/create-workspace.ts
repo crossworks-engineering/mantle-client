@@ -17,6 +17,7 @@ const CREATE_ROUTES = [
   /^\/api\/notes$/,
   /^\/api\/draws$/,
   /^\/api\/tables$/,
+  /^\/api\/tables\/import$/,
   /^\/api\/apps$/,
   /^\/api\/files\/files$/,
   /^\/api\/files\/folders$/,

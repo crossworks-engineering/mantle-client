@@ -12,12 +12,13 @@ const WS = 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1';
 afterEach(() => setCreateWorkspace(null));
 
 describe('create routes name the switcher workspace (W6b)', () => {
-  it('knows the eight create routes of the contract', () => {
+  it('knows the create routes of the contract', () => {
     for (const p of [
       '/api/pages',
       '/api/notes',
       '/api/draws',
       '/api/tables',
+      '/api/tables/import',
       '/api/apps',
       '/api/files/files',
       '/api/files/folders',
@@ -33,6 +34,7 @@ describe('create routes name the switcher workspace (W6b)', () => {
       '/api/tree/pages/move',
       '/api/files/files/abc',
       '/api/apps/abc/build',
+      '/api/tables/abc/import',
     ]) {
       expect(isCreateRoute(p), p).toBe(false);
     }

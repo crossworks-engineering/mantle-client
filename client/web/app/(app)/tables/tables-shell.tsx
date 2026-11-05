@@ -16,6 +16,7 @@ import {
   Plus,
   Table2,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { useListNav } from '@/lib/use-list-nav';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
@@ -67,6 +68,7 @@ import { useTreeServes } from '@/components/item-tree/use-tree-kinds';
 import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
 import { TableDetailClient } from './[id]/table-detail-client';
+import { TableImportDialog } from './table-import-dialog';
 import type { TableDetail, TableRow, TableSort } from '@mantle/content-core/table-model';
 
 const SORTS: TableSort[] = ['edited', 'newest', 'oldest', 'title'];
@@ -174,6 +176,7 @@ export function TablesShell() {
   // "New table inside" a tree folder: where it goes.
   const [createIn, setCreateIn] = useState<TreeFolder | null>(null);
   const { fileNew, confirm: fileConfirm } = useFileNewItem('tables', 'table');
+  const [importOpen, setImportOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Pick<TableRow, 'id' | 'title'> | null>(null);
 
   // The list's collapse, restored after hydration. The effect below already
@@ -222,6 +225,13 @@ export function TablesShell() {
     setCreateOpen(true);
   };
 
+  // A table just made, by New table or Import: refresh the lists and open it.
+  async function openNewTable(id: string) {
+    await queryClient.invalidateQueries({ queryKey: ['tables'] });
+    void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
+    address.open(id);
+  }
+
   async function createTable() {
     const title = newTitle.trim();
     if (!title) return;
@@ -230,9 +240,7 @@ export function TablesShell() {
       const { table } = await apiSend<{ table: TableDetail }>('/api/tables', 'POST', { title });
       setCreateOpen(false);
       if (createIn) await fileNew(table.id, createIn);
-      await queryClient.invalidateQueries({ queryKey: ['tables'] });
-      void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
-      address.open(table.id);
+      await openNewTable(table.id);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return;
       toast.error('Could not create table');
@@ -279,11 +287,22 @@ export function TablesShell() {
     );
   }
 
-  // New, and the collapse toggle (the rail brings the list back): the same
-  // pair above the tree and above the older list.
+  // New, Import, and the collapse toggle (the rail brings the list back): the
+  // same row above the tree and above the older list.
   const listActions = (
     <>
       <NewButton onClick={() => openCreate()} />
+      {/* Icon only: with the word the row overflows a 320px list and clips
+          the collapse toggle. */}
+      <Button
+        variant="outline"
+        size="icon-sm"
+        onClick={() => setImportOpen(true)}
+        aria-label="Import"
+        title="Import a spreadsheet as a new table"
+      >
+        <Upload />
+      </Button>
       <Button
         size="icon"
         variant="ghost"
@@ -323,6 +342,16 @@ export function TablesShell() {
             title="New table"
           >
             <Plus />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8"
+            onClick={() => setImportOpen(true)}
+            aria-label="Import a table"
+            title="Import a spreadsheet as a new table"
+          >
+            <Upload />
           </Button>
         </div>
       )}
@@ -570,6 +599,12 @@ export function TablesShell() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <TableImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={(table) => void openNewTable(table.id)}
+      />
 
       {/* Delete confirm */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
