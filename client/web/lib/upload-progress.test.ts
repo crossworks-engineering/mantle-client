@@ -151,7 +151,8 @@ describe('progressTicker', () => {
 });
 
 describe('the dock line for a spreadsheet', () => {
-  const line = 'Spreadsheets stay in Files. For a Table, use Import on the Tables screen.';
+  const line =
+    'Spreadsheets stay in Files. For a Table, use the upload button next to New on the Tables screen.';
   const done = (name: string) => ({ name, status: 'done' });
 
   it('knows the three types', () => {

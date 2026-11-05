@@ -227,6 +227,6 @@ export function spreadsheetHint(
   if (!noAutoTables) return null;
   const going = new Set(['pending', 'uploading', 'done', 'exists']);
   return tasks.some((t) => going.has(t.status) && isSpreadsheetName(t.name))
-    ? 'Spreadsheets stay in Files. For a Table, use Import on the Tables screen.'
+    ? 'Spreadsheets stay in Files. For a Table, use the upload button next to New on the Tables screen.'
     : null;
 }
