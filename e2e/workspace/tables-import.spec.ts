@@ -5,6 +5,7 @@ import {
   startMockWorkspaceApi,
   type MockWorkspaceApi,
 } from './mock-workspace-api';
+import { scopedNav } from './shell-nav';
 
 /**
  * The Tables screen's Import (a spreadsheet becomes a new table), and the
@@ -221,6 +222,30 @@ test('while the brain builds, every way out is off; later a Close only hides', a
   await expect.poll(listReads).toBeGreaterThan(before);
   await expect(page.getByText('Imported stock-list')).toBeVisible();
   await expect(page).toHaveURL((u) => u.pathname === '/tables');
+});
+
+test('leaving the screen while the brain builds stops nothing; the answer is a toast', async ({
+  page,
+}) => {
+  await signIn(page, 'admin');
+  await page.goto('/files');
+  const nav = await scopedNav(page, 'Work');
+  await nav.getByRole('link', { name: 'Tables', exact: true }).click();
+  await expect(page).toHaveURL((u) => u.pathname === '/tables');
+  await page.getByRole('main').getByRole('button', { name: 'Import a table', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Import a table' });
+  const answer = holdTheAnswer();
+
+  await pickAndSend(page);
+  await expect(dialog.getByText('Making the table')).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL((u) => u.pathname === '/files');
+  await expect(dialog).toBeHidden();
+
+  answer();
+  await expect.poll(() => api.importedTables.length).toBe(1);
+  await expect(page.getByText('Imported stock-list')).toBeVisible();
+  await expect(page).toHaveURL((u) => u.pathname === '/files');
 });
 
 test('a late refusal is a toast, not a line in a dialog opened since', async ({ page }) => {
