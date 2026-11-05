@@ -5,12 +5,7 @@
  */
 import type { TableDetail } from '@mantle/content-core/table-model';
 import { isSpreadsheetName, overLimitMessage } from './upload-progress';
-import {
-  UploadHttpError,
-  UploadNetworkError,
-  UploadStalledError,
-  xhrUploadToBrain,
-} from './xhr-upload';
+import { UploadHttpError, UploadNetworkError, xhrUploadToBrain } from './xhr-upload';
 
 /** What the file picker offers. */
 export const TABLE_IMPORT_ACCEPT = '.xlsx,.xls,.csv';
@@ -61,11 +56,7 @@ export function tableImportError(err: unknown): string {
 
 /** A dropped line, or a 5xx: neither says whether the table was made. */
 function answerLost(err: unknown): boolean {
-  return (
-    err instanceof UploadNetworkError ||
-    err instanceof UploadStalledError ||
-    (err instanceof UploadHttpError && err.status >= 500)
-  );
+  return err instanceof UploadNetworkError || (err instanceof UploadHttpError && err.status >= 500);
 }
 
 /**
