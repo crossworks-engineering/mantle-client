@@ -53,12 +53,12 @@ export function tableImportError(err: unknown): string {
   return err instanceof Error ? err.message : 'Could not import this file.';
 }
 
-/** A dropped line, or a proxy's answer in place of the brain's. */
+/** A dropped line, or a 5xx: neither says whether the table was made. */
 function answerLost(err: unknown): boolean {
   return (
     err instanceof UploadNetworkError ||
     err instanceof UploadStalledError ||
-    (err instanceof UploadHttpError && (err.status === 502 || err.status === 504))
+    (err instanceof UploadHttpError && err.status >= 500)
   );
 }
 
