@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { Loader2, Upload } from 'lucide-react';
 import { bounceToLogin } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -121,7 +122,11 @@ export function TableImportDialog({
         if (left.current) toast.error('The import stopped because you left the screen.');
         return; // Cancel: already closed.
       }
-      if (err instanceof UploadHttpError && err.status === 401) bounceToLogin();
+      if (err instanceof UploadHttpError && err.status === 401) {
+        // The unload guard goes first, or the way to login may ask "Leave site?".
+        flushSync(() => setSent(null));
+        bounceToLogin();
+      }
       if (err instanceof TableImportAnswerLost) onMayLand();
       if (sending.current !== controller) {
         toast.error(tableImportError(err));
