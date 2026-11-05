@@ -227,21 +227,14 @@ test('Cancel part way through stops the upload; nothing lands', async ({ page })
   expect(api.importedTables).toEqual([]);
 });
 
-test('while the brain builds, every way out is off; later a Close only hides', async ({ page }) => {
-  await page.clock.install();
+test('while the brain builds, Close only hides the dialog', async ({ page }) => {
   await signIn(page, 'admin');
   const dialog = await openImport(page);
   const answer = holdTheAnswer();
 
   await pickAndSend(page);
   await expect(dialog.getByText('Making the table')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
-  await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await expect(dialog).toBeVisible();
-
-  await page.clock.fastForward(121_000);
-  await expect(dialog.getByRole('status')).toContainText('The table may still appear in the list.');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeVisible();
   const before = await readsSoFar();
@@ -293,7 +286,6 @@ test('leaving the screen during the bytes stops them, and a toast says so', asyn
 });
 
 test('a late refusal is a toast, not a line in a dialog opened since', async ({ page }) => {
-  await page.clock.install();
   await signIn(page, 'admin');
   const dialog = await openImport(page);
   const answer = holdTheAnswer();
@@ -301,7 +293,6 @@ test('a late refusal is a toast, not a line in a dialog opened since', async ({ 
 
   await pickAndSend(page);
   await expect(dialog.getByText('Making the table')).toBeVisible();
-  await page.clock.fastForward(121_000);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(dialog).toBeHidden();
 
@@ -314,7 +305,6 @@ test('a late refusal is a toast, not a line in a dialog opened since', async ({ 
 });
 
 test('a late lost answer leaves the file of a dialog opened since', async ({ page }) => {
-  await page.clock.install();
   await signIn(page, 'admin');
   const dialog = await openImport(page);
   const answer = holdTheAnswer();
@@ -322,7 +312,6 @@ test('a late lost answer leaves the file of a dialog opened since', async ({ pag
 
   await pickAndSend(page);
   await expect(dialog.getByText('Making the table')).toBeVisible();
-  await page.clock.fastForward(121_000);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(dialog).toBeHidden();
 
