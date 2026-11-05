@@ -271,19 +271,12 @@ describe('the words of a failed import', () => {
     return tableImportError(err);
   };
 
-  it('a 400 and a 413 show the server words', async () => {
-    expect(await failure({ status: 400, body: { error: 'no tabular data found' } })).toBe(
-      'no tabular data found',
-    );
-    expect(
-      await failure({ status: 413, body: { error: 'This request is too large (at most 64 MB).' } }),
-    ).toBe('This request is too large (at most 64 MB).');
-  });
-
-  it('a 429 shows the server words', async () => {
-    expect(await failure({ status: 429, body: { error: 'Too many requests.' } })).toBe(
-      'Too many requests.',
-    );
+  it('a 400, a 413 and a 429 show the server words', async () => {
+    for (const status of [400, 413, 429]) {
+      expect(await failure({ status, body: { error: 'the server words' } })).toBe(
+        'the server words',
+      );
+    }
   });
 
   it('a 401 says the session expired, not its code', async () => {
