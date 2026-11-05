@@ -190,12 +190,18 @@ export function TableImportDialog({
         <form onSubmit={(e) => void submit(e)} noValidate>
           <FieldGroup>
             <Field data-invalid={!!error || undefined}>
-              <FieldLabel htmlFor="table-import-file">Spreadsheet</FieldLabel>
+              <FieldLabel id="table-import-label" htmlFor="table-import-file">
+                Spreadsheet
+              </FieldLabel>
               <div className="flex min-w-0 items-center gap-2">
+                {/* The file input is display:none, so the label names this button. */}
                 <Button
+                  id="table-import-choose"
                   type="button"
                   variant="outline"
                   disabled={busy}
+                  aria-labelledby="table-import-label table-import-choose"
+                  aria-invalid={!!error || undefined}
                   aria-describedby={error ? 'table-import-error' : undefined}
                   onClick={() => pickerRef.current?.click()}
                 >
