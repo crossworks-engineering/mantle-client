@@ -167,6 +167,7 @@ export function TableImportDialog({
           type="file"
           accept={TABLE_IMPORT_ACCEPT}
           className="hidden"
+          disabled={busy}
           onChange={(e) => {
             pick(e.target.files?.[0]);
             e.target.value = '';
