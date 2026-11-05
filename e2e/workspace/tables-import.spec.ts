@@ -83,6 +83,8 @@ test('another type is refused before anything is sent', async ({ page }) => {
     .setInputFiles({ name: 'notes.pdf', mimeType: 'application/pdf', buffer: Buffer.from('x') });
   await expect(dialog.getByRole('alert')).toHaveText('This takes an .xlsx, .xls or .csv file.');
   await expect(dialog.getByRole('button', { name: 'Import table' })).toBeDisabled();
+  const choose = dialog.getByRole('button', { name: 'Spreadsheet Choose file', exact: true });
+  await expect(choose).toHaveAttribute('aria-invalid', 'true');
 
   // Each of the three types is taken.
   for (const name of ['a.xlsx', 'b.xls', 'c.csv']) {
@@ -90,6 +92,7 @@ test('another type is refused before anything is sent', async ({ page }) => {
     await expect(dialog.getByRole('alert')).toHaveCount(0);
     await expect(dialog.getByText(name)).toBeVisible();
   }
+  await expect(choose).not.toHaveAttribute('aria-invalid', 'true');
   expect(importsWs()).toEqual([]);
 });
 
