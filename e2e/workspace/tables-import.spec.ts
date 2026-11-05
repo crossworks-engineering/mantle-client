@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   WORKSPACES,
   signIn,
@@ -42,6 +42,44 @@ function holdTheAnswer() {
   api.tableImportHold = new Promise((resolve) => (answer = resolve));
   return answer;
 }
+
+/** A slow line, so an upload is really under way when the spec acts. */
+async function slowLine(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: 0,
+    downloadThroughput: -1,
+    uploadThroughput: 64 * 1024,
+  });
+}
+
+/** Send a file big enough for the slow line, and wait until it is part way. */
+async function sendPartWay(page: Page, dialog: Locator) {
+  await page.locator('#table-import-file').setInputFiles({
+    name: 'big.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.alloc(2 * 1024 * 1024, 'a'),
+  });
+  await dialog.getByRole('button', { name: 'Import table' }).click();
+  const bar = dialog.getByRole('progressbar');
+  await expect.poll(async () => Number(await bar.getAttribute('aria-valuenow'))).toBeGreaterThan(0);
+  expect(Number(await bar.getAttribute('aria-valuenow'))).toBeLessThan(100);
+}
+
+/** Into Tables from Files, so Back leaves the screen. */
+async function openImportFromFiles(page: Page) {
+  await page.goto('/files');
+  const nav = await scopedNav(page, 'Work');
+  await nav.getByRole('link', { name: 'Tables', exact: true }).click();
+  await expect(page).toHaveURL((u) => u.pathname === '/tables');
+  await page.getByRole('main').getByRole('button', { name: 'Import a table', exact: true }).click();
+  return page.getByRole('dialog', { name: 'Import a table' });
+}
+
+const importFailed = (page: Page) =>
+  page.waitForEvent('requestfailed', (r) => r.url().includes('/api/tables/import'));
 
 const importsWs = () =>
   api.requests
@@ -161,26 +199,10 @@ test('Cancel part way through stops the upload; nothing lands', async ({ page })
   await signIn(page, 'admin');
   const dialog = await openImport(page);
 
-  // A slow line, so the upload is really under way when Cancel comes.
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Network.enable');
-  await cdp.send('Network.emulateNetworkConditions', {
-    offline: false,
-    latency: 0,
-    downloadThroughput: -1,
-    uploadThroughput: 64 * 1024,
-  });
-  const stopped = page.waitForEvent('requestfailed', (r) => r.url().includes('/api/tables/import'));
+  await slowLine(page);
+  const stopped = importFailed(page);
 
-  await page.locator('#table-import-file').setInputFiles({
-    name: 'big.csv',
-    mimeType: 'text/csv',
-    buffer: Buffer.alloc(2 * 1024 * 1024, 'a'),
-  });
-  await dialog.getByRole('button', { name: 'Import table' }).click();
-  const bar = dialog.getByRole('progressbar');
-  await expect.poll(async () => Number(await bar.getAttribute('aria-valuenow'))).toBeGreaterThan(0);
-  expect(Number(await bar.getAttribute('aria-valuenow'))).toBeLessThan(100);
+  await sendPartWay(page, dialog);
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeEnabled();
   await expect(dialog.getByText('Making the table')).toHaveCount(0);
 
@@ -193,12 +215,7 @@ test('Cancel part way through stops the upload; nothing lands', async ({ page })
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toBeHidden();
   expect((await stopped).failure()?.errorText).toBe('net::ERR_ABORTED');
-  await cdp.send('Network.emulateNetworkConditions', {
-    offline: false,
-    latency: 0,
-    downloadThroughput: -1,
-    uploadThroughput: -1,
-  });
+  await expect(page.getByText('The import stopped')).toHaveCount(0);
   expect(api.importedTables).toEqual([]);
 });
 
@@ -236,12 +253,7 @@ test('leaving the screen while the brain builds stops nothing; the answer is a t
   page,
 }) => {
   await signIn(page, 'admin');
-  await page.goto('/files');
-  const nav = await scopedNav(page, 'Work');
-  await nav.getByRole('link', { name: 'Tables', exact: true }).click();
-  await expect(page).toHaveURL((u) => u.pathname === '/tables');
-  await page.getByRole('main').getByRole('button', { name: 'Import a table', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Import a table' });
+  const dialog = await openImportFromFiles(page);
   const answer = holdTheAnswer();
 
   await pickAndSend(page);
@@ -254,6 +266,20 @@ test('leaving the screen while the brain builds stops nothing; the answer is a t
   await expect.poll(() => api.importedTables.length).toBe(1);
   await expect(page.getByText('Imported stock-list')).toBeVisible();
   await expect(page).toHaveURL((u) => u.pathname === '/files');
+});
+
+test('leaving the screen during the bytes stops them, and a toast says so', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImportFromFiles(page);
+  await slowLine(page);
+  const stopped = importFailed(page);
+
+  await sendPartWay(page, dialog);
+  await page.goBack();
+  await expect(page).toHaveURL((u) => u.pathname === '/files');
+  await expect(page.getByText('The import stopped because you left the screen.')).toBeVisible();
+  expect((await stopped).failure()?.errorText).toBe('net::ERR_ABORTED');
+  expect(api.importedTables).toEqual([]);
 });
 
 test('a late refusal is a toast, not a line in a dialog opened since', async ({ page }) => {
@@ -304,7 +330,7 @@ test('a network fault after all the bytes: check the list first', async ({ page 
   const dialog = await openImport(page);
   const answer = holdTheAnswer();
   api.tableImportCut = true;
-  const cut = page.waitForEvent('requestfailed', (r) => r.url().includes('/api/tables/import'));
+  const cut = importFailed(page);
 
   await pickAndSend(page);
   await expect(dialog.getByText('Making the table')).toBeVisible();
