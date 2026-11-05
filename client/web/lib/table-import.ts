@@ -45,12 +45,18 @@ export function tableImportRefusal(file: { name: string; size: number }): string
     : null;
 }
 
+/** The words when the server gave none of its own. */
+export const TABLE_IMPORT_FAILED = 'Could not import this file. Try again.';
+
 /** The words for a failed import: the server's own where it gave any. */
 export function tableImportError(err: unknown): string {
-  if (err instanceof UploadHttpError && (err.status === 404 || err.status === 405)) {
-    return TABLE_IMPORT_NEEDS_UPDATE;
+  if (!(err instanceof Error)) return TABLE_IMPORT_FAILED;
+  if (err instanceof UploadHttpError) {
+    if (err.status === 404 || err.status === 405) return TABLE_IMPORT_NEEDS_UPDATE;
+    // A proxy's page: `xhrUpload` has only the status line, which says nothing to a person.
+    if (err.message.startsWith(`${err.status} `)) return TABLE_IMPORT_FAILED;
   }
-  return err instanceof Error ? err.message : 'Could not import this file.';
+  return err.message;
 }
 
 /** A dropped line, or a 5xx: neither says whether the table was made. */
