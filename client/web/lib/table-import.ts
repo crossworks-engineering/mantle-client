@@ -31,6 +31,9 @@ export class TableImportAnswerLost extends Error {
   }
 }
 
+/** How long the brain may build before the dialog offers a Close. */
+export const TABLE_IMPORT_CLOSE_AFTER_MS = 120_000;
+
 /** Why this file cannot be imported, or null when it can. */
 export function tableImportRefusal(file: { name: string }): string | null {
   return isSpreadsheetName(file.name) ? null : TABLE_IMPORT_WRONG_TYPE;
