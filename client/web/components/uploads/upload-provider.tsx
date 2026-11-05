@@ -22,8 +22,6 @@ import {
 import { cn } from '@mantle/web-ui/lib/utils';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Button } from '@mantle/web-ui/ui/button';
-import { isCrossOrigin, runtimeApiBase } from '@mantle/web-ui/runtime-env';
-import { tokenStore } from '@mantle/web-ui/token-store';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import {
@@ -38,12 +36,13 @@ import {
   formatEta,
   formatRate,
   overLimitMessage,
-  updateRate,
+  progressTicker,
+  spreadsheetHint,
   uploadForm,
 } from '@/lib/upload-progress';
-import type { ClashVerdict } from '@/lib/upload-progress';
-import { UploadAbortedError, UploadHttpError, xhrUpload } from '@/lib/xhr-upload';
-import { withCreateWs } from '@/lib/create-workspace';
+import type { AggregateProgress, ClashVerdict } from '@/lib/upload-progress';
+import { UploadAbortedError, UploadHttpError, xhrUploadToBrain } from '@/lib/xhr-upload';
+import { useNoAutoTables } from '@/components/workspaces/use-shell-workspaces';
 import { uploadBatchSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
 
@@ -105,9 +104,6 @@ const UploadContext = createContext<UploadApi | null>(null);
 
 /** How many files upload at once. Sequential was slow for a 20-file batch. */
 const CONCURRENCY = 3;
-/** Progress writes are throttled to this so a fast link does not re-render
- *  the dock hundreds of times a second. */
-const PROGRESS_TICK_MS = 150;
 /** What an old server (no `maxUploadBytes` in /api/shell) accepts. */
 const LEGACY_LIMIT_BYTES = 64 * 1024 * 1024;
 
@@ -188,19 +184,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     update(id, { status: 'uploading', loaded: 0, rate: null, error: undefined });
 
     // Progress bookkeeping lives outside React state; state gets a throttled copy.
-    let lastLoaded = 0;
-    let lastAt = performance.now();
-    let rate: number | null = null;
-    let lastWrite = 0;
-    const onProgress = (loaded: number) => {
-      const now = performance.now();
-      rate = updateRate(rate, loaded - lastLoaded, now - lastAt);
-      lastLoaded = loaded;
-      lastAt = now;
-      if (now - lastWrite < PROGRESS_TICK_MS && loaded < entry.file.size) return;
-      lastWrite = now;
-      update(id, { loaded, rate });
-    };
+    const onProgress = progressTicker((loaded, rate) => update(id, { loaded, rate }));
 
     try {
       const form = uploadForm(
@@ -209,13 +193,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         entry.confirm === true,
         entry.replace === true,
       );
-      const token = tokenStore.get();
-      await xhrUpload({
-        url: `${runtimeApiBase()}${withCreateWs('/api/files/files')}`,
+      await xhrUploadToBrain('/api/files/files', {
         form,
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        // Same rule as apiFetch: cookie on same-origin, bearer only across origins.
-        withCredentials: !isCrossOrigin(),
         signal: controller.signal,
         onProgress,
       });
@@ -444,6 +423,7 @@ export function useUploads(): UploadApi {
 export function UploadDock() {
   const { tasks, active, cancel, retry, replace, clearFinished } = useUploads();
   const [collapsed, setCollapsed] = useState(false);
+  const noAutoTables = useNoAutoTables();
 
   if (tasks.length === 0) return null;
 
@@ -455,13 +435,11 @@ export function UploadDock() {
   const cancelled = tasks.filter((t) => t.status === 'cancelled').length;
   const finished = done + exists + conflicts + failed + cancelled;
   const agg = aggregateProgress(tasks);
+  const hint = spreadsheetHint(tasks, noAutoTables);
 
   const heading = active
     ? `Uploading ${Math.min(finished + 1, total)} of ${total}`
     : finishedHeading({ done, exists, conflicts, failed, cancelled });
-  const progressLine = [`${agg.pct}%`, formatRate(agg.rate), formatEta(agg.etaSec)]
-    .filter(Boolean)
-    .join(' · ');
 
   return (
     <div className="pointer-events-auto w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg">
@@ -497,24 +475,13 @@ export function UploadDock() {
         </ul>
       )}
 
+      {!collapsed && hint && (
+        <p className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">{hint}</p>
+      )}
+
       {active ? (
         <div className="border-t border-border">
-          <div
-            className="h-1 w-full bg-muted"
-            role="progressbar"
-            aria-label="Upload progress"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={agg.pct}
-          >
-            <div className="h-full bg-primary transition-all" style={{ width: `${agg.pct}%` }} />
-          </div>
-          <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
-            <span>{progressLine}</span>
-            <span>
-              {formatBytes(agg.loaded)} of {formatBytes(agg.total)}
-            </span>
-          </div>
+          <UploadProgressBar progress={agg} />
         </div>
       ) : (
         <div className="flex justify-end border-t border-border px-2 py-1.5">
@@ -527,6 +494,31 @@ export function UploadDock() {
         </div>
       )}
     </div>
+  );
+}
+
+/** The one progress bar with its numbers: the dock's, and any other upload's. */
+export function UploadProgressBar({ progress: p }: { progress: AggregateProgress }) {
+  const line = [`${p.pct}%`, formatRate(p.rate), formatEta(p.etaSec)].filter(Boolean).join(' · ');
+  return (
+    <>
+      <div
+        className="h-1 w-full bg-muted"
+        role="progressbar"
+        aria-label="Upload progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={p.pct}
+      >
+        <div className="h-full bg-primary transition-all" style={{ width: `${p.pct}%` }} />
+      </div>
+      <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
+        <span>{line}</span>
+        <span>
+          {formatBytes(p.loaded)} of {formatBytes(p.total)}
+        </span>
+      </div>
+    </>
   );
 }
 

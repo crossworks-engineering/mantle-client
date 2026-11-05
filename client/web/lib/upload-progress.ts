@@ -77,6 +77,32 @@ export function updateRate(
   return prev * 0.7 + instant * 0.3;
 }
 
+/** How often progress reaches React: a fast link fires hundreds of events a
+ *  second. */
+const PROGRESS_TICK_MS = 150;
+
+/**
+ * An upload's `onProgress`, as `tick(loaded, rate)` calls: throttled, with the
+ * smoothed rate, and always the last one.
+ */
+export function progressTicker(
+  tick: (loaded: number, rate: number | null) => void,
+): (loaded: number, total: number) => void {
+  let lastLoaded = 0;
+  let lastAt = performance.now();
+  let rate: number | null = null;
+  let lastWrite = -Infinity;
+  return (loaded, total) => {
+    const now = performance.now();
+    rate = updateRate(rate, loaded - lastLoaded, now - lastAt);
+    lastLoaded = loaded;
+    lastAt = now;
+    if (now - lastWrite < PROGRESS_TICK_MS && loaded < total) return;
+    lastWrite = now;
+    tick(loaded, rate);
+  };
+}
+
 export function etaSeconds(loaded: number, total: number, rate: number | null): number | null {
   if (rate == null || rate <= 0 || total <= 0) return null;
   return Math.max(0, (total - loaded) / rate);
@@ -175,4 +201,32 @@ export async function sha256Hex(file: Blob): Promise<string | null> {
   if (!subtle) return null;
   const digest = await subtle.digest('SHA-256', await file.arrayBuffer());
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** A file the Tables screen can import, and that Files gives a read-only
+ *  database on a box with the line (`noAutoTables`). */
+export function isSpreadsheetName(name: string): boolean {
+  return /\.(xlsx|xls|csv)$/i.test(name);
+}
+
+/** The shell's `noAutoTables`: true only when the brain says so. An older
+ *  brain sends no such field. */
+export function noAutoTablesOf(shell: { noAutoTables?: unknown } | null | undefined): boolean {
+  return shell?.noAutoTables === true;
+}
+
+/**
+ * The dock's one line for a spreadsheet in Files, on a box where an upload no
+ * longer makes a Table; null otherwise. Only for a file that is going in or is
+ * there: one that failed, was cancelled or was not replaced stays nowhere.
+ */
+export function spreadsheetHint(
+  tasks: readonly { name: string; status: string }[],
+  noAutoTables: boolean,
+): string | null {
+  if (!noAutoTables) return null;
+  const going = new Set(['pending', 'uploading', 'done', 'exists']);
+  return tasks.some((t) => going.has(t.status) && isSpreadsheetName(t.name))
+    ? 'Stays in Files, with a read-only database. For a Table, use Import on the Tables screen.'
+    : null;
 }
