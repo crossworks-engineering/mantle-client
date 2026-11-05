@@ -35,6 +35,13 @@ async function pickAndSend(page: Page, name = 'stock-list.csv') {
   await page.getByRole('button', { name: 'Import table' }).click();
 }
 
+/** The brain still making the table, until the spec lets it answer. */
+function holdTheAnswer() {
+  let answer = () => {};
+  api.tableImportHold = new Promise((resolve) => (answer = resolve));
+  return answer;
+}
+
 const importsWs = () =>
   api.requests
     .filter((r) => r.method === 'POST' && r.path === '/api/tables/import')
@@ -120,12 +127,18 @@ test('a brain with no such route says it needs an update', async ({ page }) => {
 });
 
 const listReads = () =>
-  api.requests.filter((r) => r.method === 'GET' && r.path === '/api/tables').length;
+  api.requests.filter((r) => r.method === 'GET' && r.path === '/api/tree/tables').length;
+
+/** How often the list was read, once the screen has read it the first time. */
+async function readsSoFar() {
+  await expect.poll(listReads).toBeGreaterThan(0);
+  return listReads();
+}
 
 test('a proxy answer after all the bytes: check the list first', async ({ page }) => {
   await signIn(page, 'admin');
   const dialog = await openImport(page);
-  const before = listReads();
+  const before = await readsSoFar();
 
   api.tableImportAnswer = { status: 504, body: '<html>Gateway Timeout</html>' };
   await pickAndSend(page);
@@ -133,6 +146,128 @@ test('a proxy answer after all the bytes: check the list first', async ({ page }
   await expect.poll(listReads).toBeGreaterThan(before);
   // The file stays: a try again is still the user's call.
   await expect(dialog.getByRole('button', { name: 'Import table' })).toBeEnabled();
+});
+
+test('Cancel part way through stops the upload; nothing lands', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+
+  // A slow line, so the upload is really under way when Cancel comes.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: 0,
+    downloadThroughput: -1,
+    uploadThroughput: 64 * 1024,
+  });
+  const stopped = page.waitForEvent('requestfailed', (r) => r.url().includes('/api/tables/import'));
+
+  await page.locator('#table-import-file').setInputFiles({
+    name: 'big.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.alloc(2 * 1024 * 1024, 'a'),
+  });
+  await dialog.getByRole('button', { name: 'Import table' }).click();
+  const bar = dialog.getByRole('progressbar');
+  await expect.poll(async () => Number(await bar.getAttribute('aria-valuenow'))).toBeGreaterThan(0);
+  expect(Number(await bar.getAttribute('aria-valuenow'))).toBeLessThan(100);
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  await expect(dialog.getByText('Making the table')).toHaveCount(0);
+
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  expect((await stopped).failure()?.errorText).toBe('net::ERR_ABORTED');
+  await cdp.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: 0,
+    downloadThroughput: -1,
+    uploadThroughput: -1,
+  });
+  expect(api.importedTables).toEqual([]);
+});
+
+test('while the brain builds, every way out is off; later a Close only hides', async ({ page }) => {
+  await page.clock.install();
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+  const answer = holdTheAnswer();
+
+  await pickAndSend(page);
+  await expect(dialog.getByText('Making the table')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+
+  await page.clock.fastForward(121_000);
+  await expect(dialog.getByRole('status')).toContainText('The table may still appear in the list.');
+  const before = await readsSoFar();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(api.importedTables).toEqual([]);
+
+  // The late answer: the table lands, the list hears of it, and nobody is moved.
+  answer();
+  await expect.poll(() => api.importedTables.length).toBe(1);
+  await expect.poll(listReads).toBeGreaterThan(before);
+  await expect(page.getByText('Imported stock-list')).toBeVisible();
+  await expect(page).toHaveURL((u) => u.pathname === '/tables');
+});
+
+test('a late refusal is a toast, not a line in a dialog opened since', async ({ page }) => {
+  await page.clock.install();
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+  const answer = holdTheAnswer();
+  api.tableImportAnswer = { status: 400, body: { error: 'no tabular data found' } };
+
+  await pickAndSend(page);
+  await expect(dialog.getByText('Making the table')).toBeVisible();
+  await page.clock.fastForward(121_000);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('main').getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(dialog).toBeVisible();
+  answer();
+  await expect(page.getByText('no tabular data found')).toBeVisible();
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await expect(dialog.getByText('No file chosen')).toBeVisible();
+});
+
+test('a network fault after all the bytes: check the list first', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+  const answer = holdTheAnswer();
+  api.tableImportCut = true;
+  const cut = page.waitForEvent('requestfailed', (r) => r.url().includes('/api/tables/import'));
+
+  await pickAndSend(page);
+  await expect(dialog.getByText('Making the table')).toBeVisible();
+  answer();
+  await cut;
+  await expect(dialog.getByRole('alert')).toHaveText(MAY_LAND);
+
+  // The way out is back, and closing looks at the list again.
+  const before = await readsSoFar();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(listReads).toBeGreaterThan(before);
+});
+
+test('a double click sends one upload', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+  const answer = holdTheAnswer();
+
+  await page.locator('#table-import-file').setInputFiles({ name: 'once.csv', ...CSV });
+  await dialog.getByRole('button', { name: 'Import table' }).dblclick();
+  await expect(dialog.getByRole('button', { name: 'Import table' })).toBeDisabled();
+  answer();
+  await expect(dialog).toBeHidden();
+  expect(importsWs()).toHaveLength(1);
+  expect(api.importedTables).toHaveLength(1);
 });
 
 test('an expired session goes to login, back to here afterwards', async ({ page }) => {

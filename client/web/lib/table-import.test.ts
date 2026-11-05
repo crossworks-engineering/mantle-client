@@ -5,16 +5,29 @@ import {
   TABLE_IMPORT_MAY_LAND,
   TABLE_IMPORT_NEEDS_UPDATE,
   TABLE_IMPORT_WRONG_TYPE,
+  TableImportAnswerLost,
   importTable,
   tableImportError,
   tableImportRefusal,
 } from './table-import';
-import { UploadAbortedError, UploadHttpError } from './xhr-upload';
+import { UploadAbortedError, UploadHttpError, UploadNetworkError } from './xhr-upload';
 
-/** A browser's XMLHttpRequest, answering as `reply` says. */
-type Reply = { status: number; body?: unknown; statusText?: string };
+/**
+ * A browser's XMLHttpRequest, answering as `reply` says. `fault` drops the
+ * connection after all the bytes. `hold` keeps the answer back until `xhr.answer`,
+ * with `sentOf` bytes of 10 gone out by then.
+ */
+type Reply = {
+  status?: number;
+  body?: unknown;
+  statusText?: string;
+  fault?: 'network';
+  hold?: boolean;
+  sentOf?: number;
+};
 let reply: Reply;
 let sent: { url: string; form: FormData } | null;
+let xhr: FakeXhr;
 
 class FakeXhr {
   status = 0;
@@ -22,6 +35,7 @@ class FakeXhr {
   responseText = '';
   responseType = '';
   withCredentials = false;
+  aborted = false;
   upload: { onprogress?: (e: unknown) => void; onload?: () => void } = {};
   onload?: () => void;
   onerror?: () => void;
@@ -32,13 +46,20 @@ class FakeXhr {
   }
   setRequestHeader() {}
   abort() {
+    this.aborted = true;
     this.onabort?.();
   }
   send(form: FormData) {
+    xhr = this;
     sent = { url: this.url, form };
-    this.upload.onprogress?.({ lengthComputable: true, loaded: 10, total: 10 });
-    this.upload.onload?.();
-    this.status = reply.status;
+    const loaded = reply.sentOf ?? 10;
+    this.upload.onprogress?.({ lengthComputable: true, loaded, total: 10 });
+    if (loaded >= 10) this.upload.onload?.();
+    if (reply.fault) this.onerror?.();
+    else if (!reply.hold) this.answer();
+  }
+  answer() {
+    this.status = reply.status ?? 0;
     this.statusText = reply.statusText ?? '';
     this.responseText = typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body);
     this.onload?.();
@@ -102,6 +123,55 @@ describe('importTable', () => {
     await expect(importTable(csv(), { signal: stop.signal })).rejects.toBeInstanceOf(
       UploadAbortedError,
     );
+  });
+});
+
+describe('an import under way', () => {
+  it('a Cancel part way through stops the bytes and rejects as aborted', async () => {
+    reply = { hold: true, sentOf: 5 };
+    const stop = new AbortController();
+    const onProgress = vi.fn();
+    const going = importTable(csv(), { signal: stop.signal, onProgress });
+    expect(onProgress).toHaveBeenCalledWith(5, 10);
+    stop.abort();
+    await expect(going).rejects.toBeInstanceOf(UploadAbortedError);
+    expect(xhr.aborted).toBe(true);
+  });
+
+  it('a delayed answer still gives the table, after all the bytes', async () => {
+    reply = { hold: true, status: 201, body: { table: { id: 'T1' } } };
+    const onProgress = vi.fn();
+    const going = importTable(csv(), { onProgress });
+    expect(onProgress).toHaveBeenCalledWith(10, 10);
+    xhr.answer();
+    expect((await going).id).toBe('T1');
+  });
+
+  it('a delayed refusal shows the server words, not the lost answer', async () => {
+    reply = { hold: true, status: 400, body: { error: 'no tabular data found' } };
+    const going = importTable(csv()).catch((e: unknown) => e);
+    xhr.answer();
+    expect(tableImportError(await going)).toBe('no tabular data found');
+  });
+
+  it('a network fault after all the bytes: the table may still land', async () => {
+    reply = { fault: 'network' };
+    const err = await importTable(csv()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TableImportAnswerLost);
+    expect(tableImportError(err)).toBe(TABLE_IMPORT_MAY_LAND);
+  });
+
+  it('a network fault part way through is only a dropped connection', async () => {
+    reply = { fault: 'network', sentOf: 5 };
+    const err = await importTable(csv()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UploadNetworkError);
+    expect(tableImportError(err)).toBe('Connection dropped before the upload finished.');
+  });
+
+  it('a proxy answer part way through is not a lost answer', async () => {
+    reply = { status: 502, statusText: 'Bad Gateway', body: '<html></html>', sentOf: 5 };
+    const err = await importTable(csv()).catch((e: unknown) => e);
+    expect(tableImportError(err)).toBe('502 Bad Gateway');
   });
 });
 
