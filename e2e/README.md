@@ -88,6 +88,11 @@ else is a plain 404.
   desk shows with one quiet toast.
 - `sounds.spec.ts`: a change to the UI sounds is saved at once
   (`PUT /api/profile/sounds`) and names the login the tab shows (`loginId`).
+- `tables-import.spec.ts`: Import on the Tables screen takes the three types
+  and refuses another, opens the new table in the workspace picked, shows the
+  brain's words for a refusal and says a brain with no such route needs an
+  update; the upload dock's line for a spreadsheet shows only when the shell
+  says `noAutoTables`.
 
 CI runs them on every push and pull request (the `e2e-workspace` job in
 `.github/workflows/verify.yml`), with no brain and nothing configured.

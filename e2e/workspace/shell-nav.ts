@@ -124,7 +124,7 @@ export const MEMBER_OPEN: readonly RegExp[] = [
   rx('POST', `/api/apps/${ID}/(frame-ticket|db-broker|tool-broker)`),
   rx('GET', `/api/apps/${ID}/frame`),
   // Writes.
-  rx('POST', `/api/(pages|notes|draws|tables|apps|files/files|files/folders)`),
+  rx('POST', `/api/(pages|notes|draws|tables|tables/import|apps|files/files|files/folders)`),
   rx('(PATCH|DELETE)', `/api/(pages|notes|draws|tables|apps|files/files|files/folders)/${ID}`),
   rx('PUT', `/api/(pages|draws|tables|apps)/${ID}/draft`),
   rx('DELETE', `/api/apps/${ID}/draft`),
