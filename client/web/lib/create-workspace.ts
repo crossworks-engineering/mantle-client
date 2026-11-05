@@ -21,6 +21,14 @@ const CREATE_ROUTES = [
   /^\/api\/files\/files$/,
   /^\/api\/files\/folders$/,
   /^\/api\/tree\/[a-z]+\/folders$/,
+  // The brain's other create routes: left out of W6b, so a task, an event,
+  // a formula, a canvas or a recall map landed in the fallback home (Admin
+  // for an Admin user) whatever the switcher showed.
+  /^\/api\/tasks$/,
+  /^\/api\/events$/,
+  /^\/api\/formulas$/,
+  /^\/api\/presents$/,
+  /^\/api\/recall\/maps$/,
 ];
 
 let current: string | null = null;

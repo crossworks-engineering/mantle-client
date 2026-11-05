@@ -65,3 +65,34 @@ describe('the apiFetch rewrite', () => {
     expect(createWsRewrite('/api/pages/abc/commit', 'POST')).toBe('/api/pages/abc/commit');
   });
 });
+
+describe('every item kind the brain creates names the workspace', () => {
+  it('knows the create routes W6b left out', () => {
+    for (const p of [
+      '/api/tasks',
+      '/api/events',
+      '/api/formulas',
+      '/api/presents',
+      '/api/recall/maps',
+    ]) {
+      expect(isCreateRoute(p), p).toBe(true);
+    }
+    for (const p of [
+      '/api/tasks/abc',
+      '/api/events/abc',
+      '/api/formulas/abc',
+      '/api/presents/abc/poster',
+      '/api/recall/maps/abc',
+      '/api/recall/maps/abc/publish',
+    ]) {
+      expect(isCreateRoute(p), p).toBe(false);
+    }
+  });
+
+  it('adds ws to a new task, so it lands in the picked workspace', () => {
+    setCreateWorkspace(WS);
+    expect(createWsRewrite('/api/tasks', 'POST')).toBe(`/api/tasks?ws=${WS}`);
+    expect(createWsRewrite('/api/tasks', 'GET')).toBe('/api/tasks');
+    expect(createWsRewrite('/api/tasks/abc', 'PATCH')).toBe('/api/tasks/abc');
+  });
+});
