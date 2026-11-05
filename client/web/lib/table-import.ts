@@ -4,7 +4,7 @@
  * Files. Free of React so the words it shows are unit-tested.
  */
 import type { TableDetail } from '@mantle/content-core/table-model';
-import { isSpreadsheetName } from './upload-progress';
+import { isSpreadsheetName, overLimitMessage } from './upload-progress';
 import {
   UploadHttpError,
   UploadNetworkError,
@@ -34,9 +34,15 @@ export class TableImportAnswerLost extends Error {
 /** How long the brain may build before the dialog offers a Close. */
 export const TABLE_IMPORT_CLOSE_AFTER_MS = 120_000;
 
+/** The brain's cap for a workbook. A CSV's is lower, and the brain says so. */
+export const TABLE_IMPORT_MAX_BYTES = 64 * 1024 * 1024;
+
 /** Why this file cannot be imported, or null when it can. */
-export function tableImportRefusal(file: { name: string }): string | null {
-  return isSpreadsheetName(file.name) ? null : TABLE_IMPORT_WRONG_TYPE;
+export function tableImportRefusal(file: { name: string; size: number }): string | null {
+  if (!isSpreadsheetName(file.name)) return TABLE_IMPORT_WRONG_TYPE;
+  return file.size > TABLE_IMPORT_MAX_BYTES
+    ? overLimitMessage(file.size, TABLE_IMPORT_MAX_BYTES)
+    : null;
 }
 
 /** The words for a failed import: the server's own where it gave any. */

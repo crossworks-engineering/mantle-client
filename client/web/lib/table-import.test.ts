@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCreateWorkspace } from './create-workspace';
 import {
   TABLE_IMPORT_ACCEPT,
+  TABLE_IMPORT_MAX_BYTES,
   TABLE_IMPORT_MAY_LAND,
   TABLE_IMPORT_NEEDS_UPDATE,
   TABLE_IMPORT_WRONG_TYPE,
@@ -80,13 +81,20 @@ afterEach(() => {
 describe('which files it takes', () => {
   it('takes the three types, in any case', () => {
     for (const name of ['a.xlsx', 'a.xls', 'a.csv', 'A.XLSX', 'my book.Csv']) {
-      expect(tableImportRefusal({ name }), name).toBeNull();
+      expect(tableImportRefusal({ name, size: 10 }), name).toBeNull();
     }
   });
   it('refuses another', () => {
     for (const name of ['a.pdf', 'a.xlsm', 'a.txt', 'csv', 'a.csv.zip']) {
-      expect(tableImportRefusal({ name }), name).toBe(TABLE_IMPORT_WRONG_TYPE);
+      expect(tableImportRefusal({ name, size: 10 }), name).toBe(TABLE_IMPORT_WRONG_TYPE);
     }
+  });
+  it('refuses a file over the cap, with both numbers', () => {
+    const name = 'big.xlsx';
+    expect(tableImportRefusal({ name, size: TABLE_IMPORT_MAX_BYTES })).toBeNull();
+    expect(tableImportRefusal({ name, size: 70 * 1024 * 1024 })).toBe(
+      'File is 70 MB. The limit is 64 MB.',
+    );
   });
   it('offers the three in the picker', () => {
     expect(TABLE_IMPORT_ACCEPT).toBe('.xlsx,.xls,.csv');
