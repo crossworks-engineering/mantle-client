@@ -366,10 +366,11 @@ export function TablesShell() {
       <MasterDetail
         id="tables"
         className="min-w-0 flex-1"
-        // The screen's old hand-rolled clamps, kept so the column lands and
-        // stops where it always did.
+        // The screen's old hand-rolled clamps, so the column lands and stops
+        // where it always did. Only the minimum moved: at 220px the row of
+        // actions leaves the search box about 8px.
         defaultListSize="320px"
-        minListSize="220px"
+        minListSize="260px"
         maxListSize="520px"
         // The detail is a DATA GRID, not a measure of reading text: the 672px
         // default would cap a spreadsheet and park an empty spacer beside it.
