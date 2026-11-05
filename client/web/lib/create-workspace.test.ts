@@ -89,6 +89,19 @@ describe('every item kind the brain creates names the workspace', () => {
     }
   });
 
+  it('knows that a duplicated or imported app is a new app', () => {
+    for (const p of ['/api/apps/abc/duplicate', '/api/apps/import', '/api/apps/import-package']) {
+      expect(isCreateRoute(p), p).toBe(true);
+    }
+    for (const p of ['/api/apps/a/b/duplicate', '/api/apps/abc/duplicates', '/api/apps/imports']) {
+      expect(isCreateRoute(p), p).toBe(false);
+    }
+    setCreateWorkspace(WS);
+    expect(createWsRewrite('/api/apps/abc/duplicate', 'POST')).toBe(
+      `/api/apps/abc/duplicate?ws=${WS}`,
+    );
+  });
+
   it('adds ws to a new task, so it lands in the picked workspace', () => {
     setCreateWorkspace(WS);
     expect(createWsRewrite('/api/tasks', 'POST')).toBe(`/api/tasks?ws=${WS}`);

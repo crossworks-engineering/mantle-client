@@ -29,6 +29,10 @@ const CREATE_ROUTES = [
   /^\/api\/formulas$/,
   /^\/api\/presents$/,
   /^\/api\/recall\/maps$/,
+  // A copy or an import makes a new app: its home is where you make it.
+  /^\/api\/apps\/[^/]+\/duplicate$/,
+  /^\/api\/apps\/import$/,
+  /^\/api\/apps\/import-package$/,
 ];
 
 let current: string | null = null;
