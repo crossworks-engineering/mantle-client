@@ -106,13 +106,14 @@ export function xhrUpload<T = unknown>(opts: XhrUploadOptions): Promise<T> {
           resolve((body ?? {}) as T);
           return;
         }
+        // A 401 first: its body is a code ('unauthorized'), not words to show.
         const msg =
-          body && typeof body.error === 'string'
-            ? errorMessageOf(body, xhr)
-            : xhr.status === 413
-              ? 'The server refused the file as too large.'
-              : xhr.status === 401
-                ? 'Your session expired. Sign in again.'
+          xhr.status === 401
+            ? 'Your session expired. Sign in again.'
+            : body && typeof body.error === 'string'
+              ? errorMessageOf(body, xhr)
+              : xhr.status === 413
+                ? 'The server refused the file as too large.'
                 : `${xhr.status} ${xhr.statusText || 'error'}`;
         reject(new UploadHttpError(xhr.status, msg, body));
       });
