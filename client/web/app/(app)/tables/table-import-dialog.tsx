@@ -236,7 +236,7 @@ export function TableImportDialog({
 
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" disabled={locked} onClick={close}>
-                {waitedLong ? 'Close' : 'Cancel'}
+                {waitedLong || error === TABLE_IMPORT_MAY_LAND ? 'Close' : 'Cancel'}
               </Button>
               <SubmitButton pending={busy} disabled={!file}>
                 Import table
