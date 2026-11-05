@@ -151,8 +151,7 @@ describe('progressTicker', () => {
 });
 
 describe('the dock line for a spreadsheet', () => {
-  const line =
-    'Stays in Files, with a read-only database. For a Table, use Import on the Tables screen.';
+  const line = 'Spreadsheets stay in Files. For a Table, use Import on the Tables screen.';
   const done = (name: string) => ({ name, status: 'done' });
 
   it('knows the three types', () => {

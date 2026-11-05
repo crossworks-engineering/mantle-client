@@ -203,8 +203,8 @@ export async function sha256Hex(file: Blob): Promise<string | null> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** A file the Tables screen can import, and that Files gives a read-only
- *  database on a box with the line (`noAutoTables`). */
+/** A file the Tables screen can import. On a box with the line
+ *  (`noAutoTables`) it stays in Files and makes no Table. */
 export function isSpreadsheetName(name: string): boolean {
   return /\.(xlsx|xls|csv)$/i.test(name);
 }
@@ -227,6 +227,6 @@ export function spreadsheetHint(
   if (!noAutoTables) return null;
   const going = new Set(['pending', 'uploading', 'done', 'exists']);
   return tasks.some((t) => going.has(t.status) && isSpreadsheetName(t.name))
-    ? 'Stays in Files, with a read-only database. For a Table, use Import on the Tables screen.'
+    ? 'Spreadsheets stay in Files. For a Table, use Import on the Tables screen.'
     : null;
 }
