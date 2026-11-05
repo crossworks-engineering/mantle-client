@@ -7,8 +7,12 @@ import {
   formatEta,
   formatRate,
   isNameClash,
+  isSpreadsheetName,
+  noAutoTablesOf,
   overLimitMessage,
+  progressTicker,
   sha256Hex,
+  spreadsheetHint,
   storedFilename,
   updateRate,
   uploadForm,
@@ -132,5 +136,55 @@ describe('name clashes', () => {
       { status: 'conflict', size: 50, loaded: 0, rate: null },
     ]);
     expect(agg).toMatchObject({ loaded: 10, total: 10, pct: 100 });
+  });
+});
+
+describe('progressTicker', () => {
+  it('throttles, and always gives the last one', () => {
+    const ticks: number[] = [];
+    const onProgress = progressTicker((loaded) => ticks.push(loaded));
+    onProgress(10, 100); // the first
+    onProgress(20, 100); // inside the tick: dropped
+    onProgress(100, 100); // the last
+    expect(ticks).toEqual([10, 100]);
+  });
+});
+
+describe('the dock line for a spreadsheet', () => {
+  const line =
+    'Stays in Files, with a read-only database. For a Table, use Import on the Tables screen.';
+  const done = (name: string) => ({ name, status: 'done' });
+
+  it('knows the three types', () => {
+    for (const name of ['a.xlsx', 'a.xls', 'a.CSV'])
+      expect(isSpreadsheetName(name), name).toBe(true);
+    for (const name of ['a.pdf', 'a.xlsm', 'xlsx'])
+      expect(isSpreadsheetName(name), name).toBe(false);
+  });
+
+  it('shows only with the field and only for those types', () => {
+    expect(spreadsheetHint([done('a.xlsx')], true)).toBe(line);
+    expect(spreadsheetHint([done('a.xls')], true)).toBe(line);
+    expect(spreadsheetHint([done('a.csv')], true)).toBe(line);
+    expect(spreadsheetHint([done('a.pdf'), done('b.csv')], true)).toBe(line);
+    expect(spreadsheetHint([done('a.pdf')], true)).toBeNull();
+    expect(spreadsheetHint([done('a.xlsx')], false)).toBeNull();
+    expect(spreadsheetHint([], true)).toBeNull();
+  });
+
+  it('only for a file going in or there', () => {
+    for (const status of ['pending', 'uploading', 'done', 'exists']) {
+      expect(spreadsheetHint([{ name: 'a.csv', status }], true), status).toBe(line);
+    }
+    for (const status of ['error', 'cancelled', 'conflict']) {
+      expect(spreadsheetHint([{ name: 'a.csv', status }], true), status).toBeNull();
+    }
+  });
+
+  it('reads the field: true only, an older brain sends none', () => {
+    expect(noAutoTablesOf({ noAutoTables: true })).toBe(true);
+    expect(noAutoTablesOf({ noAutoTables: false })).toBe(false);
+    expect(noAutoTablesOf({})).toBe(false);
+    expect(noAutoTablesOf(null)).toBe(false);
   });
 });

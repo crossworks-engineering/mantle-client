@@ -5,6 +5,11 @@
  * refusal (413 with a message), a dropped connection, and a stall.
  */
 
+import { errorMessageOf } from '@mantle/web-ui/api-fetch';
+import { isCrossOrigin, runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { tokenStore } from '@mantle/web-ui/token-store';
+import { withCreateWs } from './create-workspace';
+
 export class UploadHttpError extends Error {
   constructor(
     readonly status: number,
@@ -103,7 +108,7 @@ export function xhrUpload<T = unknown>(opts: XhrUploadOptions): Promise<T> {
         }
         const msg =
           body && typeof body.error === 'string'
-            ? body.error
+            ? errorMessageOf(body, xhr)
             : xhr.status === 413
               ? 'The server refused the file as too large.'
               : xhr.status === 401
@@ -126,5 +131,23 @@ export function xhrUpload<T = unknown>(opts: XhrUploadOptions): Promise<T> {
     opts.signal?.addEventListener('abort', onSignalAbort, { once: true });
     armStall();
     xhr.send(opts.form);
+  });
+}
+
+/**
+ * `xhrUpload` to a route on the brain: a create route names the switcher's
+ * workspace, and the credential is apiFetch's (cookie on same-origin, bearer
+ * only across origins).
+ */
+export function xhrUploadToBrain<T = unknown>(
+  path: string,
+  opts: Omit<XhrUploadOptions, 'url' | 'headers' | 'withCredentials'>,
+): Promise<T> {
+  const token = tokenStore.get();
+  return xhrUpload<T>({
+    ...opts,
+    url: `${runtimeApiBase()}${withCreateWs(path)}`,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    withCredentials: !isCrossOrigin(),
   });
 }

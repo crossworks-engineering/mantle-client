@@ -10,6 +10,7 @@ import {
   shellWorkspacesOf,
   type ShellWorkspace,
 } from '@/lib/workspaces';
+import { noAutoTablesOf } from '@/lib/upload-progress';
 
 export type ShellWorkspaceInfo = {
   /** The login's workspaces, as the shell names them ([] when it names none). */
@@ -109,4 +110,22 @@ export function useViewerLogin():
         : null,
   });
   return data ?? undefined;
+}
+
+/** The shell with `noAutoTables`, which the published @mantle/client-types
+ *  does not carry yet; optional, as an older brain does not send it. */
+type ShellWithNoAutoTables = Shell & { noAutoTables?: boolean };
+
+/**
+ * Whether this box keeps a spreadsheet upload in Files and makes no Table of
+ * it: false until the shell has answered, and from a brain that does not say.
+ */
+export function useNoAutoTables(): boolean {
+  const { data } = useQuery({
+    queryKey: ['shell'],
+    queryFn: () => apiFetch<ShellWithNoAutoTables>('/api/shell'),
+    enabled: false,
+    select: (d: ShellWithNoAutoTables) => noAutoTablesOf(d),
+  });
+  return data === true;
 }
