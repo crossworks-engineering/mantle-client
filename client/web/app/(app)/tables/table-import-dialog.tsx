@@ -154,6 +154,8 @@ export function TableImportDialog({
       sending.current = null;
       setBusy(false);
       setSent(null);
+      // The table may land: a second try is a choice, so it starts with a pick.
+      if (err instanceof TableImportAnswerLost) setFile(null);
       setError(tableImportError(err));
     }
   };

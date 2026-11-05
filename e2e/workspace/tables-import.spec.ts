@@ -145,7 +145,12 @@ test('a proxy answer after all the bytes: check the list first', async ({ page }
   await pickAndSend(page);
   await expect(dialog.getByRole('alert')).toHaveText(MAY_LAND);
   await expect.poll(listReads).toBeGreaterThan(before);
-  // The file stays: a try again is still the user's call.
+  // The file goes: a second try starts with a pick, not one stray click.
+  await expect(dialog.getByRole('button', { name: 'Import table' })).toBeDisabled();
+  await expect(dialog.getByText('No file chosen')).toBeVisible();
+
+  await page.locator('#table-import-file').setInputFiles({ name: 'again.csv', ...CSV });
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Import table' })).toBeEnabled();
 });
 
@@ -267,6 +272,28 @@ test('a late refusal is a toast, not a line in a dialog opened since', async ({ 
   await expect(page.getByText('no tabular data found')).toBeVisible();
   await expect(dialog.getByRole('alert')).toHaveCount(0);
   await expect(dialog.getByText('No file chosen')).toBeVisible();
+});
+
+test('a late lost answer leaves the file of a dialog opened since', async ({ page }) => {
+  await page.clock.install();
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+  const answer = holdTheAnswer();
+  api.tableImportAnswer = { status: 504, body: '<html>Gateway Timeout</html>' };
+
+  await pickAndSend(page);
+  await expect(dialog.getByText('Making the table')).toBeVisible();
+  await page.clock.fastForward(121_000);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('main').getByRole('button', { name: 'Import a table', exact: true }).click();
+  await page.locator('#table-import-file').setInputFiles({ name: 'next.csv', ...CSV });
+  answer();
+  await expect(page.getByText(MAY_LAND)).toBeVisible();
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await expect(dialog.getByText('next.csv')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Import table' })).toBeEnabled();
 });
 
 test('a network fault after all the bytes: check the list first', async ({ page }) => {
