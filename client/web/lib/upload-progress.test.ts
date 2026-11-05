@@ -8,7 +8,6 @@ import {
   formatRate,
   isNameClash,
   isSpreadsheetName,
-  noAutoTablesOf,
   overLimitMessage,
   progressTicker,
   sha256Hex,
@@ -179,12 +178,5 @@ describe('the dock line for a spreadsheet', () => {
     for (const status of ['error', 'cancelled', 'conflict']) {
       expect(spreadsheetHint([{ name: 'a.csv', status }], true), status).toBeNull();
     }
-  });
-
-  it('reads the field: true only, an older brain sends none', () => {
-    expect(noAutoTablesOf({ noAutoTables: true })).toBe(true);
-    expect(noAutoTablesOf({ noAutoTables: false })).toBe(false);
-    expect(noAutoTablesOf({})).toBe(false);
-    expect(noAutoTablesOf(null)).toBe(false);
   });
 });

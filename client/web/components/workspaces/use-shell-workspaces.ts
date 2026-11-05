@@ -10,7 +10,6 @@ import {
   shellWorkspacesOf,
   type ShellWorkspace,
 } from '@/lib/workspaces';
-import { noAutoTablesOf } from '@/lib/upload-progress';
 
 export type ShellWorkspaceInfo = {
   /** The login's workspaces, as the shell names them ([] when it names none). */
@@ -125,7 +124,7 @@ export function useNoAutoTables(): boolean {
     queryKey: ['shell'],
     queryFn: () => apiFetch<ShellWithNoAutoTables>('/api/shell'),
     enabled: false,
-    select: (d: ShellWithNoAutoTables) => noAutoTablesOf(d),
+    select: (d: ShellWithNoAutoTables) => d?.noAutoTables === true,
   });
   return data === true;
 }
