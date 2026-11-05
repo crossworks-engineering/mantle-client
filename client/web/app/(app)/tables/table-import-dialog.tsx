@@ -36,6 +36,8 @@ type Sent = { loaded: number; total: number; rate: number | null };
  * will land whatever this dialog does, so the dialog stays until it answers.
  * An answer may never come, so after a long wait a Close hides the dialog and
  * stops nothing. A late answer then refreshes the list and shows as a toast.
+ * While a file goes out only these buttons are a way out: Escape or a stray
+ * click must not lose an upload with no word.
  */
 export function TableImportDialog({
   open,
@@ -151,10 +153,10 @@ export function TableImportDialog({
       open={open}
       onOpenChange={(next) => {
         if (next) onOpenChange(true);
-        else if (!locked) dismiss();
+        else if (!busy) dismiss();
       }}
     >
-      <DialogContent className="sm:max-w-md" hideClose={building}>
+      <DialogContent className="sm:max-w-md" hideClose={busy}>
         <DialogHeader>
           <DialogTitle>Import a table</DialogTitle>
           <DialogDescription>
