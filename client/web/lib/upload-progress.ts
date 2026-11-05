@@ -209,12 +209,6 @@ export function isSpreadsheetName(name: string): boolean {
   return /\.(xlsx|xls|csv)$/i.test(name);
 }
 
-/** The shell's `noAutoTables`: true only when the brain says so. An older
- *  brain sends no such field. */
-export function noAutoTablesOf(shell: { noAutoTables?: unknown } | null | undefined): boolean {
-  return shell?.noAutoTables === true;
-}
-
 /**
  * The dock's one line for a spreadsheet in Files, on a box where an upload no
  * longer makes a Table; null otherwise. Only for a file that is going in or is
