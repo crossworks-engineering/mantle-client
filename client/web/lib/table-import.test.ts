@@ -235,11 +235,13 @@ describe('the words of a failed import', () => {
     expect(tableImportError(new UploadHttpError(404, 'x', null))).toBe(TABLE_IMPORT_NEEDS_UPDATE);
   });
 
-  it('a proxy that answers after every byte went out: the table may still land', async () => {
-    expect(await failure({ status: 502, body: '<html>Bad Gateway</html>' })).toBe(
-      TABLE_IMPORT_MAY_LAND,
-    );
-    expect(await failure({ status: 504, body: '<html>Gateway Timeout</html>' })).toBe(
+  it('any 5xx after every byte went out: the table may still land', async () => {
+    for (const status of [500, 502, 503, 504, 520]) {
+      expect(await failure({ status, body: '<html>Bad Gateway</html>' }), String(status)).toBe(
+        TABLE_IMPORT_MAY_LAND,
+      );
+    }
+    expect(await failure({ status: 500, body: { error: 'database is down' } })).toBe(
       TABLE_IMPORT_MAY_LAND,
     );
   });
