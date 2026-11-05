@@ -126,6 +126,14 @@ describe('the words of a failed import', () => {
     );
   });
 
+  it('a 401 says the session expired, not its code', async () => {
+    reply = { status: 401, body: { error: 'unauthorized' } };
+    const err = await importTable(csv()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UploadHttpError);
+    expect((err as UploadHttpError).status).toBe(401);
+    expect(tableImportError(err)).toBe('Your session expired. Sign in again.');
+  });
+
   it('a workspace refusal shows its message, not its code', async () => {
     expect(
       await failure({

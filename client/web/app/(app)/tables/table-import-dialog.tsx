@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Loader2, Upload } from 'lucide-react';
+import { bounceToLogin } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import {
@@ -21,7 +22,7 @@ import {
   tableImportRefusal,
 } from '@/lib/table-import';
 import { aggregateProgress, formatBytes, progressTicker } from '@/lib/upload-progress';
-import { UploadAbortedError } from '@/lib/xhr-upload';
+import { UploadAbortedError, UploadHttpError } from '@/lib/xhr-upload';
 
 type Sent = { loaded: number; total: number; rate: number | null };
 
@@ -91,6 +92,7 @@ export function TableImportDialog({
       onImported(table);
     } catch (err) {
       if (err instanceof UploadAbortedError) return; // Cancel: already closed.
+      if (err instanceof UploadHttpError && err.status === 401) bounceToLogin();
       sending.current = null;
       setBusy(false);
       setSent(null);

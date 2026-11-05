@@ -117,6 +117,16 @@ test('a brain with no such route says it needs an update', async ({ page }) => {
   await expect(dialog.getByRole('alert')).toHaveText(NEEDS_UPDATE);
 });
 
+test('an expired session goes to login, back to here afterwards', async ({ page }) => {
+  await signIn(page, 'admin');
+  await openImport(page);
+
+  api.tableImportAnswer = { status: 401, body: { error: 'unauthorized' } };
+  await pickAndSend(page);
+  await expect(page).toHaveURL((u) => u.pathname === '/login');
+  expect(new URL(page.url()).searchParams.get('next')).toBe('/tables');
+});
+
 const HINT =
   'Stays in Files, with a read-only database. For a Table, use Import on the Tables screen.';
 
