@@ -12,6 +12,15 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.10: the Tables screen imports a file
+
+- **New:** the Tables screen gets an import. An xlsx, xls or csv makes one Table in the switcher's workspace. It shows upload progress and plain words for a refused file.
+
+## v0.9.9: new items land in the switcher's workspace
+
+- **Fixed:** a new task, event, formula, canvas or recall map now lands in the switcher's workspace. Before, it took the fallback home, which is Admin for an Admin user. A duplicated or imported app does too.
+- **Fixed:** a refused recall map create shows the brain's words, not the word forbidden.
+
 ## v0.9.8: the Status screen
 
 - A Status screen replaces the Dashboard: `/status`, first in the System menu. `/dashboard` redirects to it. It uses the standard master-detail layout: on the left a card per section with health and one number, on the right what needs attention, tiles, compute, brain, spend, queues and workers, sidecars, providers, version, updates and backups.
