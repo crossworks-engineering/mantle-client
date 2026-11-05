@@ -190,6 +190,12 @@ export type MockWorkspaceApi = {
   /** Answer POST /api/tables/import with this instead of making a table: a
    *  refusal, or a 404 as a brain before the route. */
   tableImportAnswer: { status: number; body: unknown } | null;
+  /** Read the import's whole body, then keep the answer back until this
+   *  settles: the brain still making the table. */
+  tableImportHold: Promise<void> | null;
+  /** Cut the line once the answer has begun: the browser sees a network fault
+   *  with every byte sent. */
+  tableImportCut: boolean;
   /** GET /api/shell's `noAutoTables`; undefined sends no field, as an older
    *  brain. */
   noAutoTables: boolean | undefined;
@@ -240,6 +246,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     created: [],
     importedTables: [],
     tableImportAnswer: null,
+    tableImportHold: null,
+    tableImportCut: false,
     noAutoTables: undefined,
     leftSince: {},
     homeApps: {},
@@ -537,11 +545,17 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     }
     // The Tables screen's Import: a new committed table, where `?ws=` says.
     if (path === '/api/tables/import' && method === 'POST') {
+      const sent = await readBody(req);
+      await state.tableImportHold;
+      if (state.tableImportCut) {
+        res.writeHead(201, { 'content-type': 'application/json', 'content-length': '1000' });
+        res.write('{');
+        return (res.socket?.destroy(), true);
+      }
       if (state.tableImportAnswer) {
-        await readBody(req);
         return (json(res, state.tableImportAnswer.status, state.tableImportAnswer.body), true);
       }
-      const name = /filename="([^"]+)"/.exec(await readBody(req))?.[1] ?? 'Imported table';
+      const name = /filename="([^"]+)"/.exec(sent)?.[1] ?? 'Imported table';
       const home = createHome(role, ws);
       if ('status' in home) return (json(res, home.status, home.body), true);
       const n = state.importedTables.length + 1;
