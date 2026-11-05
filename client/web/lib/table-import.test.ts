@@ -90,6 +90,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   setCreateWorkspace(null);
 });
@@ -191,6 +192,15 @@ describe('the credential it sends', () => {
     await importTable(csv());
     expect(sent?.headers).toEqual({ Authorization: 'Bearer tok' });
     expect(sent?.withCredentials).toBe(true);
+  });
+
+  it('a build with only the env token sends it, as apiFetch does', async () => {
+    page('https://brain.example.test');
+    vi.spyOn(tokenStore, 'get').mockReturnValue(null);
+    vi.stubEnv('NEXT_PUBLIC_MANTLE_API_TOKEN', 'env-tok');
+    reply = ok;
+    await importTable(csv());
+    expect(sent?.headers).toEqual({ Authorization: 'Bearer env-tok' });
   });
 });
 

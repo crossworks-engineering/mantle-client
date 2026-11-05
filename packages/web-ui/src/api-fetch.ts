@@ -24,7 +24,7 @@ import { tokenStore } from './token-store';
 function apiBaseValue(): string {
   return runtimeApiBase();
 }
-function apiTokenValue(): string {
+export function apiTokenValue(): string {
   return tokenStore.get() ?? process.env.NEXT_PUBLIC_MANTLE_API_TOKEN ?? '';
 }
 
