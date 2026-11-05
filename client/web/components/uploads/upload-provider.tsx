@@ -374,16 +374,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     if (kind) play(kind);
   }, [active, tasks]);
 
-  // Guard against losing in-flight uploads to a reload / tab close.
-  useEffect(() => {
-    if (!active) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [active]);
+  useUnloadGuard(active);
 
   const api = useMemo<UploadApi>(
     () => ({
@@ -495,6 +486,19 @@ export function UploadDock() {
       )}
     </div>
   );
+}
+
+/** Guard against losing an upload under way to a reload or a tab close. */
+export function useUnloadGuard(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [active]);
 }
 
 /** The one progress bar with its numbers: the dock's, and any other upload's. */

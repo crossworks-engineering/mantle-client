@@ -68,6 +68,14 @@ async function sendPartWay(page: Page, dialog: Locator) {
   expect(Number(await bar.getAttribute('aria-valuenow'))).toBeLessThan(100);
 }
 
+/** Whether a reload or a tab close would ask first. */
+const unloadGuarded = (page: Page) =>
+  page.evaluate(() => {
+    const e = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+
 /** Into Tables from Files, so Back leaves the screen. */
 async function openImportFromFiles(page: Page) {
   await page.goto('/files');
@@ -274,7 +282,9 @@ test('leaving the screen during the bytes stops them, and a toast says so', asyn
   await slowLine(page);
   const stopped = importFailed(page);
 
+  expect(await unloadGuarded(page)).toBe(false);
   await sendPartWay(page, dialog);
+  expect(await unloadGuarded(page)).toBe(true);
   await page.goBack();
   await expect(page).toHaveURL((u) => u.pathname === '/files');
   await expect(page.getByText('The import stopped because you left the screen.')).toBeVisible();
