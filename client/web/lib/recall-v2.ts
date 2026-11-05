@@ -486,7 +486,12 @@ export function dropCard(
 /** The error body the brain sends on a refused write, when it sent one. */
 export function writeErrorOf(err: unknown): RecallWriteErrorDTO | null {
   if (!(err instanceof ApiError)) return null;
-  const body = err.body as Partial<RecallWriteErrorDTO> | undefined;
+  const body = err.body as (Partial<RecallWriteErrorDTO> & { message?: unknown }) | undefined;
+  // The gate's refusals (a 403 workspace on a create, say) put a code in
+  // `error` and the words in `message`: show the words.
+  if (body && typeof body.message === 'string' && body.message) {
+    return { error: body.message, code: body.code };
+  }
   if (body && typeof body.error === 'string') return { error: body.error, code: body.code };
   return { error: err.message };
 }

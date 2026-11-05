@@ -318,6 +318,14 @@ describe('write errors', () => {
     const e = new ApiError('fallback', 400, { error: 'Split it.', code: 'body_too_long' });
     expect(writeErrorText(e, 'Save failed.')).toBe('Split it.');
   });
+  it("shows the gate's words, not its code, on a refused create", () => {
+    const e = new ApiError('forbidden', 403, {
+      error: 'forbidden',
+      reason: 'workspace',
+      message: 'You are not in that workspace.',
+    });
+    expect(writeErrorText(e, 'Save failed.')).toBe('You are not in that workspace.');
+  });
   it('words a stale version as the editor sees it', () => {
     expect(writeErrorText(stale, 'Save failed.')).toMatch(/changed since you opened it/);
   });
