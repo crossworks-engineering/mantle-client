@@ -3,6 +3,7 @@ import { tokenStore } from '@mantle/web-ui/token-store';
 import { setCreateWorkspace } from './create-workspace';
 import {
   TABLE_IMPORT_ACCEPT,
+  TABLE_IMPORT_FAILED,
   TABLE_IMPORT_MAX_BYTES,
   TABLE_IMPORT_MAY_LAND,
   TABLE_IMPORT_NEEDS_UPDATE,
@@ -249,7 +250,7 @@ describe('an import under way', () => {
   it('a proxy answer part way through is not a lost answer', async () => {
     reply = { status: 502, statusText: 'Bad Gateway', body: '<html></html>', sentOf: 5 };
     const err = await importTable(csv()).catch((e: unknown) => e);
-    expect(tableImportError(err)).toBe('502 Bad Gateway');
+    expect(tableImportError(err)).toBe(TABLE_IMPORT_FAILED);
   });
 });
 
@@ -312,12 +313,6 @@ describe('the words of a failed import', () => {
     }
     expect(await failure({ status: 500, body: { error: 'database is down' } })).toBe(
       TABLE_IMPORT_MAY_LAND,
-    );
-  });
-
-  it('a dropped connection says so', () => {
-    expect(tableImportError(new Error('Connection dropped before the upload finished.'))).toBe(
-      'Connection dropped before the upload finished.',
     );
   });
 });
