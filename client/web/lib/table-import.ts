@@ -26,9 +26,6 @@ export class TableImportAnswerLost extends Error {
   }
 }
 
-/** How long the brain may build before the dialog offers a Close. */
-export const TABLE_IMPORT_CLOSE_AFTER_MS = 120_000;
-
 /** The brain's cap for a workbook. A CSV's is lower, and the brain says so. */
 export const TABLE_IMPORT_MAX_BYTES = 64 * 1024 * 1024;
 

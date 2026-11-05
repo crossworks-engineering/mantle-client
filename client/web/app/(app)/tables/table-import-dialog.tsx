@@ -18,7 +18,6 @@ import type { TableDetail } from '@mantle/content-core/table-model';
 import { UploadProgressBar, useUnloadGuard } from '@/components/uploads/upload-provider';
 import {
   TABLE_IMPORT_ACCEPT,
-  TABLE_IMPORT_CLOSE_AFTER_MS,
   TABLE_IMPORT_MAY_LAND,
   TableImportAnswerLost,
   importTable,
@@ -36,10 +35,9 @@ import { UploadAbortedError, UploadHttpError } from '@/lib/xhr-upload';
 /**
  * Pick a spreadsheet, send it, get a new table. While the bytes go out Cancel
  * stops them. Once they are all sent the brain is building the table and it
- * will land whatever this dialog does (`importTable` stops bytes only), so the
- * dialog stays until it answers. An answer may never come, so after a long wait
- * a Close hides the dialog. A late answer then refreshes the list and shows as
- * a toast.
+ * will land whatever this dialog does (`importTable` stops bytes only), so Close
+ * only hides the dialog. A late answer then refreshes the list and shows as a
+ * toast.
  * While a file goes out only these buttons are a way out: Escape or a stray
  * click must not lose an upload with no word.
  */
@@ -59,7 +57,6 @@ export function TableImportDialog({
   const [error, setError] = useState<string | null>(null);
   // The upload under way, from Import table until the answer.
   const [sent, setSent] = useState<ProgressLike | null>(null);
-  const [waitedLong, setWaitedLong] = useState(false);
   const toast = useToast();
   const pickerRef = useRef<HTMLInputElement | null>(null);
   const sending = useRef<AbortController | null>(null);
@@ -79,15 +76,6 @@ export function TableImportDialog({
       sending.current = null;
     };
   }, []);
-
-  useEffect(() => {
-    if (!building) return;
-    const timer = setTimeout(() => setWaitedLong(true), TABLE_IMPORT_CLOSE_AFTER_MS);
-    return () => {
-      clearTimeout(timer);
-      setWaitedLong(false);
-    };
-  }, [building]);
 
   const close = () => {
     // Refresh again now: the table may have landed since the answer was lost.
@@ -203,9 +191,7 @@ export function TableImportDialog({
             {building ? (
               <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
-                {waitedLong
-                  ? 'This is taking a long time. You can close this. The table may still appear in the list.'
-                  : 'Making the table. A large sheet takes a while.'}
+                Making the table. A large sheet takes a while. You can close this and carry on.
               </p>
             ) : sent ? (
               <div className="overflow-hidden rounded-md border border-border">
@@ -214,13 +200,8 @@ export function TableImportDialog({
             ) : null}
 
             <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={building && !waitedLong}
-                onClick={close}
-              >
-                {waitedLong || error === TABLE_IMPORT_MAY_LAND ? 'Close' : 'Cancel'}
+              <Button type="button" variant="outline" onClick={close}>
+                {building || error === TABLE_IMPORT_MAY_LAND ? 'Close' : 'Cancel'}
               </Button>
               <SubmitButton pending={busy} disabled={!file}>
                 Import table
