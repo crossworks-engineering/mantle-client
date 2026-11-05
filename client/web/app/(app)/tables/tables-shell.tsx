@@ -104,7 +104,9 @@ export function TablesShell() {
   const sort: TableSort = SORTS.includes(sortParam as TableSort)
     ? (sortParam as TableSort)
     : 'edited';
-  // Spreadsheet import is a route only an Admin user may call (W6b).
+  // Import into an existing table is a route only an Admin user may call
+  // (W6b), so the New table dialog offers it to them alone. Import on this
+  // list makes a new table, and any member may.
   const isAdminUser = useIsAdminUser();
   const [details, changeDetails] = useCardDetails('mantle_tables_card_details_v1');
 
