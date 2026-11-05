@@ -217,6 +217,16 @@ describe('an import under way', () => {
     expect(xhr.aborted).toBe(true);
   });
 
+  it('a stop after all the bytes stops nothing: the table still comes', async () => {
+    reply = { hold: true, status: 201, body: { table: { id: 'T1' } } };
+    const stop = new AbortController();
+    const going = importTable(csv(), { signal: stop.signal });
+    stop.abort();
+    expect(xhr.aborted).toBe(false);
+    xhr.answer();
+    expect((await going).id).toBe('T1');
+  });
+
   it('a delayed answer still gives the table, after all the bytes', async () => {
     reply = { hold: true, status: 201, body: { table: { id: 'T1' } } };
     const onProgress = vi.fn();
