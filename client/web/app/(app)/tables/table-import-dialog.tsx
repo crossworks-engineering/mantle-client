@@ -33,9 +33,10 @@ type Sent = { loaded: number; total: number; rate: number | null };
 /**
  * Pick a spreadsheet, send it, get a new table. While the bytes go out Cancel
  * stops them. Once they are all sent the brain is building the table and it
- * will land whatever this dialog does, so the dialog stays until it answers.
- * An answer may never come, so after a long wait a Close hides the dialog and
- * stops nothing. A late answer then refreshes the list and shows as a toast.
+ * will land whatever this dialog does (`importTable` stops bytes only), so the
+ * dialog stays until it answers. An answer may never come, so after a long wait
+ * a Close hides the dialog. A late answer then refreshes the list and shows as
+ * a toast.
  * While a file goes out only these buttons are a way out: Escape or a stray
  * click must not lose an upload with no word.
  */
@@ -59,13 +60,12 @@ export function TableImportDialog({
   const toast = useToast();
   const pickerRef = useRef<HTMLInputElement | null>(null);
   const sending = useRef<AbortController | null>(null);
-  const allSent = useRef(false);
 
   // Leaving the screen stops bytes still going out. Once all are sent the table
-  // lands anyway, so let go of it, as `hide` does, and the answer is a toast.
+  // lands anyway, and the answer is a toast: `submit` sees it was let go.
   useEffect(
     () => () => {
-      if (!allSent.current) sending.current?.abort();
+      sending.current?.abort();
       sending.current = null;
     },
     [],
@@ -100,14 +100,6 @@ export function TableImportDialog({
     reset();
   };
 
-  // Lets go of the upload without stopping it: `submit` sees it was let go.
-  const hide = () => {
-    sending.current = null;
-    reset();
-  };
-
-  const dismiss = building ? hide : close;
-
   const pick = (picked: File | undefined) => {
     if (!picked) return;
     const refusal = tableImportRefusal(picked);
@@ -120,7 +112,6 @@ export function TableImportDialog({
     if (!file || busy) return;
     const controller = new AbortController();
     sending.current = controller;
-    allSent.current = false;
     setBusy(true);
     setError(null);
     setSent(null);
@@ -131,7 +122,6 @@ export function TableImportDialog({
         signal: controller.signal,
         onProgress: (loaded, size) => {
           total = size;
-          allSent.current = loaded >= size;
           tick(loaded, size);
         },
       });
@@ -165,7 +155,7 @@ export function TableImportDialog({
       open={open}
       onOpenChange={(next) => {
         if (next) onOpenChange(true);
-        else if (!busy) dismiss();
+        else if (!busy) close();
       }}
     >
       <DialogContent className="sm:max-w-md" hideClose={busy}>
@@ -238,7 +228,7 @@ export function TableImportDialog({
             ) : null}
 
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" disabled={locked} onClick={dismiss}>
+              <Button type="button" variant="outline" disabled={locked} onClick={close}>
                 {waitedLong ? 'Close' : 'Cancel'}
               </Button>
               <SubmitButton pending={busy} disabled={!file}>

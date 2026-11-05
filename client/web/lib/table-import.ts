@@ -71,7 +71,8 @@ function answerLost(err: unknown): boolean {
 /**
  * Send the file. Resolves to the new table; rejects as `xhrUpload` does, or
  * with `TableImportAnswerLost` when the answer was lost after every byte went
- * out, since the brain may still be making the table.
+ * out, since the brain may still be making the table. For the same reason the
+ * signal stops only bytes still going out: after the last one it stops nothing.
  */
 export async function importTable(
   file: File,
@@ -80,11 +81,17 @@ export async function importTable(
   const form = new FormData();
   form.set('file', file);
   let allSent = false;
+  const stop = new AbortController();
+  const stopBytes = () => {
+    if (!allSent) stop.abort();
+  };
+  if (opts.signal?.aborted) stopBytes();
+  opts.signal?.addEventListener('abort', stopBytes, { once: true });
   let answer: { table?: TableDetail };
   try {
     answer = await xhrUploadToBrain<{ table?: TableDetail }>('/api/tables/import', {
       form,
-      signal: opts.signal,
+      signal: stop.signal,
       onProgress: (loaded, total) => {
         allSent = loaded >= total;
         opts.onProgress?.(loaded, total);
