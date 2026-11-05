@@ -363,11 +363,17 @@ test('a double click sends one upload', async ({ page }) => {
 test('an expired session goes to login, back to here afterwards', async ({ page }) => {
   await signIn(page, 'admin');
   await openImport(page);
+  let asked = false;
+  page.on('dialog', (d) => {
+    asked = true;
+    void d.accept();
+  });
 
   api.tableImportAnswer = { status: 401, body: { error: 'unauthorized' } };
   await pickAndSend(page);
   await expect(page).toHaveURL((u) => u.pathname === '/login');
   expect(new URL(page.url()).searchParams.get('next')).toBe('/tables');
+  expect(asked).toBe(false);
 });
 
 const HINT =
