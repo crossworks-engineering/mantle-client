@@ -59,9 +59,17 @@ export function TableImportDialog({
   const toast = useToast();
   const pickerRef = useRef<HTMLInputElement | null>(null);
   const sending = useRef<AbortController | null>(null);
+  const allSent = useRef(false);
 
-  // Leaving the screen stops an upload nobody is watching.
-  useEffect(() => () => sending.current?.abort(), []);
+  // Leaving the screen stops bytes still going out. Once all are sent the table
+  // lands anyway, so let go of it, as `hide` does, and the answer is a toast.
+  useEffect(
+    () => () => {
+      if (!allSent.current) sending.current?.abort();
+      sending.current = null;
+    },
+    [],
+  );
 
   const building = busy && sent !== null && sent.loaded >= sent.total;
 
@@ -112,6 +120,7 @@ export function TableImportDialog({
     if (!file || busy) return;
     const controller = new AbortController();
     sending.current = controller;
+    allSent.current = false;
     setBusy(true);
     setError(null);
     setSent(null);
@@ -122,6 +131,7 @@ export function TableImportDialog({
         signal: controller.signal,
         onProgress: (loaded, size) => {
           total = size;
+          allSent.current = loaded >= size;
           tick(loaded, size);
         },
       });
