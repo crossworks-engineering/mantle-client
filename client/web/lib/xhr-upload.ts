@@ -5,9 +5,8 @@
  * refusal (413 with a message), a dropped connection, and a stall.
  */
 
-import { errorMessageOf } from '@mantle/web-ui/api-fetch';
+import { apiTokenValue, errorMessageOf } from '@mantle/web-ui/api-fetch';
 import { isCrossOrigin, runtimeApiBase } from '@mantle/web-ui/runtime-env';
-import { tokenStore } from '@mantle/web-ui/token-store';
 import { withCreateWs } from './create-workspace';
 
 export class UploadHttpError extends Error {
@@ -137,14 +136,14 @@ export function xhrUpload<T = unknown>(opts: XhrUploadOptions): Promise<T> {
 
 /**
  * `xhrUpload` to a route on the brain: a create route names the switcher's
- * workspace, and the credential is apiFetch's (cookie on same-origin, bearer
- * only across origins).
+ * workspace, and the credential is apiFetch's (the cookie on the same origin,
+ * and its bearer whenever it has one).
  */
 export function xhrUploadToBrain<T = unknown>(
   path: string,
   opts: Omit<XhrUploadOptions, 'url' | 'headers' | 'withCredentials'>,
 ): Promise<T> {
-  const token = tokenStore.get();
+  const token = apiTokenValue();
   return xhrUpload<T>({
     ...opts,
     url: `${runtimeApiBase()}${withCreateWs(path)}`,
