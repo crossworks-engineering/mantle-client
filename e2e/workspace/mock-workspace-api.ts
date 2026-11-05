@@ -172,6 +172,9 @@ export type MockRequest = { method: string; path: string; query: string; role: R
 /** A page a spec made through POST /api/pages, and where the brain put it. */
 export type MockCreated = { id: string; title: string; ws: WorkspaceKey; role: Role };
 
+/** A table a spec made through POST /api/tables/import, and where it landed. */
+export type MockImportedTable = { id: string; title: string; ws: WorkspaceKey; role: Role };
+
 /** A page as the mock holds it (a created one, or one of PAGES). */
 type MockPage = { id: string; title: string; ws: WorkspaceKey; snapshotOf?: string };
 
@@ -182,6 +185,14 @@ export type MockWorkspaceApi = {
   signIns: { email: string; status: number }[];
   /** The paths `role` asked for (method and path), in order. */
   asked: (role: Role) => string[];
+  /** The tables made through POST /api/tables/import, in order. */
+  importedTables: MockImportedTable[];
+  /** Answer POST /api/tables/import with this instead of making a table: a
+   *  refusal, or a 404 as a brain before the route. */
+  tableImportAnswer: { status: number; body: unknown } | null;
+  /** GET /api/shell's `noAutoTables`; undefined sends no field, as an older
+   *  brain. */
+  noAutoTables: boolean | undefined;
   /** What GET /api/shell says in `onboarded`, for every login (default true). */
   onboarded: boolean;
   /** The pages made in this run, with the workspace each landed in. */
@@ -227,6 +238,9 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       state.requests.filter((r) => r.role === role).map((r) => `${r.method} ${r.path}`),
     onboarded: true,
     created: [],
+    importedTables: [],
+    tableImportAnswer: null,
+    noAutoTables: undefined,
     leftSince: {},
     homeApps: {},
     desks: {},
@@ -266,6 +280,11 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
   /** A kind's items a login reads, narrowed to `ws` like pagesOf. */
   const itemsOf = (kind: string, role: Role, ws: string | null = null): MockPage[] => {
     if (kind === 'pages') return pagesOf(role, ws);
+    if (kind === 'tables') {
+      return state.importedTables.filter(
+        (t) => t.role === role && (!ws || WORKSPACES[t.ws].id === ws),
+      );
+    }
     if (!(kind in KIND_ITEMS)) return [];
     const mine = new Set<WorkspaceKey>(MEMBERSHIP[role].map((m) => m.ws));
     return KIND_ITEMS[kind as keyof typeof KIND_ITEMS].filter(
@@ -306,6 +325,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     workspaces: shellWorkspaces(role),
     areas: role === 'admin' ? ALL_AREAS : [],
     treeKinds: MEMBER_TREE_KINDS,
+    ...(state.noAutoTables === undefined ? {} : { noAutoTables: state.noAutoTables }),
     onboarded: state.onboarded,
     displayName: LOGINS[role].name,
     email: LOGINS[role].email,
@@ -326,6 +346,29 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     fontLogoSize: null,
     fontTitleSize: null,
     fontProseSize: null,
+  });
+
+  /** An imported table as GET /api/tables/:id gives it: one column, one row. */
+  const tableDetail = (role: Role, t: MockImportedTable) => ({
+    id: t.id,
+    title: t.title,
+    icon: null,
+    tags: [],
+    summary: null,
+    description: null,
+    visibility: 'private',
+    columnCount: 1,
+    rowCount: 1,
+    createdAt: now,
+    updatedAt: now,
+    data: {
+      columns: [{ id: 'c1', name: 'Name', type: 'text' }],
+      rows: [{ id: 'r1', cells: { c1: 'First row' } }],
+    },
+    draft: null,
+    draftRev: 0,
+    mayEdit: true,
+    mayManage: role === 'admin',
   });
 
   /** A tree answer in the brain's shape, every item at the top level. */
@@ -491,6 +534,40 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       const made: MockCreated = { id, title: body.title ?? 'Untitled', ws: home.ws, role };
       state.created.push(made);
       return (json(res, 201, { page: pageRow(role, made) }), true);
+    }
+    // The Tables screen's Import: a new committed table, where `?ws=` says.
+    if (path === '/api/tables/import' && method === 'POST') {
+      if (state.tableImportAnswer) {
+        await readBody(req);
+        return (json(res, state.tableImportAnswer.status, state.tableImportAnswer.body), true);
+      }
+      const name = /filename="([^"]+)"/.exec(await readBody(req))?.[1] ?? 'Imported table';
+      const home = createHome(role, ws);
+      if ('status' in home) return (json(res, home.status, home.body), true);
+      const n = state.importedTables.length + 1;
+      const made: MockImportedTable = {
+        id: `abcdef${String(n).padStart(2, '0')}-1111-4000-8000-000000000000`,
+        title: name.replace(/\.[a-z]+$/i, ''),
+        ws: home.ws,
+        role,
+      };
+      state.importedTables.push(made);
+      return (json(res, 201, { table: tableDetail(role, made) }), true);
+    }
+    const tableM = /^\/api\/tables\/([0-9a-f-]{36})$/.exec(path);
+    if (tableM && method === 'GET') {
+      const t = state.importedTables.find((x) => x.id === tableM[1]);
+      return (
+        t
+          ? json(res, 200, { table: tableDetail(role, t) })
+          : json(res, 404, { error: 'not found' }),
+        true
+      );
+    }
+    // A file sent to Files; the screen's lists do not change here.
+    if (path === '/api/files/files' && method === 'POST') {
+      await readBody(req);
+      return (json(res, 201, { ok: true }), true);
     }
     const pageM = /^\/api\/pages\/([0-9a-f-]{36})$/.exec(path);
     if (pageM && method === 'GET') {

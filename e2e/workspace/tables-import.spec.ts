@@ -1,0 +1,148 @@
+import { expect, test, type Page } from '@playwright/test';
+import {
+  WORKSPACES,
+  signIn,
+  startMockWorkspaceApi,
+  type MockWorkspaceApi,
+} from './mock-workspace-api';
+
+/**
+ * The Tables screen's Import (a spreadsheet becomes a new table), and the
+ * upload dock's line for a spreadsheet in Files. In-memory brain, no real one.
+ */
+
+let api: MockWorkspaceApi;
+test.beforeEach(async ({ baseURL }) => {
+  api = await startMockWorkspaceApi(new URL(baseURL!).origin);
+});
+test.afterEach(async () => {
+  await api.close();
+});
+
+const CSV = { mimeType: 'text/csv', buffer: Buffer.from('Name\nFirst row\n') };
+const NEEDS_UPDATE = 'This brain needs an update before it can import a table.';
+
+async function openImport(page: Page) {
+  await page.goto('/tables');
+  await page.getByRole('main').getByRole('button', { name: 'Import', exact: true }).click();
+  return page.getByRole('dialog', { name: 'Import a table' });
+}
+
+async function pickAndSend(page: Page, name = 'stock-list.csv') {
+  await page.locator('#table-import-file').setInputFiles({ name, ...CSV });
+  await page.getByRole('button', { name: 'Import table' }).click();
+}
+
+const importsWs = () =>
+  api.requests
+    .filter((r) => r.method === 'POST' && r.path === '/api/tables/import')
+    .map((r) => new URLSearchParams(r.query).get('ws'));
+
+test('a member imports a spreadsheet: the new table opens, in the workspace picked', async ({
+  page,
+}) => {
+  await signIn(page, 'member');
+  await page.goto('/tables');
+  await page
+    .getByRole('button', { name: /^Workspace:/ })
+    .first()
+    .click();
+  await page.getByRole('menuitemradio', { name: /^Team( Moderator)?$/ }).click();
+
+  const dialog = await openImport(page);
+  await expect(dialog.getByRole('button', { name: 'Import table' })).toBeDisabled();
+  await pickAndSend(page);
+
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(() => api.importedTables.map((t) => [t.title, t.ws]))
+    .toEqual([['stock-list', 'team']]);
+  expect(importsWs()).toEqual([WORKSPACES.team.id]);
+  await expect(page).toHaveURL((u) => u.pathname === `/tables/${api.importedTables[0]!.id}`);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('treeitem', { name: /stock-list/ })).toBeVisible();
+  await expect(main.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('First row');
+});
+
+test('another type is refused before anything is sent', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+
+  await page
+    .locator('#table-import-file')
+    .setInputFiles({ name: 'notes.pdf', mimeType: 'application/pdf', buffer: Buffer.from('x') });
+  await expect(dialog.getByRole('alert')).toHaveText('This takes an .xlsx, .xls or .csv file.');
+  await expect(dialog.getByRole('button', { name: 'Import table' })).toBeDisabled();
+
+  // Each of the three types is taken.
+  for (const name of ['a.xlsx', 'b.xls', 'c.csv']) {
+    await page.locator('#table-import-file').setInputFiles({ name, ...CSV });
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    await expect(dialog.getByText(name)).toBeVisible();
+  }
+  expect(importsWs()).toEqual([]);
+});
+
+test('a refusal shows the server words; the file stays to try again', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+
+  api.tableImportAnswer = { status: 400, body: { error: 'no tabular data found' } };
+  await pickAndSend(page);
+  await expect(dialog.getByRole('alert')).toHaveText('no tabular data found');
+
+  api.tableImportAnswer = {
+    status: 413,
+    body: { error: 'This request is too large (at most 64 MB).' },
+  };
+  await dialog.getByRole('button', { name: 'Import table' }).click();
+  await expect(dialog.getByRole('alert')).toHaveText('This request is too large (at most 64 MB).');
+
+  api.tableImportAnswer = null;
+  await dialog.getByRole('button', { name: 'Import table' }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => api.importedTables.length).toBe(1);
+});
+
+test('a brain with no such route says it needs an update', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+
+  api.tableImportAnswer = { status: 404, body: { error: 'not found' } };
+  await pickAndSend(page);
+  await expect(dialog.getByRole('alert')).toHaveText(NEEDS_UPDATE);
+
+  api.tableImportAnswer = { status: 405, body: {} };
+  await dialog.getByRole('button', { name: 'Import table' }).click();
+  await expect(dialog.getByRole('alert')).toHaveText(NEEDS_UPDATE);
+});
+
+const HINT =
+  'Stays in Files, with a read-only database. For a Table, use Import on the Tables screen.';
+
+async function uploadToFiles(page: Page, name: string) {
+  await page.goto('/files');
+  await page
+    .locator('input[type="file"]:not([webkitdirectory])')
+    .first()
+    .setInputFiles({ name, ...CSV });
+  await expect(page.getByText(name)).toBeVisible();
+}
+
+test('the dock says where a spreadsheet went, only on a box with the line', async ({ page }) => {
+  await signIn(page, 'admin');
+
+  // An older brain sends no field: no line.
+  await uploadToFiles(page, 'old.csv');
+  await expect(page.getByText('Uploaded 1 file')).toBeVisible();
+  await expect(page.getByText(HINT)).toHaveCount(0);
+
+  // With the line, but not a spreadsheet: none.
+  api.noAutoTables = true;
+  await uploadToFiles(page, 'readme.txt');
+  await expect(page.getByText('Uploaded 1 file')).toBeVisible();
+  await expect(page.getByText(HINT)).toHaveCount(0);
+
+  await uploadToFiles(page, 'sheet.xlsx');
+  await expect(page.getByText(HINT)).toBeVisible();
+});
