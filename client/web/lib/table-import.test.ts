@@ -28,7 +28,8 @@ type Reply = {
 };
 let reply: Reply;
 let sent: { url: string; form: FormData } | null;
-let xhr: FakeXhr;
+/** The last request: lets a held answer go, and says if it was stopped. */
+const xhr = { answer: () => {}, aborted: false };
 
 class FakeXhr {
   status = 0;
@@ -36,7 +37,6 @@ class FakeXhr {
   responseText = '';
   responseType = '';
   withCredentials = false;
-  aborted = false;
   upload: { onprogress?: (e: unknown) => void; onload?: () => void } = {};
   onload?: () => void;
   onerror?: () => void;
@@ -47,11 +47,12 @@ class FakeXhr {
   }
   setRequestHeader() {}
   abort() {
-    this.aborted = true;
+    xhr.aborted = true;
     this.onabort?.();
   }
   send(form: FormData) {
-    xhr = this;
+    xhr.answer = () => this.answer();
+    xhr.aborted = false;
     sent = { url: this.url, form };
     const loaded = reply.sentOf ?? 10;
     this.upload.onprogress?.({ lengthComputable: true, loaded, total: 10 });
