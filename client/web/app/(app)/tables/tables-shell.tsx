@@ -295,7 +295,8 @@ export function TablesShell() {
     <>
       <NewButton onClick={() => openCreate()} />
       {/* Icon only: with the word the row overflows a 320px list and clips
-          the collapse toggle. */}
+          the collapse toggle. So the dock's line (spreadsheetHint) names it
+          by what shows: the upload button next to New. */}
       <Button
         variant="outline"
         size="icon-sm"
