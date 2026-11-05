@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tokenStore } from '@mantle/web-ui/token-store';
 import { setCreateWorkspace } from './create-workspace';
 import {
   TABLE_IMPORT_ACCEPT,
@@ -27,7 +28,12 @@ type Reply = {
   sentOf?: number;
 };
 let reply: Reply;
-let sent: { url: string; form: FormData } | null;
+let sent: {
+  url: string;
+  form: FormData;
+  headers: Record<string, string>;
+  withCredentials: boolean;
+} | null;
 /** The last request: lets a held answer go, and says if it was stopped. */
 const xhr = { answer: () => {}, aborted: false };
 
@@ -42,10 +48,13 @@ class FakeXhr {
   onerror?: () => void;
   onabort?: () => void;
   private url = '';
+  private headers: Record<string, string> = {};
   open(_method: string, url: string) {
     this.url = url;
   }
-  setRequestHeader() {}
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value;
+  }
   abort() {
     xhr.aborted = true;
     this.onabort?.();
@@ -53,7 +62,12 @@ class FakeXhr {
   send(form: FormData) {
     xhr.answer = () => this.answer();
     xhr.aborted = false;
-    sent = { url: this.url, form };
+    sent = {
+      url: this.url,
+      form,
+      headers: this.headers,
+      withCredentials: this.withCredentials,
+    };
     const loaded = reply.sentOf ?? 10;
     this.upload.onprogress?.({ lengthComputable: true, loaded, total: 10 });
     if (loaded >= 10) this.upload.onload?.();
@@ -76,6 +90,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   setCreateWorkspace(null);
 });
 
@@ -97,8 +112,10 @@ describe('which files it takes', () => {
       'File is 70 MB. The limit is 64 MB.',
     );
   });
-  it('offers the three in the picker', () => {
-    expect(TABLE_IMPORT_ACCEPT).toBe('.xlsx,.xls,.csv');
+  it('the picker offers only what it takes', () => {
+    for (const type of TABLE_IMPORT_ACCEPT.split(',')) {
+      expect(tableImportRefusal({ name: `a${type}`, size: 10 }), type).toBeNull();
+    }
   });
 });
 
@@ -132,6 +149,48 @@ describe('importTable', () => {
     await expect(importTable(csv(), { signal: stop.signal })).rejects.toBeInstanceOf(
       UploadAbortedError,
     );
+  });
+});
+
+describe('the credential it sends', () => {
+  const page = (apiBase: string) =>
+    vi.stubGlobal('window', {
+      location: {
+        href: 'https://client.example.test/tables',
+        origin: 'https://client.example.test',
+      },
+      __MANTLE_ENV__: { apiBase },
+    });
+  const ok = { status: 201, body: { table: { id: 'T1' } } };
+
+  it('across origins: the bearer, and no cookie', async () => {
+    page('https://brain.example.test');
+    vi.spyOn(tokenStore, 'get').mockReturnValue('tok');
+    reply = ok;
+    await importTable(csv());
+    expect(sent?.url).toBe('https://brain.example.test/api/tables/import');
+    expect(sent?.headers).toEqual({ Authorization: 'Bearer tok' });
+    expect(sent?.withCredentials).toBe(false);
+  });
+
+  it('the same origin, by a full address too: the cookie, and no bearer without a token', async () => {
+    for (const apiBase of ['', 'https://client.example.test']) {
+      page(apiBase);
+      vi.spyOn(tokenStore, 'get').mockReturnValue(null);
+      reply = ok;
+      await importTable(csv());
+      expect(sent?.headers, apiBase).toEqual({});
+      expect(sent?.withCredentials, apiBase).toBe(true);
+    }
+  });
+
+  it('the same origin with a token: the bearer goes beside the cookie, as apiFetch does', async () => {
+    page('');
+    vi.spyOn(tokenStore, 'get').mockReturnValue('tok');
+    reply = ok;
+    await importTable(csv());
+    expect(sent?.headers).toEqual({ Authorization: 'Bearer tok' });
+    expect(sent?.withCredentials).toBe(true);
   });
 });
 
