@@ -60,16 +60,18 @@ export function TableImportDialog({
   const toast = useToast();
   const pickerRef = useRef<HTMLInputElement | null>(null);
   const sending = useRef<AbortController | null>(null);
+  const left = useRef(false);
 
-  // Leaving the screen stops bytes still going out. Once all are sent the table
-  // lands anyway, and the answer is a toast: `submit` sees it was let go.
-  useEffect(
-    () => () => {
+  // Leaving the screen stops bytes still going out, and `submit` says so. Once
+  // all are sent the table lands anyway, and the answer is a toast.
+  useEffect(() => {
+    left.current = false; // Strict Mode runs this effect twice.
+    return () => {
+      left.current = true;
       sending.current?.abort();
       sending.current = null;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const building = busy && sent !== null && sent.loaded >= sent.total;
 
@@ -134,7 +136,10 @@ export function TableImportDialog({
       close();
       onImported(table);
     } catch (err) {
-      if (err instanceof UploadAbortedError) return; // Cancel: already closed.
+      if (err instanceof UploadAbortedError) {
+        if (left.current) toast.error('The import stopped because you left the screen.');
+        return; // Cancel: already closed.
+      }
       if (err instanceof UploadHttpError && err.status === 401) bounceToLogin();
       if (err instanceof TableImportAnswerLost) onMayLand();
       if (sending.current !== controller) {
