@@ -227,10 +227,14 @@ export function TablesShell() {
     setCreateOpen(true);
   };
 
+  function refreshLists() {
+    void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
+    return queryClient.invalidateQueries({ queryKey: ['tables'] });
+  }
+
   // A table just made, by New table or Import: refresh the lists and open it.
   async function openNewTable(id: string) {
-    await queryClient.invalidateQueries({ queryKey: ['tables'] });
-    void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
+    await refreshLists();
     address.open(id);
   }
 
@@ -607,10 +611,7 @@ export function TablesShell() {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImported={(table) => void openNewTable(table.id)}
-        onMayLand={() => {
-          void queryClient.invalidateQueries({ queryKey: ['tables'] });
-          void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
-        }}
+        onMayLand={() => void refreshLists()}
       />
 
       {/* Delete confirm */}

@@ -25,10 +25,13 @@ import {
   tableImportError,
   tableImportRefusal,
 } from '@/lib/table-import';
-import { aggregateProgress, formatBytes, progressTicker } from '@/lib/upload-progress';
+import {
+  aggregateProgress,
+  formatBytes,
+  progressTicker,
+  type ProgressLike,
+} from '@/lib/upload-progress';
 import { UploadAbortedError, UploadHttpError } from '@/lib/xhr-upload';
-
-type Sent = { loaded: number; total: number; rate: number | null };
 
 /**
  * Pick a spreadsheet, send it, get a new table. While the bytes go out Cancel
@@ -54,13 +57,15 @@ export function TableImportDialog({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState<Sent | null>(null);
+  // The upload under way, from Import table until the answer.
+  const [sent, setSent] = useState<ProgressLike | null>(null);
   const [waitedLong, setWaitedLong] = useState(false);
   const toast = useToast();
   const pickerRef = useRef<HTMLInputElement | null>(null);
   const sending = useRef<AbortController | null>(null);
   const left = useRef(false);
+  const busy = sent !== null;
+  const building = sent !== null && sent.loaded >= sent.size;
 
   useUnloadGuard(busy);
 
@@ -75,10 +80,6 @@ export function TableImportDialog({
     };
   }, []);
 
-  const building = busy && sent !== null && sent.loaded >= sent.total;
-
-  const locked = building && !waitedLong;
-
   useEffect(() => {
     if (!building) return;
     const timer = setTimeout(() => setWaitedLong(true), TABLE_IMPORT_CLOSE_AFTER_MS);
@@ -88,20 +89,15 @@ export function TableImportDialog({
     };
   }, [building]);
 
-  const reset = () => {
-    setFile(null);
-    setError(null);
-    setBusy(false);
-    setSent(null);
-    onOpenChange(false);
-  };
-
   const close = () => {
     // Refresh again now: the table may have landed since the answer was lost.
     if (error === TABLE_IMPORT_MAY_LAND) onMayLand();
     sending.current?.abort();
     sending.current = null;
-    reset();
+    setFile(null);
+    setError(null);
+    setSent(null);
+    onOpenChange(false);
   };
 
   const pick = (picked: File | undefined) => {
@@ -116,25 +112,20 @@ export function TableImportDialog({
     if (!file || busy) return;
     const controller = new AbortController();
     sending.current = controller;
-    setBusy(true);
     setError(null);
-    setSent(null);
-    let total = 0;
-    const tick = progressTicker((loaded, rate) => setSent({ loaded, total, rate }));
+    setSent({ status: 'uploading', size: file.size, loaded: 0, rate: null });
     try {
       const table = await importTable(file, {
         signal: controller.signal,
-        onProgress: (loaded, size) => {
-          total = size;
-          tick(loaded, size);
-        },
+        onProgress: progressTicker((loaded, rate, size) =>
+          setSent({ status: 'uploading', size, loaded, rate }),
+        ),
       });
       if (sending.current !== controller) {
         onMayLand();
         toast.success(`Imported ${table.title}`);
         return;
       }
-      sending.current = null;
       close();
       onImported(table);
     } catch (err) {
@@ -148,8 +139,6 @@ export function TableImportDialog({
         toast.error(tableImportError(err));
         return;
       }
-      sending.current = null;
-      setBusy(false);
       setSent(null);
       // The table may land: a second try is a choice, so it starts with a pick.
       if (err instanceof TableImportAnswerLost) setFile(null);
@@ -161,8 +150,7 @@ export function TableImportDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (next) onOpenChange(true);
-        else if (!busy) close();
+        if (!next && !busy) close();
       }}
     >
       <DialogContent className="sm:max-w-md" hideClose={busy}>
@@ -184,7 +172,7 @@ export function TableImportDialog({
             e.target.value = '';
           }}
         />
-        <form onSubmit={(e) => void submit(e)} noValidate>
+        <form onSubmit={(e) => void submit(e)}>
           <FieldGroup>
             <Field data-invalid={!!error || undefined}>
               <FieldLabel id="table-import-label" htmlFor="table-import-file">
@@ -219,23 +207,19 @@ export function TableImportDialog({
                   ? 'This is taking a long time. You can close this. The table may still appear in the list.'
                   : 'Making the table. A large sheet takes a while.'}
               </p>
-            ) : busy ? (
+            ) : sent ? (
               <div className="overflow-hidden rounded-md border border-border">
-                <UploadProgressBar
-                  progress={aggregateProgress([
-                    {
-                      status: 'uploading',
-                      size: sent?.total ?? file?.size ?? 0,
-                      loaded: sent?.loaded ?? 0,
-                      rate: sent?.rate ?? null,
-                    },
-                  ])}
-                />
+                <UploadProgressBar progress={aggregateProgress([sent])} />
               </div>
             ) : null}
 
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" disabled={locked} onClick={close}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={building && !waitedLong}
+                onClick={close}
+              >
                 {waitedLong || error === TABLE_IMPORT_MAY_LAND ? 'Close' : 'Cancel'}
               </Button>
               <SubmitButton pending={busy} disabled={!file}>

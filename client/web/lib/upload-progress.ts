@@ -82,11 +82,11 @@ export function updateRate(
 const PROGRESS_TICK_MS = 150;
 
 /**
- * An upload's `onProgress`, as `tick(loaded, rate)` calls: throttled, with the
- * smoothed rate, and always the last one.
+ * An upload's `onProgress`, as `tick(loaded, rate, total)` calls: throttled,
+ * with the smoothed rate, and always the last one.
  */
 export function progressTicker(
-  tick: (loaded: number, rate: number | null) => void,
+  tick: (loaded: number, rate: number | null, total: number) => void,
 ): (loaded: number, total: number) => void {
   let lastLoaded = 0;
   let lastAt = performance.now();
@@ -99,7 +99,7 @@ export function progressTicker(
     lastAt = now;
     if (now - lastWrite < PROGRESS_TICK_MS && loaded < total) return;
     lastWrite = now;
-    tick(loaded, rate);
+    tick(loaded, rate, total);
   };
 }
 

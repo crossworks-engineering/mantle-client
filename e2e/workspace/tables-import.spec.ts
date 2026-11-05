@@ -351,7 +351,8 @@ test('a network fault after all the bytes: check the list first', async ({ page 
   // The way out is back, and closing looks at the list again.
   const before = await readsSoFar();
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  // The first: the X in the corner has the same name.
+  await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
   await expect(dialog).toBeHidden();
   await expect.poll(listReads).toBeGreaterThan(before);
 });
