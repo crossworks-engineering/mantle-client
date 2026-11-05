@@ -300,7 +300,7 @@ export function TablesShell() {
         variant="outline"
         size="icon-sm"
         onClick={() => setImportOpen(true)}
-        aria-label="Import"
+        aria-label="Import a table"
         title="Import a spreadsheet as a new table"
       >
         <Upload />

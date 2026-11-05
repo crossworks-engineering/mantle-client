@@ -26,7 +26,7 @@ const MAY_LAND =
 
 async function openImport(page: Page) {
   await page.goto('/tables');
-  await page.getByRole('main').getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('main').getByRole('button', { name: 'Import a table', exact: true }).click();
   return page.getByRole('dialog', { name: 'Import a table' });
 }
 
@@ -228,7 +228,7 @@ test('a late refusal is a toast, not a line in a dialog opened since', async ({ 
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(dialog).toBeHidden();
 
-  await page.getByRole('main').getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('main').getByRole('button', { name: 'Import a table', exact: true }).click();
   await expect(dialog).toBeVisible();
   answer();
   await expect(page.getByText('no tabular data found')).toBeVisible();
