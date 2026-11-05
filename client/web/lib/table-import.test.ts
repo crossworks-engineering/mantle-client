@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCreateWorkspace } from './create-workspace';
 import {
   TABLE_IMPORT_ACCEPT,
+  TABLE_IMPORT_MAY_LAND,
   TABLE_IMPORT_NEEDS_UPDATE,
   TABLE_IMPORT_WRONG_TYPE,
   importTable,
@@ -153,6 +154,15 @@ describe('the words of a failed import', () => {
     );
     expect(await failure({ status: 405, body: '' })).toBe(TABLE_IMPORT_NEEDS_UPDATE);
     expect(tableImportError(new UploadHttpError(404, 'x', null))).toBe(TABLE_IMPORT_NEEDS_UPDATE);
+  });
+
+  it('a proxy that answers after every byte went out: the table may still land', async () => {
+    expect(await failure({ status: 502, body: '<html>Bad Gateway</html>' })).toBe(
+      TABLE_IMPORT_MAY_LAND,
+    );
+    expect(await failure({ status: 504, body: '<html>Gateway Timeout</html>' })).toBe(
+      TABLE_IMPORT_MAY_LAND,
+    );
   });
 
   it('a dropped connection says so', () => {

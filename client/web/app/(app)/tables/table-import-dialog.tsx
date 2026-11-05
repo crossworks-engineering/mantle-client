@@ -17,6 +17,8 @@ import type { TableDetail } from '@mantle/content-core/table-model';
 import { UploadProgressBar } from '@/components/uploads/upload-provider';
 import {
   TABLE_IMPORT_ACCEPT,
+  TABLE_IMPORT_MAY_LAND,
+  TableImportAnswerLost,
   importTable,
   tableImportError,
   tableImportRefusal,
@@ -35,10 +37,13 @@ export function TableImportDialog({
   open,
   onOpenChange,
   onImported,
+  onMayLand,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImported: (table: TableDetail) => void;
+  /** A table may have landed that this dialog never heard about. */
+  onMayLand: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +58,8 @@ export function TableImportDialog({
   const building = busy && sent !== null && sent.loaded >= sent.total;
 
   const close = () => {
+    // Refresh again now: the table may have landed since the answer was lost.
+    if (error === TABLE_IMPORT_MAY_LAND) onMayLand();
     sending.current?.abort();
     sending.current = null;
     setFile(null);
@@ -93,6 +100,7 @@ export function TableImportDialog({
     } catch (err) {
       if (err instanceof UploadAbortedError) return; // Cancel: already closed.
       if (err instanceof UploadHttpError && err.status === 401) bounceToLogin();
+      if (err instanceof TableImportAnswerLost) onMayLand();
       sending.current = null;
       setBusy(false);
       setSent(null);
