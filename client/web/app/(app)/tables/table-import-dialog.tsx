@@ -15,7 +15,7 @@ import {
 } from '@mantle/web-ui/ui/dialog';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import type { TableDetail } from '@mantle/content-core/table-model';
-import { UploadProgressBar } from '@/components/uploads/upload-provider';
+import { UploadProgressBar, useUnloadGuard } from '@/components/uploads/upload-provider';
 import {
   TABLE_IMPORT_ACCEPT,
   TABLE_IMPORT_CLOSE_AFTER_MS,
@@ -61,6 +61,8 @@ export function TableImportDialog({
   const pickerRef = useRef<HTMLInputElement | null>(null);
   const sending = useRef<AbortController | null>(null);
   const left = useRef(false);
+
+  useUnloadGuard(busy);
 
   // Leaving the screen stops bytes still going out, and `submit` says so. Once
   // all are sent the table lands anyway, and the answer is a toast.
