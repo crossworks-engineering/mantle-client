@@ -343,8 +343,7 @@ test('an expired session goes to login, back to here afterwards', async ({ page 
   expect(new URL(page.url()).searchParams.get('next')).toBe('/tables');
 });
 
-const HINT =
-  'Stays in Files, with a read-only database. For a Table, use Import on the Tables screen.';
+const HINT = 'Spreadsheets stay in Files. For a Table, use Import on the Tables screen.';
 
 async function uploadToFiles(page: Page, name: string) {
   await page.goto('/files');
