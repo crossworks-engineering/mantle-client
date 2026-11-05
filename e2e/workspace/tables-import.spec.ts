@@ -175,6 +175,12 @@ test('Cancel part way through stops the upload; nothing lands', async ({ page })
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeEnabled();
   await expect(dialog.getByText('Making the table')).toHaveCount(0);
 
+  // Only the buttons are a way out: Escape, a stray click and the X stop nothing.
+  await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.mouse.click(5, 5);
+  await expect(dialog).toBeVisible();
+
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toBeHidden();
   expect((await stopped).failure()?.errorText).toBe('net::ERR_ABORTED');
@@ -202,6 +208,8 @@ test('while the brain builds, every way out is off; later a Close only hides', a
 
   await page.clock.fastForward(121_000);
   await expect(dialog.getByRole('status')).toContainText('The table may still appear in the list.');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
   const before = await readsSoFar();
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(dialog).toBeHidden();
