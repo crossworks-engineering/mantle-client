@@ -21,6 +21,8 @@ test.afterEach(async () => {
 
 const CSV = { mimeType: 'text/csv', buffer: Buffer.from('Name\nFirst row\n') };
 const NEEDS_UPDATE = 'This brain needs an update before it can import a table.';
+const MAY_LAND =
+  'The file was sent, but the answer was lost. The table may still appear. Check the list before you try again.';
 
 async function openImport(page: Page) {
   await page.goto('/tables');
@@ -115,6 +117,22 @@ test('a brain with no such route says it needs an update', async ({ page }) => {
   api.tableImportAnswer = { status: 405, body: {} };
   await dialog.getByRole('button', { name: 'Import table' }).click();
   await expect(dialog.getByRole('alert')).toHaveText(NEEDS_UPDATE);
+});
+
+const listReads = () =>
+  api.requests.filter((r) => r.method === 'GET' && r.path === '/api/tables').length;
+
+test('a proxy answer after all the bytes: check the list first', async ({ page }) => {
+  await signIn(page, 'admin');
+  const dialog = await openImport(page);
+  const before = listReads();
+
+  api.tableImportAnswer = { status: 504, body: '<html>Gateway Timeout</html>' };
+  await pickAndSend(page);
+  await expect(dialog.getByRole('alert')).toHaveText(MAY_LAND);
+  await expect.poll(listReads).toBeGreaterThan(before);
+  // The file stays: a try again is still the user's call.
+  await expect(dialog.getByRole('button', { name: 'Import table' })).toBeEnabled();
 });
 
 test('an expired session goes to login, back to here afterwards', async ({ page }) => {

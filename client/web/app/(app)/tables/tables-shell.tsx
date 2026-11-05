@@ -604,6 +604,10 @@ export function TablesShell() {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImported={(table) => void openNewTable(table.id)}
+        onMayLand={() => {
+          void queryClient.invalidateQueries({ queryKey: ['tables'] });
+          void queryClient.invalidateQueries({ queryKey: treeKey('tables') });
+        }}
       />
 
       {/* Delete confirm */}
