@@ -28,6 +28,15 @@ describe('captureRect', () => {
     });
   });
 
+  it("scales the page's CSS pixels by its zoom", () => {
+    expect(captureRect({ x: 10, y: 20, w: 100, h: 50 }, content, 1.5)).toEqual({
+      x: 15,
+      y: 30,
+      width: 150,
+      height: 75,
+    });
+  });
+
   it('refuses anything that is not four finite numbers, or too small', () => {
     for (const raw of [
       null,

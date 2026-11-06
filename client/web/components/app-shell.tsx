@@ -572,7 +572,7 @@ function ShellFrame({
         onToggleNav={toggleNav}
         showCollapse={!inDrawer}
         // The launchers open surfaces that live BEHIND the modal drawer
-        // (assistant z-20, help z-20, pick-mode z-40 vs the Sheet's z-50), so
+        // (assistant z-20, help z-20 vs the Sheet's z-50), so
         // in the drawer every toolbar tap must also close it or the tap
         // appears dead. Not wired to navigation like the other bands' —
         // launchers don't navigate — hence its own prop.

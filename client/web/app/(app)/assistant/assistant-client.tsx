@@ -110,8 +110,9 @@ export function AssistantClient({
     attachContext,
   } = useAssistantDock();
   // Everything that rides this turn as context: the screen-pinned node (the open
-  // page/table/app) PLUS any pick-mode chips, deduped. Pinned nodes survive a
-  // send (they stay attached while you're on the screen); pick-mode chips clear.
+  // page/table/app) PLUS any attached chips (uploads, screenshots), deduped.
+  // Pinned nodes survive a send (they stay attached while you're on the
+  // screen); attached chips clear.
   const pickedContext = useMemo(() => {
     const seen = new Set(pinnedContext.map((r) => r.id));
     return pendingContext.filter((r) => !seen.has(r.id));
@@ -1298,7 +1299,7 @@ export function AssistantClient({
                 question without leaving the screen. Focused-section chips (the
                 Pages gutter marks, with a snippet of each marked block) follow,
                 so it's unambiguous the assistant sees exactly what you selected.
-                Pick-mode chips come last and clear after a send. */}
+                Attached chips come last and clear after a send. */}
             {linkedUploads.length > 0 && (
               <div className="flex flex-wrap gap-1.5" aria-live="polite">
                 {linkedUploads.map((u) => (

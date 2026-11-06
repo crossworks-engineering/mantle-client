@@ -11,12 +11,13 @@
  *  - A browser shares this tab once (`getDisplayMedia`), one frame is drawn
  *    and cropped, and the share stops at once. The browser asks every time.
  *
- * The brain decides where the file lands: an Admin user's goes to
- * Auto-filed / Screenshots / <month>, anyone else's to their own private
- * workspace. That is why /api/screenshots is NOT a create route the
- * switcher's `?ws=` is added to (lib/create-workspace.ts): a screenshot can
- * hold anything that was on screen, so it never lands in a shared workspace
- * by itself.
+ * The brain decides where the file lands, by the export rule: an Admin
+ * user's goes to Auto-filed / Screenshots / <month> in Admin (an Admin user
+ * has no private workspace, so every Admin user reads it, as an export);
+ * anyone else's to their own private workspace. That is why
+ * /api/screenshots is NOT a create route the switcher's `?ws=` is added to
+ * (lib/create-workspace.ts): a screenshot can hold anything that was on
+ * screen, so it never lands in a workspace the switcher shows by itself.
  */
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
@@ -130,8 +131,14 @@ export type SavedScreenshot = {
   landedIn: { id: string; name: string } | null;
 };
 
+/** The brain's upload cap for a screenshot. */
+export const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
+
 /** Save a captured PNG as a screenshot item. */
 export async function saveScreenshot(png: Blob, meta: ScreenshotMeta): Promise<SavedScreenshot> {
+  if (png.size > MAX_SCREENSHOT_BYTES) {
+    throw new Error('The area is too large to save (over 10 MB). Capture a smaller area.');
+  }
   const fd = new FormData();
   fd.set('meta', JSON.stringify(meta));
   fd.set('file', new File([png], 'screenshot.png', { type: 'image/png' }));
@@ -174,6 +181,9 @@ export async function shareThisTab(): Promise<MediaStream> {
   return navigator.mediaDevices.getDisplayMedia(options);
 }
 
+/** Frames let pass before the one that is kept (see grabFrame). */
+const FRESH_FRAMES = 3;
+
 export function stopStream(stream: MediaStream | null): void {
   for (const track of stream?.getTracks() ?? []) track.stop();
 }
@@ -187,14 +197,17 @@ export async function grabFrame(stream: MediaStream, rect: Rect, view: Size): Pr
   video.srcObject = stream;
   try {
     await video.play();
-    // A fresh share can hand over a black first frame; wait for a real one.
-    await new Promise<void>((resolve) => {
-      const rvfc = (
-        video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void }
-      ).requestVideoFrameCallback;
-      if (rvfc) rvfc.call(video, () => resolve());
-      else setTimeout(resolve, 120);
-    });
+    // A fresh share can hand over a black first frame, or one taken while
+    // the selection layer was still on screen: let a few frames pass.
+    const rvfc = (
+      video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void }
+    ).requestVideoFrameCallback;
+    for (let i = 0; i < FRESH_FRAMES; i++) {
+      await new Promise<void>((resolve) => {
+        if (rvfc) rvfc.call(video, () => resolve());
+        else setTimeout(resolve, 120);
+      });
+    }
     const frame = { w: video.videoWidth, h: video.videoHeight };
     if (!frameIsThisTab(frame, view)) {
       throw new Error('Share this tab to capture it, not a window or the whole screen.');

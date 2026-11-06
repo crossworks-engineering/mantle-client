@@ -637,10 +637,12 @@ function registerIpc(): void {
   // in a rectangle clamped to its content (capture.ts). PNG bytes back.
   ipcMain.handle('desktop:capture', async (event, raw: unknown) => {
     if (!vaultProfileFor(event)) throw new Error('capture: not this app');
+    // Only the page itself, never a frame inside it.
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error('capture: not this app');
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) throw new Error('capture: no window');
     const [width, height] = win.getContentSize();
-    const rect = captureRect(raw, { width, height });
+    const rect = captureRect(raw, { width, height }, event.sender.getZoomFactor());
     if (!rect) throw new Error('capture: invalid area');
     const image = await event.sender.capturePage(rect);
     return new Uint8Array(image.toPNG());

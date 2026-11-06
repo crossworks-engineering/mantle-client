@@ -94,7 +94,7 @@ export type AssistantPanelState = 'closed' | 'open' | 'min';
 
 /** The content surfaces that can be attached as assistant context — the single
  *  source of truth for the set. `ContextKind` is derived from it, so runtime
- *  consumers (pick-mode's guard) and the type cannot drift apart: adding a kind
+ *  consumers and the type cannot drift apart: adding a kind
  *  here is the only edit needed.
  *
  *  Every entry names a `nodes.type` in the brain, but see `ContextRef` — that
@@ -210,7 +210,7 @@ type AssistantDockApi = {
   setActiveAgentSlug: (slug?: string) => void;
   // ── surface-pinned context (the open page/table/app rides every turn) ──
   /** A node pinned by the current screen — sent with EVERY turn (survives a send,
-   *  unlike pick-mode chips) so the specialist always knows what you're editing. */
+   *  unlike attached chips) so the specialist always knows what you're editing. */
   pinnedContext: ContextRef[];
   /** Replace the pinned set (the surface hook owns this; cleared on leave). */
   setPinnedContext: (refs: ContextRef[]) => void;
