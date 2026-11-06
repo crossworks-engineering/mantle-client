@@ -93,7 +93,8 @@ else is a plain 404.
   (played through the dev build's `window.__mantleAgentCalls`): off by
   default, the profile menu's opt-in, the first call asks the user, allowed
   calls answer with this window's id, a write the agent sets off names its
-  call (`x-mantle-agent-call`) and a setting the user allows goes without it.
+  call (`x-mantle-agent-call`) and a setting the user allows goes without it;
+  a member turns it on too, and its window answers its own agent.
 - `agent-hands.spec.ts`: an agent driving the window (lib/agent-ui, through
   the dev build's `window.__mantleAgentHands`): the screen read as labelled
   controls, typing and clicking, Stop, a settings change held for the

@@ -170,6 +170,27 @@ test('Stop stops the agent: its turn is cancelled and later calls answer stopped
   await expect(page.getByText('Saskia is using this window.')).toHaveCount(0);
 });
 
+test('a member turns it on, and its own window answers its agent', async ({ page }) => {
+  await signIn(page, 'member');
+  await page
+    .getByRole('button', { name: /Mo Member/ })
+    .first()
+    .click();
+  await page.getByRole('menuitemcheckbox', { name: 'Let agents use this window' }).click();
+  await expect.poll(() => api.agentUi.member).toBe(true);
+  await page.keyboard.press('Escape');
+
+  await ready(page);
+  expect((await call(page, 'screen')).result).toMatchObject({
+    ok: false,
+    error: 'needs_consent',
+  });
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+  const read = await call(page, 'screen');
+  expect(read.role).toBe('member');
+  expect(read.result).toMatchObject({ ok: true });
+});
+
 test('Not now refuses, and a call is never run twice', async ({ page }) => {
   api.agentUi.admin = true;
   await signIn(page, 'admin');

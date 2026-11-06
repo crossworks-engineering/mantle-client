@@ -308,9 +308,9 @@ export function ProfileMenu({
         <DropdownMenuItem onSelect={() => openLessonPicker()} className="cursor-pointer">
           <GraduationCap className="size-4" /> Lessons
         </DropdownMenuItem>
-        {/* An Admin user's in-app agents may drive the window once this is on
-            (lib/agent-ui/turn-calls); a member's turns do not stream yet. */}
-        {manages ? <AgentUiToggle /> : null}
+        {/* In-app agents may drive this window once this is on
+            (lib/agent-ui/turn-calls): an Admin user's and a member's. */}
+        <AgentUiToggle />
         {manages ? (
           <DropdownMenuItem asChild>
             <Link href="/settings/profile" onClick={onNavigate} className="cursor-pointer">

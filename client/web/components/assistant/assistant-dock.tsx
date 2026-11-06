@@ -72,7 +72,9 @@ export type TurnResponse = {
  *  turn id (202) — the reply then arrives over the live stream, and the caller
  *  reconciles to the durable row. The dock drives its own mini-chat off the
  *  stream in that case; the /assistant page reconciles its transcript. */
-export type TurnAck = { turnId: string; warnings?: string[] };
+/** `stream`: the brain streams this turn live (a member's turn too, on a
+ *  brain that streams them); absent from an older brain. */
+export type TurnAck = { turnId: string; warnings?: string[]; stream?: boolean };
 export type TurnPostResult = TurnResponse | TurnAck;
 
 export type RunTurnInput = {
@@ -436,11 +438,12 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const adminUserRef = useRef(adminUser);
   adminUserRef.current = adminUser;
   // Whether this login lets agents use the window (lib/agent-ui/turn-calls):
-  // read once, so a turn can name the window. An Admin user's only: a
-  // member's turns do not stream, so its window is never driven.
+  // read once, so a turn can name the window. Every login with a chat (an
+  // Admin user or a member); a brain whose member turns do not stream never
+  // offers a member the ui tools, so the setting changes nothing there.
   useEffect(() => {
-    if (adminUser) void loadAgentUiSetting();
-  }, [adminUser]);
+    void loadAgentUiSetting();
+  }, []);
 
   // ── Global panel UI state ──
   const [panel, setPanel] = useState<AssistantPanelState>('closed');
@@ -808,6 +811,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       botId: string,
       target: { agentSlug?: string; nodeId: string | null },
       sinceIso: string,
+      /** The brain said this turn streams (its 202's `stream`). */
+      streams = false,
     ) => {
       // A new turn supersedes whatever was still streaming.
       stopDockStream();
@@ -817,9 +822,11 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       // The reply row's durable id, once `turn-start` says it. The safety poll
       // reads it lazily, and falls back to pairing by time when it never comes.
       let outboundId: string | null = null;
-      // No live stream for a login that is not an Admin user (W7c): the poll
-      // alone reads the reply, so it may give up as if the stream had died.
-      const live = adminUserRef.current;
+      // An Admin user's turn always streams. Anyone else's streams when the
+      // brain says so in its 202 (`stream: true`, member turns stream since
+      // agent UI phase 3); else the poll alone reads the reply, so it may
+      // give up as if the stream had died (W7c).
+      const live = adminUserRef.current || streams;
       let streamDead = !live;
       const subscribedAt = Date.now();
 
@@ -1072,6 +1079,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
                   firstSentAtMs: startedAt,
                   nowMs: Date.now(),
                 }),
+                data.stream === true,
               );
               return data;
             }

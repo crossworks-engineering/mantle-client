@@ -127,6 +127,11 @@ export const MEMBER_OPEN: readonly RegExp[] = [
   rx('POST', `/api/(pages|notes|draws|tables|tables/import|apps|files/files|files/folders)`),
   // An area screenshot: any login's, saved in its own scope.
   rx('POST', `/api/screenshots`),
+  // Agent UI for members: the login's own opt-in, its own turn's live
+  // stream and cancel, and its window's answers to the agent's calls.
+  rx('(GET|PUT)', `/api/profile/agent-ui`),
+  rx('GET', `/api/assistant/turn/[^/]+/stream`),
+  rx('POST', `/api/assistant/turn/[^/]+/(cancel|ui/${ID})`),
   rx('(PATCH|DELETE)', `/api/(pages|notes|draws|tables|apps|files/files|files/folders)/${ID}`),
   rx('PUT', `/api/(pages|draws|tables|apps)/${ID}/draft`),
   rx('DELETE', `/api/apps/${ID}/draft`),
