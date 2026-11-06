@@ -93,6 +93,31 @@ export function claimTurn(turnId: string): void {
   if (enabled) ownTurns.add(turnId);
 }
 const turnAgents = new Map<string, string>();
+/** Turns the user stopped: their later calls answer `stopped`. */
+const stoppedTurns = new Set<string>();
+let watching = false;
+
+/**
+ * Stop on the bar (or Esc) ends the hands' session. While an agent's turn
+ * is running here, that is the user stopping the agent itself: its turn is
+ * cancelled, every later call of it answers `stopped`, and the next agent
+ * has to ask again before it may use this window.
+ */
+function watchStop(): void {
+  if (watching) return;
+  watching = true;
+  agentHands().subscribe((s) => {
+    if (s.active || turnAgents.size === 0) return;
+    for (const turnId of turnAgents.keys()) {
+      stoppedTurns.add(turnId);
+      void apiFetch(`/api/assistant/turn/${encodeURIComponent(turnId)}/cancel`, {
+        method: 'POST',
+      }).catch(() => undefined);
+    }
+    turnAgents.clear();
+    consent = 'unasked';
+  });
+}
 
 /** Run one call from the brain and answer it. Each call id once, whichever
  *  of the page's stream readers hears it first. */
@@ -107,6 +132,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
     }).catch(() => undefined);
 
   if (!enabled) return void answer(refuse('no_session'));
+  if (stoppedTurns.has(turnId)) return void answer(refuse('stopped'));
   if (consent !== 'allowed') {
     // Answer now; the agent asks again once the user has allowed it.
     void answer(refuse('needs_consent'));
@@ -117,9 +143,10 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
     }
     return;
   }
+  watchStop();
   const hands = agentHands();
-  if (!hands.get().active) hands.begin(agentName);
   turnAgents.set(turnId, agentName);
+  if (!hands.get().active) hands.begin(agentName);
   const result = await hands.withCall(call.callId, () => run(call));
   await answer(result);
 }
@@ -127,6 +154,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
 /** The agent's turn is over: its session ends with it. */
 export function endAgentTurn(turnId: string): void {
   ownTurns.delete(turnId);
+  // Deleted before the session ends, so its end is not read as Stop.
   if (!turnAgents.delete(turnId)) return;
   if (turnAgents.size === 0) agentHands().end();
 }

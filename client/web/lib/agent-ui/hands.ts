@@ -132,6 +132,7 @@ export class AgentHands {
     this.state.held?.answer(false);
     this.unwrapFetch();
     this.refs.clear();
+    this.callId = null;
     this.set(IDLE);
   }
 
@@ -152,14 +153,12 @@ export class AgentHands {
     });
   }
 
-  /** Run `fn` as the in-app agent's call `callId`. */
+  /** Run `fn` as the in-app agent's call `callId`. Every write the page
+   *  makes from then until the session ends names the last call (a
+   *  debounced save lands after the action has returned). */
   async withCall<T>(callId: string, fn: () => Promise<T>): Promise<T> {
     this.callId = callId;
-    try {
-      return await fn();
-    } finally {
-      this.callId = null;
-    }
+    return fn();
   }
 
   /** Go on after the user took over (the user said so). */
@@ -185,7 +184,10 @@ export class AgentHands {
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      const risk = this.state.active && !this.state.paused ? riskOfRequest(method, url) : null;
+      const risk =
+        this.state.active && !this.state.paused && !agentOwnRequest(url)
+          ? riskOfRequest(method, url, typeof init?.body === 'string' ? init.body : undefined)
+          : null;
       let userAllowed = false;
       if (risk) {
         const allowed = await this.ask(risk, method, url);
@@ -197,7 +199,15 @@ export class AgentHands {
       }
       // A request an agent's call set off names the call, unless the user
       // allowed it: the brain refuses a risky one that names a call.
-      if (this.callId && !userAllowed && method !== 'GET' && method !== 'HEAD') {
+      if (
+        this.callId &&
+        this.state.active &&
+        !this.state.paused &&
+        !userAllowed &&
+        method !== 'GET' &&
+        method !== 'HEAD' &&
+        !agentOwnRequest(url)
+      ) {
         const headers = new Headers(
           init?.headers ?? (input instanceof Request ? input.headers : undefined),
         );
@@ -412,6 +422,18 @@ export class AgentHands {
     }
     return false;
   }
+}
+
+/** The window's own answer to an agent's call, and a turn's cancel: never
+ *  held or named, or the agent could not be answered or stopped. */
+function agentOwnRequest(url: string): boolean {
+  let path = url;
+  try {
+    path = new URL(url, location.href).pathname;
+  } catch {
+    /* the raw text */
+  }
+  return /^\/api\/assistant\/turn\/[^/]+\/(ui\/[^/]+|cancel)$/.test(path);
 }
 
 /** A full press: pointer and mouse down and up, then click. Radix opens a

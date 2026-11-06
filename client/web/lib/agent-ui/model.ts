@@ -116,6 +116,15 @@ export function safeAgentRoute(path: unknown): string | null {
   if (!path.startsWith('/') || path.startsWith('//')) return null;
   if (/[?#\\]/.test(path)) return null;
   if ([...path].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)) return null;
+  // A path that changes when the browser resolves it (`/x/../login`)
+  // could reach a refused screen: only a path already in its own form.
+  let resolved: string;
+  try {
+    resolved = new URL(path, 'http://app.invalid').pathname;
+  } catch {
+    return null;
+  }
+  if (resolved !== path) return null;
   if (/^\/(login|logout|auth|invite|api)(\/|$)/.test(path)) return null;
   return path;
 }
@@ -132,6 +141,16 @@ export const RISK_TEXT: Record<RequestRisk, string> = {
 };
 
 const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
+  // A new turn or a thread continued: the agent typing into the chat and
+  // sending (its own answer and a cancel are let through by the hands).
+  [/^\/api\/assistant\/(turn|threads\/[^/]+\/continue)$/, 'send'],
+  [/\/restore$/, 'publish'],
+  [/^\/api\/(recall\/maps|entities\/merge)(\/|$)/, 'publish'],
+  [/^\/api\/apps\/[^/]+\/tool-broker$/, 'settings'],
+  [
+    /^\/api\/(pending|mcp-settings|model-pools|heartbeats|tools|dev-tools|connectors|assistants|integrations|services|maintenance|debug)(\/|$)/,
+    'settings',
+  ],
   [/\/(trash|purge|empty)(\/|$)/, 'delete'],
   [/\/(send|reply|forward|messages|messenger|email|emails|mail|telegram|notify)(\/|$)/, 'send'],
   [/\/(share|shares|grants|access|members|invites|visibility|unshare|move)(\/|$)/, 'share'],
@@ -149,7 +168,7 @@ const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
  * setting. Erring wide is the point: an unneeded question costs a click, a
  * missed one could cost the user's data.
  */
-export function riskOfRequest(method: string, url: string): RequestRisk | null {
+export function riskOfRequest(method: string, url: string, body?: string): RequestRisk | null {
   const m = method.toUpperCase();
   if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return null;
   if (m === 'DELETE') return 'delete';
@@ -160,6 +179,9 @@ export function riskOfRequest(method: string, url: string): RequestRisk | null {
     return 'settings';
   }
   for (const [re, risk] of RISKY_PATHS) if (re.test(path)) return risk;
+  // A write that makes something public or shares it by a field of an
+  // ordinary edit (a page's visibility, a folder's share).
+  if (body && /"(visibility|published|public|share|shares)"\s*:/.test(body)) return 'share';
   return null;
 }
 

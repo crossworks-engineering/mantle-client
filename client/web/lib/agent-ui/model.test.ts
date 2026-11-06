@@ -27,6 +27,14 @@ describe('riskOfRequest', () => {
     expect(riskOfRequest('POST', '/api/access-keys')).toBe('settings');
   });
 
+  it('holds a new turn, a publish, a restore and a share by field', () => {
+    expect(riskOfRequest('POST', '/api/assistant/turn')).toBe('send');
+    expect(riskOfRequest('PATCH', '/api/recall/maps/1', '{"published":true}')).toBe('publish');
+    expect(riskOfRequest('POST', '/api/recall/revisions/1/restore')).toBe('publish');
+    expect(riskOfRequest('PATCH', '/api/pages/1', '{"visibility":"public"}')).toBe('share');
+    expect(riskOfRequest('PATCH', '/api/pending/1')).toBe('settings');
+  });
+
   it('lets an ordinary create or edit through', () => {
     expect(riskOfRequest('POST', '/api/tasks?ws=1')).toBeNull();
     expect(riskOfRequest('PATCH', '/api/notes/1')).toBeNull();
@@ -51,6 +59,8 @@ describe('safeAgentRoute', () => {
       '/logout',
       '/api/files/files',
       '/x\u0000y',
+      '/x/../login',
+      '/tasks/./x',
       '',
       42,
     ]) {

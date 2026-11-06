@@ -153,6 +153,23 @@ test('a turn this window did not send is not acted on here', async ({ page }) =>
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
 
+test('Stop stops the agent: its turn is cancelled and later calls answer stopped', async ({
+  page,
+}) => {
+  api.agentUi.admin = true;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+  expect((await call(page, 'screen')).result).toMatchObject({ ok: true });
+
+  await page.getByRole('button', { name: 'Stop' }).click();
+  await expect.poll(() => api.asked('admin')).toContain(`POST /api/assistant/turn/${TURN}/cancel`);
+  const after = await call(page, 'screen');
+  expect(after.result).toMatchObject({ ok: false, error: 'stopped' });
+  await expect(page.getByText('Saskia is using this window.')).toHaveCount(0);
+});
+
 test('Not now refuses, and a call is never run twice', async ({ page }) => {
   api.agentUi.admin = true;
   await signIn(page, 'admin');
