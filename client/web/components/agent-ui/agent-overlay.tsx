@@ -6,7 +6,7 @@ import { Hand, MousePointer2, ShieldAlert } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { agentHands, type HandsState } from '@/lib/agent-ui/hands';
 import { RISK_TEXT } from '@/lib/agent-ui/model';
-import { handleUiCall, loadAgentUiSetting, WINDOW_ID } from '@/lib/agent-ui/turn-calls';
+import { claimTurn, handleUiCall, loadAgentUiSetting, WINDOW_ID } from '@/lib/agent-ui/turn-calls';
 import { placeCard } from '@/lib/tour/model';
 
 /** How long a held request's Allow stays disarmed, so a click already on
@@ -45,6 +45,7 @@ export function AgentOverlay() {
       (window as unknown as { __mantleAgentHands?: unknown }).__mantleAgentHands = hands;
       (window as unknown as { __mantleAgentCalls?: unknown }).__mantleAgentCalls = {
         handleUiCall,
+        claimTurn,
         loadAgentUiSetting,
         windowId: WINDOW_ID,
       };

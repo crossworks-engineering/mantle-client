@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  claimTurn,
   endAgentTurn,
   handleUiCall,
   loadAgentUiSetting,
@@ -1058,6 +1059,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
               // bot bubble pending and let the stream type it out + settle it.
               // plus the durable-row safety poll, bounded in the SERVER's clock
               // (the ack's Date header) so client clock skew cannot hide the row.
+              // Its ui calls run in this window, and no other.
+              claimTurn(data.turnId);
               subscribeDockTurn(
                 data.turnId,
                 botId,

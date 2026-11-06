@@ -83,13 +83,22 @@ export function parseUiCall(data: unknown): UiCall | null {
 
 let consent: 'unasked' | 'asking' | 'allowed' | 'refused' = 'unasked';
 const handled = new Set<string>();
+/** The turns this window sent naming itself: only their calls run here. A
+ *  call event names no window, and another tab reading the same turn must
+ *  not act on it. */
+const ownTurns = new Set<string>();
+
+/** This window sent `turnId` with its window id. */
+export function claimTurn(turnId: string): void {
+  if (enabled) ownTurns.add(turnId);
+}
 const turnAgents = new Map<string, string>();
 
 /** Run one call from the brain and answer it. Each call id once, whichever
  *  of the page's stream readers hears it first. */
 export async function handleUiCall(turnId: string, raw: unknown, agentName: string): Promise<void> {
   const call = parseUiCall(raw);
-  if (!call || handled.has(call.callId)) return;
+  if (!call || handled.has(call.callId) || !ownTurns.has(turnId)) return;
   handled.add(call.callId);
   const answer = (result: AgentResult<object>) =>
     apiSend(`/api/assistant/turn/${encodeURIComponent(turnId)}/ui/${call.callId}`, 'POST', {
@@ -117,6 +126,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
 
 /** The agent's turn is over: its session ends with it. */
 export function endAgentTurn(turnId: string): void {
+  ownTurns.delete(turnId);
   if (!turnAgents.delete(turnId)) return;
   if (turnAgents.size === 0) agentHands().end();
 }

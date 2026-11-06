@@ -40,20 +40,40 @@ async function call(page: Page, action: string, args: Record<string, unknown> = 
 
 async function ready(page: Page) {
   await page.waitForFunction(() => '__mantleAgentCalls' in window);
-  await page.evaluate(() =>
-    (
+  await page.evaluate(async (turn) => {
+    const calls = (
       window as unknown as {
-        __mantleAgentCalls: { loadAgentUiSetting: (f: boolean) => Promise<boolean> };
+        __mantleAgentCalls: {
+          loadAgentUiSetting: (f: boolean) => Promise<boolean>;
+          claimTurn: (t: string) => void;
+        };
       }
-    ).__mantleAgentCalls.loadAgentUiSetting(true),
-  );
+    ).__mantleAgentCalls;
+    await calls.loadAgentUiSetting(true);
+    // As the dock does when its turn is accepted.
+    calls.claimTurn(turn);
+  }, TURN);
 }
 
-test('the setting is off by default: a call is refused and nothing is asked', async ({ page }) => {
+test('the setting is off by default: the window claims no turn and runs nothing', async ({
+  page,
+}) => {
   await signIn(page, 'admin');
   await ready(page);
-  const a = await call(page, 'screen');
-  expect(a.result).toMatchObject({ ok: false, error: 'no_session' });
+  const id = callId();
+  await page.evaluate(
+    ([turn, data]) => {
+      void (
+        window as unknown as {
+          __mantleAgentCalls: { handleUiCall: (t: string, d: unknown, a: string) => Promise<void> };
+        }
+      ).__mantleAgentCalls.handleUiCall(turn, data, 'Saskia');
+    },
+    [TURN, { callId: id, action: 'screen', args: {} }] as const,
+  );
+  await page.waitForTimeout(500);
+  // The brain offers no ui tools then either; nothing runs and nothing is asked.
+  expect(api.uiAnswers).toHaveLength(0);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
 
@@ -111,6 +131,26 @@ test('the first call asks the user; once allowed, calls run and answer with this
   const put = api.requests.find((r) => r.method === 'PUT' && r.path === '/api/profile/sounds');
   expect(put).toBeTruthy();
   expect(put?.agentCall).toBeUndefined();
+});
+
+test('a turn this window did not send is not acted on here', async ({ page }) => {
+  api.agentUi.admin = true;
+  await signIn(page, 'admin');
+  await ready(page);
+  const id = callId();
+  await page.evaluate(
+    ([data]) => {
+      void (
+        window as unknown as {
+          __mantleAgentCalls: { handleUiCall: (t: string, d: unknown, a: string) => Promise<void> };
+        }
+      ).__mantleAgentCalls.handleUiCall('another-turn', data, 'Saskia');
+    },
+    [{ callId: id, action: 'screen', args: {} }] as const,
+  );
+  await page.waitForTimeout(500);
+  expect(api.uiAnswers.find((a) => a.callId === id)).toBeUndefined();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
 
 test('Not now refuses, and a call is never run twice', async ({ page }) => {
