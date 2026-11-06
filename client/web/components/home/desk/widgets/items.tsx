@@ -330,6 +330,58 @@ function hash(id: string): number {
   return Math.abs(h);
 }
 
+/** A sticky's paper: its own tint, a slight shadow. */
+const STICKY_PAPER = 'relative flex h-full min-h-28 flex-col gap-1 rounded-sm p-3 pt-4 shadow-md';
+
+/** A strip of tape across a sticky's top. */
+function StickyTape() {
+  return (
+    <span
+      aria-hidden
+      className="absolute -top-2 left-1/2 h-4 w-12 -translate-x-1/2 rotate-[-3deg] rounded-[2px] bg-background/55 shadow-sm"
+    />
+  );
+}
+
+/** How many blank stickies an empty board shows: up to three. */
+export function blankStickies(count: number): number {
+  return Math.max(1, Math.min(count, 3));
+}
+
+/** The tilts of the blank stickies, so they sit like the real ones. */
+const BLANK_TILTS = [-1.8, 0.9, -0.9];
+
+/**
+ * Blank stickies on the board while the notes load and when there are none,
+ * instead of dark blocks. Once loaded, the first one says how to fill it.
+ */
+function BlankStickies({ n, loading }: { n: number; loading: boolean }) {
+  return (
+    <ul className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-4 p-3 pt-2">
+      {Array.from({ length: n }, (_, i) => (
+        <li key={i} className="min-h-0" aria-hidden={loading || i > 0 || undefined}>
+          <div
+            style={{ transform: `rotate(${BLANK_TILTS[i] ?? 0}deg)` }}
+            className={cn(
+              STICKY_PAPER,
+              loading && 'animate-pulse opacity-70',
+              TINT_CLASSES[STICKY_TINTS[i] ?? 'amber'],
+            )}
+          >
+            <StickyTape />
+            {!loading && i === 0 ? (
+              <>
+                <span className="text-sm font-semibold leading-snug">No notes yet</span>
+                <span className="text-xs leading-relaxed opacity-85">Jot one in Quick note.</span>
+              </>
+            ) : null}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Markdown down to the words, for a sticky's few lines. */
 function plain(md: string): string {
   return md
@@ -430,16 +482,8 @@ export function StickyNotesWidget({
       bodyClassName="overflow-hidden"
     >
       <div ref={board}>
-        {latest.isPending ? (
-          <div className="flex gap-3 p-3">
-            {Array.from({ length: Math.min(count, 4) }, (_, i) => (
-              <Skeleton key={i} className="aspect-square w-36 rounded-sm" />
-            ))}
-          </div>
-        ) : notes.length === 0 ? (
-          <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
-            No notes yet. Jot one in Quick note.
-          </div>
+        {latest.isPending || notes.length === 0 ? (
+          <BlankStickies n={blankStickies(count)} loading={latest.isPending} />
         ) : (
           <ul className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-4 p-3 pt-2">
             {notes.map((n, i) => {
@@ -453,17 +497,13 @@ export function StickyNotesWidget({
                     href={`/notes/${encodeURIComponent(n.id)}`}
                     style={{ transform: `rotate(${tilt * 0.9}deg)`, animationDelay: `${i * 60}ms` }}
                     className={cn(
-                      'relative flex h-full min-h-28 flex-col gap-1 rounded-sm p-3 pt-4 shadow-md',
+                      STICKY_PAPER,
                       'transition-transform duration-200 ease-out hover:z-10 hover:!rotate-0 hover:scale-[1.04] hover:shadow-xl',
                       'animate-in fade-in zoom-in-95 fill-mode-both',
                       TINT_CLASSES[tint],
                     )}
                   >
-                    {/* A strip of tape across the top. */}
-                    <span
-                      aria-hidden
-                      className="absolute -top-2 left-1/2 h-4 w-12 -translate-x-1/2 rotate-[-3deg] rounded-[2px] bg-background/55 shadow-sm"
-                    />
+                    <StickyTape />
                     {n.pinned ? (
                       <Pin
                         className="absolute right-2 top-2 size-3 opacity-70"
