@@ -233,6 +233,44 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * The update notice (components/update-notice): a light that runs along the
+ * bar, and a slow breath on the logo. Under reduced motion the clamp above
+ * stops both, on purpose: the bar still steps and its words still change.
+ * ------------------------------------------------------------------------- */
+@keyframes mantle-notice-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes mantle-notice-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+.mantle-notice-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--background) 45%, transparent),
+    transparent
+  );
+  animation: mantle-notice-shimmer 1.8s ease-in-out infinite;
+}
+
+.mantle-notice-breathe {
+  animation: mantle-notice-breathe 4s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
  * A link's code, in flight (lib/link-code.ts).
  *
  * /client-signin and /invite render an inline script first that takes a

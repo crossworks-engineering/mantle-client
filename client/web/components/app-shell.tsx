@@ -58,6 +58,7 @@ import { LinkGate } from '@/components/oidc/link-gate';
 import { OfferCard } from '@/components/oidc/offer-card';
 import { ProviderAlertBanner } from '@/components/needs-you/provider-alert-banner';
 import { PickMode } from '@/components/assistant/pick-mode';
+import { UpdateNotice } from '@/components/update-notice/update-notice';
 import { ZenModeContext } from '@/components/layout/zen-mode';
 import { SearchPalette } from '@/components/search/search-palette';
 import { WorkspaceSwitcher } from '@/components/workspaces/workspace-switcher';
@@ -191,26 +192,31 @@ export function AppShell(props: {
   // AssistantDockProvider and HelpRailProvider so it can read both dock states
   // (each open column publishes its width to the frame's CSS vars). None of it
   // mounts until the shell has answered: a neutral screen until then.
+  // The update notice sits BESIDE the gate, not in the frame: a page opened
+  // while the brain restarts never gets past the gate, and must still show it.
   return (
-    <ShellGate ready={data !== undefined} failure={failure} retrying={retrying} onRetry={retry}>
-      {data !== undefined ? (
-        <ToastProvider>
-          <PageTitleProvider>
-            <UploadProvider>
-              <AssistantDockProvider>
-                <HelpRailProvider>
-                  <TourProvider>
-                    <LinkGate>
-                      <ShellFrame {...props} shell={data} />
-                    </LinkGate>
-                  </TourProvider>
-                </HelpRailProvider>
-              </AssistantDockProvider>
-            </UploadProvider>
-          </PageTitleProvider>
-        </ToastProvider>
-      ) : null}
-    </ShellGate>
+    <>
+      <UpdateNotice />
+      <ShellGate ready={data !== undefined} failure={failure} retrying={retrying} onRetry={retry}>
+        {data !== undefined ? (
+          <ToastProvider>
+            <PageTitleProvider>
+              <UploadProvider>
+                <AssistantDockProvider>
+                  <HelpRailProvider>
+                    <TourProvider>
+                      <LinkGate>
+                        <ShellFrame {...props} shell={data} />
+                      </LinkGate>
+                    </TourProvider>
+                  </HelpRailProvider>
+                </AssistantDockProvider>
+              </UploadProvider>
+            </PageTitleProvider>
+          </ToastProvider>
+        ) : null}
+      </ShellGate>
+    </>
   );
 }
 
