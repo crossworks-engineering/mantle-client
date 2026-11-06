@@ -11,8 +11,9 @@ import { cn } from '@mantle/web-ui/lib/utils';
  * `mantleos-icon.svg` is `mantle-sun-icon.svg`, and `mantleos-logo.svg` is
  * `mantle-logo-os.svg` (text as curves, so no font is needed). When the mark
  * changes there, copy them into `public/brand/` again. The stacked logo
- * (`mantle-logo-os-sun-icon.svg`) is not copied: it is for rare big square
- * placements and does not work small.
+ * (`mantleos-logo-stacked.svg`) is for rare big square placements and does
+ * not work small: only the update notice uses it
+ * (components/update-notice/update-notice-body.tsx).
  *
  * ONE file per mark, not a light/dark pair like the old Jackdaw art: the
  * MantleOS art is drawn in its own warm colours, with no ink that has to flip

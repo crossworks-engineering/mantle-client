@@ -10,6 +10,7 @@ import { LoginMark } from './login-mark';
 import { LoginCredit } from './login-credit';
 import { WithSearchParams } from '@/lib/search-params';
 import { useHydrated } from '@/lib/use-hydrated';
+import { UpdateNotice } from '@/components/update-notice/update-notice';
 
 /**
  * Owner sign-in screen, zero-secret flavor: no server session read (this app
@@ -87,6 +88,8 @@ function LoginPageView({ params }: { params: Query }) {
           slot, or the mark would appear twice on one screen. See
           `login-credit.tsx`. */}
       <LoginCredit show={hydrated && brand.kind !== 'product'} />
+      {/* A login sent here while the box restarts still sees why. */}
+      <UpdateNotice />
     </main>
   );
 }

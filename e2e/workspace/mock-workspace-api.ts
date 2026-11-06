@@ -155,6 +155,7 @@ const roleOfToken = (header: string | undefined): Role | null => {
 /** What anyone may ask, signed in or not: what /login asks, and sign-in. */
 const PUBLIC = [
   /^\/api\/version$/,
+  /^\/api\/update-notice$/,
   /^\/api\/appearance(\/|$)/,
   /^\/api\/auth\/bootstrap-state$/,
   /^\/api\/auth\/token$/,
@@ -234,6 +235,11 @@ export type MockWorkspaceApi = {
   status: MockStatus;
   /** Company sign-in's setup screen (mock-sso-setup.ts). */
   ssoSetup: MockSsoSetup;
+  /** GET /api/update-notice's answer; null answers 404, as a brain before
+   *  the route. */
+  updateNotice: { on: boolean; version: string } | null;
+  /** The brain is restarting: every request is the front door's 502. */
+  down: boolean;
   close: () => Promise<void>;
 };
 
@@ -268,6 +274,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     sounds: {},
     status: newMockStatus(),
     ssoSetup: newMockSsoSetup(),
+    updateNotice: null,
+    down: false,
     close: async () => undefined,
   };
 
@@ -759,9 +767,15 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     const path = url.pathname;
     const role = roleOfToken(req.headers.authorization);
     state.requests.push({ method, path, query: url.search, role: role ?? 'anon' });
+    if (state.down) return send(res, 502, 'text/html', '<h1>502 Bad Gateway</h1>');
 
     if (PUBLIC.some((re) => re.test(path))) {
       if (path === '/api/version') return json(res, 200, { version: 'mock' });
+      if (path === '/api/update-notice') {
+        return state.updateNotice
+          ? json(res, 200, state.updateNotice)
+          : json(res, 404, { error: 'not found' });
+      }
       if (path.startsWith('/api/appearance')) return json(res, 200, { siteName: null });
       if (path === '/api/auth/bootstrap-state') return json(res, 200, { firstRun: false });
       if (path === '/api/auth/token' && method === 'POST') {
