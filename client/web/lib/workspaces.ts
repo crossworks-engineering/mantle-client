@@ -87,6 +87,7 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/chats', null],
   // Settings screens with an area of their own.
   ['/settings/users', 'users'],
+  ['/settings/company-sign-in', 'users'],
   ['/settings/agents', 'assistants'],
   ['/settings/ai-workers', 'assistants'],
   ['/settings/worker-groups', 'assistants'],

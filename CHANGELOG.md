@@ -12,6 +12,14 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## Next: the company sign-in setup screen
+
+Settings > Company sign-in, for an Admin user while the box's mode is on. With
+the mode `setup`, a client's Microsoft admin enters the client secret, sealed and
+never shown, tests it, and makes the SCIM token, shown once. Any other mode shows
+the same values read-only. It needs a brain with `GET /api/users/sso-setup`; an
+older brain answers 404, and the entry stays hidden.
+
 ## v0.9.11: a canvas plays its media in the app
 
 - **New:** the contract pins move to 0.500.30, so the canvas frame in Present and in a page answers `mantle.media`. A new e2e test uploads a clip and plays it, in the app and on the open link.
