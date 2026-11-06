@@ -42,7 +42,7 @@ mantle repo.
   operator."
 - A value the box `.env` holds reads so, and offers no write.
 - The token shows once, in this screen's state only. It is never kept in the
-  query cache, and a reload loses it. A failed status read does not take it away.
+  query cache, and a reload or leaving the screen loses it. A failed status read does not take it away.
 - A refusal that says the screen is out of date (`setup-closed`, `env-wins`) reads
   the status again, so the screen shows the lock or the `.env` value.
 - The secret field asks `autoComplete="new-password"`, not `off`, so a browser does

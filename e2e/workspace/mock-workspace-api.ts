@@ -717,6 +717,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
   ): Promise<boolean> => {
     if (!path.startsWith('/api/users/sso-setup')) return false;
     const body = method === 'GET' ? {} : (JSON.parse((await readBody(req)) || '{}') as object);
+    if (method === 'GET' && state.ssoSetup.statusHold) await state.ssoSetup.statusHold;
     const answer = ssoSetupAnswer(state.ssoSetup, path, method, body, PASSWORD);
     if (!answer) return false;
     return (json(res, answer.status, answer.body), true);
