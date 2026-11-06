@@ -36,8 +36,11 @@ import {
   type DragMoveEvent,
 } from '@dnd-kit/core';
 import {
+  ArrowDownAZ,
   FolderInput,
   FolderPlus,
+  FolderTree,
+  History,
   Layers,
   ListFilter,
   Pin,
@@ -45,6 +48,7 @@ import {
   Search,
   Share2,
   Table2,
+  TrendingUp,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -141,6 +145,7 @@ import { FolderPickerDialog } from './folder-picker';
 import { canGrantFolder, seenOf, visibilityRefusal } from './sharing';
 import { itemAccess } from '@/lib/item-access';
 import { VisibilityConfirmDialog, type PendingConfirm } from './visibility-confirm';
+import { useCompactTabs } from './view-tabs';
 
 /**
  * The item tree: one navigation for every kind (the brain's
@@ -162,11 +167,12 @@ import { VisibilityConfirmDialog, type PendingConfirm } from './visibility-confi
  */
 
 type View = 'tree' | 'recent' | 'used' | 'az';
-const VIEWS: Array<{ id: View; label: string }> = [
-  { id: 'tree', label: 'Folders' },
-  { id: 'recent', label: 'Recent' },
-  { id: 'used', label: 'Most used' },
-  { id: 'az', label: 'A to Z' },
+// The icon stands in for the label when the panel is too narrow for words.
+const VIEWS: Array<{ id: View; label: string; icon: LucideIcon }> = [
+  { id: 'tree', label: 'Folders', icon: FolderTree },
+  { id: 'recent', label: 'Recent', icon: History },
+  { id: 'used', label: 'Most used', icon: TrendingUp },
+  { id: 'az', label: 'A to Z', icon: ArrowDownAZ },
 ];
 const SORT_LABEL: Record<TreeSort, string> = {
   custom: 'Custom order',
@@ -354,6 +360,9 @@ export function ItemTree({
 
   const term = useDebounced(query.trim(), 250);
   const searching = query.trim().length > 0;
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const tabLabelsRef = useRef<HTMLDivElement>(null);
+  const compactTabs = useCompactTabs(tabsRef, tabLabelsRef, !searching);
 
   // The filter menu (State, Tag): a question about items, so it lists them
   // flat by name, like A to Z. Not remembered: a filter left on from last
@@ -1351,8 +1360,24 @@ export function ItemTree({
             {actions}
           </div>
           {!searching && (
-            <div className="flex items-center gap-1.5">
+            <div className="relative flex items-center gap-1.5">
+              {/* The labels at their natural width, never seen: what the
+                  tabs need, measured in the user's font (view-tabs.ts). */}
+              <div
+                aria-hidden
+                className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"
+              >
+                <div
+                  ref={tabLabelsRef}
+                  className="flex w-max text-xs font-medium whitespace-nowrap"
+                >
+                  {views.map((v) => (
+                    <span key={v.id}>{v.label}</span>
+                  ))}
+                </div>
+              </div>
               <ToggleGroup
+                ref={tabsRef}
                 type="single"
                 variant="outline"
                 size="sm"
@@ -1366,8 +1391,14 @@ export function ItemTree({
                 className="flex min-w-0 flex-1"
               >
                 {views.map((v) => (
-                  <ToggleGroupItem key={v.id} value={v.id} className="h-8 flex-auto px-1.5 text-xs">
-                    {v.label}
+                  <ToggleGroupItem
+                    key={v.id}
+                    value={v.id}
+                    aria-label={compactTabs ? v.label : undefined}
+                    title={compactTabs ? v.label : undefined}
+                    className="h-8 flex-auto px-1.5 text-xs"
+                  >
+                    {compactTabs ? <v.icon aria-hidden /> : v.label}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>

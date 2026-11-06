@@ -93,6 +93,9 @@ else is a plain 404.
   brain's words for a refusal and says a brain with no such route needs an
   update; the upload dock's line for a spreadsheet shows only when the shell
   says `noAutoTables`.
+- `tree-tabs.spec.ts`: the tree's view tabs (Folders, Recent, Most used,
+  A to Z) fold to icons, each named by its label, when the list is dragged
+  narrow, and never overlap, at the smallest, default and largest font size.
 
 CI runs them on every push and pull request (the `e2e-workspace` job in
 `.github/workflows/verify.yml`), with no brain and nothing configured.
