@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { folderKey, treeKey } from '@/components/item-tree/tree-api';
 import { deskNewestKey, deskStorageKey, hubNewestOf } from './desk-data';
+import { blankStickies } from './widgets/items';
 import { splitJot } from './widgets/misc';
 import { greeting, monthGrid } from './widgets/time';
 
@@ -14,6 +15,12 @@ describe('quick note', () => {
 
   it('drops a markdown heading mark from the title', () => {
     expect(splitJot('## Plan').title).toBe('Plan');
+  });
+});
+
+describe('sticky notes', () => {
+  it('an empty board shows up to three blank stickies, never none', () => {
+    expect([0, 1, 2, 3, 6, 12].map(blankStickies)).toEqual([1, 1, 2, 3, 3, 3]);
   });
 });
 
