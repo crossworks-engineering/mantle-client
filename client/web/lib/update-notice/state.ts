@@ -4,7 +4,8 @@
  * cannot be reached, the client holds the notice on its own last answer, so
  * the screen stays up through the restart and goes by itself once the brain
  * answers "off". The brain's own rule (a new version or an hour clears an
- * "on") lives brain-side; the client only remembers.
+ * "on") lives brain-side; the client holds an "on" with no answer for an
+ * hour from the last one at most.
  *
  * LOCAL COPY of @mantle/client-types dto/update-notice.ts `UpdateNoticeView`
  * until the contract pin moves past the release that ships it.
@@ -18,26 +19,27 @@ export type UpdateNoticeView = { on: boolean; version: string };
  *  have the route (404) is an answer: off. */
 export type NoticeProbe = { kind: 'answer'; view: UpdateNoticeView } | { kind: 'unreachable' };
 
-/** The last answer, kept across reloads (localStorage), so a page opened
- *  while the brain is down still knows the notice was on. */
-export type Remembered = { on: boolean; version: string; at: number };
+/** The last answer, kept across reloads (localStorage, per brain), so a
+ *  page opened while the brain is down still knows the notice was on. */
+export type Remembered = { on: boolean; at: number };
 
 /** `off`: no notice. `on`: the brain says so. `down`: the brain cannot be
  *  reached and was last seen on. `done`: back and off (the screen finishes
- *  its bar, then goes). */
+ *  its bar, then the page reloads: a roll may have changed the interface,
+ *  whether or not the brain's version moved). */
 export type NoticePhase = 'off' | 'on' | 'down' | 'done';
 
 export type NoticeState = {
   phase: NoticePhase;
-  /** The brain's version when the notice was first seen on: a different one
-   *  when it goes off means the box rolled, and the page reloads. */
-  onVersion: string | null;
+  /** When the brain last said "on" (this tab's clock): the notice holds
+   *  without an answer for an hour from then at most. */
+  seenOnAt: number | null;
 };
 
-export const NOTICE_OFF: NoticeState = { phase: 'off', onVersion: null };
+export const NOTICE_OFF: NoticeState = { phase: 'off', seenOnAt: null };
 
-/** How long a remembered "on" holds the notice while the brain is down:
- *  the brain's own limit (UPDATE_NOTICE_MAX_MS). */
+/** How long the notice holds with no answer from the brain, from its last
+ *  "on": the brain's own limit (UPDATE_NOTICE_MAX_MS). */
 export const REMEMBER_MAX_MS = 60 * 60 * 1000;
 
 /** Poll every 15 s; every 5 s while the notice shows. */
@@ -51,24 +53,14 @@ export function nextNotice(
   remembered: Remembered | null,
   now: number,
 ): NoticeState {
-  const showing = prev.phase === 'on' || prev.phase === 'down';
+  if (prev.phase === 'done') return prev;
   if (probe.kind === 'unreachable') {
-    if (showing) return { ...prev, phase: 'down' };
-    if (remembered?.on && now - remembered.at < REMEMBER_MAX_MS) {
-      return { phase: 'down', onVersion: remembered.version };
-    }
-    return prev.phase === 'done' ? prev : NOTICE_OFF;
+    const seenOnAt = prev.seenOnAt ?? (remembered?.on ? remembered.at : null);
+    if (seenOnAt !== null && now - seenOnAt < REMEMBER_MAX_MS) return { phase: 'down', seenOnAt };
+    return NOTICE_OFF;
   }
-  const { on, version } = probe.view;
-  if (on) return { phase: 'on', onVersion: prev.onVersion ?? version };
-  if (showing) return { ...prev, phase: 'done' };
-  return prev.phase === 'done' ? prev : NOTICE_OFF;
-}
-
-/** Whether the page reloads when the notice is done: the brain answered on
- *  another version than the one it was on (pure). */
-export function reloadsWhenDone(state: NoticeState, answered: string): boolean {
-  return state.onVersion !== null && answered !== '' && answered !== state.onVersion;
+  if (probe.view.on) return { phase: 'on', seenOnAt: now };
+  return prev.phase === 'on' || prev.phase === 'down' ? { ...prev, phase: 'done' } : NOTICE_OFF;
 }
 
 /** What to remember after a poll: an answer replaces it, no answer keeps the
@@ -79,7 +71,7 @@ export function rememberAfter(
   now: number,
 ): Remembered | null {
   if (probe.kind === 'unreachable') return last;
-  return { on: probe.view.on, version: probe.view.version, at: now };
+  return { on: probe.view.on, at: now };
 }
 
 /** Read a poll's response (pure): `status` and the parsed body, or null when
@@ -99,9 +91,9 @@ export function parseRemembered(raw: string | null): Remembered | null {
   if (!raw) return null;
   try {
     const v = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof v.on !== 'boolean' || typeof v.version !== 'string') return null;
+    if (typeof v.on !== 'boolean') return null;
     if (typeof v.at !== 'number' || !Number.isFinite(v.at)) return null;
-    return { on: v.on, version: v.version, at: v.at };
+    return { on: v.on, at: v.at };
   } catch {
     return null;
   }

@@ -9,7 +9,7 @@ const stay = (e: Event) => e.preventDefault();
 
 /**
  * The "Update In Progress" notice: full screen, above everything (menus sit
- * at z-[2002]), and it cannot be closed. Escape, a click outside and focus
+ * at z-[2002], the responsive dialog at z-[9999]), and it cannot be closed. Escape, a click outside and focus
  * leaving are all refused; Radix keeps focus inside and hides the page from
  * assistive tech while it shows. The background is solid: nothing of the
  * page behind it shows through.
@@ -30,7 +30,7 @@ export function UpdateNotice() {
         onInteractOutside={stay}
         onPointerDownOutside={stay}
         onFocusOutside={stay}
-        className="inset-0 left-0 top-0 z-[3000] flex h-dvh max-h-none w-screen max-w-none translate-x-0 translate-y-0 items-center justify-center overflow-hidden rounded-none border-0 bg-background p-6 shadow-none"
+        className="inset-0 left-0 top-0 z-[10000] flex h-dvh max-h-none w-screen max-w-none translate-x-0 translate-y-0 items-center justify-center overflow-hidden rounded-none border-0 bg-background p-6 shadow-none"
       >
         <DialogTitle className="sr-only">{NOTICE_HEADING}</DialogTitle>
         <DialogDescription className="sr-only">{NOTICE_TEXT}</DialogDescription>
