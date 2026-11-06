@@ -85,6 +85,10 @@ describe('settings', () => {
     expect(shown).toContain('Workspaces');
   });
 
+  it('carries Company sign-in, where the steps send a Microsoft admin', () => {
+    expect(shown).toContain('Company sign-in');
+  });
+
   it('carries the four Jason named', () => {
     // The only part of the mapping that is not a proposal.
     expect(shown).toEqual(expect.arrayContaining(['Agents', 'AI workers', 'MCP', 'Profile']));
