@@ -80,6 +80,10 @@ else is a plain 404.
   the others pass with or without it.
 - `retired-links.spec.ts`: old portal links (`/team`, `/hub`, `/client-signin`)
   land on a bare `/login`; old review links land on the home.
+- `lessons.spec.ts`: a lesson from the pages tree's Lessons folder plays
+  with the agent's hands: from the profile menu, step by step, with a
+  settings step left to the user; a `?lesson=` link only offers one, and a
+  page outside the folder is refused.
 - `login-brains.spec.ts`: the sign-in screen against more than one brain (the
   desktop shell's per-window brain header) and after every way a sign-in fails.
 - `landing.spec.ts`: Home shows the current workspace's landing page and

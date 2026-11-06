@@ -14,7 +14,9 @@ import {
   Search as SearchIcon,
   SunMoon,
   User as UserIcon,
+  GraduationCap,
 } from 'lucide-react';
+import { openLessonPicker } from '@/components/lessons/lessons';
 import { currentBrainOrigin } from '@mantle/web-ui/session-registry';
 import { signInAgainPath, signOutActive, switchSession } from '@mantle/web-ui/session-switch';
 import { useSessions, type HeldSession } from '@mantle/web-ui/use-sessions';
@@ -300,6 +302,9 @@ export function ProfileMenu({
           </DropdownMenuItem>
         )}
 
+        <DropdownMenuItem onSelect={() => openLessonPicker()} className="cursor-pointer">
+          <GraduationCap className="size-4" /> Lessons
+        </DropdownMenuItem>
         {manages ? (
           <DropdownMenuItem asChild>
             <Link href="/settings/profile" onClick={onNavigate} className="cursor-pointer">

@@ -238,8 +238,34 @@ export type MockWorkspaceApi = {
    *  it, the `?ws=` it named (none: the brain picks the login's own home),
    *  its meta and the PNG's size. */
   screenshots: MockScreenshot[];
+  /** The pages tree holds a top-level Lessons folder (components/lessons). */
+  lessons: boolean;
   close: () => Promise<void>;
 };
+
+/** The lessons the mock brain holds (components/lessons). */
+export const LESSONS = {
+  folder: { id: '1e551111-1111-4111-8111-111111111111', name: 'Lessons', path: 'pages.lessons' },
+  lesson: { id: '1e552222-2222-4222-8222-222222222222', title: 'Your sounds' },
+  stray: { id: '1e553333-3333-4333-8333-333333333333', title: 'Not a lesson' },
+  yaml: [
+    'title: Your sounds',
+    'steps:',
+    '  - say: Your profile holds your own settings.',
+    '    do:',
+    '      - go: /settings/profile',
+    '    check: { route: /settings/profile }',
+    '  - say: Sounds turns the app sounds on or off.',
+    '    point: { role: switch, name: Sounds }',
+    '    do:',
+    '      - click: { role: switch, name: Sounds }',
+    '    check: { visible: { role: switch, name: Sounds } }',
+    '  - say: That is all. Back to your Desk.',
+    '    do:',
+    '      - go: /',
+    '    check: { route: / }',
+  ].join('\n'),
+} as const;
 
 export type MockScreenshot = {
   role: Role;
@@ -280,6 +306,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     status: newMockStatus(),
     ssoSetup: newMockSsoSetup(),
     screenshots: [],
+    lessons: false,
     close: async () => undefined,
   };
 
@@ -474,6 +501,23 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           true
         );
       }
+      // The Lessons folder, when a spec asks for it (components/lessons).
+      if (kind === 'pages' && state.lessons) {
+        const folder = url.searchParams.get('folder');
+        const lessons = { ...LESSONS.folder, depth: 1, parentId: null, system: false };
+        if (folder === LESSONS.folder.id) {
+          return (
+            json(res, 200, {
+              ...tree(kind, [{ id: LESSONS.lesson.id, title: LESSONS.lesson.title }], url),
+              folder: lessons,
+            }),
+            true
+          );
+        }
+        if (!folder) {
+          return (json(res, 200, { ...tree(kind, items, url), folders: [lessons], ...echo }), true);
+        }
+      }
       return (json(res, 200, { ...tree(kind, items, url), ...echo }), true);
     }
     // The landing page of the current workspace (task d78e7bde): the
@@ -665,6 +709,36 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     if (path === '/api/files/files' && method === 'POST') {
       await readBody(req);
       return (json(res, 201, { ok: true }), true);
+    }
+    // A lesson page (components/lessons), in or outside the Lessons folder.
+    const lessonM = /^\/api\/pages\/([0-9a-f-]{36})$/.exec(path);
+    if (
+      lessonM &&
+      method === 'GET' &&
+      (lessonM[1] === LESSONS.lesson.id || lessonM[1] === LESSONS.stray.id)
+    ) {
+      const yaml =
+        lessonM[1] === LESSONS.lesson.id ? LESSONS.yaml : 'title: Stray\nsteps:\n  - say: x';
+      return (
+        json(res, 200, {
+          page: {
+            id: lessonM[1],
+            mayEdit: role === 'admin',
+            doc: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'codeBlock',
+                  attrs: { language: 'lesson' },
+                  content: [{ type: 'text', text: yaml }],
+                },
+              ],
+            },
+            draft: null,
+          },
+        }),
+        true
+      );
     }
     const pageM = /^\/api\/pages\/([0-9a-f-]{36})$/.exec(path);
     if (pageM && method === 'GET') {

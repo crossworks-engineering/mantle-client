@@ -50,6 +50,7 @@ import { HelpRail } from '@/components/help/help-rail';
 import { TourProvider } from '@/components/tour/tour-provider';
 import { TourOverlay } from '@/components/tour/tour-overlay';
 import { AgentOverlay } from '@/components/agent-ui/agent-overlay';
+import { Lessons } from '@/components/lessons/lessons';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { MessengerShell } from '@/components/messenger/messenger-shell';
@@ -744,6 +745,9 @@ function ShellFrame({
             spotlight, the Stop bar and the question for a held request.
             Renders nothing otherwise. See lib/agent-ui. */}
         <AgentOverlay />
+        {/* Lessons: the picker, a link's "Start this lesson?", and the card
+            that plays one with the agent's hands. A client login has none. */}
+        {role === 'admin' || role === 'member' ? <Lessons adminUser={role === 'admin'} /> : null}
 
         {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}
