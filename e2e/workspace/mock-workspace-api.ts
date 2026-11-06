@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { expect, type Page } from '@playwright/test';
 import { GONE_ROUTE, MEMBER_OPEN } from './shell-nav';
 import { newMockStatus, statusAnswer, type MockStatus } from './mock-status';
+import { newMockSsoSetup, ssoSetupAnswer, type MockSsoSetup } from './mock-sso-setup';
 
 /**
  * An in-memory brain for the workspace specs (phase W5c: one shell for every
@@ -231,6 +232,8 @@ export type MockWorkspaceApi = {
   /** What the Status screen's routes answer (mock-status.ts): a spec
    *  changes a container to break it. */
   status: MockStatus;
+  /** Company sign-in's setup screen (mock-sso-setup.ts). */
+  ssoSetup: MockSsoSetup;
   close: () => Promise<void>;
 };
 
@@ -264,6 +267,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     desks: {},
     sounds: {},
     status: newMockStatus(),
+    ssoSetup: newMockSsoSetup(),
     close: async () => undefined,
   };
 
@@ -703,6 +707,21 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     ...capsOf(role, p),
   });
 
+  /** Company sign-in's setup screen (mock-sso-setup.ts); true when it
+   *  answered. */
+  const handleSsoSetup = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    path: string,
+    method: string,
+  ): Promise<boolean> => {
+    if (!path.startsWith('/api/users/sso-setup')) return false;
+    const body = method === 'GET' ? {} : (JSON.parse((await readBody(req)) || '{}') as object);
+    const answer = ssoSetupAnswer(state.ssoSetup, path, method, body, PASSWORD);
+    if (!answer) return false;
+    return (json(res, answer.status, answer.body), true);
+  };
+
   /** The owner routes the admin's Users screen needs; true when it
    *  answered. */
   const handleAdmin = (res: ServerResponse, url: URL, path: string): boolean => {
@@ -844,6 +863,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     } else if (role !== 'admin' && !MEMBER_OPEN.some((re) => re.test(`${method} ${path}`))) {
       return json(res, 403, { error: 'forbidden', reason: `${role}-login` });
     } else if (await handleItems(req, res, url, path, role)) {
+      return;
+    } else if (role === 'admin' && (await handleSsoSetup(req, res, path, method))) {
       return;
     } else if (role === 'admin' && handleAdmin(res, url, path)) {
       return;

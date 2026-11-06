@@ -6,18 +6,40 @@ before it, nothing here shows, and the sign-in screen stays as it was.
 
 ## Where each thing is
 
-| What the person sees                                        | Code                                                                     |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
-| "Sign in with {label}" beside the password form             | `client/web/app/login/login-client.tsx`, `components/oidc/`              |
-| The one dismissible offer card                              | `components/oidc/offer-card.tsx`, in the shell's bottom-right stack      |
-| Settings > Profile; the account menu with no Profile screen | `components/oidc/company-sign-in-section.tsx`                            |
-| Required mode: the one link step                            | `components/oidc/link-step.tsx`: at sign-in, invite, and `link-gate.tsx` |
-| A fresh sign-in in place of the password for a key          | `components/api-access/api-access-client.tsx`                            |
-| The page every flow ends on                                 | `client/web/app/auth/oidc/`                                              |
+| What the person sees                                        | Code                                                                       |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| "Sign in with {label}" beside the password form             | `client/web/app/login/login-client.tsx`, `components/oidc/`                |
+| The one dismissible offer card                              | `components/oidc/offer-card.tsx`, in the shell's bottom-right stack        |
+| Settings > Profile; the account menu with no Profile screen | `components/oidc/company-sign-in-section.tsx`                              |
+| Required mode: the one link step                            | `components/oidc/link-step.tsx`: at sign-in, invite, and `link-gate.tsx`   |
+| A fresh sign-in in place of the password for a key          | `components/api-access/api-access-client.tsx`                              |
+| The page every flow ends on                                 | `client/web/app/auth/oidc/`                                                |
+| The setup screen, Settings > Company sign-in                | `client/web/app/(app)/settings/(hub)/company-sign-in/`, `lib/sso-setup.ts` |
 
 The MCP consent page is the brain's own page: its Confirm button runs the fresh
 sign-in itself. The client only brings the person back to it after a sign-in
 (`lib/oauth-consent.ts`).
+
+## The setup screen
+
+A client's Microsoft admin enters the client secret and makes the SCIM token on
+this screen while the box's `MANTLE_OIDC_MODE` is `setup`. The contract and every
+stated cost are the brain's: "The setup screen" in `docs/oidc-sign-in.md` in the
+mantle repo.
+
+- The sidebar offers the entry only to a login with the users area, while
+  `GET /api/users/sso-setup` answers a mode other than `off`. A brain before the
+  screen answers 404, which reads as off.
+- `setup`: a warning, a password field for the secret that stays empty after a
+  save, Save and Make SCIM token, which each ask for the password, and Test.
+- `optional`, `required`: the same values read-only, and "Locked by the box
+  operator."
+- A value the box `.env` holds reads so, and offers no write.
+- The token shows once, in this screen's state only. It is never kept in the
+  query cache, and a reload loses it.
+
+The types in `lib/sso-setup.ts` mirror the brain's DTOs. Replace them with
+`@mantle/client-types` when the next contract is published.
 
 ## One way back
 

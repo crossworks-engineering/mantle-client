@@ -1,4 +1,4 @@
-import { Activity, Layers, Link2, MessagesSquare, Power, Send } from 'lucide-react';
+import { Activity, Building2, Layers, Link2, MessagesSquare, Power, Send } from 'lucide-react';
 import {
   NAV_GROUPS as SHARED_NAV_GROUPS,
   navItemMatches,
@@ -59,6 +59,13 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     group: 'Settings',
     after: '/settings/workspaces',
     item: { name: 'Shared links', href: '/settings/shared-links', icon: Link2 },
+  },
+  {
+    // Company sign-in's setup screen: the sidebar keeps it only while the
+    // brain says the mode is on (client/web/lib/sso-setup.ts).
+    group: 'Settings',
+    after: '/settings/shared-links',
+    item: { name: 'Company sign-in', href: '/settings/company-sign-in', icon: Building2 },
   },
   {
     // Status: the whole box at a glance (vitals, brain, spend, queues,

@@ -24,6 +24,8 @@ import { hasArea, navWithAreas } from '@/lib/workspaces';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { useMessengerUnread } from '@/components/messenger/messenger-shell';
 import { withChats } from '@/lib/messenger/nav';
+import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
+import { withCompanySignIn } from '@/lib/sso-setup';
 import {
   NAV_GROUPS,
   type NavGroup as BaseNavGroup,
@@ -78,11 +80,16 @@ export function SidebarNav({
   // count with 404 (a brain before the messenger), else with that count,
   // the one sum of people, groups and assistant replies.
   const messenger = useMessengerUnread();
-  const groups: NavGroup[] = withChats(
-    navWithAreas(NAV_GROUPS, areas),
-    // Hidden only on a 404: a count still loading (or failing) leaves the
-    // entry where it is, so the rows below it do not jump.
-    messenger.available !== 'no',
+  // Company sign-in: only while the brain says the mode is on.
+  const ssoSetupShown = useSsoSetupShown(areas);
+  const groups: NavGroup[] = withCompanySignIn(
+    withChats(
+      navWithAreas(NAV_GROUPS, areas),
+      // Hidden only on a 404: a count still loading (or failing) leaves the
+      // entry where it is, so the rows below it do not jump.
+      messenger.available !== 'no',
+    ),
+    ssoSetupShown,
   ).map((g) => ({
     ...g,
     items: g.items.map((item) =>
