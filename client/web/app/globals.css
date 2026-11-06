@@ -230,12 +230,18 @@
     animation-duration: 2.4s !important;
     animation-iteration-count: infinite !important;
   }
+
+  /* Clamped, it would snap back and leave a still pale band on the bar. */
+  .mantle-notice-shimmer {
+    display: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
  * The update notice (components/update-notice): a light that runs along the
  * bar, and a slow breath on the logo. Under reduced motion the clamp above
- * stops both, on purpose: the bar still steps and its words still change.
+ * stops both (the shimmer is hidden), on purpose: the bar still steps and
+ * its words still change.
  * ------------------------------------------------------------------------- */
 @keyframes mantle-notice-shimmer {
   from {

@@ -56,8 +56,8 @@ describe('UpdateNotice dialog', () => {
     expect(dialog).not.toContain('onOpenChange');
   });
 
-  it('covers the whole window, above the menus (z-[2002])', () => {
-    expect(dialog).toContain('z-[3000]');
+  it('covers the whole window, above the menus and the responsive dialog (z-[9999])', () => {
+    expect(dialog).toContain('z-[10000]');
     expect(dialog).toMatch(/inset-0 .*h-dvh .*w-screen .*bg-background/);
   });
 
@@ -69,7 +69,8 @@ describe('UpdateNotice dialog', () => {
 
   it('polls with a raw fetch, never apiFetch (no bounce to sign-in mid-restart)', () => {
     const hook = src('../../lib/update-notice/use-update-notice.ts');
-    expect(hook).toContain("fetch(apiUrl('/api/update-notice'), { cache: 'no-store' })");
+    expect(hook).toContain("fetch(apiUrl('/api/update-notice'), {");
+    expect(hook).toContain('signal: AbortSignal.timeout(POLL_TIMEOUT_MS)');
     expect(hook).not.toMatch(/apiFetch[<(]|bounceToLogin/);
   });
 });

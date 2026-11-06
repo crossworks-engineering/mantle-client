@@ -72,14 +72,18 @@ test('a page opened while the brain is down shows it from the last answer', asyn
   await expect(notice(page).getByText('Restarting services')).toBeVisible();
 });
 
-test('off on the same version: it just goes', async ({ page }) => {
+test('off on the same version: it goes, and the page reloads (the interface may have rolled)', async ({
+  page,
+}) => {
   api.updateNotice = { on: false, version: '1.0.0' };
   await signIn(page, 'admin');
   api.updateNotice = { on: true, version: '1.0.0' };
   await page.reload();
   await expect(notice(page)).toBeVisible();
+  const reloaded = page.waitForEvent('load', { timeout: 20_000 });
   api.updateNotice = { on: false, version: '1.0.0' };
-  await expect(notice(page)).toHaveCount(0, { timeout: 15_000 });
+  await reloaded;
+  await expect(notice(page)).toHaveCount(0);
 });
 
 test('the sign-in page shows it too, and blocks it', async ({ page }) => {

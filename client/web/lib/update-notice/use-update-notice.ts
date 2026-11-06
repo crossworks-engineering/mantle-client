@@ -11,19 +11,26 @@ import {
   parseRemembered,
   probeOf,
   rememberAfter,
-  reloadsWhenDone,
   type NoticeProbe,
   type NoticeState,
   type Remembered,
 } from './state';
 
-const STORE_KEY = 'mantle.updateNotice';
-/** How long the finished bar shows before the screen goes. */
+/** How long the finished bar shows before the page reloads. */
 const DONE_HOLD_MS = 900;
+/** A poll that has not answered by then counts as no answer. */
+const POLL_TIMEOUT_MS = 8_000;
+/** Before the reload: ask the page's own origin until it answers (a roll
+ *  restarts the interface too), every 2 s, for a minute at most. */
+const UI_WAIT_STEP_MS = 2_000;
+const UI_WAIT_TRIES = 30;
+
+/** Per brain: the desktop app reaches several from one origin. */
+const storeKey = () => `mantle.updateNotice:${apiUrl('')}`;
 
 function readRemembered(): Remembered | null {
   try {
-    return parseRemembered(window.localStorage.getItem(STORE_KEY));
+    return parseRemembered(window.localStorage.getItem(storeKey()));
   } catch {
     return null;
   }
@@ -31,7 +38,7 @@ function readRemembered(): Remembered | null {
 
 function writeRemembered(r: Remembered | null): void {
   try {
-    if (r) window.localStorage.setItem(STORE_KEY, JSON.stringify(r));
+    if (r) window.localStorage.setItem(storeKey(), JSON.stringify(r));
   } catch {
     // private mode or full storage: the notice still works for this page
   }
@@ -39,21 +46,38 @@ function writeRemembered(r: Remembered | null): void {
 
 /** One poll. A raw fetch, not apiFetch: the route is public, and an odd
  *  answer mid-restart must never bounce the user to the sign-in page. */
-async function probe(): Promise<{ probe: NoticeProbe; version: string }> {
+async function probe(): Promise<NoticeProbe> {
   try {
-    const res = await fetch(apiUrl('/api/update-notice'), { cache: 'no-store' });
+    const res = await fetch(apiUrl('/api/update-notice'), {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
+    });
     const body: unknown = await res.json().catch(() => null);
-    const p = probeOf(res.status, body);
-    return { probe: p, version: p.kind === 'answer' ? p.view.version : '' };
+    return probeOf(res.status, body);
   } catch {
-    return { probe: { kind: 'unreachable' }, version: '' };
+    return { kind: 'unreachable' };
+  }
+}
+
+/** Whether the page's own origin serves again (any answer but a gateway
+ *  error), so the reload does not land on the front door's error page. */
+async function uiServes(): Promise<boolean> {
+  try {
+    const res = await fetch('/env.js', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
+    });
+    return res.status < 502 || res.status > 504;
+  } catch {
+    return false;
   }
 }
 
 /**
  * The notice's state, polled while the tab is visible (every 15 s, every 5 s
- * while it shows). When it is done it holds the full bar a moment, then
- * reloads the page if the box came back on another version, else goes.
+ * while it shows). When it is done it holds the full bar a moment, waits
+ * until the page's own origin answers, then reloads the page: the update may
+ * have changed the interface, whether or not the brain's version moved.
  */
 export function useUpdateNotice(): NoticeState {
   const [state, setState] = useState<NoticeState>(NOTICE_OFF);
@@ -66,30 +90,35 @@ export function useUpdateNotice(): NoticeState {
     if (!visible) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+      });
+    const reloadWhenServed = async () => {
+      await wait(DONE_HOLD_MS);
+      for (let i = 0; i < UI_WAIT_TRIES && !stopped && !(await uiServes()); i++) {
+        await wait(UI_WAIT_STEP_MS);
+      }
+      if (!stopped) window.location.reload();
+    };
     const tick = async () => {
-      const { probe: p, version } = await probe();
+      const p = await probe();
       if (stopped) return;
       const now = Date.now();
       const remembered = readRemembered();
       const next = nextNotice(stateRef.current, p, remembered, now);
       writeRemembered(rememberAfter(p, remembered, now));
-      if (next.phase === 'done' && stateRef.current.phase !== 'done') {
-        const reload = reloadsWhenDone(next, version);
-        setTimeout(() => {
-          if (reload) {
-            window.location.reload();
-            return;
-          }
-          stateRef.current = NOTICE_OFF;
-          setState(NOTICE_OFF);
-        }, DONE_HOLD_MS);
-      }
+      const finished = next.phase === 'done' && stateRef.current.phase !== 'done';
       stateRef.current = next;
       setState(next);
+      if (finished) return void reloadWhenServed();
+      if (next.phase === 'done') return;
       const showing = next.phase === 'on' || next.phase === 'down';
       timer = setTimeout(() => void tick(), showing ? POLL_SHOWING_MS : POLL_MS);
     };
-    void tick();
+    // Done already (the tab was hidden mid-way): finish the reload.
+    if (stateRef.current.phase === 'done') void reloadWhenServed();
+    else void tick();
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
