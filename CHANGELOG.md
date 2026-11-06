@@ -12,6 +12,10 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.11: a canvas plays its media in the app
+
+- **New:** the contract pins move to 0.500.30, so the canvas frame in Present and in a page answers `mantle.media`. A new e2e test uploads a clip and plays it, in the app and on the open link.
+
 ## v0.9.10: the Tables screen imports a file
 
 - **New:** the Tables screen gets an import. An xlsx, xls or csv makes one Table in the switcher's workspace. It shows upload progress and plain words for a refused file.
