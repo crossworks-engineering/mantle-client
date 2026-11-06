@@ -49,6 +49,7 @@ import { HelpRailProvider, useHelpRail } from '@/components/help/help-rail-conte
 import { HelpRail } from '@/components/help/help-rail';
 import { TourProvider } from '@/components/tour/tour-provider';
 import { TourOverlay } from '@/components/tour/tour-overlay';
+import { AgentOverlay } from '@/components/agent-ui/agent-overlay';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { MessengerShell } from '@/components/messenger/messenger-shell';
@@ -738,6 +739,11 @@ function ShellFrame({
             when a tour is running (MANTLE_TOUR once per browser, or ?tour=).
             See components/tour. */}
         <TourOverlay />
+
+        {/* While an agent drives this window (a lesson): its cursor, its
+            spotlight, the Stop bar and the question for a held request.
+            Renders nothing otherwise. See lib/agent-ui. */}
+        <AgentOverlay />
 
         {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}

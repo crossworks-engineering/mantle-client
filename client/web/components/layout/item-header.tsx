@@ -424,7 +424,9 @@ export function ItemHeader({
               </span>
             ) : null}
             {onDelete || deleteDisabled ? (
-              <span data-slot="delete">
+              // data-agent-risk: an agent driving the window may point at
+              // it, never press it (lib/agent-ui).
+              <span data-slot="delete" data-agent-risk="delete">
                 <HeaderIconButton
                   label={deleteLabel}
                   tooltip={deleteDisabled ? 'You may not delete this' : deleteLabel}
@@ -671,7 +673,12 @@ function MoreItem({ entry: e, onPanel }: { entry: MoreEntry; onPanel: (key: stri
   }
   if (e.kind === 'action') {
     return (
-      <DropdownMenuItem onSelect={e.onSelect} disabled={e.disabled} className={cls}>
+      <DropdownMenuItem
+        onSelect={e.onSelect}
+        disabled={e.disabled}
+        className={cls}
+        data-agent-risk={e.danger ? 'delete' : undefined}
+      >
         {e.icon}
         {e.label}
       </DropdownMenuItem>

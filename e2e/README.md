@@ -85,6 +85,11 @@ else is a plain 404.
 - `landing.spec.ts`: Home shows the current workspace's landing page and
   changes with the switcher (the Desk, or the workspace's home app); "All my
   workspaces" shows all of them; an Admin user finds the Dashboard in the menu.
+- `agent-hands.spec.ts`: an agent driving the window (lib/agent-ui, through
+  the dev build's `window.__mantleAgentHands`): the screen read as labelled
+  controls, typing and clicking, Stop, a settings change held for the
+  user's Block or Allow once, a route with a query refused, and a real
+  click pausing it.
 - `area-capture.spec.ts`: the rail's area capture (the desktop capture
   stubbed): drag an area, see it, then Attach to chat (an Admin user) or
   Save (a member, no attach); Esc saves nothing, and the save never names
