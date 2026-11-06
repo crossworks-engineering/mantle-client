@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { ApiError, apiSend } from '@mantle/web-ui/api-fetch';
@@ -20,7 +20,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from '@mantle/web-ui/ui/field';
-import { Input } from '@mantle/web-ui/ui/input';
+import { SecretInput } from '@mantle/web-ui/ui/secret-input';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
@@ -42,9 +42,9 @@ function Value({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-3 py-2">
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="truncate text-sm">{value || 'Not set'}</p>
+        <p className="break-all text-sm">{value || 'Not set'}</p>
       </div>
-      {value && <CopyButton value={value} />}
+      {value && <CopyButton value={value} ariaLabel={`Copy ${label}`} />}
     </div>
   );
 }
@@ -63,6 +63,21 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** What to tell the person of a failed write: the brain's own words. The hold's
+ *  403 carries its text in `message`, and a machine code in `error`. */
+function refusalText(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) return fallback;
+  const message = err.body?.message;
+  return typeof message === 'string' && message ? message : err.message;
+}
+
+/** Whether a refusal says the screen on show is out of date: the box was locked,
+ *  or its .env now holds the value. */
+function statusIsStale(err: unknown): boolean {
+  const code = err instanceof ApiError ? err.body?.code : null;
+  return code === 'setup-closed' || code === 'env-wins';
+}
+
 /** Ask the password again, then run `send`. A stolen session is not stopped by
  *  this: the audit log and the who-and-when on the screen are the record. */
 function PasswordDialog({
@@ -73,6 +88,7 @@ function PasswordDialog({
   send,
   onDone,
   onOpenChange,
+  staleStatus,
 }: {
   open: boolean;
   title: string;
@@ -81,6 +97,8 @@ function PasswordDialog({
   send: (password: string) => Promise<void>;
   onDone: () => void;
   onOpenChange: (open: boolean) => void;
+  /** Read the status again: this refusal says the screen is out of date. */
+  staleStatus: () => Promise<void>;
 }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +120,8 @@ function PasswordDialog({
       setPassword('');
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save. Try again.');
+      setError(refusalText(err, 'Could not save. Try again.'));
+      if (statusIsStale(err)) await staleStatus();
     } finally {
       setPending(false);
     }
@@ -110,7 +129,7 @@ function PasswordDialog({
 
   return (
     <Dialog open={open} onOpenChange={change}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -119,9 +138,8 @@ function PasswordDialog({
           <FieldGroup>
             <Field data-invalid={error ? true : undefined}>
               <FieldLabel htmlFor="sso-setup-password">Your password</FieldLabel>
-              <Input
+              <SecretInput
                 id="sso-setup-password"
-                type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -131,7 +149,12 @@ function PasswordDialog({
               <FieldError id="sso-setup-password-error">{error}</FieldError>
             </Field>
             <div className="flex justify-end gap-2 border-t border-border pt-4">
-              <Button type="button" variant="outline" onClick={() => change(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => change(false)}
+              >
                 Cancel
               </Button>
               <SubmitButton pending={pending} disabled={!password}>
@@ -152,20 +175,26 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
   const [asking, setAsking] = useState(false);
   const [testing, setTesting] = useState(false);
   const [outcome, setOutcome] = useState<SsoSetupTestOutcome | null>(null);
-  const [testFailed, setTestFailed] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
   const open = status.mode === 'setup';
   const who = setterText(status.secretSet);
   const result = outcome ? testOutcomeText(outcome) : null;
 
+  // A typed secret does not outlive the window: the form is gone, so is it.
+  useEffect(() => {
+    if (!open) setSecret('');
+  }, [open]);
+
   const test = async () => {
     setTesting(true);
     setOutcome(null);
-    setTestFailed(false);
+    setTestError(null);
     try {
       const res = await apiSend<{ outcome: SsoSetupTestOutcome }>(`${SSO_SETUP_PATH}/test`, 'POST');
       setOutcome(res.outcome);
-    } catch {
-      setTestFailed(true);
+    } catch (err) {
+      setTestError(refusalText(err, 'The Test did not run. Try again.'));
+      if (statusIsStale(err)) void queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY });
     } finally {
       setTesting(false);
     }
@@ -189,24 +218,25 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
               <FieldLabel htmlFor="sso-setup-secret">
                 {status.secret === 'row' ? 'Replace the secret' : 'Enter the secret'}
               </FieldLabel>
-              <Input
+              <SecretInput
                 id="sso-setup-secret"
-                type="password"
-                autoComplete="new-password"
+                noun="secret"
+                autoComplete="off"
                 value={secret}
                 maxLength={1024}
+                aria-describedby="sso-setup-secret-help"
                 onChange={(e) => setSecret(e.target.value)}
               />
-              <FieldDescription>
+              <FieldDescription id="sso-setup-secret-help">
                 The value from Certificates &amp; secrets in Entra. It is sealed and never shown
                 again. There is no way to clear it: replace it. Note its expiry date: nothing warns
                 before it ends.
               </FieldDescription>
             </Field>
             <div className="flex justify-end">
-              <Button type="submit" disabled={!secret.trim()}>
+              <SubmitButton pending={false} disabled={!secret.trim()}>
                 Save secret
-              </Button>
+              </SubmitButton>
             </div>
           </FieldGroup>
         </form>
@@ -216,6 +246,7 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
           <Button variant="outline" onClick={test} disabled={testing}>
             {testing ? 'Testing…' : 'Test'}
           </Button>
+          <p className="text-xs text-muted-foreground">Test uses the secret that is saved.</p>
           {result && (
             <p
               role="status"
@@ -229,9 +260,9 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
               <span>{result.text}</span>
             </p>
           )}
-          {testFailed && (
+          {testError && (
             <p role="status" className="text-sm text-destructive-ink">
-              The Test did not run. Try again.
+              {testError}
             </p>
           )}
         </div>
@@ -239,6 +270,7 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
       <PasswordDialog
         open={asking}
         onOpenChange={setAsking}
+        staleStatus={() => queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY })}
         title="Save the client secret"
         description="Type your password to save it."
         action="Save secret"
@@ -294,6 +326,7 @@ function ScimSection({ status }: { status: SsoSetupOn }) {
       <PasswordDialog
         open={asking}
         onOpenChange={setAsking}
+        staleStatus={() => queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY })}
         title={replacing ? 'Make a new SCIM token' : 'Make a SCIM token'}
         description={
           replacing
@@ -342,7 +375,9 @@ export function CompanySignInClient() {
   if (query.isLoading) {
     return <div className="p-4 text-sm text-muted-foreground md:p-5">Loading…</div>;
   }
-  if (query.isError || !query.data) {
+  // Only with nothing to show: a failed refetch keeps the data. A screen that
+  // holds a token shown once must not go away because a read failed.
+  if (!query.data) {
     return (
       <div className="p-4 text-sm text-destructive-ink md:p-5">Could not load company sign-in.</div>
     );
@@ -359,9 +394,14 @@ export function CompanySignInClient() {
 
   return (
     <div>
+      {query.isError && (
+        <p role="status" className="px-4 pt-4 text-sm text-destructive-ink md:px-5">
+          Could not read the latest status. This may be out of date.
+        </p>
+      )}
       <Section title="This box">
         {open ? (
-          <p role="status" className="flex items-start gap-1.5 text-sm text-destructive-ink">
+          <p role="status" className="flex items-start gap-1.5 text-sm text-warning-ink">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <span>
               Setup is open, and company sign-in is off for everybody. Passwords work. Keep this

@@ -94,13 +94,17 @@ export function scimSourceText(status: SsoSetupOn): string {
 }
 
 /** The Company sign-in entry stays in the nav only while the brain says the
- *  mode is on. A brain before the screen answers 404, and reads as off. */
+ *  mode is on. The sidebar and the search palette both ask this. */
+export function companySignInOffered(href: string, show: boolean): boolean {
+  return show || href !== COMPANY_SIGN_IN_HREF;
+}
+
 export function withCompanySignIn<G extends { items: { href: string }[] }>(
   groups: readonly G[],
   show: boolean,
 ): G[] {
   if (show) return [...groups];
   return groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => i.href !== COMPANY_SIGN_IN_HREF) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => companySignInOffered(i.href, show)) }))
     .filter((g) => g.items.length > 0);
 }
