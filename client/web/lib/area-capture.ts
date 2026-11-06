@@ -94,7 +94,17 @@ export type ScreenshotMeta = {
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const cut = (s: string, n: number) => s.trim().slice(0, n);
+/** `s` trimmed and cut to at most `n` UTF-16 code units (the brain's caps
+ *  count those) by whole code points, so a cut never splits an emoji into a
+ *  lone surrogate, which the brain's jsonb refuses. */
+const cut = (s: string, n: number) => {
+  let out = '';
+  for (const ch of s.trim()) {
+    if (out.length + ch.length > n) break;
+    out += ch;
+  }
+  return out;
+};
 
 /** The meta for a capture, cut to the brain's caps so a long title or note
  *  is shortened here rather than refused there. Only the path is sent, never

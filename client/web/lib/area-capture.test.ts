@@ -110,6 +110,24 @@ describe('screenshotMeta', () => {
     expect(m.itemId).toBe('0b8c7f5e-1d2a-4c3b-9e8f-7a6b5c4d3e2f');
   });
 
+  it('cuts by whole code points: an emoji at the cap is dropped, never halved', () => {
+    const smile = '\u{1F600}'; // two code units
+    const m = screenshotMeta({
+      ...base,
+      // 199 units, then an emoji that would end at 201: it goes whole.
+      title: `${'x'.repeat(199)}${smile}tail`,
+      note: `${'n'.repeat(1998)}${smile}`,
+      item: { id: 'row', label: `${'t'.repeat(299)}${smile}` },
+    });
+    expect(m.screen).toBe('x'.repeat(199));
+    expect(m.note).toBe(`${'n'.repeat(1998)}${smile}`);
+    expect(m.itemTitle).toBe('t'.repeat(299));
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    for (const v of [m.screen, m.note, m.itemTitle]) expect(v).not.toMatch(lone);
+    // Short text with emoji is kept as is.
+    expect(screenshotMeta({ ...base, title: `Tasks ${smile}` }).screen).toBe(`Tasks ${smile}`);
+  });
+
   it('sends ids only when they are ids, and clamps the scale', () => {
     const m = screenshotMeta({
       ...base,
