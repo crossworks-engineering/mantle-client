@@ -120,22 +120,27 @@ describe('a lesson types after what a field holds', () => {
 
 describe('lessonTrusted', () => {
   const ADMIN_WS = 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0';
+  const TEAM_WS = 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1';
   const admin = { adminWorkspaceId: ADMIN_WS };
   const member = { adminWorkspaceId: null };
 
-  it('an Admin user plays only what is homed in the Admin workspace', () => {
-    expect(lessonTrusted({ wsId: ADMIN_WS }, admin)).toBe(true);
+  it('a brain that sends homeIsAdmin decides it, for every viewer', () => {
+    for (const viewer of [admin, member]) {
+      expect(lessonTrusted({ homeIsAdmin: true, home: { wsId: null } }, viewer)).toBe(true);
+      expect(lessonTrusted({ homeIsAdmin: false, home: { wsId: ADMIN_WS } }, viewer)).toBe(false);
+    }
     // An Admin user may change it; that is fine in the Admin workspace.
-    expect(lessonTrusted({ wsId: ADMIN_WS }, admin, true)).toBe(true);
-    expect(lessonTrusted({ wsId: 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1' }, admin)).toBe(false);
-    expect(lessonTrusted({ wsId: null }, admin)).toBe(false);
+    expect(lessonTrusted({ homeIsAdmin: true }, admin, true)).toBe(true);
+    // Anyone else may not play a lesson they may change.
+    expect(lessonTrusted({ homeIsAdmin: true }, member, true)).toBe(false);
   });
 
-  it('anyone else plays only a lesson whose home they cannot name and may not change', () => {
-    expect(lessonTrusted({ wsId: null }, member)).toBe(true);
-    // A home they can name is one of their own workspaces.
-    expect(lessonTrusted({ wsId: 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1' }, member)).toBe(false);
-    expect(lessonTrusted({ wsId: null }, member, true)).toBe(false);
+  it('an older brain: an Admin user checks the home it names; anyone else gets nothing', () => {
+    expect(lessonTrusted({ home: { wsId: ADMIN_WS } }, admin)).toBe(true);
+    expect(lessonTrusted({ home: { wsId: TEAM_WS } }, admin)).toBe(false);
+    expect(lessonTrusted({ home: { wsId: null } }, admin)).toBe(false);
+    expect(lessonTrusted({ home: { wsId: null } }, member)).toBe(false);
+    expect(lessonTrusted({ home: { wsId: TEAM_WS } }, member)).toBe(false);
   });
 
   it('a home that could not be read is never trusted', () => {

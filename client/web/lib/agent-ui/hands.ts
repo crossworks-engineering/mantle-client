@@ -27,6 +27,7 @@ import {
   AGENT_CALL_HEADER,
   elementRefusal,
   isAgentRefusal,
+  isBookkeepingRequest,
   linkRefusal,
   MAX_WAIT_MS,
   refuse,
@@ -243,8 +244,16 @@ export class AgentHands {
       }
       // A write the agent set off carries its tag, unless the user allowed
       // it: the brain refuses a risky one that is tagged.
+      // Background bookkeeping (a frame ticket, an open counted) is the
+      // screen's, not the agent's write: never tagged.
       const tag =
-        agents && !userAllowed && method !== 'GET' && method !== 'HEAD' ? this.callTag : null;
+        agents &&
+        !userAllowed &&
+        method !== 'GET' &&
+        method !== 'HEAD' &&
+        !isBookkeepingRequest(method, url)
+          ? this.callTag
+          : null;
       if (!tag) return send(input, init);
       // A Request's body is read once: keep a copy for a resend.
       const spare = input instanceof Request ? input.clone() : null;

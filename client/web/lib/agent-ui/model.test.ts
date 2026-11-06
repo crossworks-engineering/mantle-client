@@ -4,6 +4,7 @@ import {
   decodePath,
   elementRefusal,
   isAgentRefusal,
+  isBookkeepingRequest,
   lessonCallTag,
   linkRefusal,
   nameMatches,
@@ -91,6 +92,27 @@ describe('the brain’s refusal', () => {
     expect(lessonCallTag('0a0a0a0a-0a0a-40a0-80a0-000000000001')).toBe(
       'lesson:0a0a0a0a-0a0a-40a0-80a0-000000000001',
     );
+  });
+});
+
+describe('isBookkeepingRequest', () => {
+  it('is a frame ticket or an open counted, by POST', () => {
+    expect(isBookkeepingRequest('POST', '/api/apps/a1/frame-ticket')).toBe(true);
+    expect(isBookkeepingRequest('post', 'https://brain.invalid/api/presents/p1/frame-ticket')).toBe(
+      true,
+    );
+    expect(isBookkeepingRequest('POST', '/api/tree/items/i1/opened')).toBe(true);
+    expect(isBookkeepingRequest('POST', '/api/tree/items/i1/%6Fpened')).toBe(true);
+  });
+
+  it('is nothing else: no other method, path or a write beside it', () => {
+    expect(isBookkeepingRequest('PUT', '/api/apps/a1/frame-ticket')).toBe(false);
+    expect(isBookkeepingRequest('POST', '/api/apps/a1/db-broker')).toBe(false);
+    expect(isBookkeepingRequest('POST', '/api/apps/a1/frame-ticket/x')).toBe(false);
+    expect(isBookkeepingRequest('POST', '/api/formulas/f1/evaluate')).toBe(false);
+    expect(isBookkeepingRequest('POST', '/api/journal')).toBe(false);
+    expect(isBookkeepingRequest('POST', '/api/files/files')).toBe(false);
+    expect(isBookkeepingRequest('POST', '/api/tree/items/i1/pin')).toBe(false);
   });
 });
 

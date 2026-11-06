@@ -245,8 +245,44 @@ export function decodePath(path: string): string | null {
 }
 
 /** The header that names the agent's call (or a lesson) on a request it
- *  set off; the brain refuses a risky one (fix round contract, section 2). */
+ *  set off; the brain refuses a risky one (fix round contract, section 2).
+ *  This constant, AGENT_REFUSED_ERROR and the `unsafe_route` refusal equal
+ *  the brain's `@mantle/client-types/agent-ui` (AGENT_CALL_HEADER,
+ *  AGENT_REFUSED_ERROR, AGENT_UI_ERRORS); the contract package this client
+ *  pins (0.500.30) has no agent-ui module yet, so they are kept here until
+ *  it does. */
 export const AGENT_CALL_HEADER = 'x-mantle-agent-call';
+
+/** The `error` of the brain's 403 for a tagged risky write. */
+export const AGENT_REFUSED_ERROR = 'agent_refused';
+
+/**
+ * Background bookkeeping a screen sends on its own while the agent only
+ * opens or reads it: not the agent's write, so it is never tagged (the
+ * brain would refuse a tagged one and the user would be asked about it).
+ * Each must be something no user sees as an action:
+ *  - `POST /api/apps/:id/frame-ticket`: a short-lived ticket to show an
+ *    app's frame, minted when an app is shown;
+ *  - `POST /api/presents/:id/frame-ticket`: the same for a canvas (a page's
+ *    canvas embed, a presentation);
+ *  - `POST /api/tree/items/:id/opened`: the Recent and Most used counter an
+ *    item's open bumps.
+ * Only the exact path, POST, decoded; anything below or beside it is not.
+ */
+export function isBookkeepingRequest(method: string, url: string): boolean {
+  if (method.toUpperCase() !== 'POST') return false;
+  let path: string | null;
+  try {
+    path = decodePath(new URL(url, 'http://app.invalid').pathname);
+  } catch {
+    return false;
+  }
+  if (!path) return false;
+  return (
+    /^\/api\/(apps|presents)\/[^/]+\/frame-ticket$/.test(path) ||
+    /^\/api\/tree\/items\/[^/]+\/opened$/.test(path)
+  );
+}
 
 /** A lesson's tag for that header: `lesson:<uuid>`. */
 export function lessonCallTag(uuid: string): string {
@@ -260,7 +296,7 @@ export function isAgentRefusal(status: number, body: unknown): boolean {
     status === 403 &&
     !!body &&
     typeof body === 'object' &&
-    (body as { error?: unknown }).error === 'agent_refused'
+    (body as { error?: unknown }).error === AGENT_REFUSED_ERROR
   );
 }
 

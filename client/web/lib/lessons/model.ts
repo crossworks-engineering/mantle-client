@@ -195,27 +195,37 @@ export const LESSONS_FOLDER = 'Lessons';
  *  in it (an Admin user; the shell names it), else null. */
 export type LessonViewer = { adminWorkspaceId: string | null };
 
+/** What GET /api/grants/:id says of an item's home: `homeIsAdmin` from a
+ *  brain that sends it (any login that reads the item gets it), and the
+ *  home as the caller may name it. */
+export type LessonHome = {
+  home?: { wsId: string | null } | null;
+  homeIsAdmin?: boolean;
+};
+
 /**
  * Whether the Lessons folder, or a lesson in it, may be played to this
- * viewer: it is homed in the Admin workspace, as far as the viewer can
- * tell from its home (GET /api/grants/:id). The same rule for every
- * viewer, Admin users included (fix round contract, section 3):
+ * viewer: it is homed in the Admin workspace, where members cannot write.
+ * The same rule for every viewer, Admin users included (fix round
+ * contract, section 3):
  *
- *  - an Admin user is in the Admin workspace, so the brain names its home:
- *    it must be the Admin workspace;
- *  - anyone else is not in the Admin workspace, and the brain names no home
- *    of a workspace the caller is not a user of: the home must be unnamed.
- *    A home they can name is one of their own workspaces, where a member
- *    could have written it; and a lesson they may change is not played.
+ *  - a brain that sends `homeIsAdmin` says it: only `true` plays;
+ *  - an older brain does not: an Admin user names the home, so it must be
+ *    the Admin workspace; anyone else cannot tell, so nothing plays.
+ *
+ * A lesson the viewer may change is never played to anyone but an Admin
+ * user.
  */
 export function lessonTrusted(
-  home: { wsId: string | null } | null | undefined,
+  grants: LessonHome | null | undefined,
   viewer: LessonViewer,
   mayEdit = false,
 ): boolean {
-  if (!home) return false;
-  if (viewer.adminWorkspaceId) return home.wsId === viewer.adminWorkspaceId;
-  return home.wsId === null && !mayEdit;
+  if (!grants) return false;
+  if (mayEdit && !viewer.adminWorkspaceId) return false;
+  if (typeof grants.homeIsAdmin === 'boolean') return grants.homeIsAdmin;
+  if (!viewer.adminWorkspaceId) return false;
+  return !!grants.home && grants.home.wsId === viewer.adminWorkspaceId;
 }
 
 export function isLessonsFolder(f: { name: string; depth: number }): boolean {

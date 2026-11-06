@@ -131,3 +131,27 @@ test('a Lessons folder that is not the Admin workspace’s offers nothing, to an
   );
   await expect(card(page)).toHaveCount(0);
 });
+
+test('a brain before homeIsAdmin offers a member nothing', async ({ page }) => {
+  api.sendsHomeIsAdmin = false;
+  await signIn(page, 'member');
+  await page
+    .getByRole('button', { name: /Mo Member/ })
+    .first()
+    .click();
+  await page.getByRole('menuitem', { name: 'Lessons' }).click();
+  await expect(page.getByRole('dialog', { name: 'Lessons' })).toContainText('No lessons yet.');
+});
+
+test('a brain before homeIsAdmin: an Admin user still plays by the home it names', async ({
+  page,
+}) => {
+  api.sendsHomeIsAdmin = false;
+  await signIn(page, 'admin');
+  await page.goto(`/?lesson=${LESSONS.lesson.id}`);
+  await page
+    .getByRole('dialog', { name: 'Start this lesson?' })
+    .getByRole('button', { name: 'Start' })
+    .click();
+  await expect(card(page)).toContainText('step 1 of 3');
+});

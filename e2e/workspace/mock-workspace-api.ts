@@ -273,6 +273,9 @@ export type MockWorkspaceApi = {
   /** Where the Lessons folder and its lesson are homed (GET /api/grants/:id):
    *  the Admin workspace unless a spec moves them. */
   lessonsHome: WorkspaceKey;
+  /** GET /api/grants/:id sends `homeIsAdmin` (default true); false plays
+   *  a brain before the field. */
+  sendsHomeIsAdmin: boolean;
   close: () => Promise<void>;
 };
 
@@ -363,6 +366,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     turnEvents: [],
     refuseAgentWrites: null,
     lessonsHome: 'admin',
+    sendsHomeIsAdmin: true,
     close: async () => undefined,
   };
 
@@ -770,7 +774,9 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     }
     // The home of the Lessons folder and its lessons (components/lessons
     // checks it): named only to a user of the home workspace, or an Admin
-    // user, as the brain's GET /api/grants/:id. The stray page is Team's.
+    // user, as the brain's GET /api/grants/:id; `homeIsAdmin` to anyone
+    // who reads it (unless a spec plays an older brain). The stray page is
+    // Team's.
     const grantsM = /^\/api\/grants\/([0-9a-f-]{36})$/.exec(path);
     if (grantsM && method === 'GET') {
       const id = grantsM[1]!;
@@ -788,6 +794,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           home: names
             ? { wsId: WORKSPACES[homeKey].id, name: WORKSPACES[homeKey].name }
             : { wsId: null, name: null },
+          ...(state.sendsHomeIsAdmin ? { homeIsAdmin: homeKey === 'admin' } : {}),
           rows: [],
           addable: [],
           mayManage: role === 'admin',

@@ -5,8 +5,9 @@
  * published body (never a draft).
  *
  * Members cannot write in the Admin workspace. The client checks the home
- * of the folder and of each lesson (GET /api/grants/:id) with
- * `lessonTrusted`, for every viewer: a lesson anywhere else is not offered.
+ * of the folder and of each lesson (GET /api/grants/:id, its `homeIsAdmin`)
+ * with `lessonTrusted`, for every viewer: a lesson anywhere else is not
+ * offered.
  */
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import type { GrantsResponse, TreeFolderPage } from '@mantle/client-types';
@@ -16,16 +17,24 @@ import {
   lessonTrusted,
   parseLesson,
   type Lesson,
+  type LessonHome,
   type LessonViewer,
 } from './model';
 
 export type LessonEntry = { id: string; title: string };
 
-/** An item's home as the caller may name it, or null when it cannot be read. */
-async function homeOf(id: string): Promise<GrantsResponse['home'] | null> {
+/** What the brain says of an item's home, or null when it cannot be read.
+ *  `homeIsAdmin` is read off the answer: a contract package before it does
+ *  not name the field. */
+async function homeOf(id: string): Promise<LessonHome | null> {
   try {
-    const g = await apiFetch<GrantsResponse>(`/api/grants/${encodeURIComponent(id)}`);
-    return g.home ?? null;
+    const g = await apiFetch<GrantsResponse & { homeIsAdmin?: unknown }>(
+      `/api/grants/${encodeURIComponent(id)}`,
+    );
+    return {
+      home: g.home ?? null,
+      ...(typeof g.homeIsAdmin === 'boolean' ? { homeIsAdmin: g.homeIsAdmin } : {}),
+    };
   } catch {
     return null;
   }

@@ -150,6 +150,17 @@ describe('the request guard and the brain’s refusal', () => {
     h.end();
   });
 
+  it('never tags background bookkeeping: a frame ticket, an open counted', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = new AgentHands();
+    h.begin('Lesson', { tag: 'lesson:x' });
+    await window.fetch('/api/apps/a1/frame-ticket', { method: 'POST' });
+    await window.fetch('/api/tree/items/i1/opened', { method: 'POST' });
+    await window.fetch('/api/notes', { method: 'POST', body: '{}' });
+    expect(calls.map((c) => c.tag)).toEqual([null, null, 'lesson:x']);
+    h.end();
+  });
+
   it('a 403 that is not the brain’s refusal is the page’s own answer', async () => {
     const { AgentHands } = await import('./hands');
     const h = new AgentHands();
