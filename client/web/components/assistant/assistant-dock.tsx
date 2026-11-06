@@ -427,11 +427,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const [agentName, setAgentName] = useState('Assistant');
   const agentNameRef = useRef(agentName);
   agentNameRef.current = agentName;
-  // Whether this login lets agents use the window (lib/agent-ui/turn-calls):
-  // read once, so a turn can name the window.
-  useEffect(() => {
-    void loadAgentUiSetting();
-  }, []);
+
   const agentRef = useRef<string | undefined>(undefined);
   // The live-stream routes of a turn are an Admin user's (W7c): any other
   // login's reply is read from its thread by the safety poll below. A ref,
@@ -439,6 +435,12 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const adminUser = useIsAdminUser();
   const adminUserRef = useRef(adminUser);
   adminUserRef.current = adminUser;
+  // Whether this login lets agents use the window (lib/agent-ui/turn-calls):
+  // read once, so a turn can name the window. An Admin user's only: a
+  // member's turns do not stream, so its window is never driven.
+  useEffect(() => {
+    if (adminUser) void loadAgentUiSetting();
+  }, [adminUser]);
 
   // ── Global panel UI state ──
   const [panel, setPanel] = useState<AssistantPanelState>('closed');
