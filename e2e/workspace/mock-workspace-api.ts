@@ -172,6 +172,9 @@ export type MockRequest = { method: string; path: string; query: string; role: R
 /** A page a spec made through POST /api/pages, and where the brain put it. */
 export type MockCreated = { id: string; title: string; ws: WorkspaceKey; role: Role };
 
+/** A task a spec made through POST /api/tasks, and where it landed. */
+export type MockTask = { id: string; title: string; body: string; ws: WorkspaceKey; role: Role };
+
 /** A table a spec made through POST /api/tables/import, and where it landed. */
 export type MockImportedTable = { id: string; title: string; ws: WorkspaceKey; role: Role };
 
@@ -203,6 +206,11 @@ export type MockWorkspaceApi = {
   onboarded: boolean;
   /** The pages made in this run, with the workspace each landed in. */
   created: MockCreated[];
+  /** Whether the shell lists Tasks among the login's tree kinds (default
+   *  false, as before): a spec of a tasks tool turns it on. */
+  tasksKind: boolean;
+  /** The tasks made in this run (POST /api/tasks), with their workspace. */
+  tasks: MockTask[];
   /** Workspaces a login was taken out of after its shell loaded: the shell
    *  still lists them, the brain refuses a create there (403 workspace). */
   leftSince: Partial<Record<Role, WorkspaceKey[]>>;
@@ -244,6 +252,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       state.requests.filter((r) => r.role === role).map((r) => `${r.method} ${r.path}`),
     onboarded: true,
     created: [],
+    tasksKind: false,
+    tasks: [],
     importedTables: [],
     tableImportAnswer: null,
     tableImportHold: null,
@@ -332,7 +342,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     isOwner: role === 'admin',
     workspaces: shellWorkspaces(role),
     areas: role === 'admin' ? ALL_AREAS : [],
-    treeKinds: MEMBER_TREE_KINDS,
+    treeKinds: state.tasksKind ? [...MEMBER_TREE_KINDS, 'tasks'] : MEMBER_TREE_KINDS,
     ...(state.noAutoTables === undefined ? {} : { noAutoTables: state.noAutoTables }),
     onboarded: state.onboarded,
     displayName: LOGINS[role].name,
@@ -542,6 +552,24 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       const made: MockCreated = { id, title: body.title ?? 'Untitled', ws: home.ws, role };
       state.created.push(made);
       return (json(res, 201, { page: pageRow(role, made) }), true);
+    }
+    if (path === '/api/tasks' && method === 'POST') {
+      const body = JSON.parse((await readBody(req)) || '{}') as { title?: string; body?: string };
+      const home = createHome(role, ws);
+      if ('status' in home) return (json(res, home.status, home.body), true);
+      const id = `abcdef${String(state.tasks.length + 1).padStart(2, '0')}-0000-4000-8000-0000000000aa`;
+      const made: MockTask = {
+        id,
+        title: body.title ?? '',
+        body: body.body ?? '',
+        ws: home.ws,
+        role,
+      };
+      state.tasks.push(made);
+      return (
+        json(res, 201, { task: { id, title: made.title, body: made.body, status: 'open' } }),
+        true
+      );
     }
     // The Tables screen's Import: a new committed table, where `?ws=` says.
     if (path === '/api/tables/import' && method === 'POST') {

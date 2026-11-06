@@ -3,8 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { folderKey, treeKey } from '@/components/item-tree/tree-api';
 import { deskNewestKey, deskStorageKey, hubNewestOf } from './desk-data';
+import { toolAvailable } from '@/lib/home-desk';
 import { blankStickies } from './widgets/items';
-import { splitJot } from './widgets/misc';
+import { jotRequest, splitJot } from './widgets/misc';
 import { greeting, monthGrid } from './widgets/time';
 
 describe('quick note', () => {
@@ -23,6 +24,33 @@ describe('quick note', () => {
 describe('sticky notes', () => {
   it('an empty board shows up to three blank stickies, never none', () => {
     expect([0, 1, 2, 3, 6, 12].map(blankStickies)).toEqual([1, 1, 2, 3, 3, 3]);
+  });
+});
+
+describe('quick task', () => {
+  it('posts the first line as the title and the rest as the body', () => {
+    expect(jotRequest('task', 'Book the venue\nfor 40 people')).toEqual({
+      route: '/api/tasks',
+      body: { title: 'Book the venue', body: 'for 40 people' },
+    });
+  });
+
+  it('names an untitled task, and sends nothing for blank text', () => {
+    expect(jotRequest('task', '#\nonly a body')?.body.title).toBe('Quick task');
+    expect(jotRequest('task', '  \n ')).toBeNull();
+  });
+
+  it('a note still posts title and content', () => {
+    expect(jotRequest('note', 'Plan\nsteps')).toEqual({
+      route: '/api/notes',
+      body: { title: 'Plan', content: 'steps' },
+    });
+  });
+
+  it('is offered only to a login that has tasks', () => {
+    expect(toolAvailable('quick-task', ['notes', 'tasks'])).toBe(true);
+    expect(toolAvailable('quick-task', ['notes', 'pages'])).toBe(false);
+    expect(toolAvailable('quick-note', ['pages'])).toBe(true);
   });
 });
 

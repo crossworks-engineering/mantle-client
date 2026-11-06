@@ -32,7 +32,7 @@ import {
 import { DeskSettings } from './desk-settings';
 import { DeskIcon, KindWidget, StickyNotesWidget, TasksWidget } from './widgets/items';
 import { DriftWidget, ThemeWidget } from './widgets/look';
-import { GlanceWidget, QuickNoteWidget, WorkspacesWidget } from './widgets/misc';
+import { GlanceWidget, QuickNoteWidget, QuickTaskWidget, WorkspacesWidget } from './widgets/misc';
 import { CalendarWidget, ClockWidget, FocusWidget } from './widgets/time';
 
 /**
@@ -227,7 +227,11 @@ function renderWidget(item: DeskItem, env: WidgetEnv): ReactNode {
         <CalendarWidget id={id} withEvents={env.kinds.includes('events')} onRemove={env.onRemove} />
       );
     case 'quick-note':
-      return <QuickNoteWidget id={id} ws={env.ws} onRemove={env.onRemove} />;
+      return <QuickNoteWidget id={id} onRemove={env.onRemove} />;
+    case 'quick-task':
+      return env.kinds.includes('tasks') ? (
+        <QuickTaskWidget id={id} onRemove={env.onRemove} />
+      ) : null;
     case 'theme':
       return <ThemeWidget id={id} onRemove={env.onRemove} />;
     case 'drift':

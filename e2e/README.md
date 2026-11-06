@@ -90,6 +90,9 @@ else is a plain 404.
   (`PUT /api/profile/sounds`) and names the login the tab shows (`loginId`).
 - `desk-theme.spec.ts`: the Desk's Theme card picks the colour theme from a
   menu that opens on the worn theme, by keyboard.
+- `desk-quick-task.spec.ts`: the Desk's Quick task adds a task (first line
+  the title, the rest the body) in the workspace the switcher shows, and is
+  offered only to a login that has Tasks (`tasksKind` turns them on).
 - `tables-import.spec.ts`: Import on the Tables screen takes the three types
   and refuses another, opens the new table in the workspace picked, shows the
   brain's words for a refusal and says a brain with no such route needs an
