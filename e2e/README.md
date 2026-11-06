@@ -64,6 +64,9 @@ else is a plain 404.
   Edit or Delete); a `/n` link to a file opens it in its folder from
   `GET /api/files/files/:id`; a typed admin screen says "You cannot manage
   this part of the brain."; `/review` and `/team-admin` land on the home.
+- `company-sign-in.spec.ts`: Settings > Company sign-in in each mode: the secret
+  and the SCIM token in `setup`, the lock, the `.env` values, the refusals, a
+  brain before the screen, the search palette (`mock-sso-setup.ts`).
 - `admin-shell.spec.ts`: the full nav with Settings > Users, the owner Pages
   screen (every page of the brain) and the Users screen (no sign-in by email
   code and no client login since W8).
@@ -83,7 +86,7 @@ else is a plain 404.
   changes with the switcher (the Desk, or the workspace's home app); "All my
   workspaces" shows all of them; an Admin user finds the Dashboard in the menu.
 - `desk.spec.ts`: the Desk saved on the login's profile (`GET`/`PUT
-  /api/profile/home-desk`, compare-and-set on a version): a change is saved
+/api/profile/home-desk`, compare-and-set on a version): a change is saved
   once, read back after a reload, and when another device saved first its
   desk shows with one quiet toast.
 - `sounds.spec.ts`: a change to the UI sounds is saved at once

@@ -44,7 +44,9 @@ mantle repo.
 - The token shows once, in this screen's state only. It is never kept in the
   query cache, and a reload loses it. A failed status read does not take it away.
 - A refusal that says the screen is out of date (`setup-closed`, `env-wins`) reads
-  the status again, so the screen shows the lock.
+  the status again, so the screen shows the lock or the `.env` value.
+- The secret field asks `autoComplete="new-password"`, not `off`, so a browser does
+  not fill the admin's own password into it.
 
 The types in `lib/sso-setup.ts` mirror the brain's DTOs. Replace them with
 `@mantle/client-types` when the next contract is published.

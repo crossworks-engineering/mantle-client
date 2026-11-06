@@ -35,7 +35,7 @@ import {
   type SsoSetupStatus,
   type SsoSetupTestOutcome,
 } from '@/lib/sso-setup';
-import { readSsoSetup } from '@/lib/use-sso-setup-shown';
+import { ssoSetupQuery } from '@/lib/use-sso-setup-shown';
 
 function Value({ label, value }: { label: string; value: string }) {
   return (
@@ -88,7 +88,6 @@ function PasswordDialog({
   send,
   onDone,
   onOpenChange,
-  staleStatus,
 }: {
   open: boolean;
   title: string;
@@ -97,14 +96,15 @@ function PasswordDialog({
   send: (password: string) => Promise<void>;
   onDone: () => void;
   onOpenChange: (open: boolean) => void;
-  /** Read the status again: this refusal says the screen is out of date. */
-  staleStatus: () => Promise<void>;
 }) {
+  const queryClient = useQueryClient();
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const change = (next: boolean) => {
+    // The request lands anyway: its answer belongs on this dialog.
+    if (!next && pending) return;
     if (!next) {
       setPassword('');
       setError(null);
@@ -121,7 +121,7 @@ function PasswordDialog({
       onDone();
     } catch (err) {
       setError(refusalText(err, 'Could not save. Try again.'));
-      if (statusIsStale(err)) await staleStatus();
+      if (statusIsStale(err)) await queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY });
     } finally {
       setPending(false);
     }
@@ -180,10 +180,11 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
   const who = setterText(status.secretSet);
   const result = outcome ? testOutcomeText(outcome) : null;
 
-  // A typed secret does not outlive the window: the form is gone, so is it.
+  // A typed secret does not outlive its form.
+  const formShown = open && status.secret !== 'env';
   useEffect(() => {
-    if (!open) setSecret('');
-  }, [open]);
+    if (!formShown) setSecret('');
+  }, [formShown]);
 
   const test = async () => {
     setTesting(true);
@@ -206,7 +207,7 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
       {who && status.secret === 'row' && (
         <p className="text-xs text-muted-foreground">Set by {who}.</p>
       )}
-      {open && status.secret !== 'env' && (
+      {formShown && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -221,7 +222,12 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
               <SecretInput
                 id="sso-setup-secret"
                 noun="secret"
-                autoComplete="off"
+                // Not `off`: a browser may ignore that on a password field and
+                // fill the admin's own password here. The two data marks ask
+                // the common password managers to leave it alone.
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
                 value={secret}
                 maxLength={1024}
                 aria-describedby="sso-setup-secret-help"
@@ -270,7 +276,6 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
       <PasswordDialog
         open={asking}
         onOpenChange={setAsking}
-        staleStatus={() => queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY })}
         title="Save the client secret"
         description="Type your password to save it."
         action="Save secret"
@@ -289,13 +294,44 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
   );
 }
 
-function ScimSection({ status }: { status: SsoSetupOn }) {
+/** The token this answer alone holds. Kept by the screen, above anything a
+ *  status read can take away. */
+function TokenPanel({ token, onDone }: { token: string; onDone: () => void }) {
+  return (
+    <Section title="New SCIM token">
+      <div className="space-y-3 rounded-md border border-border bg-primary/5 p-3">
+        <p className="text-sm">
+          Copy the token now: it is shown only once. Paste it into Entra as the secret token. It
+          works at once.
+        </p>
+        <CopyBlock code={token} />
+        <div className="flex justify-end">
+          <Button size="sm" onClick={onDone}>
+            I copied it
+          </Button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function ScimSection({
+  status,
+  tokenShown,
+  madeHere,
+  onMade,
+}: {
+  status: SsoSetupOn;
+  tokenShown: boolean;
+  madeHere: boolean;
+  onMade: (token: string) => void;
+}) {
   const queryClient = useQueryClient();
   const [asking, setAsking] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
   const open = status.mode === 'setup';
   const who = setterText(status.scimSet);
-  const replacing = status.scim === 'row';
+  // A token made here counts, also when the read after it failed.
+  const replacing = status.scim === 'row' || madeHere;
   const mayMake = open && (status.scim === 'none' || status.scim === 'row');
 
   return (
@@ -304,21 +340,7 @@ function ScimSection({ status }: { status: SsoSetupOn }) {
       {who && status.scim === 'row' && (
         <p className="text-xs text-muted-foreground">Made by {who}.</p>
       )}
-      {token && (
-        <div className="space-y-3 rounded-md border border-border bg-primary/5 p-3">
-          <p className="text-sm">
-            Copy the token now: it is shown only once. Paste it into Entra as the secret token. It
-            works at once.
-          </p>
-          <CopyBlock code={token} />
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => setToken(null)}>
-              I copied it
-            </Button>
-          </div>
-        </div>
-      )}
-      {mayMake && !token && (
+      {mayMake && !tokenShown && (
         <Button variant="outline" onClick={() => setAsking(true)}>
           {replacing ? 'Make a new token' : 'Make SCIM token'}
         </Button>
@@ -326,7 +348,6 @@ function ScimSection({ status }: { status: SsoSetupOn }) {
       <PasswordDialog
         open={asking}
         onOpenChange={setAsking}
-        staleStatus={() => queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY })}
         title={replacing ? 'Make a new SCIM token' : 'Make a SCIM token'}
         description={
           replacing
@@ -338,7 +359,7 @@ function ScimSection({ status }: { status: SsoSetupOn }) {
           const res = await apiSend<{ token: string }>(`${SSO_SETUP_PATH}/scim-token`, 'POST', {
             password,
           });
-          setToken(res.token);
+          onMade(res.token);
           await queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY });
         }}
         onDone={() => setAsking(false)}
@@ -367,10 +388,10 @@ function EntraSteps() {
  * value, so it may differ from what the box's .env says now.
  */
 export function CompanySignInClient() {
-  const query = useQuery({
-    queryKey: SSO_SETUP_KEY,
-    queryFn: readSsoSetup,
-  });
+  const query = useQuery(ssoSetupQuery);
+  const [token, setToken] = useState<string | null>(null);
+  const [madeHere, setMadeHere] = useState(false);
+  const panel = token && <TokenPanel token={token} onDone={() => setToken(null)} />;
 
   if (query.isLoading) {
     return <div className="p-4 text-sm text-muted-foreground md:p-5">Loading…</div>;
@@ -385,8 +406,11 @@ export function CompanySignInClient() {
   const status = query.data;
   if (status.mode === 'off') {
     return (
-      <div className="p-4 text-sm text-muted-foreground md:p-5">
-        Company sign-in is off on this box.
+      <div>
+        {panel}
+        <div className="p-4 text-sm text-muted-foreground md:p-5">
+          Company sign-in is off on this box.
+        </div>
       </div>
     );
   }
@@ -425,7 +449,16 @@ export function CompanySignInClient() {
         </div>
       </Section>
       <SecretSection status={status} />
-      <ScimSection status={status} />
+      {panel}
+      <ScimSection
+        status={status}
+        tokenShown={!!token}
+        madeHere={madeHere}
+        onMade={(made) => {
+          setToken(made);
+          setMadeHere(true);
+        }}
+      />
       {open && <EntraSteps />}
     </div>
   );
