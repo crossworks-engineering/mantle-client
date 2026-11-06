@@ -62,7 +62,6 @@ describe('the parts of the chat a login gets', () => {
   it('an Admin user with the Settings area gets everything', () => {
     expect(chatFeatures(true, ['settings'])).toEqual({
       attachments: true,
-      pick: true,
       live: true,
       runs: true,
     });
@@ -73,7 +72,6 @@ describe('the parts of the chat a login gets', () => {
   it('an Admin user without the Settings area: no runs strips (/api/pending, /api/runs)', () => {
     expect(chatFeatures(true, ['users', 'connectors'])).toEqual({
       attachments: true,
-      pick: true,
       live: true,
       runs: false,
     });
@@ -84,7 +82,6 @@ describe('the parts of the chat a login gets', () => {
     expect(chatFeatures(false, ['settings']).runs).toBe(false);
     expect(chatFeatures(false, [])).toEqual({
       attachments: false,
-      pick: false,
       live: false,
       runs: false,
     });

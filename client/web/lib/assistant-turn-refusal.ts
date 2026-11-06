@@ -59,8 +59,6 @@ export type ChatFeatures = {
   /** Attach a file, paste or pick one: an Admin user's (a workspace chat
    *  takes text only). */
   attachments: boolean;
-  /** Pick content on the screen behind (pick mode is an Admin user's). */
-  pick: boolean;
   /** The live tokens, the thought trail and the stage label of a turn, Stop,
    *  the premature-Enter replace and the follow-up suggestion: all on the
    *  Admin-only live-stream routes. */
@@ -81,7 +79,6 @@ export function chatFeatures(
 ): ChatFeatures {
   return {
     attachments: adminUser,
-    pick: adminUser,
     live: adminUser,
     runs: adminUser && hasArea(areas, 'settings'),
   };

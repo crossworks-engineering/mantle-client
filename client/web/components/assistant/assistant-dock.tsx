@@ -17,7 +17,6 @@ import {
   PanelRight,
   PictureInPicture2,
   Sparkles,
-  SquareDashedMousePointer,
 } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
@@ -278,23 +277,15 @@ type AssistantDockApi = {
   /** Subscribe to turn-settled events; returns an unsubscribe. A surface hook
    *  uses this to refresh its editor when a turn that edited its node completes. */
   registerTurnListener: (fn: TurnSettledListener) => () => void;
-  // ── marker context-pick (consumed by <PickMode/>, the composer, the bubbles) ──
-  /** Nodes marked to ride along with the next turn as context. */
+  // ── hand-attached context (chat uploads, area screenshots, the bubbles) ──
+  /** Nodes attached to ride along with the next turn as context. */
   pendingContext: ContextRef[];
-  /** Add a marked node (deduped by id, capped). */
+  /** Attach a node (deduped by id, capped). */
   attachContext: (ref: ContextRef) => void;
-  /** Drop one marked node. */
+  /** Drop one attached node. */
   removeContext: (id: string) => void;
-  /** Clear all marked nodes (called after a successful send). */
+  /** Clear all attached nodes (called after a successful send). */
   clearContext: () => void;
-  /** True while in pick mode — the screen behind highlights markable rows. */
-  picking: boolean;
-  /** Enter pick mode (also minimises an open panel so the screen is navigable). */
-  startPicking: () => void;
-  /** Leave pick mode. */
-  stopPicking: () => void;
-  /** picking ⇄ not — what the marker bubble toggles. */
-  togglePicking: () => void;
 };
 
 /**
@@ -327,9 +318,6 @@ type DockActions = Pick<
   | 'setDockWidth'
   | 'setDockResizing'
   | 'registerTurnListener'
-  | 'startPicking'
-  | 'stopPicking'
-  | 'togglePicking'
 >;
 type DockLayout = Pick<
   AssistantDockApi,
@@ -348,7 +336,6 @@ type DockSession = Pick<
   | 'surfaceSelection'
   | 'surfaceChanges'
   | 'activeContextNodeId'
-  | 'picking'
 >;
 
 /** Compile-time proof that the three partitions cover every field. Add one to
@@ -450,9 +437,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   }, [panel]);
   const [activeAgentSlug, setActiveAgentSlugState] = useState<string | undefined>(undefined);
 
-  // ── Marker context-pick state ──
+  // ── Hand-attached context ──
   const [pendingContext, setPendingContext] = useState<ContextRef[]>([]);
-  const [picking, setPicking] = useState(false);
   // ── Surface-pinned context + focus directive (owned by the surface hook) ──
   const [pinnedContextRaw, setPinnedContextState] = useState<ContextRef[]>([]);
   // Pinned refs the user dismissed via the composer "×" — they want a general
@@ -709,7 +695,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
   const attachContext = useCallback((ref: ContextRef) => {
     setPendingContext((prev) => {
-      if (prev.some((r) => r.id === ref.id)) return prev; // already marked
+      if (prev.some((r) => r.id === ref.id)) return prev; // already attached
       if (prev.length >= MAX_CONTEXT) return prev; // cap — silently ignore extras
       return [...prev, ref];
     });
@@ -719,18 +705,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
     [],
   );
   const clearContext = useCallback(() => setPendingContext([]), []);
-
-  const startPicking = useCallback(() => {
-    setPicking(true);
-    setPanel((p) => (p === 'open' ? 'min' : p)); // free the screen to navigate + click rows
-  }, []);
-  const stopPicking = useCallback(() => setPicking(false), []);
-  const togglePicking = useCallback(() => {
-    setPicking((on) => {
-      if (!on) setPanel((p) => (p === 'open' ? 'min' : p));
-      return !on;
-    });
-  }, []);
 
   // Seed the selected agent from the pref the picker writes, so the panel
   // opens on your last-used agent without a URL param. Kept URI-encoded, as
@@ -750,7 +724,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const openAssistant = useCallback(
     (slug?: string) => {
       if (slug) setActiveAgentSlug(slug);
-      setPicking(false); // opening the full chat ends any in-progress pick
       setPanel('open');
     },
     [setActiveAgentSlug],
@@ -759,7 +732,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const close = useCallback(() => setPanel('closed'), []);
   const toggle = useCallback(() => {
     setPanel((p) => (p === 'open' ? 'min' : 'open'));
-    setPicking(false); // showing the chat (or minimising it) ends pick mode
   }, []);
 
   // ⌘I / Ctrl+I toggles the panel. Registered HERE, once per app, not in
@@ -1127,9 +1099,9 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
   // ── Three contexts, not one ────────────────────────────────────────────────
   // This was ONE value of 45 fields memoised on all 45, so a change to any of
-  // them re-rendered every consumer. Measured on /tasks: toggling `picking` —
-  // which only <PickMode/> reads — re-rendered the 630-line app shell and the
-  // question watcher just as often as PickMode itself. `messages` is in here
+  // them re-rendered every consumer. Measured on /tasks: toggling the old pick
+  // mode's flag, which one overlay read, re-rendered the 630-line app shell and
+  // the question watcher just as often as that overlay. `messages` is in here
   // too, so that fan-out fired on every streaming token.
   //
   // Split by WHAT CHANGES, which turned out to match what consumers ask for:
@@ -1163,9 +1135,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       setDockWidth,
       setDockResizing,
       registerTurnListener,
-      startPicking,
-      stopPicking,
-      togglePicking,
     }),
     [
       runTurn,
@@ -1192,9 +1161,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       setDockWidth,
       setDockResizing,
       registerTurnListener,
-      startPicking,
-      stopPicking,
-      togglePicking,
     ],
   );
 
@@ -1228,7 +1194,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       surfaceSelection,
       surfaceChanges,
       activeContextNodeId,
-      picking,
     }),
     [
       messages,
@@ -1242,7 +1207,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       surfaceSelection,
       surfaceChanges,
       activeContextNodeId,
-      picking,
     ],
   );
 
@@ -1386,7 +1350,7 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
           label there regardless. */}
       <span className="truncate group-data-[nav-collapsed=true]/shell:hidden">Assistant</span>
       {needsYou ? (
-        /* Corner badge, same shape as HighlightButton's attachment count —
+        /* Corner badge, a small count pip —
            absolutely positioned so it adds NO min-content width (see the
            className comment above). aria-hidden: the count is already in the
            accessible name. */
@@ -1403,55 +1367,6 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
             aria-hidden
           />
         )
-      )}
-    </Button>
-  );
-}
-
-/**
- * Highlight-content button — the "pick context first" entry point in the rail
- * toolbar. Toggles pick mode (<PickMode/> highlights markable rows on the screen
- * behind); a trailing count shows how many nodes are attached.
- */
-export function HighlightButton() {
-  const { picking, togglePicking, pendingContext } = useAssistantDock();
-  const count = pendingContext.length;
-
-  return (
-    /* Icon-only: this lives in the rail's bottom toolbar, where "Highlight
-       content" is three times the width of the column's whole control strip.
-       Active state is the accent surface rather than `variant="default"` — it
-       matches the help launcher beside it, and it leaves `primary` free to mean
-       the attachment count (a primary pip on a primary fill is invisible). */
-    <Button
-      onClick={togglePicking}
-      size="icon"
-      variant="ghost"
-      className={cn(
-        'relative size-8',
-        picking &&
-          'bg-accent text-accent-foreground ring-2 ring-ring ring-offset-1 ring-offset-sidebar',
-      )}
-      aria-pressed={picking}
-      aria-label={
-        picking
-          ? 'Stop highlighting'
-          : `Highlight content to send to the assistant${count > 0 ? ` — ${count} attached` : ''}`
-      }
-      title={
-        picking
-          ? 'Picking — click a row to attach (Esc when done)'
-          : 'Highlight content to send to the assistant'
-      }
-    >
-      <SquareDashedMousePointer aria-hidden />
-      {count > 0 && (
-        <span
-          className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-sidebar"
-          aria-hidden
-        >
-          {count}
-        </span>
       )}
     </Button>
   );

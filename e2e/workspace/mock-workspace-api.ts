@@ -234,7 +234,18 @@ export type MockWorkspaceApi = {
   status: MockStatus;
   /** Company sign-in's setup screen (mock-sso-setup.ts). */
   ssoSetup: MockSsoSetup;
+  /** Area screenshots saved in this run (POST /api/screenshots): who sent
+   *  it, the `?ws=` it named (none: the brain picks the private home), its
+   *  meta and the PNG's size. */
+  screenshots: MockScreenshot[];
   close: () => Promise<void>;
+};
+
+export type MockScreenshot = {
+  role: Role;
+  ws: string | null;
+  meta: Record<string, unknown>;
+  bytes: number;
 };
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -268,6 +279,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     sounds: {},
     status: newMockStatus(),
     ssoSetup: newMockSsoSetup(),
+    screenshots: [],
     close: async () => undefined,
   };
 
@@ -607,6 +619,35 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         t
           ? json(res, 200, { table: tableDetail(role, t) })
           : json(res, 404, { error: 'not found' }),
+        true
+      );
+    }
+    // An area screenshot: kept, and answered as the brain does (an Admin
+    // user's lands in Auto-filed, anyone else's in its private workspace).
+    if (path === '/api/screenshots' && method === 'POST') {
+      const raw = await readBody(req);
+      const meta = /name="meta"\r\n\r\n([^\r]*)\r\n/.exec(raw)?.[1];
+      const png = raw.includes('Content-Type: image/png') && raw.includes('PNG');
+      if (!meta || !png) return (json(res, 400, { error: 'meta and a PNG file required' }), true);
+      const n = state.screenshots.length + 1;
+      const id = `5c5c5c5c-5c5c-45c5-85c5-${String(n).padStart(12, '0')}`;
+      state.screenshots.push({
+        role,
+        ws: url.searchParams.get('ws'),
+        meta: JSON.parse(meta) as Record<string, unknown>,
+        bytes: raw.length,
+      });
+      const home = role === 'admin' ? WORKSPACES.admin : WORKSPACES.own;
+      return (
+        json(res, 201, {
+          file: {
+            id,
+            filename: `screenshot-${n}.png`,
+            sizeBytes: raw.length,
+            mimeType: 'image/png',
+          },
+          landedIn: { id: home.id, name: home.name },
+        }),
         true
       );
     }

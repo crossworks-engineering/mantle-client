@@ -57,7 +57,6 @@ import { RingCard } from '@/components/calls/ring-card';
 import { LinkGate } from '@/components/oidc/link-gate';
 import { OfferCard } from '@/components/oidc/offer-card';
 import { ProviderAlertBanner } from '@/components/needs-you/provider-alert-banner';
-import { PickMode } from '@/components/assistant/pick-mode';
 import { ZenModeContext } from '@/components/layout/zen-mode';
 import { SearchPalette } from '@/components/search/search-palette';
 import { WorkspaceSwitcher } from '@/components/workspaces/workspace-switcher';
@@ -739,11 +738,6 @@ function ShellFrame({
             when a tour is running (MANTLE_TOUR once per browser, or ?tour=).
             See components/tour. */}
         <TourOverlay />
-
-        {/* Marker pick mode: highlights markable rows + intercepts their clicks
-            while picking; renders nothing otherwise. It hands to the owner
-            assistant: an admin's. */}
-        {role === 'admin' ? <PickMode /> : null}
 
         {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}

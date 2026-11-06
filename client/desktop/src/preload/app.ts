@@ -76,4 +76,8 @@ contextBridge.exposeInMainWorld('mantleDesktop', {
     open: (url: string): Promise<boolean> => ipcRenderer.invoke('oidc:open', url),
     cancel: () => ipcRenderer.send('oidc:cancel'),
   },
+  // Area screenshots: this window's own pixels in a viewport rectangle, as
+  // PNG bytes. Only the window that asks is captured.
+  capture: (rect: { x: number; y: number; w: number; h: number }): Promise<Uint8Array> =>
+    ipcRenderer.invoke('desktop:capture', rect),
 });

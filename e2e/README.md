@@ -85,6 +85,10 @@ else is a plain 404.
 - `landing.spec.ts`: Home shows the current workspace's landing page and
   changes with the switcher (the Desk, or the workspace's home app); "All my
   workspaces" shows all of them; an Admin user finds the Dashboard in the menu.
+- `area-capture.spec.ts`: the rail's area capture (the desktop capture
+  stubbed): drag an area, see it, then Attach to chat (an Admin user) or
+  Save (a member, no attach); Esc saves nothing, and the save never names
+  the switcher's workspace (`POST /api/screenshots`).
 - `desk.spec.ts`: the Desk saved on the login's profile (`GET`/`PUT
 /api/profile/home-desk`, compare-and-set on a version): a change is saved
   once, read back after a reload, and when another device saved first its

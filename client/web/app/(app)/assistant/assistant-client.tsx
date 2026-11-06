@@ -106,7 +106,6 @@ export function AssistantClient({
     removeContext,
     dismissPinnedContext,
     clearContext,
-    startPicking,
     registerTurnListener,
     attachContext,
   } = useAssistantDock();
@@ -1565,7 +1564,6 @@ export function AssistantClient({
                     onAttachClick={
                       features.attachments ? () => fileInputRef.current?.click() : null
                     }
-                    onPick={features.pick ? startPicking : null}
                     shareLocation={shareLocation}
                     onToggleShareLocation={() => void toggleShareLocation()}
                     recording={recording}

@@ -17,6 +17,7 @@ import {
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { attentionMode, safeInAppPath } from './attention';
+import { captureRect } from './capture';
 import {
   BRAIN_PASSTHROUGH,
   brainRequestFilter,
@@ -629,6 +630,20 @@ function registerIpc(): void {
       win.flashFrame(true);
       win.once('focus', () => win.flashFrame(false));
     }
+  });
+
+  // Area screenshots: the asking window's own pixels, only while it shows
+  // this app's UI (vaultProfileFor checks the sender and its frame origin),
+  // in a rectangle clamped to its content (capture.ts). PNG bytes back.
+  ipcMain.handle('desktop:capture', async (event, raw: unknown) => {
+    if (!vaultProfileFor(event)) throw new Error('capture: not this app');
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) throw new Error('capture: no window');
+    const [width, height] = win.getContentSize();
+    const rect = captureRect(raw, { width, height });
+    if (!rect) throw new Error('capture: invalid area');
+    const image = await event.sender.capturePage(rect);
+    return new Uint8Array(image.toPNG());
   });
 
   ipcMain.on('desktop:badge', (_event, count: unknown) => {

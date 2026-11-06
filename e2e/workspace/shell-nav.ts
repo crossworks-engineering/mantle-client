@@ -125,6 +125,8 @@ export const MEMBER_OPEN: readonly RegExp[] = [
   rx('GET', `/api/apps/${ID}/frame`),
   // Writes.
   rx('POST', `/api/(pages|notes|draws|tables|tables/import|apps|files/files|files/folders)`),
+  // An area screenshot: any login's, saved in its own scope.
+  rx('POST', `/api/screenshots`),
   rx('(PATCH|DELETE)', `/api/(pages|notes|draws|tables|apps|files/files|files/folders)/${ID}`),
   rx('PUT', `/api/(pages|draws|tables|apps)/${ID}/draft`),
   rx('DELETE', `/api/apps/${ID}/draft`),
