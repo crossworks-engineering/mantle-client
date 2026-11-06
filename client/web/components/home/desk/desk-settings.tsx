@@ -28,6 +28,7 @@ import {
   countFor,
   removeWidget,
   tidy,
+  toolAvailable,
   type DeskPrefs,
   type DeskWidgetId,
 } from '@/lib/home-desk';
@@ -172,7 +173,7 @@ export function DeskSettings({
             Tools
           </h3>
           <ul className="space-y-1">
-            {DESK_TOOLS.map((t) => {
+            {DESK_TOOLS.filter((t) => toolAvailable(t, kinds)).map((t) => {
               const Icon = TOOL_ICONS[t];
               return (
                 <li key={t} className="flex items-center gap-2 rounded-lg px-2 py-2">

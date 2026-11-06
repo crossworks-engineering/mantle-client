@@ -29,6 +29,7 @@ export const DESK_TOOLS = [
   'clock',
   'calendar',
   'quick-note',
+  'quick-task',
   'theme',
   'drift',
   'focus',
@@ -36,6 +37,16 @@ export const DESK_TOOLS = [
   'workspaces',
 ] as const;
 export type DeskTool = (typeof DESK_TOOLS)[number];
+
+/** A tool that makes items of one kind, offered only to a login that has
+ *  that kind. */
+const TOOL_KIND: Partial<Record<DeskTool, TreeKind>> = { 'quick-task': 'tasks' };
+
+/** Whether a login with these tree kinds may have this tool on its desk. */
+export function toolAvailable(tool: DeskTool, kinds: readonly TreeKind[]): boolean {
+  const kind = TOOL_KIND[tool];
+  return !kind || kinds.includes(kind);
+}
 
 /** The kinds a desk can hold a widget of. Secrets never sit on a desk. */
 export const DESK_KINDS: readonly TreeKind[] = TREE_KINDS.filter((k) => k !== 'secrets');
@@ -95,6 +106,7 @@ export const TOOL_SPECS: Record<DeskTool, WidgetSpec> = {
   clock: spec(3, 2, { w: 2, h: 2 }, { w: 6, h: 5 }),
   calendar: spec(4, 4, { w: 3, h: 3 }, { w: 8, h: 7 }),
   'quick-note': spec(4, 2, { w: 3, h: 2 }, { w: 8, h: 5 }),
+  'quick-task': spec(4, 2, { w: 3, h: 2 }, { w: 8, h: 5 }),
   theme: spec(4, 2, { w: 3, h: 2 }, { w: 8, h: 4 }),
   drift: spec(4, 2, { w: 2, h: 2 }, { w: 12, h: 8 }),
   focus: spec(3, 2, { w: 2, h: 2 }, { w: 5, h: 5 }),
@@ -505,6 +517,7 @@ export const TOOL_LABELS: Record<DeskTool, { title: string; hint: string }> = {
   clock: { title: 'Clock', hint: 'The time, the date and a greeting' },
   calendar: { title: 'Calendar', hint: 'This month and what is coming up' },
   'quick-note': { title: 'Quick note', hint: 'Jot a note without leaving Desk' },
+  'quick-task': { title: 'Quick task', hint: 'Add a task without leaving Desk' },
   theme: { title: 'Theme', hint: 'Light, dark and the colour theme' },
   drift: { title: 'Drift', hint: 'The moving background, live' },
   focus: { title: 'Focus timer', hint: 'Work in focused stretches' },

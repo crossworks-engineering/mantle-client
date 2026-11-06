@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { BarChart3, Layers, NotebookPen } from 'lucide-react';
+import { BarChart3, Layers, ListTodo, NotebookPen } from 'lucide-react';
 import { ApiError, apiSend } from '@mantle/web-ui/api-fetch';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
@@ -22,61 +22,119 @@ import { KIND_LABELS, type DeskWidgetId } from '@/lib/home-desk';
 import { DeskWidget } from '../desk-widget';
 import { KIND_ICONS } from './items';
 
-// ── Quick note ─────────────────────────────────────────────────────────────
+// ── Quick note and Quick task ──────────────────────────────────────────────
 
-/** A note's title and body from what was jotted: the first line titles it. */
-export function splitJot(text: string): { title: string; content: string } {
+/** An item's title and body from what was jotted: the first line titles it,
+ *  `fallback` when that line is empty. */
+export function splitJot(
+  text: string,
+  fallback = 'Quick note',
+): { title: string; content: string } {
   const trimmed = text.trim();
   const [first, ...rest] = trimmed.split('\n');
   const title =
     (first ?? '')
       .trim()
       .replace(/^#+\s*/, '')
-      .slice(0, 120) || 'Quick note';
+      .slice(0, 120) || fallback;
   return { title, content: rest.join('\n').trim() };
+}
+
+/** What a jot widget makes: its words, where it posts and what it refreshes. */
+type JotKind = {
+  title: string;
+  icon: ReactNode;
+  /** The first line's stand-in when it is empty. */
+  fallback: string;
+  /** The create route. apiFetch names the switcher's workspace on it
+   *  (lib/create-workspace.ts), so the item lands there. */
+  route: string;
+  body: (jot: { title: string; content: string }) => Record<string, string>;
+  /** The lists to refresh once it is made. */
+  kind: 'notes' | 'tasks';
+  add: string;
+  added: string;
+  failed: string;
+};
+
+const JOTS = {
+  note: {
+    title: 'Quick note',
+    icon: <NotebookPen />,
+    fallback: 'Quick note',
+    route: '/api/notes',
+    body: (j) => j,
+    kind: 'notes',
+    add: 'Add note',
+    added: 'Note added',
+    failed: 'Could not add the note',
+  },
+  task: {
+    title: 'Quick task',
+    icon: <ListTodo />,
+    fallback: 'Quick task',
+    route: '/api/tasks',
+    body: (j) => ({ title: j.title, body: j.content }),
+    kind: 'tasks',
+    add: 'Add task',
+    added: 'Task added',
+    failed: 'Could not add the task',
+  },
+} satisfies Record<string, JotKind>;
+
+/** The request a jot sends: its route and body, or null when nothing was
+ *  jotted. */
+export function jotRequest(
+  jot: keyof typeof JOTS,
+  text: string,
+): { route: string; body: Record<string, string> } | null {
+  if (!text.trim()) return null;
+  const k: JotKind = JOTS[jot];
+  return { route: k.route, body: k.body(splitJot(text, k.fallback)) };
 }
 
 /**
  * Jot it down without leaving the Desk: the first line is the title, the rest
- * the note. ⌘/Ctrl+Enter adds it; it lands in the switcher's workspace and
- * appears on the sticky notes at once.
+ * the body. ⌘/Ctrl+Enter adds it; it lands in the switcher's workspace and
+ * the open lists of its kind refresh.
  */
-export function QuickNoteWidget({
+function JotWidget({
   id,
-  ws,
+  jot,
   onRemove,
 }: {
   id: DeskWidgetId;
-  ws: string | null;
+  jot: keyof typeof JOTS;
   onRemove: () => void;
 }) {
+  const k: JotKind = JOTS[jot];
   const qc = useQueryClient();
   const toast = useToast();
   const [text, setText] = useState('');
   const [pending, setPending] = useState(false);
 
   const submit = async () => {
-    if (!text.trim() || pending) return;
+    const req = jotRequest(jot, text);
+    if (!req || pending) return;
     setPending(true);
     try {
-      const url = ws ? `/api/notes?ws=${encodeURIComponent(ws)}` : '/api/notes';
-      await apiSend(url, 'POST', splitJot(text));
+      await apiSend(req.route, 'POST', req.body);
       setText('');
-      toast.success('Note added');
+      toast.success(k.added);
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ['notes'] }),
-        qc.invalidateQueries({ queryKey: treeKey('notes') }),
+        qc.invalidateQueries({ queryKey: [k.kind] }),
+        qc.invalidateQueries({ queryKey: treeKey(k.kind) }),
       ]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
-      toast.error(err instanceof Error ? err.message : 'Could not add the note');
+      toast.error(err instanceof Error ? err.message : k.failed);
     } finally {
       setPending(false);
     }
   };
 
   return (
-    <DeskWidget id={id} title="Quick note" icon={<NotebookPen />} onRemove={onRemove}>
+    <DeskWidget id={id} title={k.title} icon={k.icon} onRemove={onRemove}>
       <form
         className="flex h-full flex-col gap-2 px-3 pb-3"
         onSubmit={(e) => {
@@ -94,18 +152,28 @@ export function QuickNoteWidget({
             }
           }}
           placeholder="Jot it down… the first line becomes the title"
-          aria-label="Quick note"
+          aria-label={k.title}
           className="min-h-0 flex-1 resize-none bg-background/60 scrollbar-thin"
         />
         <div className="flex items-center justify-between gap-2">
           <span className="hidden text-xs text-muted-foreground sm:inline">⌘ Enter to add</span>
           <SubmitButton size="sm" pending={pending} disabled={!text.trim()}>
-            Add note
+            {k.add}
           </SubmitButton>
         </div>
       </form>
     </DeskWidget>
   );
+}
+
+/** A note from the Desk; it appears on the sticky notes at once. */
+export function QuickNoteWidget({ id, onRemove }: { id: DeskWidgetId; onRemove: () => void }) {
+  return <JotWidget id={id} jot="note" onRemove={onRemove} />;
+}
+
+/** A task from the Desk, the twin of Quick note. */
+export function QuickTaskWidget({ id, onRemove }: { id: DeskWidgetId; onRemove: () => void }) {
+  return <JotWidget id={id} jot="task" onRemove={onRemove} />;
 }
 
 // ── At a glance ────────────────────────────────────────────────────────────

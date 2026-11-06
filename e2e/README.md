@@ -88,6 +88,9 @@ else is a plain 404.
   desk shows with one quiet toast.
 - `sounds.spec.ts`: a change to the UI sounds is saved at once
   (`PUT /api/profile/sounds`) and names the login the tab shows (`loginId`).
+- `desk-quick-task.spec.ts`: the Desk's Quick task adds a task (first line
+  the title, the rest the body) in the workspace the switcher shows, and is
+  offered only to a login that has Tasks (`tasksKind` turns them on).
 - `tables-import.spec.ts`: Import on the Tables screen takes the three types
   and refuses another, opens the new table in the workspace picked, shows the
   brain's words for a refusal and says a brain with no such route needs an
