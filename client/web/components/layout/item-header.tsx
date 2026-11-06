@@ -74,6 +74,10 @@ export type HeaderTool = {
   pressed?: boolean;
   /** Shown but not usable now; `label` should say why. */
   disabled?: boolean;
+  /** It throws work away or changes what others see (Revert the draft):
+   *  `data-agent-risk`, so an agent driving the window leaves it to the
+   *  user (lib/agent-ui). */
+  risk?: string;
 };
 
 /** A More menu entry that never sits inline (Duplicate, Move to folder). */
@@ -574,6 +578,7 @@ function InlineTool({ tool }: { tool: HeaderTool }) {
       label={tool.label}
       onClick={tool.onSelect}
       disabled={tool.disabled}
+      data-agent-risk={tool.risk}
       aria-pressed={tool.pressed}
       className={cn(tool.pressed && 'bg-accent text-accent-foreground')}
     >
@@ -711,7 +716,7 @@ function MoreItem({ entry: e, onPanel }: { entry: MoreEntry; onPanel: (key: stri
     );
   }
   return (
-    <DropdownMenuItem onSelect={t.onSelect} disabled={t.disabled}>
+    <DropdownMenuItem onSelect={t.onSelect} disabled={t.disabled} data-agent-risk={t.risk}>
       {t.icon}
       {t.label}
       {t.pressed ? <Check className="ml-auto" /> : null}

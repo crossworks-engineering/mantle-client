@@ -189,6 +189,7 @@ function EnvironmentControls() {
                   keyPlaceholder="variable"
                   valuePlaceholder="value — use as {{variable}}"
                   addLabel="Add variable"
+                  secretValues
                 />
               </div>
             ))}
@@ -520,6 +521,7 @@ export function RequestBuilder() {
                   keyPlaceholder="query key"
                   valuePlaceholder="value — {{vars}} allowed"
                   addLabel="Add param"
+                  secretValues
                 />
               </TabsContent>
 

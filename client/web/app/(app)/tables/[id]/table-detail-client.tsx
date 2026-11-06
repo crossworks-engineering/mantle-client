@@ -594,6 +594,8 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
                   key: 'discard',
                   label: 'Discard the draft',
                   icon: <Undo2 />,
+                  // It throws the draft away: the user's to press (lib/agent-ui).
+                  risk: 'discard',
                   onSelect: () => void discard(),
                 },
               ]

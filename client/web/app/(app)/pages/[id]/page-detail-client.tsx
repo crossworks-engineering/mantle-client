@@ -907,6 +907,8 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
             key: 'revert',
             label: reverting ? 'Reverting…' : 'Revert the draft to the last commit',
             icon: <Undo2 />,
+            // It throws the draft away: the user's to press (lib/agent-ui).
+            risk: 'discard',
             onSelect: () => void revertDraft(),
           },
         ]

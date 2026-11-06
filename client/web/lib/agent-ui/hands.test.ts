@@ -24,6 +24,7 @@ const GLOBALS = [
   'HTMLTextAreaElement',
   'HTMLSelectElement',
   'HTMLElement',
+  'XMLHttpRequest',
 ];
 
 class FakeElement extends EventTarget {
@@ -201,6 +202,101 @@ describe('the request guard and the brain’s refusal', () => {
     expect(out).toMatchObject({ ok: false, error: 'stopped' });
     expect(caught).toBeInstanceOf(TypeError);
     expect(calls).toHaveLength(0);
+  });
+});
+
+/** A stand-in XMLHttpRequest that answers like the fake fetch. */
+function fakeXhr() {
+  return class {
+    status = 0;
+    statusText = '';
+    responseText = '';
+    responseType = '';
+    withCredentials = false;
+    upload: Record<string, unknown> = {};
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    private url = '';
+    private headers: Record<string, string> = {};
+    open(_m: string, url: string) {
+      this.url = url;
+    }
+    setRequestHeader(k: string, v: string) {
+      this.headers[k.toLowerCase()] = v;
+    }
+    abort() {}
+    send() {
+      const call: Call = {
+        url: this.url,
+        method: 'POST',
+        tag: this.headers['x-mantle-agent-call'] ?? null,
+      };
+      calls.push(call);
+      const res = answer(call);
+      void res.text().then((text) => {
+        this.status = res.status;
+        this.responseText = text;
+        this.onload?.();
+      });
+    }
+  };
+}
+
+describe('XHR uploads meet the same guard', () => {
+  it('an upload the agent sets off is tagged; a refused one is held and re-sent untagged', async () => {
+    g.XMLHttpRequest = fakeXhr();
+    const hands = (await import('./hands')).agentHands();
+    const { xhrUpload } = await import('../xhr-upload');
+    answer = (c) => (c.tag ? refusal() : new Response('{"ok":true}', { status: 201 }));
+    hands.begin('Lesson', { tag: 'lesson:x' });
+    const sent = xhrUpload({ url: '/api/files/files', form: new FormData() });
+    const held = await heldOf(hands);
+    expect(held?.risk).toBe('refused');
+    held!.answer(true);
+    expect(await sent).toEqual({ ok: true });
+    expect(calls.map((c) => c.tag)).toEqual(['lesson:x', null]);
+    hands.end();
+  });
+
+  it('a risky upload waits for the user; Not now sends nothing', async () => {
+    g.XMLHttpRequest = fakeXhr();
+    const hands = (await import('./hands')).agentHands();
+    const { xhrUpload, UploadAbortedError } = await import('../xhr-upload');
+    hands.begin('Agent');
+    const form = new FormData();
+    form.set('folderId', 'f1');
+    const sent = xhrUpload({ url: '/api/files/files', form });
+    const held = await heldOf(hands);
+    expect(held?.risk).toBe('move');
+    held!.answer(false);
+    await expect(sent).rejects.toBeInstanceOf(UploadAbortedError);
+    expect(calls).toHaveLength(0);
+    hands.end();
+  });
+
+  it('with no session an upload goes as ever, untagged', async () => {
+    g.XMLHttpRequest = fakeXhr();
+    const { xhrUpload } = await import('../xhr-upload');
+    answer = () => new Response('{"id":"f"}', { status: 201 });
+    expect(await xhrUpload({ url: '/api/files/files', form: new FormData() })).toEqual({
+      id: 'f',
+    });
+    expect(calls.map((c) => c.tag)).toEqual([null]);
+  });
+});
+
+describe('a call past its expiresAt', () => {
+  it('an action it queued that starts too late is not run: window_gone', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = new AgentHands();
+    h.begin('Agent');
+    // The first action holds the queue (its cursor travels for a while).
+    const first = h.withCall('c1', () => h.click({ id: 'a' }));
+    const late = h.withCall('c2', () => h.click({ id: 'b' }), { expiresAt: Date.now() + 50 });
+    expect(await late).toMatchObject({ ok: false, error: 'window_gone' });
+    await first;
+    h.end();
   });
 });
 

@@ -106,6 +106,9 @@ export class AgentHands {
    *  in-app agent's last call, or the lesson's `lesson:<uuid>`. The brain
    *  refuses a risky write that carries it (fix round contract). */
   private callTag: string | null = null;
+  /** When the in-app agent's current call expires (epoch ms): an action it
+   *  queued that only starts after that is not run (`window_gone`). */
+  private callExpiresAt: number | null = null;
 
   // ── state for the overlay ────────────────────────────────────────────────
 
@@ -189,9 +192,18 @@ export class AgentHands {
   /** Run `fn` as the in-app agent's call `callId`. Every write the page
    *  makes from then until the session ends names the last call (a
    *  debounced save lands after the action has returned). */
-  async withCall<T>(callId: string, fn: () => Promise<T>): Promise<T> {
+  async withCall<T>(
+    callId: string,
+    fn: () => Promise<T>,
+    opts: { expiresAt?: number | null } = {},
+  ): Promise<T> {
     this.callTag = callId;
-    return fn();
+    this.callExpiresAt = opts.expiresAt ?? null;
+    try {
+      return await fn();
+    } finally {
+      this.callExpiresAt = null;
+    }
   }
 
   /** Go on after the user took over (the user said so). */
@@ -208,59 +220,97 @@ export class AgentHands {
 
   // ── the request guard ────────────────────────────────────────────────────
 
+  // The one guard for every way the page sends a request: the fetch
+  // wrapper below and XHR uploads (lib/xhr-upload.ts) both go through
+  // `guardRequest` before sending and `allowRefused` on a 403.
+
+  /** Whether a request sent now would be the agent's (a session runs and
+   *  is not paused, or one of its actions is running): only then does
+   *  `guardRequest` have anything to do. */
+  guarding(): boolean {
+    return this.acting > 0 || (this.state.active && !this.state.paused);
+  }
+
+  /**
+   * Before a request goes out: hold it when it is risky and the agent set
+   * it off, and say which tag it must carry. `blocked` when the user said
+   * Not now (or the session ended mid-action): send nothing.
+   */
+  async guardRequest(
+    method: string,
+    url: string,
+    body?: unknown,
+  ): Promise<{ blocked: true } | { blocked: false; tag: string | null }> {
+    const m = method.toUpperCase();
+    // The agent's: sent while it drives, or while one of its actions runs
+    // (the user may have paused or stopped it on the way).
+    const agents = this.guarding() && !agentOwnRequest(url);
+    if (!agents) return { blocked: false, tag: null };
+    const risk = riskOfRequest(m, url, body ?? undefined);
+    if (risk) {
+      // Stopped mid-action: nobody is asked, nothing is sent.
+      const allowed = this.state.active ? await this.ask(risk, m, url) : false;
+      if (!allowed) {
+        this.blockedSinceAction = true;
+        return { blocked: true };
+      }
+      // The user allowed it: it goes as theirs, untagged.
+      return { blocked: false, tag: null };
+    }
+    // A write the agent set off carries its tag: the brain refuses a risky
+    // one that is tagged. Background bookkeeping (a frame ticket, an open
+    // counted) is the screen's, not the agent's write: never tagged.
+    const tag = m !== 'GET' && m !== 'HEAD' && !isBookkeepingRequest(m, url) ? this.callTag : null;
+    return { blocked: false, tag };
+  }
+
+  /**
+   * After a tagged request came back 403: when it is the brain's
+   * agent_refused, hold it with the brain's reason. True when the user
+   * allowed it, so the caller sends it once more, untagged, as theirs.
+   * False when it is not a refusal (the page's own 403), or Not now.
+   */
+  async allowRefused(method: string, url: string, status: number, body: unknown): Promise<boolean> {
+    if (!isAgentRefusal(status, body) || !this.state.active) return false;
+    const reason = (body as { reason?: unknown }).reason;
+    const why = typeof reason === 'string' ? reason.slice(0, 40) : null;
+    if (await this.ask('refused', method.toUpperCase(), url, why)) return true;
+    this.blockedSinceAction = true;
+    return false;
+  }
+
+  /** Count a request the page sends some other way (an XHR upload) for
+   *  the screen settling. */
+  async track<T>(sent: Promise<T>): Promise<T> {
+    this.inflight += 1;
+    this.lastRequestAt = Date.now();
+    try {
+      return await sent;
+    } finally {
+      this.inflight -= 1;
+      this.lastRequestAt = Date.now();
+    }
+  }
+
   private wrapFetch() {
     if (this.realFetch) return;
     const real = window.fetch.bind(window);
     this.realFetch = window.fetch;
-    const send = async (input: RequestInfo | URL, init?: RequestInit) => {
-      this.inflight += 1;
-      this.lastRequestAt = Date.now();
-      try {
-        return await real(input, init);
-      } finally {
-        this.inflight -= 1;
-        this.lastRequestAt = Date.now();
-      }
-    };
+    const send = (input: RequestInfo | URL, init?: RequestInit) => this.track(real(input, init));
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      // The agent's: sent while it drives, or while one of its actions runs
-      // (the user may have paused or stopped it on the way).
-      const agents =
-        !agentOwnRequest(url) && (this.acting > 0 || (this.state.active && !this.state.paused));
-      const risk = agents ? riskOfRequest(method, url, init?.body ?? undefined) : null;
-      let userAllowed = false;
-      if (risk) {
-        // Stopped mid-action: nobody is asked, nothing is sent.
-        const allowed = this.state.active ? await this.ask(risk, method, url) : false;
-        if (!allowed) {
-          this.blockedSinceAction = true;
-          throw new TypeError('Blocked: the user did not allow this request.');
-        }
-        userAllowed = true;
-      }
-      // A write the agent set off carries its tag, unless the user allowed
-      // it: the brain refuses a risky one that is tagged.
-      // Background bookkeeping (a frame ticket, an open counted) is the
-      // screen's, not the agent's write: never tagged.
-      const tag =
-        agents &&
-        !userAllowed &&
-        method !== 'GET' &&
-        method !== 'HEAD' &&
-        !isBookkeepingRequest(method, url)
-          ? this.callTag
-          : null;
-      if (!tag) return send(input, init);
+      const guard = await this.guardRequest(method, url, init?.body ?? undefined);
+      if (guard.blocked) throw new TypeError('Blocked: the user did not allow this request.');
+      if (!guard.tag) return send(input, init);
       // A Request's body is read once: keep a copy for a resend.
       const spare = input instanceof Request ? input.clone() : null;
       const headers = new Headers(
         init?.headers ?? (input instanceof Request ? input.headers : undefined),
       );
-      headers.set(AGENT_CALL_HEADER, tag);
+      headers.set(AGENT_CALL_HEADER, guard.tag);
       const res = await send(input, { ...init, headers });
       if (res.status !== 403) return res;
       let body: unknown = null;
@@ -269,14 +319,9 @@ export class AgentHands {
       } catch {
         /* not the brain's refusal */
       }
-      if (!isAgentRefusal(res.status, body) || !this.state.active) return res;
-      // The brain refused it as the agent's: the user's step, held like a
-      // risky write, with the brain's reason. Allow sends it once more as
-      // the user's own, untagged.
-      const reason = (body as { reason?: unknown }).reason;
-      const why = typeof reason === 'string' ? reason.slice(0, 40) : null;
-      if (!(await this.ask('refused', method, url, why))) {
-        this.blockedSinceAction = true;
+      if (!isAgentRefusal(res.status, body)) return res;
+      if (!(await this.allowRefused(method, url, res.status, body))) {
+        if (!this.state.active) return res;
         throw new TypeError('Blocked: the user did not allow this request.');
       }
       headers.delete(AGENT_CALL_HEADER);
@@ -324,7 +369,9 @@ export class AgentHands {
   private run<T extends object>(
     fn: (alive: () => boolean) => Promise<AgentResult<T>>,
   ): Promise<AgentResult<T>> {
+    const expiresAt = this.callExpiresAt;
     const next = this.queue.then(async () => {
+      if (expiresAt !== null && Date.now() >= expiresAt) return refuse('window_gone');
       if (!this.state.active) return refuse(this.stopped ? 'stopped' : 'no_session');
       if (this.state.paused) return refuse('user_took_over');
       const generation = this.generation;

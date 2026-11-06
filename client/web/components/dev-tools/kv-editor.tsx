@@ -26,8 +26,9 @@ export function KvEditor({
   keyPlaceholder?: string;
   valuePlaceholder?: string;
   addLabel?: string;
-  /** The values may hold a credential (a header's): `data-secret`, so an
-   *  agent driving the window never reads or types in them (lib/agent-ui). */
+  /** The values may hold a credential (a header, a query param, an
+   *  environment variable): `data-secret`, so an agent driving the window
+   *  never reads or types in them (lib/agent-ui). */
   secretValues?: boolean;
 }) {
   const update = (id: string, patch: Partial<KeyValueEntry>) =>

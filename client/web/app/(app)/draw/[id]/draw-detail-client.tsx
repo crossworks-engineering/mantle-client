@@ -592,6 +592,8 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
                 {
                   key: 'revert',
                   label: reverting ? 'Reverting…' : 'Revert the drawing to the last commit',
+                  // It throws the draft away: the user's to press (lib/agent-ui).
+                  risk: 'discard',
                   icon: <Undo2 />,
                   onSelect: () => void revertDraft(),
                 },

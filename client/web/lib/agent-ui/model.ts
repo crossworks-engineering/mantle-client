@@ -65,7 +65,9 @@ export type AgentRefusal =
   /** The screen did not settle in time. */
   | 'timeout'
   /** The user has not allowed agents in this window yet (an in-app agent). */
-  | 'needs_consent';
+  | 'needs_consent'
+  /** The call came past its `expiresAt`: the brain stopped waiting. */
+  | 'window_gone';
 
 export type AgentResult<T extends object = object> =
   ({ ok: true } & T) | { ok: false; error: AgentRefusal; message: string };
@@ -92,6 +94,7 @@ export const REFUSAL_TEXT: Record<AgentRefusal, string> = {
   unsupported: 'That control cannot be used this way.',
   timeout: 'The screen did not settle in time.',
   needs_consent: 'The user has not allowed this window yet. Ask them, then try again.',
+  window_gone: 'The call reached the window after it expired. Nothing was done.',
 };
 
 export function refuse(error: AgentRefusal, message = REFUSAL_TEXT[error]): AgentResult<never> {
@@ -198,8 +201,15 @@ export function linkRefusal(href: string | null, pageUrl: string): AgentRefusal 
     return 'unsafe_route';
   }
   if (url.origin !== page.origin) return 'unsafe_route';
+  // A query acts on load (`?lesson=`, a filter, a create): refused unless it
+  // is one the app lets a link carry. Today that is only a lesson's offer,
+  // which plays nothing until the user presses Start (a host control).
+  if (url.search && !LINK_QUERY_OK.test(url.search)) return 'unsafe_route';
   return safeAgentRoute(url.pathname) ? null : 'unsafe_route';
 }
+
+/** The one query a link the agent follows may carry: a lesson's offer. */
+const LINK_QUERY_OK = /^\?lesson=[0-9a-f-]{36}$/i;
 
 export type RequestRisk =
   | 'delete'
@@ -211,6 +221,7 @@ export type RequestRisk =
   | 'move'
   | 'copy'
   | 'admin_only'
+  | 'discard'
   /** The brain refused it as the agent's (403 agent_refused); the held
    *  request carries the brain's `reason`. */
   | 'refused';
@@ -226,6 +237,7 @@ export const RISK_TEXT: Record<RequestRisk, string> = {
   move: 'move something to another place',
   copy: 'make a copy of something',
   admin_only: 'change something only an Admin user may change',
+  discard: 'throw away a draft',
   refused: 'do something only you may do',
 };
 
@@ -262,6 +274,8 @@ const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
   // The journal and contacts are Admin users' (the brain's admin_only).
   [/^\/api\/(journal|contacts)(\/|$)/, 'admin_only'],
   [/\/restore$/, 'publish'],
+  // Throwing a draft away (Revert the draft to the last commit) loses work.
+  [/^\/api\/(pages|tables|draws)\/[^/]+\/discard-draft$/, 'discard'],
   [/^\/api\/(recall\/maps|entities\/merge)(\/|$)/, 'publish'],
   [/^\/api\/apps\/[^/]+\/tool-broker$/, 'settings'],
   [
@@ -386,8 +400,16 @@ export function riskOfRequest(method: string, url: string, body?: unknown): Requ
   }
   if (keys.some((k) => SHARING_FIELDS.has(k))) return 'share';
   if (keys.some((k) => MOVE_FIELDS.has(k))) return 'move';
+  // An app's trust: what it may reach (its MCP access, its data, its
+  // tools). The brain keeps these for Admin users (admin_only).
+  if (/^\/api\/apps\/[^/]+$/.test(path) && keys.some((k) => APP_TRUST_FIELDS.has(k))) {
+    return 'admin_only';
+  }
   return null;
 }
+
+/** The fields of an app's PATCH that change what it may reach. */
+const APP_TRUST_FIELDS = new Set(['mcpaccess', 'datareadonly', 'trusttools']);
 
 /** A path with its percent-encoding undone, until it no longer changes
  *  (`%2573` is `%73` is `s`), or null when it does not decode. */

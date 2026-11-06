@@ -121,6 +121,23 @@ describe('riskOfRequest keeps step with the brain (fix round 2)', () => {
   });
 });
 
+describe('riskOfRequest, fix round 3', () => {
+  it('an app PATCH that changes what it may reach is admin_only', () => {
+    for (const f of ['mcpAccess', 'dataReadOnly', 'trustTools'])
+      expect(riskOfRequest('PATCH', '/api/apps/a1', JSON.stringify({ [f]: true }))).toBe(
+        'admin_only',
+      );
+    expect(riskOfRequest('PATCH', '/api/apps/a1', '{"title":"x"}')).toBeNull();
+  });
+
+  it('throwing a draft away is held; saving one is not', () => {
+    for (const kind of ['pages', 'tables', 'draws'])
+      expect(riskOfRequest('POST', `/api/${kind}/1/discard-draft`)).toBe('discard');
+    expect(riskOfRequest('PUT', '/api/pages/1/draft', '{"doc":{}}')).toBeNull();
+    expect(heldText('discard')).toBe('throw away a draft');
+  });
+});
+
 describe('heldText', () => {
   it('says the brain’s reason in plain words', () => {
     expect(heldText('refused', 'workspace_target')).toBe('put something in a workspace');
@@ -184,6 +201,15 @@ describe('linkRefusal', () => {
     expect(linkRefusal('https://app.test/pages/1', page)).toBeNull();
     expect(linkRefusal('notes', page)).toBeNull();
     expect(linkRefusal(null, page)).toBeNull();
+  });
+
+  it('refuses a same-origin link with a query, but for a lesson’s offer', () => {
+    expect(linkRefusal('/tasks?new=1', page)).toBe('unsafe_route');
+    expect(linkRefusal('/pages?ws=b1b1', page)).toBe('unsafe_route');
+    expect(linkRefusal('/?lesson=1e552222-2222-4222-8222-222222222222', page)).toBeNull();
+    expect(linkRefusal('/?lesson=x&ws=1', page)).toBe('unsafe_route');
+    // A hash only scrolls.
+    expect(linkRefusal('/files#top', page)).toBeNull();
   });
 
   it('refuses a link that leaves the app or opens a refused route', () => {

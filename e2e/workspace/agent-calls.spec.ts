@@ -21,7 +21,12 @@ test.afterEach(async () => {
   await api.close();
 });
 
-async function call(page: Page, action: string, args: Record<string, unknown> = {}) {
+async function call(
+  page: Page,
+  action: string,
+  args: Record<string, unknown> = {},
+  extra: Record<string, unknown> = {},
+) {
   const id = callId();
   // Fired, not awaited: the handler may wait on the user (the consent prompt).
   await page.evaluate(
@@ -32,7 +37,7 @@ async function call(page: Page, action: string, args: Record<string, unknown> = 
         }
       ).__mantleAgentCalls.handleUiCall(turn, data, 'Saskia');
     },
-    [TURN, { callId: id, action, args }] as const,
+    [TURN, { callId: id, action, args, ...extra }] as const,
   );
   await expect.poll(() => api.uiAnswers.find((a) => a.callId === id)).toBeTruthy();
   return api.uiAnswers.find((a) => a.callId === id)!;
@@ -292,4 +297,27 @@ test('the chat streams, answers and stops on the 202’s turn id, never the key'
   expect(api.asked('admin').some((r) => r.includes(`/api/assistant/turn/${turn.key}/`))).toBe(
     false,
   );
+});
+
+test('a call past its expiresAt is answered window_gone and not run', async ({ page }) => {
+  api.agentUi.admin = true;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+  const late = await call(
+    page,
+    'navigate',
+    { path: '/settings/profile' },
+    { expiresAt: new Date(Date.now() - 1000).toISOString() },
+  );
+  expect(late.result).toMatchObject({ ok: false, error: 'window_gone' });
+  await expect(page).toHaveURL((u) => u.pathname === '/');
+  const inTime = await call(
+    page,
+    'navigate',
+    { path: '/settings/profile' },
+    { expiresAt: new Date(Date.now() + 60_000).toISOString() },
+  );
+  expect(inTime.result).toMatchObject({ ok: true });
 });

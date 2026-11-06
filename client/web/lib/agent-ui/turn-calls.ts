@@ -69,8 +69,15 @@ export function withWindowId(body: FormData | string, isJson: boolean): FormData
   }
 }
 
-/** A `ui-call` event's data, or null. */
-export type UiCall = { callId: string; action: string; args: Record<string, unknown> };
+/** A `ui-call` event's data, or null. `expiresAt`: when the brain stops
+ *  waiting for the answer (epoch ms; null when the event names none or an
+ *  unreadable one). */
+export type UiCall = {
+  callId: string;
+  action: string;
+  args: Record<string, unknown>;
+  expiresAt?: number | null;
+};
 
 export function parseUiCall(data: unknown): UiCall | null {
   if (!data || typeof data !== 'object') return null;
@@ -78,7 +85,14 @@ export function parseUiCall(data: unknown): UiCall | null {
   if (typeof d.callId !== 'string' || !/^[0-9a-f-]{36}$/i.test(d.callId)) return null;
   if (typeof d.action !== 'string') return null;
   const args = d.args && typeof d.args === 'object' ? (d.args as Record<string, unknown>) : {};
-  return { callId: d.callId, action: d.action, args };
+  const at = typeof d.expiresAt === 'string' ? Date.parse(d.expiresAt) : NaN;
+  return { callId: d.callId, action: d.action, args, expiresAt: Number.isFinite(at) ? at : null };
+}
+
+/** A call past its `expiresAt` is not run: the brain has stopped waiting,
+ *  and the agent may already have moved on. */
+export function callExpired(call: UiCall, now = Date.now()): boolean {
+  return typeof call.expiresAt === 'number' && now >= call.expiresAt;
 }
 
 let consent: 'unasked' | 'asking' | 'allowed' | 'refused' = 'unasked';
@@ -133,6 +147,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
 
   if (!enabled) return void answer(refuse('no_session'));
   if (stoppedTurns.has(turnId)) return void answer(refuse('stopped'));
+  if (callExpired(call)) return void answer(refuse('window_gone'));
   if (consent !== 'allowed') {
     // Answer now; the agent asks again once the user has allowed it.
     void answer(refuse('needs_consent'));
@@ -147,7 +162,12 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
   const hands = agentHands();
   turnAgents.set(turnId, agentName);
   if (!hands.get().active) hands.begin(agentName);
-  const result = await hands.withCall(call.callId, () => runUiCall(call));
+  // Checked again as it runs: a call can wait behind the one before it.
+  const result = await hands.withCall(
+    call.callId,
+    () => (callExpired(call) ? Promise.resolve(refuse('window_gone')) : runUiCall(call)),
+    { expiresAt: call.expiresAt },
+  );
   await answer(result);
 }
 

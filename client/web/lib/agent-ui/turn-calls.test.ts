@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseUiCall, withWindowId, WINDOW_ID } from './turn-calls';
+import { callExpired, parseUiCall, withWindowId, WINDOW_ID } from './turn-calls';
 
 describe('parseUiCall', () => {
   it('reads a ui-call event', () => {
@@ -13,7 +13,24 @@ describe('parseUiCall', () => {
       callId: '0a0a0a0a-0a0a-40a0-80a0-000000000001',
       action: 'click',
       args: { target: { role: 'button', name: 'Add' } },
+      expiresAt: null,
     });
+  });
+
+  it('reads expiresAt, and a call past it has expired', () => {
+    const call = parseUiCall({
+      callId: '0a0a0a0a-0a0a-40a0-80a0-000000000001',
+      action: 'screen',
+      expiresAt: '2026-11-07T10:00:00.000Z',
+    })!;
+    expect(call.expiresAt).toBe(Date.parse('2026-11-07T10:00:00.000Z'));
+    expect(callExpired(call, Date.parse('2026-11-07T09:59:59.000Z'))).toBe(false);
+    expect(callExpired(call, Date.parse('2026-11-07T10:00:00.000Z'))).toBe(true);
+    // None, or one that does not read: never expires here (the brain still
+    // times it out).
+    const bare = parseUiCall({ callId: call.callId, action: 'screen', expiresAt: 'soon' })!;
+    expect(bare.expiresAt).toBeNull();
+    expect(callExpired(bare)).toBe(false);
   });
 
   it('refuses a call with no id, a bad id or no action', () => {
