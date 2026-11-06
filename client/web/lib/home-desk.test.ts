@@ -41,6 +41,31 @@ describe('the default desk', () => {
   });
 });
 
+describe('the clock face', () => {
+  const saved = (clock?: unknown) =>
+    deskFrom({
+      v: 1,
+      items: [{ id: 'clock', x: 0, y: 0, w: 3, h: 2 }],
+      counts: {},
+      icons: true,
+      clock,
+    });
+
+  it('a new desk shows the analogue face', () => {
+    expect(defaultDesk(['notes']).clock).toBe('analog');
+  });
+
+  it('a desk with no face saved shows the analogue face', () => {
+    expect(saved()?.clock).toBe('analog');
+    expect(saved('sundial')?.clock).toBe('analog');
+  });
+
+  it('a saved choice stays: digital is never overwritten', () => {
+    expect(saved('digital')?.clock).toBe('digital');
+    expect(saved('analog')?.clock).toBe('analog');
+  });
+});
+
 describe('moving and resizing', () => {
   const a: DeskItem = { id: 'clock', x: 0, y: 0, w: 3, h: 2 };
   const b: DeskItem = { id: 'quick-note', x: 3, y: 0, w: 4, h: 2 };
