@@ -17,8 +17,8 @@ repo's `CHANGELOG.md`.
 Settings > Company sign-in, for an Admin user while the box's mode is on. With
 the mode `setup`, a client's Microsoft admin enters the client secret, sealed and
 never shown, tests it, and makes the SCIM token, shown once. Any other mode shows
-the same values read-only. It needs a brain with `GET /api/users/sso-setup`; an
-older brain answers 404, and the entry stays hidden.
+the same values read-only. It needs a brain with `GET /api/users/sso-setup`; on an
+older brain the entry stays hidden.
 
 ## v0.9.11: a canvas plays its media in the app
 

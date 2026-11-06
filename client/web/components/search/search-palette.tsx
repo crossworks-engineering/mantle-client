@@ -15,6 +15,9 @@ import {
   CommandSeparator,
 } from '@mantle/web-ui/ui/command';
 import { ALL_NAV_ITEMS } from '@mantle/web-ui/layout/nav-items';
+import { companySignInOffered } from '@/lib/sso-setup';
+import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
+import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { nodeTypeIcon } from '@/components/search/node-type-icons';
 import { useWorkspaceJump, WorkspaceHitTag } from '@/components/workspaces/workspace-hit-tag';
 import { guardedNavigate } from '@/lib/nav-guard';
@@ -127,7 +130,12 @@ export function SearchPalette({
   };
   const tagText = 'group-data-[selected=true]/command-item:text-accent-foreground';
 
-  const navMatches = filterNavItems(ALL_NAV_ITEMS, query);
+  // Offered as the sidebar offers it: the mode on, and the users area.
+  const ssoSetupShown = useSsoSetupShown(useShellWorkspaces()?.areas);
+  const navMatches = filterNavItems(
+    ALL_NAV_ITEMS.filter((i) => companySignInOffered(i.href, ssoSetupShown)),
+    query,
+  );
   const results = mode === 'chunks' ? chunkResults : nodeResults;
   const searchable = isSearchableQuery(query);
   const showEmpty = searchable && settled && !loading && !error && results.length === 0;

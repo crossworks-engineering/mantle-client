@@ -14,6 +14,11 @@ export type MockSsoSetup = {
   tokensMade: number;
   testOutcome: string;
   tests: number;
+  envMissing: string[];
+  /** What the status read answers instead (405: a brain before the screen). */
+  statusAnswer: number | null;
+  /** What a write answers instead: the hold's 403 or the one 429. */
+  writeRefusal: { status: number; body: unknown } | null;
 };
 
 export const newMockSsoSetup = (): MockSsoSetup => ({
@@ -25,6 +30,9 @@ export const newMockSsoSetup = (): MockSsoSetup => ({
   tokensMade: 0,
   testOutcome: 'ok',
   tests: 0,
+  envMissing: [],
+  statusAnswer: null,
+  writeRefusal: null,
 });
 
 const ADMIN = 'admin@example.invalid';
@@ -38,7 +46,7 @@ function statusOf(s: MockSsoSetup) {
     clientId: 'the-client-id',
     redirectUri: 'https://brain.example.invalid/api/auth/oidc/callback',
     scimUrl: 'https://brain.example.invalid/scim/v2',
-    envMissing: [],
+    envMissing: s.envMissing,
     secret: s.envSecret ? 'env' : s.secret ? 'row' : 'none',
     scim: s.envScim === 'hash' ? 'env' : s.envScim === 'off' ? 'env-off' : s.token ? 'row' : 'none',
     secretSet: s.secret ? { by: ADMIN, at: AT } : null,
@@ -63,8 +71,10 @@ export function ssoSetupAnswer(
   password: string,
 ): { status: number; body: unknown } | null {
   if (path === '/api/users/sso-setup' && method === 'GET') {
+    if (s.statusAnswer) return { status: s.statusAnswer, body: { error: 'no' } };
     return { status: 200, body: statusOf(s) };
   }
+  if (method !== 'GET' && s.writeRefusal) return s.writeRefusal;
   if (path === '/api/users/sso-setup' && method === 'PUT') {
     if (s.mode !== 'setup') return closed;
     if (s.envSecret) return { status: 409, body: { error: 'env', code: 'env-wins' } };

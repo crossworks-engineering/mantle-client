@@ -28,15 +28,23 @@ stated cost are the brain's: "The setup screen" in `docs/oidc-sign-in.md` in the
 mantle repo.
 
 - The sidebar offers the entry only to a login with the users area, while
-  `GET /api/users/sso-setup` answers a mode other than `off`. A brain before the
-  screen answers 404, which reads as off.
+  `GET /api/users/sso-setup` answers a mode other than `off`. The search palette
+  offers it the same way. A brain before the screen answers 405, because the path
+  matches `/api/users/:id`, or 404: both read as off.
+- While the window is open, the brain refuses a company session with a 401. This
+  client then clears its bearer and goes to `/login`, on the web and in a desktop
+  app. So a person whose app made a call in the window signs in again after it,
+  though the brain never ended that session. A person who holds only a company
+  sign-in sees no company button in the window: it is off.
 - `setup`: a warning, a password field for the secret that stays empty after a
   save, Save and Make SCIM token, which each ask for the password, and Test.
 - `optional`, `required`: the same values read-only, and "Locked by the box
   operator."
 - A value the box `.env` holds reads so, and offers no write.
 - The token shows once, in this screen's state only. It is never kept in the
-  query cache, and a reload loses it.
+  query cache, and a reload loses it. A failed status read does not take it away.
+- A refusal that says the screen is out of date (`setup-closed`, `env-wins`) reads
+  the status again, so the screen shows the lock.
 
 The types in `lib/sso-setup.ts` mirror the brain's DTOs. Replace them with
 `@mantle/client-types` when the next contract is published.
