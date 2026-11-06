@@ -166,9 +166,18 @@ const EVERY_LOGIN = [
   /^\/api\/workspaces(\/|$)/,
   /^\/api\/profile\/home-desk$/,
   /^\/api\/profile\/sounds$/,
+  /^\/api\/profile\/agent-ui$/,
+  /^\/api\/assistant\/turn\/[^/]+\/ui\/[0-9a-f-]{36}$/,
 ];
 
-export type MockRequest = { method: string; path: string; query: string; role: Role | 'anon' };
+export type MockRequest = {
+  method: string;
+  path: string;
+  query: string;
+  role: Role | 'anon';
+  /** The in-app agent's call a request names (`x-mantle-agent-call`). */
+  agentCall?: string;
+};
 
 /** A page a spec made through POST /api/pages, and where the brain put it. */
 export type MockCreated = { id: string; title: string; ws: WorkspaceKey; role: Role };
@@ -240,6 +249,11 @@ export type MockWorkspaceApi = {
   screenshots: MockScreenshot[];
   /** The pages tree holds a top-level Lessons folder (components/lessons). */
   lessons: boolean;
+  /** Each login's "Let agents use this window" (GET/PUT /api/profile/agent-ui). */
+  agentUi: Partial<Record<Role, boolean>>;
+  /** The answers windows sent to in-app agent calls
+   *  (POST /api/assistant/turn/:turnId/ui/:callId). */
+  uiAnswers: { role: Role; turnId: string; callId: string; windowId: unknown; result: unknown }[];
   close: () => Promise<void>;
 };
 
@@ -307,13 +321,16 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     ssoSetup: newMockSsoSetup(),
     screenshots: [],
     lessons: false,
+    agentUi: {},
+    uiAnswers: [],
     close: async () => undefined,
   };
 
   const cors = {
     'access-control-allow-origin': clientOrigin,
     'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'access-control-allow-headers': 'content-type, authorization, last-event-id, idempotency-key',
+    'access-control-allow-headers':
+      'content-type, authorization, last-event-id, idempotency-key, x-mantle-agent-call',
     'access-control-max-age': '600',
   };
   const send = (res: ServerResponse, status: number, type: string, body: string) => {
@@ -883,7 +900,14 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     const url = new URL(req.url ?? '/', MOCK_API_ORIGIN);
     const path = url.pathname;
     const role = roleOfToken(req.headers.authorization);
-    state.requests.push({ method, path, query: url.search, role: role ?? 'anon' });
+    const agentCall = req.headers['x-mantle-agent-call'];
+    state.requests.push({
+      method,
+      path,
+      query: url.search,
+      role: role ?? 'anon',
+      ...(typeof agentCall === 'string' ? { agentCall } : {}),
+    });
 
     if (PUBLIC.some((re) => re.test(path))) {
       if (path === '/api/version') return json(res, 200, { version: 'mock' });
@@ -926,6 +950,37 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           const saved = { homeDesk: body.homeDesk, version: stored.version + 1 };
           state.desks[role] = saved;
           return json(res, 200, saved);
+        }
+      }
+      // A window's answer to an in-app agent's ui call: kept for the spec.
+      const uiM = /^\/api\/assistant\/turn\/([^/]+)\/ui\/([0-9a-f-]{36})$/.exec(path);
+      if (uiM && method === 'POST') {
+        const body = JSON.parse((await readBody(req)) || '{}') as {
+          windowId?: unknown;
+          result?: unknown;
+        };
+        state.uiAnswers.push({
+          role,
+          turnId: uiM[1]!,
+          callId: uiM[2]!,
+          windowId: body.windowId,
+          result: body.result,
+        });
+        return json(res, 200, { ok: true });
+      }
+      // "Let agents use this window" (agent UI phase 3): the login's own.
+      if (path === '/api/profile/agent-ui') {
+        if (method === 'GET') return json(res, 200, { enabled: state.agentUi[role] === true });
+        if (method === 'PUT') {
+          const body = JSON.parse((await readBody(req)) || '{}') as {
+            enabled?: unknown;
+            loginId?: unknown;
+          };
+          if (body.loginId !== LOGINS[role].loginId) {
+            return json(res, 403, { error: 'login-mismatch', code: 'login-mismatch' });
+          }
+          state.agentUi[role] = body.enabled === true;
+          return json(res, 200, { enabled: state.agentUi[role] });
         }
       }
       if (path === '/api/profile/sounds') {

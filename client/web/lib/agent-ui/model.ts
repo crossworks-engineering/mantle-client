@@ -61,7 +61,9 @@ export type AgentRefusal =
   /** The field takes no typing, or the option was not found. */
   | 'unsupported'
   /** The screen did not settle in time. */
-  | 'timeout';
+  | 'timeout'
+  /** The user has not allowed agents in this window yet (an in-app agent). */
+  | 'needs_consent';
 
 export type AgentResult<T extends object = object> =
   ({ ok: true } & T) | { ok: false; error: AgentRefusal; message: string };
@@ -86,6 +88,7 @@ export const REFUSAL_TEXT: Record<AgentRefusal, string> = {
   bad_route: 'That is not a route the agent may open.',
   unsupported: 'That control cannot be used this way.',
   timeout: 'The screen did not settle in time.',
+  needs_consent: 'The user has not allowed this window yet. Ask them, then try again.',
 };
 
 export function refuse(error: AgentRefusal, message = REFUSAL_TEXT[error]): AgentResult<never> {

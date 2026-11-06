@@ -39,8 +39,12 @@ export type HeldRequest = {
   answer: (allow: boolean) => void;
 };
 
+export type ConsentAsk = { agent: string; answer: (allow: boolean) => void };
+
 export type HandsState = {
   active: boolean;
+  /** An in-app agent asks to use this window (lib/agent-ui/turn-calls). */
+  consent: ConsentAsk | null;
   agent: string;
   paused: boolean;
   cursor: { x: number; y: number } | null;
@@ -51,6 +55,7 @@ export type HandsState = {
 
 const IDLE: HandsState = {
   active: false,
+  consent: null,
   agent: '',
   paused: false,
   cursor: null,
@@ -79,6 +84,9 @@ export class AgentHands {
   private heldSeq = 0;
   private blockedSinceAction = false;
   private stopped = false;
+  /** The in-app agent's call the running action answers, if any: its
+   *  requests carry it, so the brain refuses a risky one (contract). */
+  private callId: string | null = null;
 
   // ── state for the overlay ────────────────────────────────────────────────
 
@@ -127,6 +135,33 @@ export class AgentHands {
     this.set(IDLE);
   }
 
+  /** Ask the user whether an in-app agent may use this window, for the
+   *  rest of this page's life. */
+  askConsent(agent: string): Promise<boolean> {
+    this.state.consent?.answer(false);
+    return new Promise((resolve) => {
+      const ask: ConsentAsk = {
+        agent: agent.slice(0, 60) || 'The assistant',
+        answer: (allow) => {
+          if (this.state.consent !== ask) return;
+          this.set({ consent: null });
+          resolve(allow);
+        },
+      };
+      this.set({ consent: ask });
+    });
+  }
+
+  /** Run `fn` as the in-app agent's call `callId`. */
+  async withCall<T>(callId: string, fn: () => Promise<T>): Promise<T> {
+    this.callId = callId;
+    try {
+      return await fn();
+    } finally {
+      this.callId = null;
+    }
+  }
+
   /** Go on after the user took over (the user said so). */
   resume(): void {
     if (this.state.active) this.set({ paused: false });
@@ -151,12 +186,23 @@ export class AgentHands {
       ).toUpperCase();
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const risk = this.state.active && !this.state.paused ? riskOfRequest(method, url) : null;
+      let userAllowed = false;
       if (risk) {
         const allowed = await this.ask(risk, method, url);
         if (!allowed) {
           this.blockedSinceAction = true;
           throw new TypeError('Blocked: the user did not allow this request.');
         }
+        userAllowed = true;
+      }
+      // A request an agent's call set off names the call, unless the user
+      // allowed it: the brain refuses a risky one that names a call.
+      if (this.callId && !userAllowed && method !== 'GET' && method !== 'HEAD') {
+        const headers = new Headers(
+          init?.headers ?? (input instanceof Request ? input.headers : undefined),
+        );
+        headers.set('x-mantle-agent-call', this.callId);
+        init = { ...init, headers };
       }
       this.inflight += 1;
       this.lastRequestAt = Date.now();

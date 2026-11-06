@@ -89,6 +89,11 @@ else is a plain 404.
 - `landing.spec.ts`: Home shows the current workspace's landing page and
   changes with the switcher (the Desk, or the workspace's home app); "All my
   workspaces" shows all of them; an Admin user finds the Dashboard in the menu.
+- `agent-calls.spec.ts`: an in-app agent's ui calls reach this window
+  (played through the dev build's `window.__mantleAgentCalls`): off by
+  default, the profile menu's opt-in, the first call asks the user, allowed
+  calls answer with this window's id, a write the agent sets off names its
+  call (`x-mantle-agent-call`) and a setting the user allows goes without it.
 - `agent-hands.spec.ts`: an agent driving the window (lib/agent-ui, through
   the dev build's `window.__mantleAgentHands`): the screen read as labelled
   controls, typing and clicking, Stop, a settings change held for the

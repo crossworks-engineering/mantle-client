@@ -1,6 +1,12 @@
 'use client';
 
 import {
+  endAgentTurn,
+  handleUiCall,
+  loadAgentUiSetting,
+  withWindowId,
+} from '@/lib/agent-ui/turn-calls';
+import {
   createContext,
   useCallback,
   useContext,
@@ -418,6 +424,13 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const [messages, setMessages] = useState<DockMsg[]>([]);
   const [agentSlug, setAgentSlug] = useState<string | undefined>(undefined);
   const [agentName, setAgentName] = useState('Assistant');
+  const agentNameRef = useRef(agentName);
+  agentNameRef.current = agentName;
+  // Whether this login lets agents use the window (lib/agent-ui/turn-calls):
+  // read once, so a turn can name the window.
+  useEffect(() => {
+    void loadAgentUiSetting();
+  }, []);
   const agentRef = useRef<string | undefined>(undefined);
   // The live-stream routes of a turn are an Admin user's (W7c): any other
   // login's reply is read from its thread by the safety poll below. A ref,
@@ -821,6 +834,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
         if (settled) return;
         settled = true;
         stopDockStream();
+        endAgentTurn(turnId);
         setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, ...patch } : m)));
         fireTurnSettled({
           agentSlug: target.agentSlug,
@@ -846,6 +860,11 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
               }
               if (ev.type === 'turn-start') {
                 if (typeof ev.data?.outboundId === 'string') outboundId = ev.data.outboundId;
+                return;
+              }
+              // An in-app agent's ui tool call for this window (agent UI).
+              if ((ev as { type: string }).type === 'ui-call') {
+                void handleUiCall(turnId, ev.data, agentNameRef.current);
                 return;
               }
               if (ev.type === 'text-delta' && typeof ev.data?.text === 'string') {
@@ -984,6 +1003,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       // up but upstream is alive → re-attach, don't surface it.)
       const headers: Record<string, string> = { 'idempotency-key': input.idempotencyKey };
       if (input.isJson) headers['content-type'] = 'application/json';
+      // The turn names this window when the login lets agents use it.
+      const turnBody = withWindowId(input.body, input.isJson);
       const RETRY_DEADLINE_MS = 6 * 60_000;
       const startedAt = Date.now();
       let attempt = 0;
@@ -995,7 +1016,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
           try {
             res = await fetch(
               apiUrl('/api/assistant/turn'),
-              withAuth({ method: 'POST', headers, body: input.body }),
+              withAuth({ method: 'POST', headers, body: turnBody }),
             );
           } catch {
             // Network drop / connection reset mid-turn — the turn is still

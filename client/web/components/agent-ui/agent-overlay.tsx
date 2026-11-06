@@ -6,6 +6,7 @@ import { Hand, MousePointer2, ShieldAlert } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { agentHands, type HandsState } from '@/lib/agent-ui/hands';
 import { RISK_TEXT } from '@/lib/agent-ui/model';
+import { handleUiCall, loadAgentUiSetting, WINDOW_ID } from '@/lib/agent-ui/turn-calls';
 import { placeCard } from '@/lib/tour/model';
 
 /** How long a held request's Allow stays disarmed, so a click already on
@@ -29,7 +30,8 @@ function useHands(): HandsState {
  * or press them, and the user's clicks on them do not count as taking over.
  *
  * Renders nothing unless a session runs. In a dev build it also hands the
- * controller to the e2e specs as `window.__mantleAgentHands`; a production
+ * controller to the e2e specs as `window.__mantleAgentHands` (and the
+ * in-app agent's call handler as `__mantleAgentCalls`); a production
  * build has no such global.
  */
 export function AgentOverlay() {
@@ -41,13 +43,26 @@ export function AgentOverlay() {
     hands.setNavigator((path) => router.push(path));
     if (process.env.NODE_ENV !== 'production') {
       (window as unknown as { __mantleAgentHands?: unknown }).__mantleAgentHands = hands;
+      (window as unknown as { __mantleAgentCalls?: unknown }).__mantleAgentCalls = {
+        handleUiCall,
+        loadAgentUiSetting,
+        windowId: WINDOW_ID,
+      };
     }
     return () => hands.setNavigator(null);
   }, [router]);
 
-  if (!state.active) return null;
+  if (!state.active && !state.consent) return null;
+  if (!state.active) {
+    return (
+      <div data-agent-host="" className="pointer-events-none fixed inset-0 z-[80]">
+        <ConsentPrompt state={state} />
+      </div>
+    );
+  }
   return (
     <div data-agent-host="" className="pointer-events-none fixed inset-0 z-[80]">
+      {state.consent && <ConsentPrompt state={state} />}
       {state.spotlight && <Spotlight el={state.spotlight.el} caption={state.spotlight.caption} />}
       {state.cursor && !state.paused && (
         <MousePointer2
@@ -91,6 +106,47 @@ function AgentBar({ state }: { state: HandsState }) {
         Stop
         <kbd className="ml-1 rounded border border-border/50 px-1 text-[10px]">Esc</kbd>
       </Button>
+    </div>
+  );
+}
+
+function ConsentPrompt({ state }: { state: HandsState }) {
+  const ask = state.consent!;
+  const [armed, setArmed] = React.useState(false);
+  React.useEffect(() => {
+    setArmed(false);
+    const t = setTimeout(() => setArmed(true), ARM_MS);
+    return () => clearTimeout(t);
+  }, [ask]);
+  return (
+    <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-foreground/20">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="agent-consent-title"
+        className="w-[min(26rem,calc(100%-2rem))] rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl"
+      >
+        <div className="flex items-start gap-3">
+          <Hand className="mt-0.5 size-5 shrink-0 text-primary-ink" aria-hidden />
+          <div className="min-w-0 space-y-1">
+            <h2 id="agent-consent-title" className="font-semibold">
+              {ask.agent} wants to show you around in this window
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              It moves, clicks and types where you can see it, as you. Anything that deletes, sends,
+              shares or changes a setting still waits for you, and Stop ends it.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={() => ask.answer(false)}>
+            Not now
+          </Button>
+          <Button disabled={!armed} onClick={() => ask.answer(true)}>
+            Allow for this session
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

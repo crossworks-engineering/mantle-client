@@ -6,6 +6,7 @@ import { isTurnStreamingEnabledClient } from '@mantle/web-ui/turn-streaming';
 import type { TurnEvent } from '@mantle/client-types';
 import { estimateTokens } from '@/lib/token-estimate';
 import { play } from '@/lib/sounds/play';
+import { endAgentTurn, handleUiCall } from '@/lib/agent-ui/turn-calls';
 
 /** One step in a turn's thought trail (a `status` event, kept). */
 export interface ThoughtEvent {
@@ -264,6 +265,7 @@ export function useTurnStream(turnId: string | null): TurnStream {
             }
             setPhase('done');
             play('reply');
+            endAgentTurn(turnId);
             return;
           }
           if (ev && ev.type === 'error') {
@@ -272,6 +274,13 @@ export function useTurnStream(turnId: string | null): TurnStream {
             setError(typeof ev.data?.message === 'string' ? ev.data.message : 'The turn failed.');
             setPhase('error');
             play('danger');
+            endAgentTurn(turnId);
+            return;
+          }
+          // An in-app agent's ui tool call for this window (agent UI); the
+          // dock may hear it too, and each call runs once.
+          if (ev && (ev as { type: string }).type === 'ui-call') {
+            void handleUiCall(turnId, ev.data, 'The assistant');
             return;
           }
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
