@@ -95,7 +95,17 @@ export function DeskWidget({
           ) : null}
         </div>
       </header>
-      <div className={cn('relative min-h-0 flex-1 overflow-y-auto scrollbar-thin', bodyClassName)}>
+      {/* The body scrolls, so it clips: pt-1 leaves room above the first
+          control for its focus ring (2px ring + 2px offset), which the
+          widgets' own px-3 pb-3 leave on the other sides. A bare widget
+          lays out its own edges. */}
+      <div
+        className={cn(
+          'relative min-h-0 flex-1 overflow-y-auto scrollbar-thin',
+          !bare && 'pt-1',
+          bodyClassName,
+        )}
+      >
         {children}
       </div>
       {narrow ? null : (

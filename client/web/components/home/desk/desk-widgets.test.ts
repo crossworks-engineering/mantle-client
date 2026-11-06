@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { folderKey, treeKey } from '@/components/item-tree/tree-api';
 import { deskNewestKey, deskStorageKey, hubNewestOf } from './desk-data';
@@ -83,6 +85,21 @@ describe('where a desk is kept', () => {
     );
     expect(deskStorageKey('https://a.example', 'l1')).not.toBe(
       deskStorageKey('https://a.example', 'l2'),
+    );
+  });
+});
+
+describe('widget frame', () => {
+  // The body scrolls, so it clips: a control at its top edge loses its focus
+  // ring unless the body leaves room above it. The node runner cannot mount
+  // the frame, so the class is pinned by reading it.
+  it('leaves room above the first control of a carded widget for its focus ring', () => {
+    const frame = readFileSync(
+      fileURLToPath(new URL('./desk-widget.tsx', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    expect(frame).toContain(
+      "'relative min-h-0 flex-1 overflow-y-auto scrollbar-thin', !bare && 'pt-1',",
     );
   });
 });
