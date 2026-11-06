@@ -346,7 +346,7 @@ export function defaultDesk(kinds: readonly TreeKind[]): DeskPrefs {
     { id: 'theme', x: 7, y: 4, w: 4, h: 2 },
     { id: 'drift', x: 7, y: 6, w: 4, h: 2 },
   ];
-  return { v: 1, items, counts: {}, icons: true, clock: 'digital' };
+  return { v: 1, items, counts: {}, icons: true, clock: 'analog' };
 }
 
 export function countFor(prefs: Pick<DeskPrefs, 'counts'>, kind: TreeKind): number {
@@ -437,7 +437,8 @@ export function deskFrom(data: unknown): DeskPrefs | null {
     items,
     counts,
     icons: d.icons !== false,
-    clock: d.clock === 'analog' ? 'analog' : 'digital',
+    // The face is analogue unless digital was saved: a saved choice stays.
+    clock: d.clock === 'digital' ? 'digital' : 'analog',
     ...(rest.length > 0 ? { rest } : {}),
     ...(Object.keys(restCounts).length > 0 ? { restCounts } : {}),
   };

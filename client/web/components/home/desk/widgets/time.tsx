@@ -65,14 +65,27 @@ export function ClockWidget({
         </WidgetAction>
       }
     >
-      <div className="@container flex h-full items-center gap-4 px-4 pb-3">
+      {/* The analogue face grows with the card; beside it the greeting and
+          date wrap rather than cut, and on a card too narrow for them the
+          face stands alone. */}
+      <div
+        className={cn(
+          '@container flex h-full items-center gap-4 px-4 pb-3',
+          face === 'analog' && 'justify-center @[13rem]:justify-start',
+        )}
+      >
         {face === 'analog' ? <AnalogFace date={d} /> : null}
-        <div className="min-w-0">
+        <div className={cn('min-w-0', face === 'analog' && 'hidden @[13rem]:block')}>
           {face === 'digital' ? <DigitalTime date={d} /> : null}
-          <p className="truncate text-sm font-medium">
+          <p className={cn('text-sm font-medium', face === 'analog' ? 'line-clamp-2' : 'truncate')}>
             {d ? `${greeting(d.getHours())}${first ? `, ${first}` : ''}` : '\u00a0'}
           </p>
-          <p className="truncate text-sm text-muted-foreground">
+          <p
+            className={cn(
+              'text-sm text-muted-foreground',
+              face === 'analog' ? 'line-clamp-2' : 'truncate',
+            )}
+          >
             {d
               ? d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
               : '\u00a0'}
@@ -83,8 +96,9 @@ export function ClockWidget({
   );
 }
 
-/** The hours and minutes large, the seconds and AM or PM (in a locale that
- *  has them) small beside them. */
+/** The hours and minutes large, and beside them on one line the seconds and
+ *  AM or PM (when the locale's clock has them; a 24-hour locale has none).
+ *  The time grows with the card, and the small part never wraps. */
 function DigitalTime({ date }: { date: Date | null }) {
   const parts = date
     ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).formatToParts(date)
@@ -96,13 +110,13 @@ function DigitalTime({ date }: { date: Date | null }) {
     .trim();
   const period = parts.find((p) => p.type === 'dayPeriod')?.value;
   return (
-    <div className="flex items-baseline gap-1.5 pb-1 font-[family-name:var(--font-page-title)]">
-      <span className="text-4xl font-semibold tabular-nums leading-none tracking-tight @[15rem]:text-5xl">
+    <div className="flex items-baseline gap-1.5 whitespace-nowrap pb-1 font-[family-name:var(--font-page-title)]">
+      <span className="text-3xl font-semibold tabular-nums leading-none tracking-tight @[13rem]:text-4xl @[17rem]:text-5xl">
         {hm || '--:--'}
       </span>
-      <span className="flex flex-col text-xs leading-tight text-muted-foreground tabular-nums">
-        <span>{date ? String(date.getSeconds()).padStart(2, '0') : ''}</span>
-        {period ? <span className="uppercase">{period}</span> : null}
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+        {date ? String(date.getSeconds()).padStart(2, '0') : ''}
+        {period ? <span className="ml-1 uppercase">{period}</span> : null}
       </span>
     </div>
   );
@@ -126,7 +140,7 @@ function AnalogFace({ date }: { date: Date | null }) {
   return (
     <svg
       viewBox="0 0 100 100"
-      className="aspect-square h-full max-h-28 min-h-16 shrink-0"
+      className="aspect-square h-full max-h-56 min-h-16 max-w-full shrink-0 @[13rem]:max-w-[50%]"
       aria-hidden
     >
       <circle cx="50" cy="50" r="47" className="fill-background/60 stroke-border" strokeWidth="2" />
