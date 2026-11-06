@@ -12,6 +12,14 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.12: Desk fixes, Quick task and a theme menu
+
+- **New:** a Quick task Desk widget, the twin of Quick note. The first line is the title and the rest is the body. It shows only for a login that has Tasks.
+- **New:** the Desk Theme card picks the theme from a menu, with clean swatches.
+- **Fixed:** the tree's view tabs fold to icons when the list is narrow, so they no longer run into each other.
+- **Fixed:** the Notes widget shows blank stickies, not dark blocks, while it loads and when it is empty.
+- **Fixed:** Desk widgets no longer clip the top focus ring of the first control.
+
 ## v0.9.11: a canvas plays its media in the app
 
 - **New:** the contract pins move to 0.500.30, so the canvas frame in Present and in a page answers `mantle.media`. A new e2e test uploads a clip and plays it, in the app and on the open link.
