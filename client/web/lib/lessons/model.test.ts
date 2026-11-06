@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLessonsFolder, lessonSource, parseLesson } from './model';
+import { isLessonsFolder, lessonSource, lessonTrusted, parseLesson } from './model';
 
 const GOOD = `
 title: Add a task
@@ -97,5 +97,49 @@ describe('isLessonsFolder', () => {
     expect(isLessonsFolder({ name: ' lessons ', depth: 1 })).toBe(true);
     expect(isLessonsFolder({ name: 'Lessons', depth: 2 })).toBe(false);
     expect(isLessonsFolder({ name: 'Lesson notes', depth: 1 })).toBe(false);
+  });
+});
+
+describe('a lesson types after what a field holds', () => {
+  it('replaces only when the lesson says replace: true', () => {
+    const steps = (t: string) =>
+      parseLesson(`title: T\nsteps:\n  - say: s\n    do:\n      - type: ${t}\n`).lesson!.steps[0]!
+        .do[0];
+    const target = { role: 'textbox', name: 'Title' };
+    expect(steps('{ target: { role: textbox, name: Title }, text: a }')).toEqual({
+      type: { target, text: 'a' },
+    });
+    expect(steps('{ target: { role: textbox, name: Title }, text: a, replace: false }')).toEqual({
+      type: { target, text: 'a' },
+    });
+    expect(steps('{ target: { role: textbox, name: Title }, text: a, replace: true }')).toEqual({
+      type: { target, text: 'a', replace: true },
+    });
+  });
+});
+
+describe('lessonTrusted', () => {
+  const ADMIN_WS = 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0';
+  const admin = { adminWorkspaceId: ADMIN_WS };
+  const member = { adminWorkspaceId: null };
+
+  it('an Admin user plays only what is homed in the Admin workspace', () => {
+    expect(lessonTrusted({ wsId: ADMIN_WS }, admin)).toBe(true);
+    // An Admin user may change it; that is fine in the Admin workspace.
+    expect(lessonTrusted({ wsId: ADMIN_WS }, admin, true)).toBe(true);
+    expect(lessonTrusted({ wsId: 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1' }, admin)).toBe(false);
+    expect(lessonTrusted({ wsId: null }, admin)).toBe(false);
+  });
+
+  it('anyone else plays only a lesson whose home they cannot name and may not change', () => {
+    expect(lessonTrusted({ wsId: null }, member)).toBe(true);
+    // A home they can name is one of their own workspaces.
+    expect(lessonTrusted({ wsId: 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1' }, member)).toBe(false);
+    expect(lessonTrusted({ wsId: null }, member, true)).toBe(false);
+  });
+
+  it('a home that could not be read is never trusted', () => {
+    expect(lessonTrusted(null, admin)).toBe(false);
+    expect(lessonTrusted(undefined, member)).toBe(false);
   });
 });

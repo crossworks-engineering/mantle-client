@@ -164,7 +164,8 @@ function parseAction(raw: unknown): LessonAction | string {
         type: {
           target: t,
           text: o.text.slice(0, 2000),
-          ...(o.replace === false ? { replace: false } : {}),
+          // Added to what the field holds, unless the lesson says replace.
+          ...(o.replace === true ? { replace: true } : {}),
         },
       };
     }
@@ -186,8 +187,36 @@ function parseAction(raw: unknown): LessonAction | string {
   }
 }
 
-/** The name of the pages folder lessons live in. */
+/** The name of the pages folder lessons live in: a top-level folder of
+ *  the Admin workspace, where members cannot write. */
 export const LESSONS_FOLDER = 'Lessons';
+
+/** Who is looking at a lesson: the Admin workspace's id when the viewer is
+ *  in it (an Admin user; the shell names it), else null. */
+export type LessonViewer = { adminWorkspaceId: string | null };
+
+/**
+ * Whether the Lessons folder, or a lesson in it, may be played to this
+ * viewer: it is homed in the Admin workspace, as far as the viewer can
+ * tell from its home (GET /api/grants/:id). The same rule for every
+ * viewer, Admin users included (fix round contract, section 3):
+ *
+ *  - an Admin user is in the Admin workspace, so the brain names its home:
+ *    it must be the Admin workspace;
+ *  - anyone else is not in the Admin workspace, and the brain names no home
+ *    of a workspace the caller is not a user of: the home must be unnamed.
+ *    A home they can name is one of their own workspaces, where a member
+ *    could have written it; and a lesson they may change is not played.
+ */
+export function lessonTrusted(
+  home: { wsId: string | null } | null | undefined,
+  viewer: LessonViewer,
+  mayEdit = false,
+): boolean {
+  if (!home) return false;
+  if (viewer.adminWorkspaceId) return home.wsId === viewer.adminWorkspaceId;
+  return home.wsId === null && !mayEdit;
+}
 
 export function isLessonsFolder(f: { name: string; depth: number }): boolean {
   return f.depth === 1 && f.name.trim().toLowerCase() === LESSONS_FOLDER.toLowerCase();

@@ -45,7 +45,7 @@ test('an Admin user plays a lesson from the profile menu', async ({ page }) => {
   await expect(page.getByRole('note')).toHaveText('Sounds turns the app sounds on or off.');
   await card(page).getByRole('button', { name: 'Show me' }).click();
   const held = page.getByRole('alertdialog', { name: /wants to change a setting/ });
-  await held.getByRole('button', { name: 'Block' }).click();
+  await held.getByRole('button', { name: 'Not now' }).click();
   // Blocked, the step is the user's; its check already holds, so it passes.
   await expect(card(page)).toContainText('That is it.');
   expect(api.asked('admin')).not.toContain('PUT /api/profile/sounds');
@@ -81,5 +81,53 @@ test('a member plays a lesson it cannot change, and Stop ends it', async ({ page
     .click();
   await expect(card(page)).toContainText('step 1 of 3');
   await page.getByRole('button', { name: 'Stop' }).click();
+  await expect(card(page)).toHaveCount(0);
+});
+
+test('a lesson tags its writes; one the brain refuses is held, and Allow sends it untagged', async ({
+  page,
+}) => {
+  api.refuseAgentWrites = /^\/api\/notes$/;
+  await signIn(page, 'admin');
+  await page.goto(`/?lesson=${LESSONS.note.id}`);
+  await page
+    .getByRole('dialog', { name: 'Start this lesson?' })
+    .getByRole('button', { name: 'Start' })
+    .click();
+  const noteCard = page.getByRole('region', { name: `Lesson: ${LESSONS.note.title}` });
+  await noteCard.getByRole('button', { name: 'Show me' }).click();
+  const held = page.getByRole('alertdialog', {
+    name: `${LESSONS.note.title} wants to do something only you may do`,
+  });
+  await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
+  await held.getByRole('button', { name: 'Allow once' }).click();
+  await expect(noteCard.getByRole('button', { name: 'Done' })).toBeVisible();
+  const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
+  expect(posts).toHaveLength(2);
+  expect(posts[0]!.agentCall).toMatch(/^lesson:[0-9a-f-]{36}$/);
+  expect(posts[1]!.agentCall).toBeUndefined();
+});
+
+test('a Lessons folder that is not the Admin workspace’s offers nothing, to anyone', async ({
+  page,
+}) => {
+  api.lessonsHome = 'team';
+  await signIn(page, 'admin');
+  await page
+    .getByRole('button', { name: /Ada Admin/ })
+    .first()
+    .click();
+  await page.getByRole('menuitem', { name: 'Lessons' }).click();
+  await expect(page.getByRole('dialog', { name: 'Lessons' })).toContainText('No lessons yet.');
+  await page.keyboard.press('Escape');
+
+  await page.goto(`/?lesson=${LESSONS.lesson.id}`);
+  await page
+    .getByRole('dialog', { name: 'Start this lesson?' })
+    .getByRole('button', { name: 'Start' })
+    .click();
+  await expect(page.getByRole('dialog', { name: 'This lesson cannot be played' })).toContainText(
+    'not in the Lessons folder of the Admin workspace',
+  );
   await expect(card(page)).toHaveCount(0);
 });
