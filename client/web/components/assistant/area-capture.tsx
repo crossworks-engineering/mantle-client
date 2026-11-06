@@ -281,7 +281,8 @@ function CapturePreview({
           <DialogTitle>Screenshot</DialogTitle>
           <DialogDescription>
             It shows whatever was in the area, so check it first. Nothing is saved or sent until you
-            choose below. Once saved, only you can see it.
+            choose below. Once saved, only you can see it. The brain&apos;s image model reads it to
+            make it searchable.
           </DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[50vh] justify-center overflow-auto rounded-md border border-border bg-muted/40 p-2 scrollbar-thin">
