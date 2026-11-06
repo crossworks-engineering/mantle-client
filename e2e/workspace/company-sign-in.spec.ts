@@ -78,7 +78,7 @@ test('setup: save the secret with the password, Test it, and it never comes back
   const dialog = page.getByRole('dialog');
   await dialog.locator('#sso-setup-password').fill('not the password');
   await dialog.getByRole('button', { name: 'Save secret' }).click();
-  await expect(dialog.getByText('Type your password to make this change.')).toBeVisible();
+  await expect(dialog.getByText('That password is not correct. Try again.')).toBeVisible();
   expect(api.ssoSetup.secret).toBeNull();
 
   await dialog.locator('#sso-setup-password').fill(PASSWORD);

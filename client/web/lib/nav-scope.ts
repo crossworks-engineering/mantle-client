@@ -77,6 +77,8 @@ const SETTINGS_HREFS = new Set([
   '/settings/accounts',
   '/settings/keys',
   '/settings/microsoft',
+  // The docs and the owner's steps say Settings > Company sign-in.
+  '/settings/company-sign-in',
   '/settings/calendar',
   '/settings/embedding',
   // Which optional services the agents can use (sandboxes, media): it

@@ -63,7 +63,7 @@ const closed = {
 };
 const wrong = {
   status: 403,
-  body: { error: 'Type your password to make this change.', code: 'password' },
+  body: { error: 'That password is not correct. Try again.', code: 'password' },
 };
 
 export function ssoSetupAnswer(
