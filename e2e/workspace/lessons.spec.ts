@@ -88,6 +88,7 @@ test('a lesson tags its writes; one the brain refuses is held, and Allow sends i
   page,
 }) => {
   api.refuseAgentWrites = /^\/api\/notes$/;
+  api.agentRefusalReason = 'admin_only';
   await signIn(page, 'admin');
   await page.goto(`/?lesson=${LESSONS.note.id}`);
   await page
@@ -97,7 +98,7 @@ test('a lesson tags its writes; one the brain refuses is held, and Allow sends i
   const noteCard = page.getByRole('region', { name: `Lesson: ${LESSONS.note.title}` });
   await noteCard.getByRole('button', { name: 'Show me' }).click();
   const held = page.getByRole('alertdialog', {
-    name: `${LESSONS.note.title} wants to do something only you may do`,
+    name: `${LESSONS.note.title} wants to change something only an Admin user may change`,
   });
   await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
   await held.getByRole('button', { name: 'Allow once' }).click();
@@ -134,6 +135,7 @@ test('a Lessons folder that is not the Admin workspace’s offers nothing, to an
 
 test('a brain before homeIsAdmin offers a member nothing', async ({ page }) => {
   api.sendsHomeIsAdmin = false;
+  api.sendsEditableOutsideAdmin = false;
   await signIn(page, 'member');
   await page
     .getByRole('button', { name: /Mo Member/ })
@@ -147,6 +149,7 @@ test('a brain before homeIsAdmin: an Admin user still plays by the home it names
   page,
 }) => {
   api.sendsHomeIsAdmin = false;
+  api.sendsEditableOutsideAdmin = false;
   await signIn(page, 'admin');
   await page.goto(`/?lesson=${LESSONS.lesson.id}`);
   await page
@@ -154,4 +157,48 @@ test('a brain before homeIsAdmin: an Admin user still plays by the home it names
     .getByRole('button', { name: 'Start' })
     .click();
   await expect(card(page)).toContainText('step 1 of 3');
+});
+
+test('a lesson someone outside the Admin workspace may change is offered to nobody', async ({
+  page,
+}) => {
+  api.lessonsEditableOutside = true;
+  await signIn(page, 'admin');
+  await page
+    .getByRole('button', { name: /Ada Admin/ })
+    .first()
+    .click();
+  await page.getByRole('menuitem', { name: 'Lessons' }).click();
+  await expect(page.getByRole('dialog', { name: 'Lessons' })).toContainText('No lessons yet.');
+});
+
+test('a brain before editableOutsideAdmin: an Admin user is refused a lesson shared with Write', async ({
+  page,
+}) => {
+  api.sendsHomeIsAdmin = false;
+  api.sendsEditableOutsideAdmin = false;
+  api.lessonsEditableOutside = true;
+  await signIn(page, 'admin');
+  await page.goto(`/?lesson=${LESSONS.lesson.id}`);
+  await page
+    .getByRole('dialog', { name: 'Start this lesson?' })
+    .getByRole('button', { name: 'Start' })
+    .click();
+  await expect(page.getByRole('dialog', { name: 'This lesson cannot be played' })).toBeVisible();
+  await expect(card(page)).toHaveCount(0);
+});
+
+test('the Lessons folder is the Admin workspace’s, not the first one by that name', async ({
+  page,
+}) => {
+  api.decoyLessonsFolder = true;
+  await signIn(page, 'member');
+  await page
+    .getByRole('button', { name: /Mo Member/ })
+    .first()
+    .click();
+  await page.getByRole('menuitem', { name: 'Lessons' }).click();
+  const list = page.getByRole('dialog', { name: 'Lessons' });
+  await expect(list.getByRole('button', { name: LESSONS.lesson.title })).toBeVisible();
+  await expect(list.getByRole('button', { name: LESSONS.stray.title })).toHaveCount(0);
 });

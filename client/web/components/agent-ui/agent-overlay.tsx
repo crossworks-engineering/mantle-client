@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Hand, MousePointer2, ShieldAlert } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { agentHands, type HandsState } from '@/lib/agent-ui/hands';
-import { RISK_TEXT } from '@/lib/agent-ui/model';
+import { heldText } from '@/lib/agent-ui/model';
 import { claimTurn, handleUiCall, loadAgentUiSetting, WINDOW_ID } from '@/lib/agent-ui/turn-calls';
 import { placeCard } from '@/lib/tour/model';
 
@@ -174,7 +174,7 @@ function HeldPrompt({ state }: { state: HandsState }) {
           <ShieldAlert className="mt-0.5 size-5 shrink-0 text-warning-ink" aria-hidden />
           <div className="min-w-0 space-y-1">
             <h2 id="agent-held-title" className="font-semibold">
-              {state.agent} wants to {RISK_TEXT[held.risk]}
+              {state.agent} wants to {heldText(held.risk, held.reason)}
             </h2>
             <p className="break-all font-mono text-xs text-muted-foreground">
               {held.method} {held.path}

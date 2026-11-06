@@ -123,24 +123,47 @@ describe('lessonTrusted', () => {
   const TEAM_WS = 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1';
   const admin = { adminWorkspaceId: ADMIN_WS };
   const member = { adminWorkspaceId: null };
+  const sure = { homeIsAdmin: true, editableOutsideAdmin: false };
 
-  it('a brain that sends homeIsAdmin decides it, for every viewer', () => {
+  it('the brain decides it, for every viewer: homed in Admin, changed by nobody else', () => {
     for (const viewer of [admin, member]) {
-      expect(lessonTrusted({ homeIsAdmin: true, home: { wsId: null } }, viewer)).toBe(true);
-      expect(lessonTrusted({ homeIsAdmin: false, home: { wsId: ADMIN_WS } }, viewer)).toBe(false);
+      expect(lessonTrusted(sure, viewer)).toBe(true);
+      expect(lessonTrusted({ ...sure, editableOutsideAdmin: true }, viewer)).toBe(false);
+      expect(lessonTrusted({ ...sure, homeIsAdmin: false, home: { wsId: ADMIN_WS } }, viewer)).toBe(
+        false,
+      );
     }
     // An Admin user may change it; that is fine in the Admin workspace.
-    expect(lessonTrusted({ homeIsAdmin: true }, admin, true)).toBe(true);
+    expect(lessonTrusted(sure, admin, true)).toBe(true);
     // Anyone else may not play a lesson they may change.
-    expect(lessonTrusted({ homeIsAdmin: true }, member, true)).toBe(false);
+    expect(lessonTrusted(sure, member, true)).toBe(false);
   });
 
-  it('an older brain: an Admin user checks the home it names; anyone else gets nothing', () => {
-    expect(lessonTrusted({ home: { wsId: ADMIN_WS } }, admin)).toBe(true);
-    expect(lessonTrusted({ home: { wsId: TEAM_WS } }, admin)).toBe(false);
-    expect(lessonTrusted({ home: { wsId: null } }, admin)).toBe(false);
-    expect(lessonTrusted({ home: { wsId: null } }, member)).toBe(false);
-    expect(lessonTrusted({ home: { wsId: TEAM_WS } }, member)).toBe(false);
+  it('an older brain: an Admin user checks the home and the Write grants; anyone else gets nothing', () => {
+    const rows = [{ wsId: ADMIN_WS, write: false }];
+    expect(lessonTrusted({ home: { wsId: ADMIN_WS }, rows }, admin)).toBe(true);
+    // A brain with homeIsAdmin but not editableOutsideAdmin is an older one too.
+    expect(lessonTrusted({ homeIsAdmin: true, home: { wsId: null }, rows }, admin)).toBe(true);
+    expect(
+      lessonTrusted(
+        { home: { wsId: ADMIN_WS }, rows: [...rows, { wsId: TEAM_WS, write: true }] },
+        admin,
+      ),
+    ).toBe(false);
+    // A Write grant that is "Removed here" gives nothing.
+    expect(
+      lessonTrusted(
+        {
+          home: { wsId: ADMIN_WS },
+          rows: [...rows, { wsId: TEAM_WS, write: true, excluded: true }],
+        },
+        admin,
+      ),
+    ).toBe(true);
+    expect(lessonTrusted({ home: { wsId: ADMIN_WS } }, admin)).toBe(false);
+    expect(lessonTrusted({ home: { wsId: TEAM_WS }, rows }, admin)).toBe(false);
+    expect(lessonTrusted({ homeIsAdmin: true, home: { wsId: null }, rows }, member)).toBe(false);
+    expect(lessonTrusted({ home: { wsId: null }, rows }, member)).toBe(false);
   });
 
   it('a home that could not be read is never trusted', () => {

@@ -1,8 +1,11 @@
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  APP_SHELL_ROUTES,
   cutText,
   decodePath,
   elementRefusal,
+  heldText,
   isAgentRefusal,
   isBookkeepingRequest,
   lessonCallTag,
@@ -42,7 +45,8 @@ describe('riskOfRequest', () => {
   });
 
   it('lets an ordinary create or edit through', () => {
-    expect(riskOfRequest('POST', '/api/tasks?ws=1')).toBeNull();
+    expect(riskOfRequest('POST', '/api/tasks')).toBeNull();
+    expect(riskOfRequest('POST', '/api/notes', '{"title":"Milk","content":"x"}')).toBeNull();
     expect(riskOfRequest('PATCH', '/api/notes/1')).toBeNull();
     expect(riskOfRequest('PUT', '/api/pages/1/draft')).toBeNull();
   });
@@ -77,6 +81,63 @@ describe('riskOfRequest reads the path decoded', () => {
       expect(riskOfRequest('POST', path)).toBe('settings');
     }
     expect(riskOfRequest('POST', '/api/studio/pages')).toBeNull();
+  });
+});
+
+describe('riskOfRequest keeps step with the brain (fix round 2)', () => {
+  it('a write aimed at a workspace is workspace_target', () => {
+    expect(riskOfRequest('POST', '/api/tasks?ws=1')).toBe('workspace_target');
+    expect(riskOfRequest('PATCH', 'https://brain.invalid/api/notes/1?WS=b')).toBe(
+      'workspace_target',
+    );
+  });
+
+  it('a move field at any depth is move', () => {
+    for (const f of ['move', 'copy_to', 'parentId', 'parent_id', 'folderId', 'folder_id']) {
+      expect(riskOfRequest('PATCH', '/api/pages/1', JSON.stringify({ a: [{ [f]: 'x' }] }))).toBe(
+        'move',
+      );
+    }
+    const form = new FormData();
+    form.set('folderId', 'f1');
+    expect(riskOfRequest('POST', '/api/files/files', form)).toBe('move');
+    expect(riskOfRequest('POST', '/api/tree/pages/move')).toBe('move');
+  });
+
+  it('a duplicate or copy route is copy, a commit is publish', () => {
+    expect(riskOfRequest('POST', '/api/apps/1/duplicate')).toBe('copy');
+    expect(riskOfRequest('POST', '/api/pages/1/copy')).toBe('copy');
+    expect(riskOfRequest('POST', '/api/tables/1/commit')).toBe('publish');
+  });
+
+  it('the journal and contacts are admin_only', () => {
+    expect(riskOfRequest('POST', '/api/journal')).toBe('admin_only');
+    expect(riskOfRequest('PATCH', '/api/contacts/1')).toBe('admin_only');
+  });
+
+  it('a sharing field the brain names is share, in any case', () => {
+    for (const f of ['shared', 'sharing', 'isPublic', 'access', 'members', 'owner'])
+      expect(riskOfRequest('PATCH', '/api/pages/1', JSON.stringify({ [f]: 1 }))).toBe('share');
+  });
+});
+
+describe('heldText', () => {
+  it('says the brain’s reason in plain words', () => {
+    expect(heldText('refused', 'workspace_target')).toBe('put something in a workspace');
+    expect(heldText('refused', 'move')).toBe('move something to another place');
+    expect(heldText('refused', 'tree_move')).toBe('move something to another place');
+    expect(heldText('refused', 'copy')).toBe('make a copy of something');
+    expect(heldText('refused', 'publish')).toBe('publish something');
+    expect(heldText('refused', 'admin_only')).toBe(
+      'change something only an Admin user may change',
+    );
+    expect(heldText('refused', 'sharing_field')).toBe('change who can see something');
+  });
+
+  it('an unknown or missing reason reads as the plain refusal', () => {
+    expect(heldText('refused', 'toString')).toBe('do something only you may do');
+    expect(heldText('refused', null)).toBe('do something only you may do');
+    expect(heldText('settings')).toBe('change a setting');
   });
 });
 
@@ -161,6 +222,11 @@ describe('safeAgentRoute', () => {
       '/x\u0000y',
       '/x/../login',
       '/tasks/./x',
+      '/onboarding',
+      '/pair',
+      '/pair/abc',
+      '/nowhere',
+      '/invite',
       '/%6Cogin',
       '/%2Fevil.invalid',
       '/x/%2E%2E/login',
@@ -173,6 +239,23 @@ describe('safeAgentRoute', () => {
   });
 });
 
+describe('the app shell routes', () => {
+  it('are the folders of client/web/app/(app)', () => {
+    const dir = new URL('../../app/(app)/', import.meta.url);
+    const folders = readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith('(') && !d.name.startsWith('_'))
+      .map((d) => d.name)
+      .sort();
+    expect([...APP_SHELL_ROUTES].sort()).toEqual(folders);
+  });
+
+  it('the Desk and every screen of the shell are open', () => {
+    expect(safeAgentRoute('/')).toBe('/');
+    expect(safeAgentRoute('/settings/profile')).toBe('/settings/profile');
+    expect(safeAgentRoute('/dev-tools')).toBe('/dev-tools');
+  });
+});
+
 describe('elementRefusal', () => {
   const plain = { inHost: false, risk: null, inAlertDialog: false, secret: false };
 
@@ -180,9 +263,10 @@ describe('elementRefusal', () => {
     expect(elementRefusal({ ...plain, inHost: true }, 'click')).toBe('host_control');
   });
 
-  it('a risky control or a confirm is the user’s to press', () => {
+  it('a risky control or anything in a confirm is the user’s', () => {
     expect(elementRefusal({ ...plain, risk: 'delete' }, 'click')).toBe('needs_user');
-    expect(elementRefusal({ ...plain, inAlertDialog: true }, 'click')).toBe('needs_user');
+    for (const action of ['click', 'type', 'select'] as const)
+      expect(elementRefusal({ ...plain, inAlertDialog: true }, action)).toBe('needs_user');
   });
 
   it('a secret field is never typed in, though it may be focused', () => {

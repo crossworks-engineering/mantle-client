@@ -44,6 +44,8 @@ import { centerOf, factsOf, findByName, findTarget, readScreen, roleOf } from '.
 export type HeldRequest = {
   id: number;
   risk: RequestRisk;
+  /** The brain's reason, when the brain refused it (`risk` is `refused`). */
+  reason: string | null;
   method: string;
   path: string;
   /** The user's answer. */
@@ -229,9 +231,7 @@ export class AgentHands {
       // (the user may have paused or stopped it on the way).
       const agents =
         !agentOwnRequest(url) && (this.acting > 0 || (this.state.active && !this.state.paused));
-      const risk = agents
-        ? riskOfRequest(method, url, typeof init?.body === 'string' ? init.body : undefined)
-        : null;
+      const risk = agents ? riskOfRequest(method, url, init?.body ?? undefined) : null;
       let userAllowed = false;
       if (risk) {
         // Stopped mid-action: nobody is asked, nothing is sent.
@@ -271,8 +271,11 @@ export class AgentHands {
       }
       if (!isAgentRefusal(res.status, body) || !this.state.active) return res;
       // The brain refused it as the agent's: the user's step, held like a
-      // risky write. Allow sends it once more as the user's own, untagged.
-      if (!(await this.ask('refused', method, url))) {
+      // risky write, with the brain's reason. Allow sends it once more as
+      // the user's own, untagged.
+      const reason = (body as { reason?: unknown }).reason;
+      const why = typeof reason === 'string' ? reason.slice(0, 40) : null;
+      if (!(await this.ask('refused', method, url, why))) {
         this.blockedSinceAction = true;
         throw new TypeError('Blocked: the user did not allow this request.');
       }
@@ -286,7 +289,12 @@ export class AgentHands {
     this.realFetch = null;
   }
 
-  private ask(risk: RequestRisk, method: string, url: string): Promise<boolean> {
+  private ask(
+    risk: RequestRisk,
+    method: string,
+    url: string,
+    reason: string | null = null,
+  ): Promise<boolean> {
     // One question at a time: a second risky request while one waits is
     // refused rather than stacked behind it.
     if (this.state.held) return Promise.resolve(false);
@@ -303,7 +311,7 @@ export class AgentHands {
         this.set({ held: null });
         resolve(allow);
       };
-      this.set({ held: { id, risk, method, path: path.slice(0, 200), answer } });
+      this.set({ held: { id, risk, reason, method, path: path.slice(0, 200), answer } });
     });
   }
 

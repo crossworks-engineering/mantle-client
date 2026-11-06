@@ -530,6 +530,7 @@ export function RequestBuilder() {
                   keyPlaceholder="header"
                   valuePlaceholder="value — {{secret:service/label}} allowed"
                   addLabel="Add header"
+                  secretValues
                 />
                 <p className="pt-2 text-[11px] text-muted-foreground">
                   Vault refs like <code className="font-mono">{'{{secret:mapbox/default}}'}</code>{' '}

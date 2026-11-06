@@ -216,7 +216,7 @@ test('a write the brain refuses as the agent’s is held; Allow once sends it ag
   await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
   const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
   const held = page.getByRole('alertdialog', {
-    name: 'Saskia wants to do something only you may do',
+    name: 'Saskia wants to send, share or publish something',
   });
   await expect(held.getByText('POST /api/notes')).toBeVisible();
   await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
@@ -240,7 +240,7 @@ test('Not now on a refused write sends nothing more, and the agent hears needs_u
   await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
   const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
   const held = page.getByRole('alertdialog', {
-    name: 'Saskia wants to do something only you may do',
+    name: 'Saskia wants to send, share or publish something',
   });
   await held.getByRole('button', { name: 'Not now' }).click();
   expect((await adding).result).toMatchObject({ ok: false, error: 'needs_user' });

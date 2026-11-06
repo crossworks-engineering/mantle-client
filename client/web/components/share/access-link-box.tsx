@@ -51,7 +51,10 @@ export function AccessLinkBox({
       {url ? (
         <>
           <div className="flex items-center gap-2">
+            {/* data-secret: a link that opens the item to anyone who has
+                it; an agent driving the window never reads it (lib/agent-ui). */}
             <Input
+              data-secret=""
               readOnly
               value={url}
               className="h-8 text-xs"

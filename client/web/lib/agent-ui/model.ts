@@ -112,7 +112,9 @@ export function parseTarget(raw: unknown): AgentTarget | null {
 /**
  * An app route the agent may open: an absolute path inside the app, with no
  * query and no hash (a route like `?lesson=` acts on load), no `//`, no
- * backslash, no control characters, not the sign-in or sign-out screens.
+ * backslash, no control characters, and only a screen of the app shell
+ * (`APP_SHELL_ROUTES`): never the sign-in, onboarding, pairing or invite
+ * screens, the API, or a path the app does not know.
  */
 export function safeAgentRoute(path: unknown): string | null {
   if (typeof path !== 'string' || path.length === 0 || path.length > 300) return null;
@@ -133,8 +135,50 @@ export function safeAgentRoute(path: unknown): string | null {
   if (decoded === null || decoded.startsWith('//') || /[?#\\]/.test(decoded)) return null;
   if (/^\/(login|logout|auth|invite|api)(\/|$)/i.test(decoded)) return null;
   if (decoded.split('/').some((seg) => seg === '.' || seg === '..')) return null;
+  const first = decoded.split('/')[1] ?? '';
+  if (first !== '' && !APP_SHELL_ROUTES.has(first)) return null;
   return path;
 }
+
+/** The top-level screens rendered inside the app shell: the folders of
+ *  `client/web/app/(app)` (a test holds the two in step). The root `/` is
+ *  the Desk. */
+export const APP_SHELL_ROUTES: ReadonlySet<string> = new Set([
+  'apps',
+  'assistant',
+  'changelog',
+  'chats',
+  'contacts',
+  'dashboard',
+  'debug',
+  'dev-tools',
+  'docs',
+  'draw',
+  'events',
+  'files',
+  'formulas',
+  'heartbeats',
+  'inbox',
+  'journal',
+  'models',
+  'n',
+  'nodes',
+  'notes',
+  'pages',
+  'pending',
+  'present',
+  'recall',
+  'runners',
+  'runs',
+  'sandboxes',
+  'secrets',
+  'settings',
+  'status',
+  'studio',
+  'tables',
+  'tasks',
+  'traces',
+]);
 
 /**
  * Whether the agent may follow a link: its href, resolved against the page,
@@ -157,24 +201,66 @@ export function linkRefusal(href: string | null, pageUrl: string): AgentRefusal 
   return safeAgentRoute(url.pathname) ? null : 'unsafe_route';
 }
 
-export type RequestRisk = 'delete' | 'send' | 'share' | 'publish' | 'settings' | 'refused';
+export type RequestRisk =
+  | 'delete'
+  | 'send'
+  | 'share'
+  | 'publish'
+  | 'settings'
+  | 'workspace_target'
+  | 'move'
+  | 'copy'
+  | 'admin_only'
+  /** The brain refused it as the agent's (403 agent_refused); the held
+   *  request carries the brain's `reason`. */
+  | 'refused';
 
-/** Words for a held request, by its risk. */
+/** Words for a held request, by its risk: "<agent> wants to ...". */
 export const RISK_TEXT: Record<RequestRisk, string> = {
   delete: 'delete something',
   send: 'send something',
   share: 'change who can see something',
   publish: 'publish something',
   settings: 'change a setting',
-  // The brain refused it as the agent's (403 agent_refused): the user may
-  // still send it as their own.
+  workspace_target: 'put something in a workspace',
+  move: 'move something to another place',
+  copy: 'make a copy of something',
+  admin_only: 'change something only an Admin user may change',
   refused: 'do something only you may do',
 };
+
+/** The brain's reasons for an agent_refused (its 403's `reason`), in the
+ *  same plain words. A reason not named here reads as `refused`. */
+const REASON_TEXT: Record<string, string> = {
+  delete: RISK_TEXT.delete,
+  settings: RISK_TEXT.settings,
+  admin_only: RISK_TEXT.admin_only,
+  listed: 'send, share or publish something',
+  tree_move: RISK_TEXT.move,
+  move: RISK_TEXT.move,
+  copy: RISK_TEXT.copy,
+  workspace_target: RISK_TEXT.workspace_target,
+  publish: RISK_TEXT.publish,
+  sharing_field: RISK_TEXT.share,
+  declared_read: 'run something the brain keeps for you',
+  body_unchecked: 'send something the brain could not check',
+};
+
+/** What a held request asks, in plain words: by the brain's reason when
+ *  the brain refused it, else by its risk. */
+export function heldText(risk: RequestRisk, reason: string | null = null): string {
+  if (risk === 'refused' && reason && Object.hasOwn(REASON_TEXT, reason)) {
+    return REASON_TEXT[reason]!;
+  }
+  return RISK_TEXT[risk];
+}
 
 const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
   // A new turn or a thread continued: the agent typing into the chat and
   // sending (its own answer and a cancel are let through by the hands).
   [/^\/api\/assistant\/(turn|threads\/[^/]+\/continue)$/, 'send'],
+  // The journal and contacts are Admin users' (the brain's admin_only).
+  [/^\/api\/(journal|contacts)(\/|$)/, 'admin_only'],
   [/\/restore$/, 'publish'],
   [/^\/api\/(recall\/maps|entities\/merge)(\/|$)/, 'publish'],
   [/^\/api\/apps\/[^/]+\/tool-broker$/, 'settings'],
@@ -190,7 +276,11 @@ const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
   [/^\/api\/studio\/reset(\/|$)/, 'settings'],
   [/\/(trash|purge|empty)(\/|$)/, 'delete'],
   [/\/(send|reply|forward|messages|messenger|email|emails|mail|telegram|notify)(\/|$)/, 'send'],
-  [/\/(share|shares|grants|access|members|invites|visibility|unshare|move)(\/|$)/, 'share'],
+  [/\/(share|shares|grants|access|members|invites|visibility|unshare)(\/|$)/, 'share'],
+  // A copy lands where the agent says, and is read where its copy is
+  // (fix round 2, section 2): a duplicate or copy route of any kind.
+  [/\/(duplicate|copy|copies|copy-to)(\/|$)/, 'copy'],
+  [/\/(move|moves)(\/|$)/, 'move'],
   [/\/(publish|unpublish|commit|release|deploy)(\/|$)/, 'publish'],
   [
     /\/(settings|profile|keys|api-keys|access-keys|tokens|auth|logins|users|workspaces|agents|models|backups|config|secrets)(\/|$)/,
@@ -198,32 +288,104 @@ const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
   ],
 ];
 
+/** Body fields, at any depth, that change who reads something (the brain's
+ *  sharing_field list), compared lower case. */
+const SHARING_FIELDS = new Set([
+  'share',
+  'shares',
+  'shared',
+  'sharing',
+  'visibility',
+  'published',
+  'publish',
+  'public',
+  'ispublic',
+  'access',
+  'members',
+  'owner',
+]);
+
+/** Body fields that put something in another place (the brain's `move`). */
+const MOVE_FIELDS = new Set(['move', 'copy_to', 'parentid', 'parent_id', 'folderid', 'folder_id']);
+
+/** Every key of a JSON body, at any depth, lower case; null when it is not
+ *  JSON. A form's (FormData, URLSearchParams) top-level keys. */
+function bodyKeys(body: unknown): string[] | null {
+  if (body === undefined || body === null) return [];
+  if (typeof body === 'string') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return null;
+    }
+    const keys: string[] = [];
+    const stack: unknown[] = [parsed];
+    while (stack.length) {
+      const v = stack.pop();
+      if (Array.isArray(v)) stack.push(...v);
+      else if (v && typeof v === 'object') {
+        for (const [k, x] of Object.entries(v)) {
+          keys.push(k.toLowerCase());
+          stack.push(x);
+        }
+      }
+    }
+    return keys;
+  }
+  const isForm =
+    (typeof FormData !== 'undefined' && body instanceof FormData) ||
+    (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams);
+  if (isForm) return [...(body as FormData | URLSearchParams).keys()].map((k) => k.toLowerCase());
+  return [];
+}
+
 /**
  * Whether a request the page makes while an agent drives it needs the
- * user's yes first. Reads are never held. A DELETE always is; any other
- * write is held when its path names sending, sharing, publishing or a
- * setting. Erring wide is the point: an unneeded question costs a click, a
- * missed one could cost the user's data.
+ * user's yes first, kept in step with what the brain refuses as the
+ * agent's (lib/auth/agent-call.ts there), so the question comes before
+ * the request. Reads are never held. A DELETE always is; any other write
+ * is held when its path names sending, sharing, publishing, a copy, a move
+ * or a setting, when it names a workspace (`?ws=`), or when its body
+ * carries a sharing or a move field. Erring wide is the point: an unneeded
+ * question costs a click, a missed one could cost the user's data.
  */
-export function riskOfRequest(method: string, url: string, body?: string): RequestRisk | null {
+export function riskOfRequest(method: string, url: string, body?: unknown): RequestRisk | null {
   const m = method.toUpperCase();
   if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return null;
   if (m === 'DELETE') return 'delete';
-  let path: string;
+  let parsed: URL;
   try {
-    path = new URL(url, 'http://app.invalid').pathname;
+    parsed = new URL(url, 'http://app.invalid');
   } catch {
     return 'settings';
   }
   // Matched decoded: `/api/%73hares` is `/api/shares` to the brain. A path
   // that does not decode (a stray `%`) is held: it is no route the app makes.
-  const decoded = decodePath(path);
+  const decoded = decodePath(parsed.pathname);
   if (decoded === null) return 'settings';
-  path = decoded.toLowerCase();
+  const path = decoded.toLowerCase();
   for (const [re, risk] of RISKY_PATHS) if (re.test(path)) return risk;
-  // A write that makes something public or shares it by a field of an
-  // ordinary edit (a page's visibility, a folder's share).
-  if (body && /"(visibility|published|public|share|shares)"\s*:/.test(body)) return 'share';
+  // A write aimed at a workspace (the brain's workspace_target).
+  if ([...parsed.searchParams.keys()].some((k) => k.toLowerCase() === 'ws')) {
+    return 'workspace_target';
+  }
+  // A field of an ordinary edit that shares it or puts it elsewhere (a
+  // page's visibility, an item's folder).
+  const keys = bodyKeys(body);
+  if (keys === null) {
+    const text = String(body).toLowerCase();
+    if (
+      /"(share|shares|shared|sharing|visibility|published|publish|public|ispublic|access|members|owner)"\s*:/.test(
+        text,
+      )
+    )
+      return 'share';
+    if (/"(move|copy_to|parentid|parent_id|folderid|folder_id)"\s*:/.test(text)) return 'move';
+    return null;
+  }
+  if (keys.some((k) => SHARING_FIELDS.has(k))) return 'share';
+  if (keys.some((k) => MOVE_FIELDS.has(k))) return 'move';
   return null;
 }
 
@@ -306,7 +468,7 @@ export type ElementFacts = {
   inHost: boolean;
   /** Its own or an ancestor's `data-agent-risk`. */
   risk: string | null;
-  /** A button inside an `alertdialog` (a confirm). */
+  /** Inside an `alertdialog` (a confirm), whatever it is. */
   inAlertDialog: boolean;
   /** A password, one-time code or `data-secret` field. */
   secret: boolean;

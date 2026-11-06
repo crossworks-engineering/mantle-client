@@ -23,28 +23,36 @@ import {
 
 export type LessonEntry = { id: string; title: string };
 
-/** What the brain says of an item's home, or null when it cannot be read.
- *  `homeIsAdmin` is read off the answer: a contract package before it does
- *  not name the field. */
+/** What the brain says of an item's home and who may change it, or null
+ *  when it cannot be read. The two flags are read off the answer: the
+ *  contract package this client pins does not name them yet. */
 async function homeOf(id: string): Promise<LessonHome | null> {
   try {
-    const g = await apiFetch<GrantsResponse & { homeIsAdmin?: unknown }>(
-      `/api/grants/${encodeURIComponent(id)}`,
-    );
+    const g = await apiFetch<
+      GrantsResponse & { homeIsAdmin?: unknown; editableOutsideAdmin?: unknown }
+    >(`/api/grants/${encodeURIComponent(id)}`);
     return {
       home: g.home ?? null,
+      rows: Array.isArray(g.rows) ? g.rows : undefined,
       ...(typeof g.homeIsAdmin === 'boolean' ? { homeIsAdmin: g.homeIsAdmin } : {}),
+      ...(typeof g.editableOutsideAdmin === 'boolean'
+        ? { editableOutsideAdmin: g.editableOutsideAdmin }
+        : {}),
     };
   } catch {
     return null;
   }
 }
 
+/** The Lessons folder: of the top-level folders named Lessons, the one
+ *  homed in the Admin workspace that only it may change (`lessonTrusted`),
+ *  never just the first by name. */
 async function lessonsFolderId(viewer: LessonViewer): Promise<string | null> {
   const root = await apiFetch<TreeFolderPage>('/api/tree/pages?sort=title');
-  const folder = root.folders.find(isLessonsFolder);
-  if (!folder) return null;
-  return lessonTrusted(await homeOf(folder.id), viewer) ? folder.id : null;
+  for (const folder of root.folders.filter(isLessonsFolder)) {
+    if (lessonTrusted(await homeOf(folder.id), viewer)) return folder.id;
+  }
+  return null;
 }
 
 /** The lessons the caller may play, by title. */

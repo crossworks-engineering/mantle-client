@@ -129,6 +129,7 @@ describe('the request guard and the brain’s refusal', () => {
     const sent = window.fetch('/api/notes', { method: 'POST', body: '{"title":"x"}' });
     const held = await heldOf(h);
     expect(held?.risk).toBe('refused');
+    expect((held as unknown as { reason: string }).reason).toBe('settings');
     held!.answer(true);
     const res = await sent;
     expect(res.status).toBe(201);

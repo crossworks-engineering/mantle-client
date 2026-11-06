@@ -261,11 +261,12 @@ export function findByName(roles: readonly string[], name: string): Found {
 /** What the guard needs to know about an element. */
 export function factsOf(el: Element): ElementFacts {
   const risk = (el as HTMLElement).closest?.('[data-agent-risk]')?.getAttribute('data-agent-risk');
-  const role = roleOf(el);
   return {
     inHost: !!el.closest('[data-agent-host]'),
     risk: risk ?? null,
-    inAlertDialog: role === 'button' && !!el.closest('[role="alertdialog"]'),
+    // Anything in a confirm (a button, a link, a field to type a name
+    // into): the user's to answer.
+    inAlertDialog: !!el.closest('[role="alertdialog"]'),
     secret: isSecretField(el),
   };
 }

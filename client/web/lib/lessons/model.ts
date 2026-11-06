@@ -195,23 +195,28 @@ export const LESSONS_FOLDER = 'Lessons';
  *  in it (an Admin user; the shell names it), else null. */
 export type LessonViewer = { adminWorkspaceId: string | null };
 
-/** What GET /api/grants/:id says of an item's home: `homeIsAdmin` from a
- *  brain that sends it (any login that reads the item gets it), and the
- *  home as the caller may name it. */
+/** What GET /api/grants/:id says of an item: `homeIsAdmin` and
+ *  `editableOutsideAdmin` from a brain that sends them (any login that reads
+ *  the item gets them), the home as the caller may name it, and the grant
+ *  rows with their Write switch. */
 export type LessonHome = {
   home?: { wsId: string | null } | null;
   homeIsAdmin?: boolean;
+  editableOutsideAdmin?: boolean;
+  rows?: { wsId: string; write: boolean; excluded?: boolean }[];
 };
 
 /**
  * Whether the Lessons folder, or a lesson in it, may be played to this
- * viewer: it is homed in the Admin workspace, where members cannot write.
- * The same rule for every viewer, Admin users included (fix round
- * contract, section 3):
+ * viewer. The brain decides it (fix round 2 contract, section 1), the same
+ * for every viewer, Admin users included: the item is homed in the Admin
+ * workspace (`homeIsAdmin`) and nobody outside it may change it, nor the
+ * folders above it (`editableOutsideAdmin` false).
  *
- *  - a brain that sends `homeIsAdmin` says it: only `true` plays;
- *  - an older brain does not: an Admin user names the home, so it must be
- *    the Admin workspace; anyone else cannot tell, so nothing plays.
+ * An older brain sends neither: anyone but an Admin user is offered
+ * nothing; an Admin user names the home, which must be the Admin
+ * workspace, and its grant rows, none of which may give another workspace
+ * Write.
  *
  * A lesson the viewer may change is never played to anyone but an Admin
  * user.
@@ -222,10 +227,15 @@ export function lessonTrusted(
   mayEdit = false,
 ): boolean {
   if (!grants) return false;
-  if (mayEdit && !viewer.adminWorkspaceId) return false;
-  if (typeof grants.homeIsAdmin === 'boolean') return grants.homeIsAdmin;
-  if (!viewer.adminWorkspaceId) return false;
-  return !!grants.home && grants.home.wsId === viewer.adminWorkspaceId;
+  const adminWs = viewer.adminWorkspaceId;
+  if (mayEdit && !adminWs) return false;
+  if (typeof grants.homeIsAdmin === 'boolean' && typeof grants.editableOutsideAdmin === 'boolean') {
+    return grants.homeIsAdmin && !grants.editableOutsideAdmin;
+  }
+  if (!adminWs) return false;
+  const inAdmin = grants.homeIsAdmin === true || grants.home?.wsId === adminWs;
+  if (!inAdmin || !Array.isArray(grants.rows)) return false;
+  return !grants.rows.some((r) => r.write && !r.excluded && r.wsId !== adminWs);
 }
 
 export function isLessonsFolder(f: { name: string; depth: number }): boolean {

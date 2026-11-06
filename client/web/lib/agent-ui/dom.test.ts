@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
-import { findTarget, isSecretField, isShut } from './dom';
+import { factsOf, findTarget, isSecretField, isShut } from './dom';
 
 /** A stand-in element: a tag, attributes, and the ancestors `closest`
  *  finds (keyed by a piece of the selector). */
@@ -66,5 +66,16 @@ describe('controls behind an open modal', () => {
     expect(findTarget({ ref: 'r1' }, refs)).toEqual({ error: 'stale_ref' });
     expect(findTarget({ ref: 'r2' }, refs)).toEqual({ el: open });
     expect(findTarget({ ref: 'r9' }, refs)).toEqual({ error: 'stale_ref' });
+  });
+});
+
+describe('a confirm', () => {
+  it('any element inside an alert dialog counts, not only a button', () => {
+    const dialog = el('DIV', { role: 'alertdialog' });
+    const link = el('A', { href: '/x' }, { alertdialog: dialog });
+    const field = el('INPUT', { type: 'text' }, { alertdialog: dialog });
+    expect(factsOf(link).inAlertDialog).toBe(true);
+    expect(factsOf(field).inAlertDialog).toBe(true);
+    expect(factsOf(el('BUTTON')).inAlertDialog).toBe(false);
   });
 });

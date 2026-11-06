@@ -276,6 +276,17 @@ export type MockWorkspaceApi = {
   /** GET /api/grants/:id sends `homeIsAdmin` (default true); false plays
    *  a brain before the field. */
   sendsHomeIsAdmin: boolean;
+  /** GET /api/grants/:id sends `editableOutsideAdmin` (default true); false
+   *  plays a brain before the field (fix round 2). */
+  sendsEditableOutsideAdmin: boolean;
+  /** The lessons are shared to Team with Write: someone outside the Admin
+   *  workspace may change them (`editableOutsideAdmin`, and a Write row). */
+  lessonsEditableOutside: boolean;
+  /** A second top-level "Lessons" folder, homed in Team, listed before the
+   *  Admin workspace's one: only the Admin one is the Lessons folder. */
+  decoyLessonsFolder: boolean;
+  /** The `reason` of the mock's 403 agent_refused. */
+  agentRefusalReason: string;
   close: () => Promise<void>;
 };
 
@@ -289,6 +300,8 @@ export const MOCK_AGENT = {
 /** The lessons the mock brain holds (components/lessons). */
 export const LESSONS = {
   folder: { id: '1e551111-1111-4111-8111-111111111111', name: 'Lessons', path: 'pages.lessons' },
+  /** A Team folder by the same name (`decoyLessonsFolder`). */
+  decoy: { id: '1e555555-5555-4555-8555-555555555555', name: 'Lessons', path: 'pages.lessons_2' },
   lesson: { id: '1e552222-2222-4222-8222-222222222222', title: 'Your sounds' },
   stray: { id: '1e553333-3333-4333-8333-333333333333', title: 'Not a lesson' },
   /** A second lesson whose step writes (a quick note on the Desk). */
@@ -367,6 +380,10 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     refuseAgentWrites: null,
     lessonsHome: 'admin',
     sendsHomeIsAdmin: true,
+    sendsEditableOutsideAdmin: true,
+    lessonsEditableOutside: false,
+    decoyLessonsFolder: false,
+    agentRefusalReason: 'listed',
     close: async () => undefined,
   };
 
@@ -576,8 +593,14 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
             true
           );
         }
+        if (folder === LESSONS.decoy.id) {
+          const listed = [{ id: LESSONS.stray.id, title: LESSONS.stray.title }];
+          return (json(res, 200, { ...tree(kind, listed, url), folder: lessons }), true);
+        }
         if (!folder) {
-          return (json(res, 200, { ...tree(kind, items, url), folders: [lessons], ...echo }), true);
+          const decoy = { ...LESSONS.decoy, depth: 1, parentId: null, system: false };
+          const folders = state.decoyLessonsFolder ? [decoy, lessons] : [lessons];
+          return (json(res, 200, { ...tree(kind, items, url), folders, ...echo }), true);
         }
       }
       return (json(res, 200, { ...tree(kind, items, url), ...echo }), true);
@@ -774,16 +797,16 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     }
     // The home of the Lessons folder and its lessons (components/lessons
     // checks it): named only to a user of the home workspace, or an Admin
-    // user, as the brain's GET /api/grants/:id; `homeIsAdmin` to anyone
-    // who reads it (unless a spec plays an older brain). The stray page is
-    // Team's.
+    // user, as the brain's GET /api/grants/:id; `homeIsAdmin` and
+    // `editableOutsideAdmin` to anyone who reads it (unless a spec plays an
+    // older brain). The stray page and the decoy folder are Team's.
     const grantsM = /^\/api\/grants\/([0-9a-f-]{36})$/.exec(path);
     if (grantsM && method === 'GET') {
       const id = grantsM[1]!;
       const homeKey: WorkspaceKey | null =
         id === LESSONS.folder.id || id === LESSONS.lesson.id || id === LESSONS.note.id
           ? state.lessonsHome
-          : id === LESSONS.stray.id
+          : id === LESSONS.stray.id || id === LESSONS.decoy.id
             ? 'team'
             : null;
       if (!homeKey) return (json(res, 404, { error: 'not found', code: 'not_found' }), true);
@@ -795,7 +818,25 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
             ? { wsId: WORKSPACES[homeKey].id, name: WORKSPACES[homeKey].name }
             : { wsId: null, name: null },
           ...(state.sendsHomeIsAdmin ? { homeIsAdmin: homeKey === 'admin' } : {}),
-          rows: [],
+          ...(state.sendsEditableOutsideAdmin
+            ? { editableOutsideAdmin: homeKey !== 'admin' || state.lessonsEditableOutside }
+            : {}),
+          // The rows an Admin user sees: the home, and Team with Write when
+          // the lessons are shared that way.
+          rows:
+            role === 'admin'
+              ? [
+                  { wsId: WORKSPACES[homeKey].id, name: WORKSPACES[homeKey].name, write: false },
+                  ...(state.lessonsEditableOutside
+                    ? [{ wsId: WORKSPACES.team.id, name: WORKSPACES.team.name, write: true }]
+                    : []),
+                ].map((r) => ({
+                  ...r,
+                  isHome: r.wsId === WORKSPACES[homeKey].id,
+                  viaFolder: null,
+                  excluded: false,
+                }))
+              : [],
           addable: [],
           mayManage: role === 'admin',
           mayLink: false,
@@ -1018,7 +1059,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       state.refuseAgentWrites?.test(path)
     ) {
       await readBody(req);
-      return json(res, 403, { error: 'agent_refused', reason: 'risky' });
+      return json(res, 403, { error: 'agent_refused', reason: state.agentRefusalReason });
     }
 
     if (EVERY_LOGIN.some((re) => re.test(path))) {
