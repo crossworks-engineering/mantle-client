@@ -30,7 +30,7 @@ export function UpdateNotice() {
         onInteractOutside={stay}
         onPointerDownOutside={stay}
         onFocusOutside={stay}
-        className="inset-0 left-0 top-0 z-[10000] flex h-dvh max-h-none w-screen max-w-none translate-x-0 translate-y-0 items-center justify-center overflow-hidden rounded-none border-0 bg-background p-6 shadow-none"
+        className="inset-0 left-0 top-0 z-[10000] flex h-dvh max-h-none w-screen max-w-none translate-x-0 translate-y-0 items-center justify-center overflow-hidden rounded-none border-0 bg-background p-6 shadow-none outline-none"
       >
         <DialogTitle className="sr-only">{NOTICE_HEADING}</DialogTitle>
         <DialogDescription className="sr-only">{NOTICE_TEXT}</DialogDescription>
