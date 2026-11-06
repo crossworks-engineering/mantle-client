@@ -12,6 +12,11 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.13: the company sign-in setup screen
+
+- **New:** Settings > Company sign-in, for an Admin user while the box's mode is on. With the mode `setup`, a client's Microsoft admin enters the client secret, sealed and never shown, tests it, and makes the SCIM token, shown once. Any other mode shows the same values read-only.
+- It needs a brain with `GET /api/users/sso-setup`. An older brain answers 404, and the entry stays hidden.
+
 ## v0.9.12: Desk fixes, Quick task and a theme menu
 
 - **New:** a Quick task Desk widget, the twin of Quick note. The first line is the title and the rest is the body. It shows only for a login that has Tasks.
