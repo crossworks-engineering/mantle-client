@@ -222,6 +222,9 @@ export type RequestRisk =
   | 'copy'
   | 'admin_only'
   | 'discard'
+  | 'reveal'
+  /** ui_type with replace on a field that holds something. */
+  | 'replace'
   /** The brain refused it as the agent's (403 agent_refused); the held
    *  request carries the brain's `reason`. */
   | 'refused';
@@ -238,6 +241,8 @@ export const RISK_TEXT: Record<RequestRisk, string> = {
   copy: 'make a copy of something',
   admin_only: 'change something only an Admin user may change',
   discard: 'throw away a draft',
+  reveal: 'show a secret',
+  replace: 'replace what is there',
   refused: 'do something only you may do',
 };
 
@@ -271,6 +276,8 @@ const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
   // A new turn or a thread continued: the agent typing into the chat and
   // sending (its own answer and a cancel are let through by the hands).
   [/^\/api\/assistant\/(turn|threads\/[^/]+\/continue)$/, 'send'],
+  // Showing a secret's value puts it on the screen the agent reads.
+  [/^\/api\/secrets\/[^/]+\/reveal$/, 'reveal'],
   // The journal and contacts are Admin users' (the brain's admin_only).
   [/^\/api\/(journal|contacts)(\/|$)/, 'admin_only'],
   [/\/restore$/, 'publish'],
@@ -320,7 +327,20 @@ const SHARING_FIELDS = new Set([
 ]);
 
 /** Body fields that put something in another place (the brain's `move`). */
-const MOVE_FIELDS = new Set(['move', 'copy_to', 'parentid', 'parent_id', 'folderid', 'folder_id']);
+const MOVE_FIELDS = new Set([
+  'move',
+  'copy_to',
+  'parentid',
+  'parent_id',
+  'parentpath',
+  'parent',
+  'folderid',
+  'folder_id',
+]);
+
+/** Body fields that approve a change of who reads something (the
+ *  visibility approval: `confirm`, `seen`), held as a sharing change. */
+const APPROVAL_FIELDS = new Set(['confirm', 'seen']);
 
 /** Every key of a JSON body, at any depth, lower case; null when it is not
  *  JSON. A form's (FormData, URLSearchParams) top-level keys. */
@@ -395,11 +415,17 @@ export function riskOfRequest(method: string, url: string, body?: unknown): Requ
       )
     )
       return 'share';
-    if (/"(move|copy_to|parentid|parent_id|folderid|folder_id)"\s*:/.test(text)) return 'move';
+    if (/"(move|copy_to|parentid|parent_id|parentpath|parent|folderid|folder_id)"\s*:/.test(text))
+      return 'move';
+    if (/"(confirm|seen)"\s*:/.test(text)) return 'share';
+    if (/"supersede"\s*:/.test(text)) return 'send';
     return null;
   }
-  if (keys.some((k) => SHARING_FIELDS.has(k))) return 'share';
+  if (keys.some((k) => SHARING_FIELDS.has(k) || APPROVAL_FIELDS.has(k))) return 'share';
   if (keys.some((k) => MOVE_FIELDS.has(k))) return 'move';
+  // A turn's cancel that replaces it with a correction (`supersede`):
+  // stopping the user's turn and sending another in their name.
+  if (keys.includes('supersede')) return 'send';
   // An app's trust: what it may reach (its MCP access, its data, its
   // tools). The brain keeps these for Admin users (admin_only).
   if (/^\/api\/apps\/[^/]+$/.test(path) && keys.some((k) => APP_TRUST_FIELDS.has(k))) {
@@ -426,6 +452,13 @@ export function decodePath(path: string): string | null {
     out = next;
   }
   return out;
+}
+
+/** Whether a body carries `key` at any depth (lower case). */
+export function bodyHasKey(body: unknown, key: string): boolean {
+  const keys = bodyKeys(body);
+  if (keys !== null) return keys.includes(key);
+  return new RegExp(`"${key}"\\s*:`, 'i').test(String(body));
 }
 
 /** The header that names the agent's call (or a lesson) on a request it

@@ -27,6 +27,7 @@ import {
   AGENT_CALL_HEADER,
   elementRefusal,
   isAgentRefusal,
+  bodyHasKey,
   isBookkeepingRequest,
   linkRefusal,
   MAX_WAIT_MS,
@@ -244,7 +245,10 @@ export class AgentHands {
     const m = method.toUpperCase();
     // The agent's: sent while it drives, or while one of its actions runs
     // (the user may have paused or stopped it on the way).
-    const agents = this.guarding() && !agentOwnRequest(url);
+    // The window's own answer and a plain cancel go; a cancel that
+    // supersedes the turn with a correction is a send like any other.
+    const own = agentOwnRequest(url) && !bodyHasKey(body, 'supersede');
+    const agents = this.guarding() && !own;
     if (!agents) return { blocked: false, tag: null };
     const risk = riskOfRequest(m, url, body ?? undefined);
     if (risk) {
@@ -345,7 +349,7 @@ export class AgentHands {
     if (this.state.held) return Promise.resolve(false);
     let path = url;
     try {
-      path = new URL(url, location.href).pathname;
+      if (url) path = new URL(url, location.href).pathname;
     } catch {
       /* the raw text */
     }
@@ -445,6 +449,12 @@ export class AgentHands {
       if ('error' in el) return el.error;
       await this.moveTo(el.el);
       if (!alive()) return refuse('stopped');
+      // Replacing what a field holds loses it: the user's yes first.
+      if (opts.replace === true && fieldText(el.el).trim() !== '') {
+        const allowed = await this.ask('replace', '', '');
+        if (!alive()) return refuse('stopped');
+        if (!allowed) return refuse('needs_user');
+      }
       if (!typeInto(el.el, text.slice(0, 2000), opts.replace === true))
         return refuse('unsupported');
       await this.settle(null, 2000);
@@ -601,6 +611,13 @@ function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectE
   const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
   if (setter) setter.call(el, v);
   else el.value = v;
+}
+
+/** What a field holds now: its value, or a rich-text field's text. */
+function fieldText(el: Element): string {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value;
+  if (el instanceof HTMLElement && el.isContentEditable) return el.textContent ?? '';
+  return '';
 }
 
 /** Type text the way a paste lands: the value changes and React hears an

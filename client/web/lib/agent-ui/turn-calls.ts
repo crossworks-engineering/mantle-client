@@ -90,9 +90,10 @@ export function parseUiCall(data: unknown): UiCall | null {
 }
 
 /** A call past its `expiresAt` is not run: the brain has stopped waiting,
- *  and the agent may already have moved on. */
-export function callExpired(call: UiCall, now = Date.now()): boolean {
-  return typeof call.expiresAt === 'number' && now >= call.expiresAt;
+ *  and the agent may already have moved on. `offsetMs`: the brain's clock
+ *  minus this one's (`serverClockOffset`). */
+export function callExpired(call: UiCall, now = Date.now(), offsetMs = 0): boolean {
+  return typeof call.expiresAt === 'number' && now + offsetMs >= call.expiresAt;
 }
 
 let consent: 'unasked' | 'asking' | 'allowed' | 'refused' = 'unasked';
@@ -102,9 +103,28 @@ const handled = new Set<string>();
  *  not act on it. */
 const ownTurns = new Set<string>();
 
-/** This window sent `turnId` with its window id. */
-export function claimTurn(turnId: string): void {
-  if (enabled) ownTurns.add(turnId);
+/** How far the brain's clock is ahead of this one, per turn (ms), read
+ *  from the turn's 202 `Date` header. */
+const clockOffsets = new Map<string, number>();
+
+/** The brain's clock minus this one's, from a response's `Date` header
+ *  read at `clientNowMs`; 0 when there is none (a `Date` header is not
+ *  readable cross-origin unless the brain exposes it), as the dock's
+ *  safety poll falls back (components/assistant/turn-safety-poll). */
+export function serverClockOffset(
+  dateHeader: string | null | undefined,
+  clientNowMs: number,
+): number {
+  const server = dateHeader ? Date.parse(dateHeader) : Number.NaN;
+  return Number.isFinite(server) ? server - clientNowMs : 0;
+}
+
+/** This window sent `turnId` with its window id. `serverDate`: the 202's
+ *  `Date` header, so a call's `expiresAt` is judged by the brain's clock. */
+export function claimTurn(turnId: string, serverDate?: string | null): void {
+  if (!enabled) return;
+  ownTurns.add(turnId);
+  clockOffsets.set(turnId, serverClockOffset(serverDate, Date.now()));
 }
 const turnAgents = new Map<string, string>();
 /** Turns the user stopped: their later calls answer `stopped`. */
@@ -147,7 +167,8 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
 
   if (!enabled) return void answer(refuse('no_session'));
   if (stoppedTurns.has(turnId)) return void answer(refuse('stopped'));
-  if (callExpired(call)) return void answer(refuse('window_gone'));
+  const offset = clockOffsets.get(turnId) ?? 0;
+  if (callExpired(call, Date.now(), offset)) return void answer(refuse('window_gone'));
   if (consent !== 'allowed') {
     // Answer now; the agent asks again once the user has allowed it.
     void answer(refuse('needs_consent'));
@@ -165,8 +186,12 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
   // Checked again as it runs: a call can wait behind the one before it.
   const result = await hands.withCall(
     call.callId,
-    () => (callExpired(call) ? Promise.resolve(refuse('window_gone')) : runUiCall(call)),
-    { expiresAt: call.expiresAt },
+    () =>
+      callExpired(call, Date.now(), offset)
+        ? Promise.resolve(refuse('window_gone'))
+        : runUiCall(call),
+    // In this window's clock, for the hands' own queue.
+    { expiresAt: typeof call.expiresAt === 'number' ? call.expiresAt - offset : null },
   );
   await answer(result);
 }
@@ -174,6 +199,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
 /** The agent's turn is over: its session ends with it. */
 export function endAgentTurn(turnId: string): void {
   ownTurns.delete(turnId);
+  clockOffsets.delete(turnId);
   // Deleted before the session ends, so its end is not read as Stop.
   if (!turnAgents.delete(turnId)) return;
   if (turnAgents.size === 0) agentHands().end();

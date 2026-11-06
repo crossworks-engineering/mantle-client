@@ -176,9 +176,11 @@ function HeldPrompt({ state }: { state: HandsState }) {
             <h2 id="agent-held-title" className="font-semibold">
               {state.agent} wants to {heldText(held.risk, held.reason)}
             </h2>
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {held.method} {held.path}
-            </p>
+            {held.path && (
+              <p className="break-all font-mono text-xs text-muted-foreground">
+                {held.method} {held.path}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               {held.risk === 'refused'
                 ? 'The brain keeps this step for you. Allow it once to send it as your own, or do it yourself.'

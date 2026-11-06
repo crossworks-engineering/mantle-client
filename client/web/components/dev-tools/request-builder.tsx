@@ -578,6 +578,9 @@ export function RequestBuilder() {
                 </div>
                 {draft.body.mode !== 'none' && (
                   <Textarea
+                    // data-secret: a body may carry a credential; an agent
+                    // driving the window never reads it (lib/agent-ui).
+                    data-secret=""
                     value={draft.body.text}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, body: { ...d.body, text: e.target.value } }))

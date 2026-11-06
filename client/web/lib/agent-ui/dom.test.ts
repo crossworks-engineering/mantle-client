@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
-import { factsOf, findTarget, isSecretField, isShut } from './dom';
+import { factsOf, findTarget, isSecretField, isShut, nameOf } from './dom';
 
 /** A stand-in element: a tag, attributes, and the ancestors `closest`
  *  finds (keyed by a piece of the selector). */
@@ -77,5 +77,20 @@ describe('a confirm', () => {
     expect(factsOf(link).inAlertDialog).toBe(true);
     expect(factsOf(field).inAlertDialog).toBe(true);
     expect(factsOf(el('BUTTON')).inAlertDialog).toBe(false);
+  });
+});
+
+describe('names of secret things', () => {
+  it('anything inside or carrying data-secret is named (hidden), whatever its text', () => {
+    const wrapper = el('DIV', { 'data-secret': '' });
+    const field = el(
+      'INPUT',
+      { 'aria-label': 'Invite code', type: 'text' },
+      { '[data-secret]': wrapper },
+    );
+    const button = el('BUTTON', { innerText: 'sk-live-1234' }, { '[data-secret]': wrapper });
+    expect(nameOf(field)).toBe('(hidden)');
+    expect(nameOf(button)).toBe('(hidden)');
+    expect(nameOf(el('BUTTON', { 'aria-label': 'Save' }))).toBe('Save');
   });
 });

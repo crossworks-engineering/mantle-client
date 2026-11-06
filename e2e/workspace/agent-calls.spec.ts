@@ -264,7 +264,12 @@ test('a typed text is added after what the field holds', async ({ page }) => {
   await call(page, 'type', { target: box, text: 'milk' });
   const field = page.getByPlaceholder('Jot it down… the first line becomes the title');
   await expect(field).toHaveValue('Buy milk');
-  await call(page, 'type', { target: box, text: 'Bread', replace: true });
+  // Replacing what the field holds waits for the user.
+  const replacing = call(page, 'type', { target: box, text: 'Bread', replace: true });
+  const held = page.getByRole('alertdialog', { name: 'Saskia wants to replace what is there' });
+  await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
+  await held.getByRole('button', { name: 'Allow once' }).click();
+  expect((await replacing).result).toMatchObject({ ok: true });
   await expect(field).toHaveValue('Bread');
 });
 

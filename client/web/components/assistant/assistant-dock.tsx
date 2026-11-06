@@ -1069,7 +1069,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
               // plus the durable-row safety poll, bounded in the SERVER's clock
               // (the ack's Date header) so client clock skew cannot hide the row.
               // Its ui calls run in this window, and no other.
-              claimTurn(data.turnId);
+              claimTurn(data.turnId, res.headers.get('date'));
               subscribeDockTurn(
                 data.turnId,
                 botId,

@@ -386,6 +386,8 @@ export function ProfileMenu({
             disabled={busy}
             onClick={() => void switchTo(s)}
             className="cursor-pointer"
+            // The login is the user's to change (lib/agent-ui).
+            data-agent-risk="session"
           >
             <Avatar className="size-5">
               <AvatarFallback className="text-[9px] font-semibold">
@@ -403,7 +405,7 @@ export function ProfileMenu({
           </DropdownMenuItem>
         ))}
         {holdsLogins && (
-          <DropdownMenuItem asChild>
+          <DropdownMenuItem asChild data-agent-risk="session">
             <a href="/login?add=1" className="cursor-pointer">
               <Plus className="size-4" /> Add login…
             </a>
@@ -423,6 +425,7 @@ export function ProfileMenu({
           onClick={signOut}
           disabled={busy}
           className="cursor-pointer text-destructive-ink focus:text-destructive-ink"
+          data-agent-risk="session"
         >
           <LogOut className="size-4" />{' '}
           {busy ? 'Working…' : others.length > 0 ? 'Sign out of this login' : 'Sign out'}
@@ -431,6 +434,7 @@ export function ProfileMenu({
           onSelect={() => setEverywhereOpen(true)}
           disabled={busy}
           className="cursor-pointer"
+          data-agent-risk="session"
         >
           <MonitorOff className="size-4" /> Sign out everywhere
         </DropdownMenuItem>

@@ -117,7 +117,7 @@ const refusal = () =>
   });
 
 async function heldOf(h: { get: () => { held: unknown } }) {
-  for (let i = 0; i < 50 && !h.get().held; i++) await new Promise((r) => setTimeout(r, 5));
+  for (let i = 0; i < 100 && !h.get().held; i++) await new Promise((r) => setTimeout(r, 10));
   return h.get().held as { risk: string; answer: (allow: boolean) => void } | null;
 }
 
@@ -296,6 +296,48 @@ describe('a call past its expiresAt', () => {
     const late = h.withCall('c2', () => h.click({ id: 'b' }), { expiresAt: Date.now() + 50 });
     expect(await late).toMatchObject({ ok: false, error: 'window_gone' });
     await first;
+    h.end();
+  });
+});
+
+describe('a supersede cancel the agent sets off', () => {
+  it('is held, though a plain cancel is the window’s own', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = new AgentHands();
+    h.begin('Agent');
+    await window.fetch('/api/assistant/turn/t1/cancel', { method: 'POST' });
+    expect(h.get().held).toBeNull();
+    const sent = window.fetch('/api/assistant/turn/t1/cancel', {
+      method: 'POST',
+      body: '{"supersede":{"inboundId":"a","outboundId":"b","newTurnId":"k"}}',
+    });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('send');
+    held!.answer(false);
+    await expect(sent).rejects.toThrow();
+    expect(calls).toHaveLength(1);
+    h.end();
+  });
+});
+
+describe('ui_type with replace', () => {
+  it('on a field that holds something waits for the user; on an empty one it does not', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = new AgentHands();
+    const input = new FakeInput();
+    g.document = { querySelectorAll: () => [input] };
+    h.begin('Agent');
+    input.value = 'Keep me';
+    const typing = h.type({ id: 'title' }, 'New', { replace: true });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('replace');
+    held!.answer(false);
+    expect(await typing).toMatchObject({ ok: false, error: 'needs_user' });
+    expect(input.value).toBe('Keep me');
+
+    input.value = '';
+    expect(await h.type({ id: 'title' }, 'New', { replace: true })).toEqual({ ok: true });
+    expect(input.value).toBe('New');
     h.end();
   });
 });

@@ -98,6 +98,8 @@ export function roleOf(el: Element): string {
 
 /** The accessible name, roughly as a screen reader reads it. */
 export function nameOf(el: Element): string {
+  // A secret's text never reaches the agent, not even as a name.
+  if (el.closest?.('[data-secret]')) return '(hidden)';
   const label = el.getAttribute('aria-label');
   if (label?.trim()) return label;
   const by = el.getAttribute('aria-labelledby');

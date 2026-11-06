@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   APP_SHELL_ROUTES,
+  bodyHasKey,
   cutText,
   decodePath,
   elementRefusal,
@@ -135,6 +136,41 @@ describe('riskOfRequest, fix round 3', () => {
       expect(riskOfRequest('POST', `/api/${kind}/1/discard-draft`)).toBe('discard');
     expect(riskOfRequest('PUT', '/api/pages/1/draft', '{"doc":{}}')).toBeNull();
     expect(heldText('discard')).toBe('throw away a draft');
+  });
+});
+
+describe('riskOfRequest, fix round 4', () => {
+  it('parentPath and parent put something elsewhere', () => {
+    expect(riskOfRequest('PATCH', '/api/notes/1', '{"parentPath":"pages.x"}')).toBe('move');
+    expect(riskOfRequest('POST', '/api/pages', '{"title":"t","parent":"p1"}')).toBe('move');
+  });
+
+  it('the visibility approval (confirm, seen) is a sharing change', () => {
+    expect(riskOfRequest('POST', '/api/tree/pages/folders', '{"confirm":true}')).toBe('share');
+    expect(riskOfRequest('PATCH', '/api/pages/1', '{"seen":["w1"]}')).toBe('share');
+  });
+
+  it('a secret reveal is "show a secret"', () => {
+    expect(riskOfRequest('POST', '/api/secrets/s1/reveal')).toBe('reveal');
+    expect(heldText('reveal')).toBe('show a secret');
+    expect(riskOfRequest('PATCH', '/api/secrets/s1')).toBe('settings');
+  });
+
+  it('a cancel that supersedes the turn is a send', () => {
+    expect(
+      riskOfRequest(
+        'POST',
+        '/api/assistant/turn/t1/cancel',
+        '{"supersede":{"inboundId":"a","outboundId":"b","newTurnId":"k"}}',
+      ),
+    ).toBe('send');
+    expect(riskOfRequest('POST', '/api/assistant/turn/t1/cancel')).toBeNull();
+    expect(bodyHasKey('{"supersede":{}}', 'supersede')).toBe(true);
+    expect(bodyHasKey('{"x":1}', 'supersede')).toBe(false);
+  });
+
+  it('replacing what a field holds is asked in its own words', () => {
+    expect(heldText('replace')).toBe('replace what is there');
   });
 });
 
