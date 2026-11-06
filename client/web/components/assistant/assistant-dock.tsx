@@ -1350,7 +1350,7 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
           label there regardless. */}
       <span className="truncate group-data-[nav-collapsed=true]/shell:hidden">Assistant</span>
       {needsYou ? (
-        /* Corner badge, a small count pip —
+        /* Corner badge, a small count pip,
            absolutely positioned so it adds NO min-content width (see the
            className comment above). aria-hidden: the count is already in the
            accessible name. */
