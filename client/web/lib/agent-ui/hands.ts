@@ -10,14 +10,24 @@
  *    and Radix handlers run as they do for a user.
  *  - Every write the page sends is checked (`riskOfRequest`). A risky one
  *    (delete, send, share, publish, a setting) waits for the user's Allow
- *    in a prompt the host draws; Block refuses it. This wraps `fetch`
- *    itself, so a screen that calls fetch directly is held too.
+ *    in a prompt the host draws; Not now refuses it. This wraps `fetch`
+ *    itself, so a screen that calls fetch directly is held too. A request
+ *    set off while an action runs is checked even when the user paused or
+ *    stopped the session meanwhile.
+ *  - A write the agent sets off carries its tag (`x-mantle-agent-call`: the
+ *    agent's call id, or `lesson:<uuid>`), and the brain refuses a risky
+ *    one (403 `agent_refused`). That answer is held the same way; Allow
+ *    sends it once more, untagged, as the user's own.
  *  - Any real click or key press by the user outside the agent's controls
  *    pauses the session: actions answer `user_took_over` until `resume`.
- *  - Stop (or Esc on the bar) ends it.
+ *  - Stop (or Esc) ends it. An action checks after every wait that the
+ *    session still runs and is not paused, and answers `stopped` if not.
  */
 import {
+  AGENT_CALL_HEADER,
   elementRefusal,
+  isAgentRefusal,
+  linkRefusal,
   MAX_WAIT_MS,
   refuse,
   riskOfRequest,
@@ -28,7 +38,7 @@ import {
   type RequestRisk,
   type Screen,
 } from './model';
-import { centerOf, factsOf, findTarget, readScreen, roleOf } from './dom';
+import { centerOf, factsOf, findByName, findTarget, readScreen, roleOf } from './dom';
 
 export type HeldRequest = {
   id: number;
@@ -67,7 +77,7 @@ const IDLE: HandsState = {
 const CURSOR_MS = 350;
 /** The screen counts as settled once no request has been open this long. */
 const QUIET_MS = 250;
-/** How long a held request waits for the user before it counts as Block. */
+/** How long a held request waits for the user before it counts as Not now. */
 const HELD_MS = 120_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -84,9 +94,15 @@ export class AgentHands {
   private heldSeq = 0;
   private blockedSinceAction = false;
   private stopped = false;
-  /** The in-app agent's call the running action answers, if any: its
-   *  requests carry it, so the brain refuses a risky one (contract). */
-  private callId: string | null = null;
+  /** Bumped by every new session, so an action of an ended one cannot go
+   *  on in the next. */
+  private generation = 0;
+  /** Actions running now (0 or 1: they are queued). */
+  private acting = 0;
+  /** What the agent's writes are tagged with (`x-mantle-agent-call`): the
+   *  in-app agent's last call, or the lesson's `lesson:<uuid>`. The brain
+   *  refuses a risky write that carries it (fix round contract). */
+  private callTag: string | null = null;
 
   // ── state for the overlay ────────────────────────────────────────────────
 
@@ -111,29 +127,43 @@ export class AgentHands {
 
   // ── the session ──────────────────────────────────────────────────────────
 
-  begin(agent: string): void {
+  /** Start a session for `agent`, its writes tagged `tag` (a lesson's
+   *  `lesson:<uuid>`; an in-app agent tags each call in `withCall`). On a
+   *  session that runs already it only takes the new name and tag: one the
+   *  user took over stays paused until they say go on. */
+  begin(agent: string, opts: { tag?: string } = {}): void {
+    const name = agent.slice(0, 60) || 'The agent';
     if (this.state.active) {
-      this.set({ agent, paused: false });
+      if (opts.tag) this.callTag = opts.tag;
+      this.set({ agent: name });
       return;
     }
     this.stopped = false;
+    this.generation += 1;
+    this.callTag = opts.tag ?? null;
     this.wrapFetch();
     window.addEventListener('pointerdown', this.onUserInput, true);
     window.addEventListener('keydown', this.onUserInput, true);
-    this.set({ ...IDLE, active: true, agent: agent.slice(0, 60) || 'The agent' });
+    this.set({ ...IDLE, active: true, agent: name });
   }
 
-  /** Stop: the session ends and every open or later action is refused. */
+  /** Stop: the session ends and every open or later action is refused. An
+   *  action still running keeps the request guard until it returns. */
   end(): void {
     if (!this.state.active) return;
     this.stopped = true;
     window.removeEventListener('pointerdown', this.onUserInput, true);
     window.removeEventListener('keydown', this.onUserInput, true);
     this.state.held?.answer(false);
-    this.unwrapFetch();
     this.refs.clear();
-    this.callId = null;
     this.set(IDLE);
+    if (this.acting === 0) this.release();
+  }
+
+  /** The guard and the tag go once no session runs and no action does. */
+  private release() {
+    this.unwrapFetch();
+    this.callTag = null;
   }
 
   /** Ask the user whether an in-app agent may use this window, for the
@@ -157,7 +187,7 @@ export class AgentHands {
    *  makes from then until the session ends names the last call (a
    *  debounced save lands after the action has returned). */
   async withCall<T>(callId: string, fn: () => Promise<T>): Promise<T> {
-    this.callId = callId;
+    this.callTag = callId;
     return fn();
   }
 
@@ -179,41 +209,7 @@ export class AgentHands {
     if (this.realFetch) return;
     const real = window.fetch.bind(window);
     this.realFetch = window.fetch;
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const method = (
-        init?.method ?? (input instanceof Request ? input.method : 'GET')
-      ).toUpperCase();
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      const risk =
-        this.state.active && !this.state.paused && !agentOwnRequest(url)
-          ? riskOfRequest(method, url, typeof init?.body === 'string' ? init.body : undefined)
-          : null;
-      let userAllowed = false;
-      if (risk) {
-        const allowed = await this.ask(risk, method, url);
-        if (!allowed) {
-          this.blockedSinceAction = true;
-          throw new TypeError('Blocked: the user did not allow this request.');
-        }
-        userAllowed = true;
-      }
-      // A request an agent's call set off names the call, unless the user
-      // allowed it: the brain refuses a risky one that names a call.
-      if (
-        this.callId &&
-        this.state.active &&
-        !this.state.paused &&
-        !userAllowed &&
-        method !== 'GET' &&
-        method !== 'HEAD' &&
-        !agentOwnRequest(url)
-      ) {
-        const headers = new Headers(
-          init?.headers ?? (input instanceof Request ? input.headers : undefined),
-        );
-        headers.set('x-mantle-agent-call', this.callId);
-        init = { ...init, headers };
-      }
+    const send = async (input: RequestInfo | URL, init?: RequestInit) => {
       this.inflight += 1;
       this.lastRequestAt = Date.now();
       try {
@@ -222,6 +218,57 @@ export class AgentHands {
         this.inflight -= 1;
         this.lastRequestAt = Date.now();
       }
+    };
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = (
+        init?.method ?? (input instanceof Request ? input.method : 'GET')
+      ).toUpperCase();
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      // The agent's: sent while it drives, or while one of its actions runs
+      // (the user may have paused or stopped it on the way).
+      const agents =
+        !agentOwnRequest(url) && (this.acting > 0 || (this.state.active && !this.state.paused));
+      const risk = agents
+        ? riskOfRequest(method, url, typeof init?.body === 'string' ? init.body : undefined)
+        : null;
+      let userAllowed = false;
+      if (risk) {
+        // Stopped mid-action: nobody is asked, nothing is sent.
+        const allowed = this.state.active ? await this.ask(risk, method, url) : false;
+        if (!allowed) {
+          this.blockedSinceAction = true;
+          throw new TypeError('Blocked: the user did not allow this request.');
+        }
+        userAllowed = true;
+      }
+      // A write the agent set off carries its tag, unless the user allowed
+      // it: the brain refuses a risky one that is tagged.
+      const tag =
+        agents && !userAllowed && method !== 'GET' && method !== 'HEAD' ? this.callTag : null;
+      if (!tag) return send(input, init);
+      // A Request's body is read once: keep a copy for a resend.
+      const spare = input instanceof Request ? input.clone() : null;
+      const headers = new Headers(
+        init?.headers ?? (input instanceof Request ? input.headers : undefined),
+      );
+      headers.set(AGENT_CALL_HEADER, tag);
+      const res = await send(input, { ...init, headers });
+      if (res.status !== 403) return res;
+      let body: unknown = null;
+      try {
+        body = await res.clone().json();
+      } catch {
+        /* not the brain's refusal */
+      }
+      if (!isAgentRefusal(res.status, body) || !this.state.active) return res;
+      // The brain refused it as the agent's: the user's step, held like a
+      // risky write. Allow sends it once more as the user's own, untagged.
+      if (!(await this.ask('refused', method, url))) {
+        this.blockedSinceAction = true;
+        throw new TypeError('Blocked: the user did not allow this request.');
+      }
+      headers.delete(AGENT_CALL_HEADER);
+      return send(spare ?? input, { ...init, headers });
     };
   }
 
@@ -254,28 +301,41 @@ export class AgentHands {
   // ── actions ──────────────────────────────────────────────────────────────
 
   /** Run one action after the one before it, refusing when the session is
-   *  not running. */
-  private run<T extends object>(fn: () => Promise<AgentResult<T>>): Promise<AgentResult<T>> {
+   *  not running. `fn` gets `alive`: false once the session ended, was
+   *  paused, or another began; it checks it after each of its waits and
+   *  answers `stopped` without acting when it is false. */
+  private run<T extends object>(
+    fn: (alive: () => boolean) => Promise<AgentResult<T>>,
+  ): Promise<AgentResult<T>> {
     const next = this.queue.then(async () => {
       if (!this.state.active) return refuse(this.stopped ? 'stopped' : 'no_session');
       if (this.state.paused) return refuse('user_took_over');
+      const generation = this.generation;
+      const alive = () => this.state.active && !this.state.paused && this.generation === generation;
       this.blockedSinceAction = false;
-      let out: AgentResult<T>;
+      this.acting += 1;
       try {
-        out = await fn();
-      } catch (err) {
-        return refuse('unsupported', err instanceof Error ? err.message : String(err));
+        let out: AgentResult<T>;
+        try {
+          out = await fn(alive);
+        } catch (err) {
+          return refuse('unsupported', err instanceof Error ? err.message : String(err));
+        }
+        // A request the action set off may still wait for the user's answer:
+        // the action is not done until it is answered (or HELD_MS passes,
+        // which counts as Not now).
+        const deadline = Date.now() + HELD_MS;
+        while (this.state.held && this.state.active && Date.now() < deadline) await sleep(80);
+        this.state.held?.answer(false);
+        if (!this.state.active || this.generation !== generation) return refuse('stopped');
+        if (!out.ok && out.error === 'stopped') return out;
+        if (this.state.paused) return refuse('user_took_over');
+        if (out.ok && this.blockedSinceAction) return refuse('needs_user');
+        return out;
+      } finally {
+        this.acting -= 1;
+        if (this.acting === 0 && !this.state.active) this.release();
       }
-      // A request the action set off may still wait for the user's answer:
-      // the action is not done until it is answered (or HELD_MS passes,
-      // which counts as Block).
-      const deadline = Date.now() + HELD_MS;
-      while (this.state.held && this.state.active && Date.now() < deadline) await sleep(80);
-      this.state.held?.answer(false);
-      if (!this.state.active) return refuse('stopped');
-      if (this.state.paused) return refuse('user_took_over');
-      if (out.ok && this.blockedSinceAction) return refuse('needs_user');
-      return out;
     });
     this.queue = next.catch(() => undefined);
     return next as Promise<AgentResult<T>>;
@@ -302,22 +362,26 @@ export class AgentHands {
   }
 
   click(target: AgentTarget): Promise<AgentResult> {
-    return this.run(async () => {
+    return this.run(async (alive) => {
       const el = this.locate(target, 'click');
       if ('error' in el) return el.error;
       await this.moveTo(el.el);
+      if (!alive()) return refuse('stopped');
       press(el.el);
       await this.settle(null, 3000);
       return { ok: true };
     });
   }
 
+  /** Type `text` into a field. It is added after what the field holds;
+   *  `replace: true` puts it in place of all of it. */
   type(target: AgentTarget, text: string, opts: { replace?: boolean } = {}): Promise<AgentResult> {
-    return this.run(async () => {
+    return this.run(async (alive) => {
       const el = this.locate(target, 'type');
       if ('error' in el) return el.error;
       await this.moveTo(el.el);
-      if (!typeInto(el.el, text.slice(0, 2000), opts.replace !== false))
+      if (!alive()) return refuse('stopped');
+      if (!typeInto(el.el, text.slice(0, 2000), opts.replace === true))
         return refuse('unsupported');
       await this.settle(null, 2000);
       return { ok: true };
@@ -325,10 +389,11 @@ export class AgentHands {
   }
 
   select(target: AgentTarget, option: string): Promise<AgentResult> {
-    return this.run(async () => {
+    return this.run(async (alive) => {
       const el = this.locate(target, 'select');
       if ('error' in el) return el.error;
       await this.moveTo(el.el);
+      if (!alive()) return refuse('stopped');
       if (el.el instanceof HTMLSelectElement) {
         const opt = [...el.el.options].find(
           (o) => o.text.trim().toLowerCase() === option.trim().toLowerCase() || o.value === option,
@@ -341,35 +406,31 @@ export class AgentHands {
       // A menu, a combobox or a tab list: open it, then press the option.
       if (roleOf(el.el) !== 'tab' && roleOf(el.el) !== 'radio') press(el.el);
       await this.settle(null, 1500);
-      for (const role of [
-        'option',
-        'menuitemradio',
-        'menuitem',
-        'menuitemcheckbox',
-        'tab',
-        'radio',
-      ]) {
-        const hit = findTarget({ role, name: option }, this.refs);
-        if ('el' in hit) {
-          const refusal = elementRefusal(factsOf(hit.el), 'click');
-          if (refusal) return refuse(refusal);
-          await this.moveTo(hit.el);
-          press(hit.el);
-          await this.settle(null, 2000);
-          return { ok: true };
-        }
+      if (!alive()) return refuse('stopped');
+      const hit = findByName(OPTION_ROLES, option);
+      if (!('el' in hit)) {
+        return hit.error === 'ambiguous'
+          ? refuse('ambiguous')
+          : refuse('unsupported', `No option "${option}".`);
       }
-      return refuse('unsupported', `No option "${option}".`);
+      const refusal = pressRefusal(hit.el);
+      if (refusal) return refuse(refusal);
+      await this.moveTo(hit.el);
+      if (!alive()) return refuse('stopped');
+      press(hit.el);
+      await this.settle(null, 2000);
+      return { ok: true };
     });
   }
 
   point(target: AgentTarget, caption: string): Promise<AgentResult> {
-    return this.run(async () => {
+    return this.run(async (alive) => {
       const found = findTarget(target, this.refs);
       if ('error' in found) return refuse(found.error);
       if (found.el.closest('[data-agent-host]')) return refuse('host_control');
       found.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       await this.moveTo(found.el);
+      if (!alive()) return refuse('stopped');
       this.set({
         spotlight: { el: found.el, caption: caption.slice(0, 200) },
       });
@@ -392,7 +453,8 @@ export class AgentHands {
   ): { el: Element } | { error: AgentResult<never> } {
     const found = findTarget(target, this.refs);
     if ('error' in found) return { error: refuse(found.error) };
-    const refusal: AgentRefusal | null = elementRefusal(factsOf(found.el), action);
+    const refusal: AgentRefusal | null =
+      action === 'click' ? pressRefusal(found.el) : elementRefusal(factsOf(found.el), action);
     if (refusal) return { error: refuse(refusal) };
     return found;
   }
@@ -422,6 +484,26 @@ export class AgentHands {
     }
     return false;
   }
+}
+
+/** The roles an option of a menu, a combobox or a tab list has, the
+ *  likeliest first. */
+const OPTION_ROLES = ['option', 'menuitemradio', 'menuitem', 'menuitemcheckbox', 'tab', 'radio'];
+
+/** Why the agent may not press `el`: the guard's rules, and a link that
+ *  leaves the app or opens a route the agent may not (`unsafe_route`). */
+function pressRefusal(el: Element): AgentRefusal | null {
+  const refusal = elementRefusal(factsOf(el), 'click');
+  if (refusal) return refusal;
+  return linkRefusal(hrefOf(el), location.href);
+}
+
+/** Where pressing `el` would go: its own or its link's href. A role=link
+ *  with none acts by script, and its requests meet the request guard. */
+function hrefOf(el: Element): string | null {
+  const link = el.closest('a[href], area[href]');
+  if (link) return link.getAttribute('href');
+  return roleOf(el) === 'link' ? el.getAttribute('href') : null;
 }
 
 /** The window's own answer to an agent's call, and a turn's cancel: never
@@ -458,19 +540,37 @@ function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectE
 }
 
 /** Type text the way a paste lands: the value changes and React hears an
- *  input event. No key events, so Enter never submits or sends. */
-function typeInto(el: Element, text: string, replace: boolean): boolean {
+ *  input event. No key events, so Enter never submits or sends. The text
+ *  goes after what the field holds, with the caret at the end; `replace`
+ *  puts it in place of all of it. Exported for its tests. */
+export function typeInto(el: Element, text: string, replace: boolean): boolean {
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     if (el.readOnly || el.disabled) return false;
     el.focus({ preventScroll: true });
     const clean = el instanceof HTMLInputElement ? text.replace(/[\r\n]+/g, ' ') : text;
-    setNativeValue(el, replace ? clean : el.value + clean);
+    const next = replace ? clean : el.value + clean;
+    setNativeValue(el, next);
+    try {
+      el.setSelectionRange(next.length, next.length);
+    } catch {
+      /* a field type with no caret (email, number) */
+    }
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   }
   if (el instanceof HTMLElement && el.isContentEditable) {
     el.focus({ preventScroll: true });
-    if (replace) document.execCommand('selectAll');
+    if (replace) {
+      document.execCommand('selectAll');
+    } else {
+      // The caret at the end of the field, so the text is added after it.
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
     return document.execCommand('insertText', false, text);
   }
   return false;

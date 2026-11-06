@@ -168,6 +168,12 @@ const EVERY_LOGIN = [
   /^\/api\/profile\/sounds$/,
   /^\/api\/profile\/agent-ui$/,
   /^\/api\/assistant\/turn\/[^/]+\/ui\/[0-9a-f-]{36}$/,
+  // A turn, its live stream and its cancel (agent UI fix round): the 202
+  // names the turn `turn-<loginId>.<key>` (a member's `ws-<loginId>.<key>`).
+  /^\/api\/assistant\/turn$/,
+  /^\/api\/assistant\/turn\/[^/]+\/(stream|cancel)$/,
+  /^\/api\/assistant\/messages$/,
+  /^\/api\/assistant\/thread$/,
 ];
 
 export type MockRequest = {
@@ -254,14 +260,44 @@ export type MockWorkspaceApi = {
   /** The answers windows sent to in-app agent calls
    *  (POST /api/assistant/turn/:turnId/ui/:callId). */
   uiAnswers: { role: Role; turnId: string; callId: string; windowId: unknown; result: unknown }[];
+  /** The turns sent (POST /api/assistant/turn): the Idempotency-Key and
+   *  the turn id the 202 gave for it, as a brain mints it from the session. */
+  turns: { role: Role; key: string; turnId: string; windowId: unknown }[];
+  /** What a turn's live stream sends, in order, once it is opened (then it
+   *  stays open, quiet). A stream for a turn id that is not the caller's is
+   *  a 404, as on a brain. */
+  turnEvents: unknown[];
+  /** Tagged writes (`x-mantle-agent-call`) whose path matches are refused
+   *  403 `{ error: 'agent_refused' }`, as the brain refuses a risky one. */
+  refuseAgentWrites: RegExp | null;
+  /** Where the Lessons folder and its lesson are homed (GET /api/grants/:id):
+   *  the Admin workspace unless a spec moves them. */
+  lessonsHome: WorkspaceKey;
   close: () => Promise<void>;
 };
+
+/** The one assistant agent of the mock brain (GET /api/assistant/thread). */
+export const MOCK_AGENT = {
+  id: '5a5a5a5a-5a5a-45a5-85a5-5a5a5a5a5a5a',
+  slug: 'saskia',
+  name: 'Saskia',
+} as const;
 
 /** The lessons the mock brain holds (components/lessons). */
 export const LESSONS = {
   folder: { id: '1e551111-1111-4111-8111-111111111111', name: 'Lessons', path: 'pages.lessons' },
   lesson: { id: '1e552222-2222-4222-8222-222222222222', title: 'Your sounds' },
   stray: { id: '1e553333-3333-4333-8333-333333333333', title: 'Not a lesson' },
+  /** A second lesson whose step writes (a quick note on the Desk). */
+  note: { id: '1e554444-4444-4444-8444-444444444444', title: 'A quick note' },
+  noteYaml: [
+    'title: A quick note',
+    'steps:',
+    '  - say: A quick note lands in Notes.',
+    '    do:',
+    '      - type: { target: { role: textbox, name: Quick note }, text: Milk }',
+    '      - click: { role: button, name: Add note }',
+  ].join('\n'),
   yaml: [
     'title: Your sounds',
     'steps:',
@@ -323,6 +359,10 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     lessons: false,
     agentUi: {},
     uiAnswers: [],
+    turns: [],
+    turnEvents: [],
+    refuseAgentWrites: null,
+    lessonsHome: 'admin',
     close: async () => undefined,
   };
 
@@ -523,9 +563,10 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         const folder = url.searchParams.get('folder');
         const lessons = { ...LESSONS.folder, depth: 1, parentId: null, system: false };
         if (folder === LESSONS.folder.id) {
+          const listed = [LESSONS.note, LESSONS.lesson].map((l) => ({ id: l.id, title: l.title }));
           return (
             json(res, 200, {
-              ...tree(kind, [{ id: LESSONS.lesson.id, title: LESSONS.lesson.title }], url),
+              ...tree(kind, listed, url),
               folder: lessons,
             }),
             true
@@ -727,15 +768,48 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       await readBody(req);
       return (json(res, 201, { ok: true }), true);
     }
+    // The home of the Lessons folder and its lessons (components/lessons
+    // checks it): named only to a user of the home workspace, or an Admin
+    // user, as the brain's GET /api/grants/:id. The stray page is Team's.
+    const grantsM = /^\/api\/grants\/([0-9a-f-]{36})$/.exec(path);
+    if (grantsM && method === 'GET') {
+      const id = grantsM[1]!;
+      const homeKey: WorkspaceKey | null =
+        id === LESSONS.folder.id || id === LESSONS.lesson.id || id === LESSONS.note.id
+          ? state.lessonsHome
+          : id === LESSONS.stray.id
+            ? 'team'
+            : null;
+      if (!homeKey) return (json(res, 404, { error: 'not found', code: 'not_found' }), true);
+      const names = role === 'admin' || MEMBERSHIP[role].some((m) => m.ws === homeKey);
+      return (
+        json(res, 200, {
+          item: { id, title: '', type: 'page' },
+          home: names
+            ? { wsId: WORKSPACES[homeKey].id, name: WORKSPACES[homeKey].name }
+            : { wsId: null, name: null },
+          rows: [],
+          addable: [],
+          mayManage: role === 'admin',
+          mayLink: false,
+          hasLink: false,
+        }),
+        true
+      );
+    }
     // A lesson page (components/lessons), in or outside the Lessons folder.
     const lessonM = /^\/api\/pages\/([0-9a-f-]{36})$/.exec(path);
     if (
       lessonM &&
       method === 'GET' &&
-      (lessonM[1] === LESSONS.lesson.id || lessonM[1] === LESSONS.stray.id)
+      [LESSONS.lesson.id, LESSONS.stray.id, LESSONS.note.id].includes(lessonM[1]! as never)
     ) {
       const yaml =
-        lessonM[1] === LESSONS.lesson.id ? LESSONS.yaml : 'title: Stray\nsteps:\n  - say: x';
+        lessonM[1] === LESSONS.lesson.id
+          ? LESSONS.yaml
+          : lessonM[1] === LESSONS.note.id
+            ? LESSONS.noteYaml
+            : 'title: Stray\nsteps:\n  - say: x';
       return (
         json(res, 200, {
           page: {
@@ -929,8 +1003,59 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     }
     if (!role) return json(res, 401, { error: 'Unauthorized' });
 
+    // The brain refuses a tagged risky write (agent UI fix round, section 2).
+    if (
+      typeof agentCall === 'string' &&
+      method !== 'GET' &&
+      method !== 'HEAD' &&
+      state.refuseAgentWrites?.test(path)
+    ) {
+      await readBody(req);
+      return json(res, 403, { error: 'agent_refused', reason: 'risky' });
+    }
+
     if (EVERY_LOGIN.some((re) => re.test(path))) {
       if (path === '/api/shell') return json(res, 200, shell(role));
+      // A turn: 202 with the id minted from the session and the key, never
+      // the key itself; the reply comes over the stream.
+      if (path === '/api/assistant/turn' && method === 'POST') {
+        const raw = await readBody(req);
+        const key = String(req.headers['idempotency-key'] ?? '');
+        let windowId: unknown;
+        try {
+          windowId = (JSON.parse(raw) as { windowId?: unknown }).windowId;
+        } catch {
+          windowId = undefined;
+        }
+        const turnId = `${role === 'admin' ? 'turn' : 'ws'}-${LOGINS[role].loginId}.${key}`;
+        state.turns.push({ role, key, turnId, windowId });
+        return json(res, 202, { turnId, stream: true });
+      }
+      const turnM = /^\/api\/assistant\/turn\/([^/]+)\/(stream|cancel)$/.exec(path);
+      if (turnM) {
+        const own = state.turns.some((t) => t.turnId === turnM[1] && t.role === role);
+        if (!own) return json(res, 404, { error: 'not found' });
+        if (turnM[2] === 'cancel') return json(res, 200, { ok: true });
+        res.writeHead(200, {
+          ...cors,
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-store',
+        });
+        res.write(':\n\n');
+        for (const ev of state.turnEvents) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+        return;
+      }
+      if (path === '/api/assistant/messages') return json(res, 200, { messages: [] });
+      // The chat a turn is sent from: one agent, an empty thread.
+      if (path === '/api/assistant/thread') {
+        const agent = { id: MOCK_AGENT.id, slug: MOCK_AGENT.slug, name: MOCK_AGENT.name };
+        return json(res, 200, {
+          agents: [{ ...agent, role: 'assistant', model: 'mock' }],
+          agent: { ...agent, model: 'mock', avatar: null },
+          messages: [],
+          assigned: null,
+        });
+      }
       if (path === '/api/profile/home-desk') {
         const stored = state.desks[role] ?? { homeDesk: null, version: 0 };
         if (method === 'GET') return json(res, 200, stored);

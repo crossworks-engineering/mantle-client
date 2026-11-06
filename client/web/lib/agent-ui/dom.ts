@@ -11,7 +11,7 @@
 import {
   cutText,
   MAX_ENTRIES,
-  nameMatches,
+  pickByName,
   type AgentTarget,
   type ElementFacts,
   type Screen,
@@ -126,15 +126,30 @@ export function nameOf(el: Element): string {
   return el.getAttribute('title') ?? '';
 }
 
+/** A password, a one-time code, or anything inside `data-secret` (a
+ *  SecretInput, shown or not: its wrapper carries the mark, so flipping the
+ *  field to plain text does not open it). Read from tag and attributes, so
+ *  it holds for any element. */
 export function isSecretField(el: Element): boolean {
-  if ((el as HTMLElement).closest?.('[data-secret]')) return true;
-  if (!(el instanceof HTMLInputElement)) return false;
-  return el.type === 'password' || SECRET_AUTOCOMPLETE.test(el.autocomplete ?? '');
+  if (el.closest?.('[data-secret]')) return true;
+  if (el.tagName?.toUpperCase() !== 'INPUT') return false;
+  const type = String((el as HTMLInputElement).type ?? el.getAttribute('type') ?? '');
+  const autocomplete = String(
+    (el as HTMLInputElement).autocomplete ?? el.getAttribute('autocomplete') ?? '',
+  );
+  return type.toLowerCase() === 'password' || SECRET_AUTOCOMPLETE.test(autocomplete);
+}
+
+/** Behind an open modal (Radix marks the rest of the page `aria-hidden`, a
+ *  native one makes it `inert`) or hidden: the user cannot reach it, so the
+ *  agent may not either. */
+export function isShut(el: Element): boolean {
+  return !!el.closest?.('[aria-hidden="true"], [inert], [hidden]');
 }
 
 function visible(el: Element): boolean {
   const h = el as HTMLElement;
-  if (h.closest('[aria-hidden="true"], [inert], [hidden]')) return false;
+  if (isShut(h)) return false;
   const r = h.getBoundingClientRect();
   if (r.width <= 0 || r.height <= 0) return false;
   if (r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) return false;
@@ -216,7 +231,8 @@ export function findTarget(target: AgentTarget, refs: Map<string, Element>): Fou
   if ('ref' in target) {
     const el = refs.get(target.ref);
     if (!el) return { error: 'stale_ref' };
-    return el.isConnected ? { el } : { error: 'stale_ref' };
+    // A ref from before a modal opened names a control behind it now.
+    return el.isConnected && !isShut(el) ? { el } : { error: 'stale_ref' };
   }
   if ('id' in target) {
     const id = target.id;
@@ -229,14 +245,17 @@ export function findTarget(target: AgentTarget, refs: Map<string, Element>): Fou
     if (hits.length === 0) return { error: 'not_found' };
     return hits.length === 1 ? { el: hits[0]! } : { error: 'ambiguous' };
   }
-  const { screen, refs: fresh } = readScreen();
-  const want = target.role.toLowerCase();
-  const byRole = screen.entries.filter((e) => e.role === want);
-  const exact = byRole.filter((e) => nameMatches(e.name, target.name) === 'exact');
-  const pool = exact.length ? exact : byRole.filter((e) => nameMatches(e.name, target.name));
-  if (pool.length === 0) return { error: 'not_found' };
-  if (pool.length > 1) return { error: 'ambiguous' };
-  return { el: fresh.get(pool[0]!.ref)! };
+  return findByName([target.role.toLowerCase()], target.name);
+}
+
+/** The one control of any of `roles` called `name` (lib/agent-ui/model
+ *  `pickByName`): an exact name in any of them wins over a name that only
+ *  starts with it, so an option "Week" is not lost to a menu item
+ *  "Weekly"; between roles, the earlier one. */
+export function findByName(roles: readonly string[], name: string): Found {
+  const { screen, refs } = readScreen();
+  const hit = pickByName(screen.entries, roles, name);
+  return 'error' in hit ? hit : { el: refs.get(hit.ref)! };
 }
 
 /** What the guard needs to know about an element. */

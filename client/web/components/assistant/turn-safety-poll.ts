@@ -223,10 +223,10 @@ export function startTurnSafetyPoll(opts: TurnSafetyPollOptions): () => void {
  * older dock) is accepted, since a transcript only ever has one turn pending.
  */
 export function verdictForSettled(
-  pending: { turnId: string } | null,
+  pending: { idempotencyKey: string } | null,
   detail: { idempotencyKey?: string; status: 'done' | 'error' },
 ): 'done' | 'error' | null {
   if (!pending) return null;
-  if (detail.idempotencyKey && detail.idempotencyKey !== pending.turnId) return null;
+  if (detail.idempotencyKey && detail.idempotencyKey !== pending.idempotencyKey) return null;
   return detail.status;
 }

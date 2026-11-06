@@ -231,9 +231,14 @@ export function AssistantClient({
   // when the route returns 202; consumed by the phase effect on done/error).
   // `startedAt` lets the safety poll find the turn's outbound row even if the
   // `turn-start` event (which carries the id) was missed.
-  const pendingTurnRef = useRef<{ optimisticId: string; turnId: string; startedAt: string } | null>(
-    null,
-  );
+  const pendingTurnRef = useRef<{
+    optimisticId: string;
+    /** The 202's turn id: the stream and Stop use it. */
+    turnId: string;
+    /** This send's key: the dock's settle signal names it. */
+    idempotencyKey: string;
+    startedAt: string;
+  } | null>(null);
   const [error, setError] = useState<string>();
   // An over-long message that was parked in a note — shown as a normal (not
   // destructive) line with a link, so the user can open what was sent.
@@ -954,9 +959,9 @@ export function AssistantClient({
     setDraft('');
     // This turn supersedes any follow-up chip (accepted or ignored alike).
     dismissSuggestion();
-    // Open the live status stream for this turn (same uuid the server keys it
-    // on) the instant we start — before the POST — so we catch the early steps.
-    setActiveTurnId(idempotencyKey);
+    // The live status stream opens on the turn id the brain's 202 gives
+    // (`turn-<loginId>.<key>`), never on the idempotency key: the stream,
+    // Stop and the supersede cancel all take that id.
     setSending(true);
 
     try {
@@ -1045,9 +1050,11 @@ export function AssistantClient({
         // done/error. Hand them the turn — keep the optimistic bubble + spinner.
         pendingTurnRef.current = {
           optimisticId,
-          turnId: idempotencyKey,
+          turnId: data.turnId,
+          idempotencyKey,
           startedAt: optimistic.createdAt,
         };
+        setActiveTurnId(data.turnId);
         if (data.warnings?.length) setError(data.warnings.join(' · '));
       }
     } catch (err) {

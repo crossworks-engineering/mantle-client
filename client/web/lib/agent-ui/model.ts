@@ -58,6 +58,8 @@ export type AgentRefusal =
   | 'host_control'
   /** Not a route the agent may open (a query, a hash, another origin). */
   | 'bad_route'
+  /** A link that leaves the app, or goes to a route the agent may not open. */
+  | 'unsafe_route'
   /** The field takes no typing, or the option was not found. */
   | 'unsupported'
   /** The screen did not settle in time. */
@@ -86,6 +88,7 @@ export const REFUSAL_TEXT: Record<AgentRefusal, string> = {
   secret_field: 'That is a secret field; the agent never reads or types in it.',
   host_control: "That is the agent's own control.",
   bad_route: 'That is not a route the agent may open.',
+  unsafe_route: 'That link leaves the app or opens a route the agent may not open.',
   unsupported: 'That control cannot be used this way.',
   timeout: 'The screen did not settle in time.',
   needs_consent: 'The user has not allowed this window yet. Ask them, then try again.',
@@ -125,11 +128,36 @@ export function safeAgentRoute(path: unknown): string | null {
     return null;
   }
   if (resolved !== path) return null;
-  if (/^\/(login|logout|auth|invite|api)(\/|$)/.test(path)) return null;
+  // Read decoded, as the router does: `/%6Cogin` is `/login`.
+  const decoded = decodePath(path);
+  if (decoded === null || decoded.startsWith('//') || /[?#\\]/.test(decoded)) return null;
+  if (/^\/(login|logout|auth|invite|api)(\/|$)/i.test(decoded)) return null;
+  if (decoded.split('/').some((seg) => seg === '.' || seg === '..')) return null;
   return path;
 }
 
-export type RequestRisk = 'delete' | 'send' | 'share' | 'publish' | 'settings';
+/**
+ * Whether the agent may follow a link: its href, resolved against the page,
+ * must stay on the app's origin and land on a path `safeAgentRoute` takes.
+ * A `javascript:`, `mailto:` or other-origin link is refused, and so is one
+ * to the sign-in screens or the API. A link with no href (a role=link that
+ * acts by script) is left to the request guard.
+ */
+export function linkRefusal(href: string | null, pageUrl: string): AgentRefusal | null {
+  if (href === null) return null;
+  let url: URL;
+  let page: URL;
+  try {
+    page = new URL(pageUrl);
+    url = new URL(href, page);
+  } catch {
+    return 'unsafe_route';
+  }
+  if (url.origin !== page.origin) return 'unsafe_route';
+  return safeAgentRoute(url.pathname) ? null : 'unsafe_route';
+}
+
+export type RequestRisk = 'delete' | 'send' | 'share' | 'publish' | 'settings' | 'refused';
 
 /** Words for a held request, by its risk. */
 export const RISK_TEXT: Record<RequestRisk, string> = {
@@ -138,6 +166,9 @@ export const RISK_TEXT: Record<RequestRisk, string> = {
   share: 'change who can see something',
   publish: 'publish something',
   settings: 'change a setting',
+  // The brain refused it as the agent's (403 agent_refused): the user may
+  // still send it as their own.
+  refused: 'do something only you may do',
 };
 
 const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
@@ -151,6 +182,12 @@ const RISKY_PATHS: readonly [RegExp, RequestRisk][] = [
     /^\/api\/(pending|mcp-settings|model-pools|heartbeats|tools|dev-tools|connectors|assistants|integrations|services|maintenance|debug)(\/|$)/,
     'settings',
   ],
+  // Admin areas the brain also refuses (fix round contract, section 2).
+  [
+    /^\/api\/(network|peers|mcp-connectors|external-access|model-combos|updates|tool-groups|gateway-services)(\/|$)/,
+    'settings',
+  ],
+  [/^\/api\/studio\/reset(\/|$)/, 'settings'],
   [/\/(trash|purge|empty)(\/|$)/, 'delete'],
   [/\/(send|reply|forward|messages|messenger|email|emails|mail|telegram|notify)(\/|$)/, 'send'],
   [/\/(share|shares|grants|access|members|invites|visibility|unshare|move)(\/|$)/, 'share'],
@@ -174,15 +211,57 @@ export function riskOfRequest(method: string, url: string, body?: string): Reque
   if (m === 'DELETE') return 'delete';
   let path: string;
   try {
-    path = new URL(url, 'http://app.invalid').pathname.toLowerCase();
+    path = new URL(url, 'http://app.invalid').pathname;
   } catch {
     return 'settings';
   }
+  // Matched decoded: `/api/%73hares` is `/api/shares` to the brain. A path
+  // that does not decode (a stray `%`) is held: it is no route the app makes.
+  const decoded = decodePath(path);
+  if (decoded === null) return 'settings';
+  path = decoded.toLowerCase();
   for (const [re, risk] of RISKY_PATHS) if (re.test(path)) return risk;
   // A write that makes something public or shares it by a field of an
   // ordinary edit (a page's visibility, a folder's share).
   if (body && /"(visibility|published|public|share|shares)"\s*:/.test(body)) return 'share';
   return null;
+}
+
+/** A path with its percent-encoding undone, until it no longer changes
+ *  (`%2573` is `%73` is `s`), or null when it does not decode. */
+export function decodePath(path: string): string | null {
+  let out = path;
+  for (let i = 0; i < 5; i += 1) {
+    let next: string;
+    try {
+      next = decodeURIComponent(out);
+    } catch {
+      return null;
+    }
+    if (next === out) return out;
+    out = next;
+  }
+  return out;
+}
+
+/** The header that names the agent's call (or a lesson) on a request it
+ *  set off; the brain refuses a risky one (fix round contract, section 2). */
+export const AGENT_CALL_HEADER = 'x-mantle-agent-call';
+
+/** A lesson's tag for that header: `lesson:<uuid>`. */
+export function lessonCallTag(uuid: string): string {
+  return `lesson:${uuid}`;
+}
+
+/** Whether a response is the brain refusing an agent's request
+ *  (403 `{ error: "agent_refused" }`). */
+export function isAgentRefusal(status: number, body: unknown): boolean {
+  return (
+    status === 403 &&
+    !!body &&
+    typeof body === 'object' &&
+    (body as { error?: unknown }).error === 'agent_refused'
+  );
 }
 
 /** What an element is, as the guard reads it. */
@@ -223,4 +302,25 @@ export function nameMatches(name: string, want: string): 'exact' | 'prefix' | nu
   if (!b) return null;
   if (a === b) return 'exact';
   return a.startsWith(b) ? 'prefix' : null;
+}
+
+/**
+ * The entry of one of `roles` that `name` names. Every exact name, in any
+ * of the roles, comes before any name that only starts with `name`; within
+ * that, the earliest role that has one. Two of them in that role is
+ * `ambiguous`.
+ */
+export function pickByName<E extends { name: string; role: string }>(
+  entries: readonly E[],
+  roles: readonly string[],
+  name: string,
+): E | { error: 'not_found' | 'ambiguous' } {
+  for (const kind of ['exact', 'prefix'] as const) {
+    for (const role of roles) {
+      const pool = entries.filter((e) => e.role === role && nameMatches(e.name, name) === kind);
+      if (pool.length === 1) return pool[0]!;
+      if (pool.length > 1) return { error: 'ambiguous' };
+    }
+  }
+  return { error: 'not_found' };
 }

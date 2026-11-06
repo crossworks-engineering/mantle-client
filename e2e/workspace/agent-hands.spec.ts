@@ -71,7 +71,7 @@ test('types and clicks as the user would, then is stopped', async ({ page }) => 
   expect((await hands(page, 'screen')).error).toBe('stopped');
 });
 
-test('a settings change waits for the user: Block refuses it, Allow once sends it', async ({
+test('a settings change waits for the user: Not now refuses it, Allow once sends it', async ({
   page,
 }) => {
   await signIn(page, 'admin');
@@ -84,7 +84,7 @@ test('a settings change waits for the user: Block refuses it, Allow once sends i
   const held = page.getByRole('alertdialog', { name: 'Lesson wants to change a setting' });
   await expect(held).toBeVisible();
   await expect(held.getByText('PUT /api/profile/sounds')).toBeVisible();
-  await held.getByRole('button', { name: 'Block' }).click();
+  await held.getByRole('button', { name: 'Not now' }).click();
   expect((await first).error).toBe('needs_user');
   expect(api.asked('admin')).not.toContain('PUT /api/profile/sounds');
 

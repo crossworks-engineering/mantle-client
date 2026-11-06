@@ -147,7 +147,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
   const hands = agentHands();
   turnAgents.set(turnId, agentName);
   if (!hands.get().active) hands.begin(agentName);
-  const result = await hands.withCall(call.callId, () => run(call));
+  const result = await hands.withCall(call.callId, () => runUiCall(call));
   await answer(result);
 }
 
@@ -163,7 +163,9 @@ function target(args: Record<string, unknown>): AgentTarget | null {
   return parseTarget(args.target);
 }
 
-async function run(call: UiCall): Promise<AgentResult<object>> {
+/** One call on the hands. `ui_type` adds to what the field holds unless
+ *  the agent says `replace: true` (fix round contract, section 4). */
+export async function runUiCall(call: UiCall): Promise<AgentResult<object>> {
   const hands = agentHands();
   const a = call.args;
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -179,7 +181,7 @@ async function run(call: UiCall): Promise<AgentResult<object>> {
     case 'type': {
       const t = target(a);
       return t
-        ? hands.type(t, str(a.text), { replace: a.replace !== false })
+        ? hands.type(t, str(a.text), { replace: a.replace === true })
         : refuse('not_found', 'No target.');
     }
     case 'select': {

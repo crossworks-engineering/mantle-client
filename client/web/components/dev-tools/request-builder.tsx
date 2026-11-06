@@ -616,7 +616,10 @@ export function RequestBuilder() {
                 {draft.auth.mode === 'bearer' && (
                   <div className="space-y-1.5">
                     <Label className="text-xs">Token</Label>
+                    {/* data-secret: an agent driving the window never reads or
+                        types in it (lib/agent-ui). */}
                     <Input
+                      data-secret=""
                       value={draft.auth.token ?? ''}
                       onChange={(e) =>
                         setDraft((d) => ({ ...d, auth: { ...d.auth, token: e.target.value } }))

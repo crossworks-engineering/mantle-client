@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
+import { LOGINS, signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
 
 /**
  * An in-app agent drives the window (lib/agent-ui/turn-calls, plan page
@@ -201,4 +201,95 @@ test('Not now refuses, and a call is never run twice', async ({ page }) => {
   expect(after.result).toMatchObject({ ok: false, error: 'needs_consent' });
   // No second prompt in this page's life.
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
+});
+
+test('a write the brain refuses as the agent’s is held; Allow once sends it again, untagged', async ({
+  page,
+}) => {
+  api.agentUi.admin = true;
+  api.refuseAgentWrites = /^\/api\/notes$/;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+
+  await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
+  const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
+  const held = page.getByRole('alertdialog', {
+    name: 'Saskia wants to do something only you may do',
+  });
+  await expect(held.getByText('POST /api/notes')).toBeVisible();
+  await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
+  await held.getByRole('button', { name: 'Allow once' }).click();
+  const add = await adding;
+  expect(add.result).toMatchObject({ ok: true });
+  const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
+  expect(posts.map((r) => r.agentCall)).toEqual([add.callId, undefined]);
+});
+
+test('Not now on a refused write sends nothing more, and the agent hears needs_user', async ({
+  page,
+}) => {
+  api.agentUi.admin = true;
+  api.refuseAgentWrites = /^\/api\/notes$/;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+
+  await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
+  const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
+  const held = page.getByRole('alertdialog', {
+    name: 'Saskia wants to do something only you may do',
+  });
+  await held.getByRole('button', { name: 'Not now' }).click();
+  expect((await adding).result).toMatchObject({ ok: false, error: 'needs_user' });
+  const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
+  expect(posts).toHaveLength(1);
+});
+
+test('a typed text is added after what the field holds', async ({ page }) => {
+  api.agentUi.admin = true;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+  const box = { role: 'textbox', name: 'Quick note' };
+  await call(page, 'type', { target: box, text: 'Buy ' });
+  await call(page, 'type', { target: box, text: 'milk' });
+  const field = page.getByPlaceholder('Jot it down… the first line becomes the title');
+  await expect(field).toHaveValue('Buy milk');
+  await call(page, 'type', { target: box, text: 'Bread', replace: true });
+  await expect(field).toHaveValue('Bread');
+});
+
+test('the chat streams, answers and stops on the 202’s turn id, never the key', async ({
+  page,
+}) => {
+  api.agentUi.admin = true;
+  const id = callId();
+  api.turnEvents = [{ type: 'ui-call', data: { callId: id, action: 'screen', args: {} } }];
+  await signIn(page, 'admin');
+  await page.getByRole('button', { name: 'Toggle assistant (⌘I)' }).click();
+  const box = page.getByPlaceholder(/Enter to send/);
+  await box.fill('Show me around');
+  await box.press('Enter');
+
+  await expect.poll(() => api.turns.length).toBe(1);
+  const turn = api.turns[0]!;
+  expect(turn.turnId).toBe(`turn-${LOGINS.admin.loginId}.${turn.key}`);
+  await expect
+    .poll(() => api.asked('admin'))
+    .toContain(`GET /api/assistant/turn/${turn.turnId}/stream`);
+  // The agent's call is answered on the turn the 202 named.
+  await expect.poll(() => api.uiAnswers.find((a) => a.callId === id)?.turnId).toBe(turn.turnId);
+  await page.getByRole('button', { name: 'Not now' }).click();
+
+  await page.getByTitle('Stop generating').click();
+  await expect
+    .poll(() => api.asked('admin'))
+    .toContain(`POST /api/assistant/turn/${turn.turnId}/cancel`);
+  expect(api.asked('admin').some((r) => r.includes(`/api/assistant/turn/${turn.key}/`))).toBe(
+    false,
+  );
 });

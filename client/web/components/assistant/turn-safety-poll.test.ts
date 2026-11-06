@@ -295,7 +295,7 @@ describe('startTurnSafetyPoll', () => {
 });
 
 describe('verdictForSettled', () => {
-  const pending = { turnId: 'key-1' };
+  const pending = { idempotencyKey: 'key-1' };
 
   it('settles the pending turn when the dock reports ITS key', () => {
     expect(verdictForSettled(pending, { idempotencyKey: 'key-1', status: 'done' })).toBe('done');

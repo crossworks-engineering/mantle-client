@@ -79,12 +79,14 @@ export function AgentOverlay() {
 }
 
 function AgentBar({ state }: { state: HandsState }) {
+  // Esc stops, heard in the capture phase: a dialog or an editor that
+  // handles Esc itself (and stops it there) cannot keep it from the bar.
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && e.isTrusted) agentHands().end();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
   return (
     <div
@@ -178,13 +180,15 @@ function HeldPrompt({ state }: { state: HandsState }) {
               {held.method} {held.path}
             </p>
             <p className="text-sm text-muted-foreground">
-              Nothing happens unless you allow it. You can also do this step yourself.
+              {held.risk === 'refused'
+                ? 'The brain keeps this step for you. Allow it once to send it as your own, or do it yourself.'
+                : 'Nothing happens unless you allow it. You can also do this step yourself.'}
             </p>
           </div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" onClick={() => held.answer(false)}>
-            Block
+            Not now
           </Button>
           <Button disabled={!armed} onClick={() => held.answer(true)}>
             Allow once
