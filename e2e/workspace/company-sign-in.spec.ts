@@ -42,6 +42,7 @@ test('a member is not offered it, and the brain is not asked', async ({ page }) 
   await signIn(page, 'member');
   await expect(page.getByRole('navigation').first()).toBeVisible();
   await expect(nav(page)).toHaveCount(0);
+  await page.waitForLoadState('networkidle');
   expect(api.asked('member').filter((r) => r.includes('sso-setup'))).toEqual([]);
 });
 
@@ -66,6 +67,7 @@ test('setup: save the secret with the password, Test it, and it never comes back
 
   const field = main.locator('#sso-setup-secret');
   await expect(field).toHaveAttribute('type', 'password');
+  await expect(field).toHaveAttribute('autocomplete', 'new-password');
   await field.fill(SECRET);
   await main.getByRole('button', { name: 'Save secret' }).click();
 
@@ -169,6 +171,7 @@ test('a Test on a locked box says locked, and the screen shows the lock', async 
   await button.click();
   await expect(main.getByText('Locked by the box operator.')).toBeVisible();
   await expect(main.getByRole('button', { name: 'Test', exact: true })).toHaveCount(0);
+  expect(api.ssoSetup.tests).toBe(0);
 });
 
 test("the password hold's 403 and the 429 read in the brain's words", async ({ page }) => {
@@ -183,14 +186,17 @@ test("the password hold's 403 and the 429 read in the brain's words", async ({ p
     status: 403,
     body: {
       error: 'password_change_required',
-      reason: 'password-change-required',
+      code: 'password_change_required',
       message: 'Change your password to go on.',
     },
   };
   await dialog.getByRole('button', { name: 'Make token' }).click();
   await expect(dialog.getByText('Change your password to go on.')).toBeVisible();
   await expect(dialog).not.toContainText('password_change_required');
-  api.ssoSetup.writeRefusal = { status: 429, body: { error: 'Too many requests.' } };
+  api.ssoSetup.writeRefusal = {
+    status: 429,
+    body: { error: 'Too many requests. Try again later.', code: 'rate_limited' },
+  };
   await dialog.getByRole('button', { name: 'Make token' }).click();
   await expect(dialog.getByText(/too many requests/i)).toBeVisible();
   expect(api.ssoSetup.tokensMade).toBe(0);
@@ -207,8 +213,13 @@ test('a failed status read does not take away a token shown once', async ({ page
   // The read after the token fails, as a box restarting does.
   api.ssoSetup.statusAnswer = 500;
   await dialog.getByRole('button', { name: 'Make token' }).click();
+  await expect(main.getByText('Could not read the latest status.')).toBeVisible();
   await expect(main.getByText('made-scim-token-1')).toBeVisible();
   await expect(main.getByText('Could not load company sign-in.')).toHaveCount(0);
+  // A second make replaces this one, so it warns, though the status read failed.
+  await main.getByRole('button', { name: 'I copied it' }).click();
+  await main.getByRole('button', { name: 'Make a new token' }).click();
+  await expect(page.getByRole('dialog').getByText('stops working at once')).toBeVisible();
 });
 
 test('a Cancel keeps the typed secret, and the password goes', async ({ page }) => {
@@ -270,8 +281,51 @@ test('a member at the typed address meets the area gate, and asks the brain noth
   api.ssoSetup.mode = 'setup';
   await signIn(page, 'member');
   await page.goto(PATH);
-  await expect(page.getByRole('main').locator('#sso-setup-secret')).toHaveCount(0);
+  await expect(page.getByText('You cannot manage this part of the brain')).toBeVisible();
+  await page.waitForLoadState('networkidle');
   expect(api.asked('member').filter((r) => r.includes('sso-setup'))).toEqual([]);
+});
+
+test('a .env value set with the screen open: a Save says so, and the form goes', async ({
+  page,
+}) => {
+  api.ssoSetup.mode = 'setup';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.locator('#sso-setup-secret').fill(SECRET);
+  await main.getByRole('button', { name: 'Save secret' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  api.ssoSetup.envSecret = true;
+  await dialog.getByRole('button', { name: 'Save secret' }).click();
+  await expect(dialog.getByText('env')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(main.getByText('From the box .env.')).toBeVisible();
+  await expect(main.locator('#sso-setup-secret')).toHaveCount(0);
+});
+
+test('a brain before the screen may answer 404 too', async ({ page }) => {
+  api.ssoSetup.statusAnswer = 404;
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  await expect(
+    page.getByRole('main').getByText('Company sign-in is off on this box.'),
+  ).toBeVisible();
+});
+
+test('a status read that answers off does not take away a token shown once', async ({ page }) => {
+  api.ssoSetup.mode = 'setup';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Make SCIM token' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  api.ssoSetup.statusAnswer = 405;
+  await dialog.getByRole('button', { name: 'Make token' }).click();
+  await expect(main.getByText('Company sign-in is off on this box.')).toBeVisible();
+  await expect(main.getByText('made-scim-token-1')).toBeVisible();
 });
 
 for (const mode of ['optional', 'required'] as const) {

@@ -19,18 +19,23 @@ export async function readSsoSetup(): Promise<SsoSetupStatus> {
   }
 }
 
+/** One set of options for the one key: the sidebar, the palette and the screen. */
+export const ssoSetupQuery = {
+  queryKey: SSO_SETUP_KEY,
+  queryFn: readSsoSetup,
+  staleTime: 60_000,
+  retry: 1,
+};
+
 /** Whether the sidebar offers Company sign-in: a login with the users area, on
  *  a box whose mode is on. Hidden on a brain before the screen, and while it
  *  loads or fails. With the mode off the brain reads
  *  nothing to answer this. */
 export function useSsoSetupShown(areas: readonly string[] | null | undefined): boolean {
   const { data } = useQuery({
-    queryKey: SSO_SETUP_KEY,
-    queryFn: readSsoSetup,
+    ...ssoSetupQuery,
     // Asked only once the shell has said what this login holds.
     enabled: areas != null && hasArea(areas, 'users'),
-    staleTime: 60_000,
-    retry: false,
   });
   return data !== undefined && data.mode !== 'off';
 }

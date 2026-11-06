@@ -128,6 +128,16 @@ describe('nav items this client adds before the shared list names them', () => {
   });
 });
 
+describe('Company sign-in in the nav', () => {
+  it('adds it after Shared links in Settings, once', () => {
+    const settings = NAV_GROUPS.find((g) => g.label === 'Settings')!;
+    const list = settings.items.map((i) => i.href);
+    expect(list.filter((h) => h === '/settings/company-sign-in')).toHaveLength(1);
+    expect(list[list.indexOf('/settings/shared-links') + 1]).toBe('/settings/company-sign-in');
+    expect(matchNavItem('/settings/company-sign-in')?.name).toBe('Company sign-in');
+  });
+});
+
 describe('Shared links (W5c) in the nav', () => {
   it('adds Shared links after Workspaces in Settings, once', () => {
     const settings = NAV_GROUPS.find((g) => g.label === 'Settings')!;
