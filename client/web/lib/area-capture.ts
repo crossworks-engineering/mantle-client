@@ -13,11 +13,13 @@
  *
  * The brain decides where the file lands, by the export rule: an Admin
  * user's goes to Auto-filed / Screenshots / <month> in Admin (an Admin user
- * has no private workspace, so every Admin user reads it, as an export);
- * anyone else's to their own private workspace. That is why
- * /api/screenshots is NOT a create route the switcher's `?ws=` is added to
- * (lib/create-workspace.ts): a screenshot can hold anything that was on
- * screen, so it never lands in a workspace the switcher shows by itself.
+ * has no private workspace); anyone else's to their own private workspace.
+ * Wherever it lands, the brain makes it private to the login that took it:
+ * only that login lists, opens or reads it, so no other Admin user sees an
+ * Admin user's either. That is why /api/screenshots is NOT a create route
+ * the switcher's `?ws=` is added to (lib/create-workspace.ts): a screenshot
+ * can hold anything that was on screen, so it never lands in a workspace
+ * the switcher shows by itself.
  */
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
@@ -235,5 +237,8 @@ export function captureErrorMessage(err: unknown): string {
   if (err instanceof DOMException && err.name === 'NotAllowedError') {
     return 'Screen sharing was not allowed, so nothing was captured.';
   }
-  return err instanceof Error ? err.message : 'The capture failed.';
+  if (!(err instanceof Error)) return 'The capture failed.';
+  // The desktop shell's refusal comes wrapped by Electron's IPC: its own
+  // words only.
+  return err.message.replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '');
 }

@@ -623,7 +623,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       );
     }
     // An area screenshot: kept, and answered as the brain does (an Admin
-    // user's lands in Auto-filed, anyone else's in its private workspace).
+    // user's lands in Auto-filed, anyone else's in its private workspace;
+    // either way private to the login that took it).
     if (path === '/api/screenshots' && method === 'POST') {
       const raw = await readBody(req);
       const meta = /name="meta"\r\n\r\n([^\r]*)\r\n/.exec(raw)?.[1];

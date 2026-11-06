@@ -17,7 +17,7 @@ import {
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { attentionMode, safeInAppPath } from './attention';
-import { captureRect } from './capture';
+import { captureForEvent, createCaptureLimiter } from './capture';
 import {
   BRAIN_PASSTHROUGH,
   brainRequestFilter,
@@ -634,19 +634,16 @@ function registerIpc(): void {
 
   // Area screenshots: the asking window's own pixels, only while it shows
   // this app's UI (vaultProfileFor checks the sender and its frame origin),
-  // in a rectangle clamped to its content (capture.ts). PNG bytes back.
-  ipcMain.handle('desktop:capture', async (event, raw: unknown) => {
-    if (!vaultProfileFor(event)) throw new Error('capture: not this app');
-    // Only the page itself, never a frame inside it.
-    if (event.senderFrame !== event.sender.mainFrame) throw new Error('capture: not this app');
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win || win.isDestroyed()) throw new Error('capture: no window');
-    const [width, height] = win.getContentSize();
-    const rect = captureRect(raw, { width, height }, event.sender.getZoomFactor());
-    if (!rect) throw new Error('capture: invalid area');
-    const image = await event.sender.capturePage(rect);
-    return new Uint8Array(image.toPNG());
-  });
+  // from its main frame, in a rectangle clamped to its content, at most one
+  // a second per window (capture.ts). PNG bytes back.
+  const captureLimiter = createCaptureLimiter();
+  ipcMain.handle('desktop:capture', (event, raw: unknown) =>
+    captureForEvent(event, raw, {
+      isThisApp: (e) => vaultProfileFor(e) !== null,
+      windowOf: (e) => BrowserWindow.fromWebContents(e.sender),
+      limiter: captureLimiter,
+    }),
+  );
 
   ipcMain.on('desktop:badge', (_event, count: unknown) => {
     if (typeof count === 'number' && Number.isFinite(count)) {

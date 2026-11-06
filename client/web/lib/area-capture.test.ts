@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  captureErrorMessage,
   dragRect,
   frameCrop,
   frameIsThisTab,
@@ -139,5 +140,18 @@ describe('the old element picker is gone', () => {
     );
     expect(rail).toContain('<CaptureButton');
     expect(rail).not.toContain('HighlightButton');
+  });
+});
+
+describe('captureErrorMessage', () => {
+  it("says the desktop shell's refusal in its own words, without Electron's wrapper", () => {
+    const wrapped = new Error(
+      "Error invoking remote method 'desktop:capture': Error: Another capture just ran. Try again in a moment.",
+    );
+    expect(captureErrorMessage(wrapped)).toBe('Another capture just ran. Try again in a moment.');
+    expect(captureErrorMessage(new Error('The capture came back empty.'))).toBe(
+      'The capture came back empty.',
+    );
+    expect(captureErrorMessage('nope')).toBe('The capture failed.');
   });
 });

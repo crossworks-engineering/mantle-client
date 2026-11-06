@@ -61,6 +61,8 @@ test('an Admin user captures an area and attaches it to the chat', async ({ page
 
   const preview = page.getByRole('dialog', { name: 'Screenshot' });
   await expect(preview.getByRole('img', { name: 'The captured area' })).toBeVisible();
+  // The brain keeps it private to this login, an Admin user's too.
+  await expect(preview.getByText('Once saved, only you can see it.')).toBeVisible();
   // Nothing is saved before a choice.
   expect(api.screenshots).toHaveLength(0);
   await preview.getByRole('textbox', { name: 'Note' }).fill('the list is cut off');
@@ -83,7 +85,9 @@ test('an Admin user captures an area and attaches it to the chat', async ({ page
   // The saved file rides with the next turn as context, and the chat opens
   // (this brain answers no assistant routes, so the chip itself is not drawn).
   await expect(
-    page.getByText(`Screenshot saved in ${WORKSPACES.admin.name} and attached to the chat.`),
+    page.getByText(
+      `Screenshot saved in ${WORKSPACES.admin.name} and attached to the chat. Only you can see it.`,
+    ),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Toggle assistant (⌘I)' })).toHaveAttribute(
     'aria-pressed',
@@ -113,5 +117,7 @@ test('a member saves a screenshot to its private workspace, with no attach', asy
 
   await expect.poll(() => api.screenshots.length).toBe(1);
   expect(api.screenshots[0]).toMatchObject({ role: 'member', ws: null });
-  await expect(page.getByText(`Screenshot saved in ${WORKSPACES.own.name}.`)).toBeVisible();
+  await expect(
+    page.getByText(`Screenshot saved in ${WORKSPACES.own.name}. Only you can see it.`),
+  ).toBeVisible();
 });
