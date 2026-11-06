@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 import {
+  ChevronsUpDown,
   Dices,
   Gauge,
   ImageOff,
@@ -16,6 +17,13 @@ import {
   Waves,
 } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@mantle/web-ui/ui/dropdown-menu';
 import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
 import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { DriftThemeBackdrop } from '@mantle/web-ui/drift-backdrop';
@@ -36,28 +44,51 @@ import { DeskWidget, WidgetAction } from '../desk-widget';
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 
+/** A theme's three colours as a pie, a third each, clockwise from the top.
+ *  One SVG with no border and nothing light behind it: the first colour is
+ *  the whole disc, the other two slices lie on it, so only the disc's own
+ *  edge meets the card and no fringe shows. */
+export function ThemePie({
+  colors: [a, b, c],
+  className,
+}: {
+  colors: readonly [string, string, string];
+  className?: string;
+}) {
+  return (
+    <svg viewBox="0 0 2 2" aria-hidden className={cn('size-5 shrink-0', className)}>
+      <circle cx="1" cy="1" r="1" fill={a} />
+      <path d="M1 1 L1.866 1.5 A1 1 0 0 1 0.134 1.5 Z" fill={b} />
+      <path d="M1 1 L0.134 1.5 A1 1 0 0 1 1 0 Z" fill={c} />
+    </svg>
+  );
+}
+
 /**
  * The room's look in one place: light, dark or the system's, and the colour
- * theme as a strip of swatches (click one to wear it), with a dice for a
- * random one.
+ * theme from a menu that shows each theme's colours (the worn one marked),
+ * with the sparkles for a random one.
  */
 export function ThemeWidget({ id, onRemove }: { id: DeskWidgetId; onRemove: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { colorTheme, setColorTheme, shuffleNow } = useColorTheme();
   const [mounted, setMounted] = useState(false);
-  const current = useRef<HTMLButtonElement>(null);
-  const strip = useRef<HTMLDivElement>(null);
   useEffect(() => setMounted(true), []);
-  // Centre the worn theme in the strip. The strip's own scroll only:
-  // scrollIntoView would also scroll the desk to this widget on load.
-  useEffect(() => {
-    const el = strip.current;
-    const on = current.current;
-    if (!el || !on) return;
-    // The strip is `relative`, so a swatch's offsetLeft is its place in it.
-    el.scrollLeft = on.offsetLeft - (el.clientWidth - on.clientWidth) / 2;
-  }, [colorTheme, mounted]);
   const mode = resolvedTheme === 'dark' ? 'dark' : 'light';
+  const worn = mounted ? COLOR_THEMES.find((t) => t.id === colorTheme) : undefined;
+  // The menu opens on the worn theme: focused, so the arrows start there,
+  // and centred in the list's own scroll (never the desk's).
+  const menu = useRef<HTMLDivElement>(null);
+  const openOnWorn = (open: boolean) => {
+    if (!open) return;
+    requestAnimationFrame(() => {
+      const list = menu.current;
+      const on = list?.querySelector<HTMLElement>('[data-state="checked"]');
+      if (!list || !on) return;
+      list.scrollTop = on.offsetTop - (list.clientHeight - on.offsetHeight) / 2;
+      on.focus({ preventScroll: true });
+    });
+  };
 
   return (
     <DeskWidget
@@ -90,45 +121,41 @@ export function ThemeWidget({ id, onRemove }: { id: DeskWidgetId; onRemove: () =
               <Monitor />
             </ToggleGroupItem>
           </ToggleGroup>
-          <span className="min-w-0 truncate text-sm text-muted-foreground">
-            {mounted ? themeLabel(colorTheme) : ' '}
-          </span>
-        </div>
-        <div
-          ref={strip}
-          className="relative flex gap-1.5 overflow-x-auto py-1 scrollbar-thin"
-          role="listbox"
-          aria-label="Colour theme"
-        >
-          {COLOR_THEMES.map((t) => {
-            const [a, b, c] = t.swatches[mode];
-            const on = mounted && t.id === colorTheme;
-            return (
+          <DropdownMenu onOpenChange={openOnWorn}>
+            <DropdownMenuTrigger asChild>
               <Button
-                key={t.id}
-                ref={on ? current : undefined}
-                variant="ghost"
-                size="icon"
-                role="option"
-                aria-selected={on}
-                aria-label={t.label}
-                title={t.label}
-                onClick={() => setColorTheme(t.id)}
-                className={cn(
-                  'size-7 shrink-0 rounded-full p-0 ring-offset-2 ring-offset-card transition-transform hover:scale-110',
-                  on && 'ring-2 ring-ring',
-                )}
+                variant="outline"
+                size="sm"
+                aria-label={`Colour theme: ${mounted ? themeLabel(colorTheme) : ''}`}
+                className="min-w-0 flex-1 justify-start gap-2 px-2"
               >
-                {/* The theme's own three colours: data from the theme
-                    registry, not a colour chosen here. */}
-                <span
-                  aria-hidden
-                  className="size-6 rounded-full border border-border/60"
-                  style={{ background: `conic-gradient(${a} 0 33%, ${b} 0 66%, ${c} 0)` }}
-                />
+                {worn ? <ThemePie colors={worn.swatches[mode]} /> : null}
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {mounted ? themeLabel(colorTheme) : '\u00a0'}
+                </span>
+                <ChevronsUpDown className="text-muted-foreground" aria-hidden />
               </Button>
-            );
-          })}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              ref={menu}
+              align="end"
+              className="relative max-h-80 w-56 overflow-y-auto scrollbar-thin"
+            >
+              <DropdownMenuRadioGroup
+                value={mounted ? colorTheme : ''}
+                onValueChange={(v) => setColorTheme(v)}
+              >
+                {COLOR_THEMES.map((t) => (
+                  <DropdownMenuRadioItem key={t.id} value={t.id} className="gap-2">
+                    {/* The theme's own three colours: data from the theme
+                        registry, not a colour chosen here. */}
+                    <ThemePie colors={t.swatches[mode]} />
+                    <span className="min-w-0 flex-1 truncate">{t.label}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </DeskWidget>
