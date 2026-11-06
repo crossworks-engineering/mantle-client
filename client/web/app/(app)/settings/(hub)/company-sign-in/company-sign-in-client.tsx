@@ -57,7 +57,7 @@ function setterText(set: SsoSetupSetter | null): string | null {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-3 border-b border-border p-4 md:p-5">
-      <h2 className="text-sm font-medium">{title}</h2>
+      <h2 className="text-sm font-semibold">{title}</h2>
       {children}
     </section>
   );
@@ -121,7 +121,8 @@ function PasswordDialog({
       onDone();
     } catch (err) {
       setError(refusalText(err, 'Could not save. Try again.'));
-      if (statusIsStale(err)) await queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY });
+      // Not awaited: the dialog must not wait on a read nothing here needs.
+      if (statusIsStale(err)) void queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY });
     } finally {
       setPending(false);
     }
@@ -172,6 +173,8 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [secret, setSecret] = useState('');
+  // Bumped by a save: the next secret starts hidden again.
+  const [fieldKey, setFieldKey] = useState(0);
   const [asking, setAsking] = useState(false);
   const [testing, setTesting] = useState(false);
   const [outcome, setOutcome] = useState<SsoSetupTestOutcome | null>(null);
@@ -228,6 +231,8 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
                 autoComplete="new-password"
                 data-1p-ignore
                 data-lpignore="true"
+                data-bwignore
+                key={fieldKey}
                 value={secret}
                 maxLength={1024}
                 aria-describedby="sso-setup-secret-help"
@@ -250,7 +255,7 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
       {open && (
         <div className="space-y-2">
           <Button variant="outline" onClick={test} disabled={testing}>
-            {testing ? 'Testing…' : 'Test'}
+            Test
           </Button>
           <p className="text-xs text-muted-foreground">Test uses the secret that is saved.</p>
           {result && (
@@ -259,15 +264,15 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
               className={`flex items-start gap-1.5 text-sm ${result.good ? '' : 'text-destructive-ink'}`}
             >
               {result.good ? (
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
               ) : (
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
               )}
               <span>{result.text}</span>
             </p>
           )}
           {testError && (
-            <p role="status" className="text-sm text-destructive-ink">
+            <p role="alert" className="text-sm text-destructive-ink">
               {testError}
             </p>
           )}
@@ -285,8 +290,10 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
         }}
         onDone={() => {
           setSecret('');
+          setFieldKey((k) => k + 1);
           setAsking(false);
           setOutcome(null);
+          setTestError(null);
           toast.success('The client secret is saved. Press Test to check it.');
         }}
       />
@@ -300,9 +307,9 @@ function TokenPanel({ token, onDone }: { token: string; onDone: () => void }) {
   return (
     <Section title="New SCIM token">
       <div className="space-y-3 rounded-md border border-border bg-primary/5 p-3">
-        <p className="text-sm">
-          Copy the token now: it is shown only once. Paste it into Entra as the secret token. It
-          works at once.
+        <p role="status" className="text-sm">
+          Copy the token now: it is shown only once, and leaving this screen loses it. Paste it into
+          Entra as the secret token. It works at once.
         </p>
         <CopyBlock code={token} />
         <div className="flex justify-end">
@@ -360,7 +367,8 @@ function ScimSection({
             password,
           });
           onMade(res.token);
-          await queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY });
+          // Not awaited: a slow read must not hold the dialog over the token.
+          void queryClient.invalidateQueries({ queryKey: SSO_SETUP_KEY });
         }}
         onDone={() => setAsking(false)}
       />
@@ -426,7 +434,7 @@ export function CompanySignInClient() {
       <Section title="This box">
         {open ? (
           <p role="status" className="flex items-start gap-1.5 text-sm text-warning-ink">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
               Setup is open, and company sign-in is off for everybody. Passwords work. Keep this
               window short.

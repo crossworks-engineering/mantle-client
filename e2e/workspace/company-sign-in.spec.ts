@@ -29,7 +29,9 @@ const nav = (page: import('@playwright/test').Page) =>
 test('mode off: the sidebar does not offer it, and the address says it is off', async ({
   page,
 }) => {
+  const answered = page.waitForResponse((r) => r.url().endsWith('/api/users/sso-setup'));
   await signIn(page, 'admin');
+  await answered;
   expect([...(await rowsInAnyScope(page, ['Users', 'Company sign-in']))]).toEqual(['Users']);
   await page.goto(PATH);
   await expect(
@@ -42,7 +44,8 @@ test('a member is not offered it, and the brain is not asked', async ({ page }) 
   await signIn(page, 'member');
   await expect(page.getByRole('navigation').first()).toBeVisible();
   await expect(nav(page)).toHaveCount(0);
-  await page.waitForLoadState('networkidle');
+  // The shell's reads have gone out by now; a stream never lets the network idle.
+  await page.waitForTimeout(1500);
   expect(api.asked('member').filter((r) => r.includes('sso-setup'))).toEqual([]);
 });
 
@@ -222,6 +225,43 @@ test('a failed status read does not take away a token shown once', async ({ page
   await expect(page.getByRole('dialog').getByText('stops working at once')).toBeVisible();
 });
 
+test('a status read that hangs does not hold the dialog over the token', async ({ page }) => {
+  api.ssoSetup.mode = 'setup';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Make SCIM token' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  let release = () => {};
+  api.ssoSetup.statusHold = new Promise((r) => (release = r));
+  await dialog.getByRole('button', { name: 'Make token' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(main.getByText('made-scim-token-1')).toBeVisible();
+  release();
+});
+
+test('a failed Test shows why, and a save clears it', async ({ page }) => {
+  api.ssoSetup.mode = 'setup';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  api.ssoSetup.writeRefusal = {
+    status: 429,
+    body: { error: 'Too many requests. Try again later.', code: 'rate_limited' },
+  };
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await expect(main.getByRole('alert').getByText('Too many requests.')).toBeVisible();
+  api.ssoSetup.writeRefusal = null;
+  await main.locator('#sso-setup-secret').fill(SECRET);
+  await main.getByRole('button', { name: 'Save secret' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Save secret' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(main.getByRole('alert').getByText('Too many requests.')).toHaveCount(0);
+});
+
 test('a Cancel keeps the typed secret, and the password goes', async ({ page }) => {
   api.ssoSetup.mode = 'setup';
   await signIn(page, 'admin');
@@ -252,7 +292,9 @@ test('a brain before the screen answers 405: no entry, and the address says off'
   page,
 }) => {
   api.ssoSetup.statusAnswer = 405;
+  const answered = page.waitForResponse((r) => r.url().endsWith('/api/users/sso-setup'));
   await signIn(page, 'admin');
+  await answered;
   expect([...(await rowsInAnyScope(page, ['Users', 'Company sign-in']))]).toEqual(['Users']);
   await page.goto(PATH);
   await expect(
@@ -266,7 +308,9 @@ test('the search palette offers it only while the sidebar does', async ({ page }
     await page.getByRole('dialog').getByRole('combobox').fill('Company sign');
     return page.getByRole('dialog').getByRole('option', { name: /Company sign-in/ });
   };
+  const answered = page.waitForResponse((r) => r.url().endsWith('/api/users/sso-setup'));
   await signIn(page, 'admin');
+  await answered;
   await expect(await paletteRow()).toHaveCount(0);
   await page.keyboard.press('Escape');
   api.ssoSetup.mode = 'setup';
@@ -282,7 +326,8 @@ test('a member at the typed address meets the area gate, and asks the brain noth
   await signIn(page, 'member');
   await page.goto(PATH);
   await expect(page.getByText('You cannot manage this part of the brain')).toBeVisible();
-  await page.waitForLoadState('networkidle');
+  // The shell's reads have gone out by now; a stream never lets the network idle.
+  await page.waitForTimeout(1500);
   expect(api.asked('member').filter((r) => r.includes('sso-setup'))).toEqual([]);
 });
 
@@ -299,7 +344,7 @@ test('a .env value set with the screen open: a Save says so, and the form goes',
   await dialog.locator('#sso-setup-password').fill(PASSWORD);
   api.ssoSetup.envSecret = true;
   await dialog.getByRole('button', { name: 'Save secret' }).click();
-  await expect(dialog.getByText('env')).toBeVisible();
+  await expect(dialog.getByText('The box .env holds the client secret.')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(main.getByText('From the box .env.')).toBeVisible();
   await expect(main.locator('#sso-setup-secret')).toHaveCount(0);
@@ -345,6 +390,8 @@ for (const mode of ['optional', 'required'] as const) {
     await expect(main.getByRole('button', { name: /token/i })).toHaveCount(0);
     await expect(main).not.toContainText(SECRET);
     await expect(main).not.toContainText('kept-token');
-    expect(await rowsInAnyScope(page, ['Company sign-in'])).toEqual(new Set(['Company sign-in']));
+    await expect
+      .poll(async () => [...(await rowsInAnyScope(page, ['Company sign-in']))])
+      .toEqual(['Company sign-in']);
   });
 }

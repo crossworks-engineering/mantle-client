@@ -75,6 +75,12 @@ export function testOutcomeText(outcome: SsoSetupTestOutcome): { good: boolean; 
         good: false,
         text: 'The stored secret cannot be opened. Enter it again. If this repeats, ask the box operator.',
       };
+    // A code from a newer brain.
+    default:
+      return {
+        good: false,
+        text: 'The provider answered with another error. It did not say the secret is wrong. Check the app registration.',
+      };
   }
 }
 

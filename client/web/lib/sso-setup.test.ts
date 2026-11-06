@@ -43,6 +43,12 @@ describe('testOutcomeText', () => {
     }
   });
 
+  it('a code from a newer brain still answers, and is not good', () => {
+    const { good, text } = testOutcomeText('a-new-code' as SsoSetupTestOutcome);
+    expect(good).toBe(false);
+    expect(text.length).toBeGreaterThan(10);
+  });
+
   it('says a pass does not prove a sign-in', () => {
     expect(testOutcomeText('ok').text).toContain('does not prove a sign-in');
   });

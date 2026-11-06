@@ -17,6 +17,8 @@ export type MockSsoSetup = {
   envMissing: string[];
   /** What the status read answers instead (405: a brain before the screen). */
   statusAnswer: number | null;
+  /** A status read waits on this: a box that does not answer. */
+  statusHold: Promise<void> | null;
   /** What a write answers instead: the hold's 403 or the one 429. */
   writeRefusal: { status: number; body: unknown } | null;
 };
@@ -32,6 +34,7 @@ export const newMockSsoSetup = (): MockSsoSetup => ({
   tests: 0,
   envMissing: [],
   statusAnswer: null,
+  statusHold: null,
   writeRefusal: null,
 });
 
@@ -77,7 +80,12 @@ export function ssoSetupAnswer(
   if (method !== 'GET' && s.writeRefusal) return s.writeRefusal;
   if (path === '/api/users/sso-setup' && method === 'PUT') {
     if (s.mode !== 'setup') return closed;
-    if (s.envSecret) return { status: 409, body: { error: 'env', code: 'env-wins' } };
+    if (s.envSecret) {
+      return {
+        status: 409,
+        body: { error: 'The box .env holds the client secret.', code: 'env-wins' },
+      };
+    }
     if (body.password !== password) return wrong;
     s.secret = body.secret ?? null;
     return { status: 200, body: statusOf(s) };
@@ -89,7 +97,12 @@ export function ssoSetupAnswer(
   }
   if (path === '/api/users/sso-setup/scim-token' && method === 'POST') {
     if (s.mode !== 'setup') return closed;
-    if (s.envScim) return { status: 409, body: { error: 'env', code: 'env-wins' } };
+    if (s.envScim) {
+      return {
+        status: 409,
+        body: { error: 'The box .env holds the SCIM token setting.', code: 'env-wins' },
+      };
+    }
     if (body.password !== password) return wrong;
     s.tokensMade += 1;
     s.token = `made-scim-token-${s.tokensMade}`;

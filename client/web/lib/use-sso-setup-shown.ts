@@ -25,6 +25,8 @@ export const ssoSetupQuery = {
   queryFn: readSsoSetup,
   staleTime: 60_000,
   retry: 1,
+  // An open tab learns a mode change when the person comes back to it.
+  refetchOnWindowFocus: true,
 };
 
 /** Whether the sidebar offers Company sign-in: a login with the users area, on
@@ -32,10 +34,8 @@ export const ssoSetupQuery = {
  *  loads or fails. With the mode off the brain reads
  *  nothing to answer this. */
 export function useSsoSetupShown(areas: readonly string[] | null | undefined): boolean {
-  const { data } = useQuery({
-    ...ssoSetupQuery,
-    // Asked only once the shell has said what this login holds.
-    enabled: areas != null && hasArea(areas, 'users'),
-  });
-  return data !== undefined && data.mode !== 'off';
+  // Asked only once the shell has said what this login holds.
+  const enabled = areas != null && hasArea(areas, 'users');
+  const { data } = useQuery({ ...ssoSetupQuery, enabled });
+  return enabled && data !== undefined && data.mode !== 'off';
 }
