@@ -384,9 +384,9 @@ test.describe('settings pane', () => {
     // connect` is still Local network — and `/settings` itself lands on
     // Profile, so Profile is what lights.
     //
-    // Each row under the scope that shows it, because the default Work scope
+    // Each row under the tab that shows it, because the default Work tab
     // hides the Settings group entirely and a row that is not rendered cannot
-    // light: Profile and Agents are Settings rows, Local network is Admin's.
+    // light: Profile, Agents and Local network are all Admin's.
     // Nothing is starred in this fresh context; a starred screen lights TWICE
     // by design, once pinned and once in its home group, and that is not what
     // this measures.
@@ -397,14 +397,14 @@ test.describe('settings pane', () => {
 
     for (const [scope, rows] of [
       [
-        'Settings',
+        'Admin',
         [
           ['/settings/profile', 'Profile'],
           ['/settings/agents', 'Agents'],
           ['/settings', 'Profile'],
+          ['/settings/network/connect', 'Local network'],
         ],
       ],
-      ['Admin', [['/settings/network/connect', 'Local network']]],
     ] as const) {
       await rail.getByRole('radio', { name: scope }).click();
       for (const [path, expected] of rows) {

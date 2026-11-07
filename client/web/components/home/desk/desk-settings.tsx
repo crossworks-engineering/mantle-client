@@ -32,7 +32,7 @@ import {
   type DeskPrefs,
   type DeskWidgetId,
 } from '@/lib/home-desk';
-import { KIND_ICONS } from './widgets/items';
+import { KIND_ICONS } from '@/lib/kind-look';
 import { TOOL_ICONS } from './desk-tools';
 
 /**

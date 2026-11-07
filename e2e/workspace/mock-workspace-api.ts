@@ -167,6 +167,7 @@ const EVERY_LOGIN = [
   /^\/api\/workspaces(\/|$)/,
   /^\/api\/profile\/home-desk$/,
   /^\/api\/profile\/sounds$/,
+  /^\/api\/profile\/nav-favorites$/,
   /^\/api\/profile\/agent-ui$/,
   /^\/api\/assistant\/turn\/[^/]+\/ui\/[0-9a-f-]{36}$/,
   // A turn, its live stream and its cancel (agent UI fix round): the 202
@@ -247,6 +248,10 @@ export type MockWorkspaceApi = {
    *  null, so the client keeps its default). PUT stores it, and a body naming
    *  another login, or none, is the brain's 403 login-mismatch, as the Desk's. */
   sounds: Partial<Record<Role, { enabled: boolean; volume: number }>>;
+  /** Each login's sidebar favorites (navFavorites), as PUT
+   *  /api/profile/nav-favorites stores them. An item entry is `/n/<id>`;
+   *  the shell resolves the ones the login reads (navFavoriteItems). */
+  favorites: Partial<Record<Role, string[]>>;
   /** What the Status screen's routes answer (mock-status.ts): a spec
    *  changes a container to break it. */
   status: MockStatus;
@@ -355,6 +360,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     homeApps: {},
     desks: {},
     sounds: {},
+    favorites: {},
     status: newMockStatus(),
     ssoSetup: newMockSsoSetup(),
     updateNotice: null,
@@ -436,6 +442,17 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     return { ws: m.moderator ? key : fallback };
   };
 
+  /** The `/n/<id>` favorites a login reads, as the brain resolves them. */
+  const favoriteItemsOf = (role: Role) =>
+    (state.favorites[role] ?? []).flatMap((href) => {
+      const id = /^\/n\/([0-9a-f-]{36})$/.exec(href)?.[1];
+      if (!id) return [];
+      for (const kind of ['pages', ...Object.keys(KIND_ITEMS)]) {
+        const hit = itemsOf(kind, role).find((p) => p.id === id);
+        if (hit) return [{ href, id, kind, title: hit.title, icon: null, color: null }];
+      }
+      return [];
+    });
   const shell = (role: Role) => ({
     role,
     loginId: LOGINS[role].loginId,
@@ -444,6 +461,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     workspaces: shellWorkspaces(role),
     areas: role === 'admin' ? ALL_AREAS : [],
     treeKinds: state.tasksKind ? [...MEMBER_TREE_KINDS, 'tasks'] : MEMBER_TREE_KINDS,
+    navFavorites: state.favorites[role] ?? [],
+    navFavoriteItems: favoriteItemsOf(role),
     ...(state.noAutoTables === undefined ? {} : { noAutoTables: state.noAutoTables }),
     onboarded: state.onboarded,
     displayName: LOGINS[role].name,
@@ -1021,6 +1040,19 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           agent: { ...agent, model: 'mock', avatar: null },
           messages: [],
           assigned: null,
+        });
+      }
+      if (path === '/api/profile/nav-favorites' && method === 'PUT') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { navFavorites?: unknown };
+        if (!Array.isArray(body.navFavorites)) {
+          return json(res, 400, { error: 'navFavorites (array of hrefs) required' });
+        }
+        state.favorites[role] = [
+          ...new Set(body.navFavorites.filter((h) => typeof h === 'string')),
+        ];
+        return json(res, 200, {
+          navFavorites: state.favorites[role],
+          navFavoriteItems: favoriteItemsOf(role),
         });
       }
       if (path === '/api/profile/home-desk') {

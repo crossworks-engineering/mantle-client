@@ -2,26 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, type ComponentType, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AppWindow,
-  ArrowUpRight,
-  Brain,
-  CalendarDays,
-  Contact,
-  File,
-  FileText,
-  KeyRound,
-  ListChecks,
-  PenTool,
-  Pin,
-  PinOff,
-  Presentation,
-  Sigma,
-  StickyNote,
-  Table2,
-} from 'lucide-react';
+import { ArrowUpRight, ListChecks, Pin, PinOff, StickyNote } from 'lucide-react';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
@@ -31,6 +14,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import type { TreeItem, TreeKind } from '@mantle/web-ui/types/tree';
 import { AppTile, TINT_CLASSES } from '@/components/app-nav/app-tile';
+import { KIND_ICONS, KIND_TINT } from '@/lib/kind-look';
 import { setTreeItemPinned, treeKey } from '@/components/item-tree/tree-api';
 import { itemRestore } from '@/lib/last-opened';
 import { noteListAnswer } from '@/lib/workspace-filter';
@@ -38,42 +22,6 @@ import { KIND_LABELS, deskItemHref, type DeskWidgetId } from '@/lib/home-desk';
 import { useDeskGrid } from '../desk-grid';
 import { DeskWidget } from '../desk-widget';
 import { useKindItems, type DeskListItem, type DeskPin } from '../desk-data';
-
-type Icon = ComponentType<{ className?: string }>;
-
-export const KIND_ICONS: Record<TreeKind, Icon> = {
-  files: File,
-  notes: StickyNote,
-  pages: FileText,
-  draw: PenTool,
-  tables: Table2,
-  formulas: Sigma,
-  apps: AppWindow,
-  tasks: ListChecks,
-  events: CalendarDays,
-  contacts: Contact,
-  secrets: KeyRound,
-  recall: Brain,
-  present: Presentation,
-} as Record<TreeKind, Icon>;
-
-/** A desk icon's tile colour when its item has none: one per kind, so the
- *  icons read at a glance (pages blue, tasks green, apps violet...). */
-const KIND_TINT: Record<TreeKind, AppTint> = {
-  files: 'slate',
-  notes: 'amber',
-  pages: 'blue',
-  draw: 'pink',
-  tables: 'teal',
-  formulas: 'indigo',
-  apps: 'violet',
-  tasks: 'green',
-  events: 'orange',
-  contacts: 'cyan',
-  secrets: 'slate',
-  recall: 'sky',
-  present: 'red',
-} as Record<TreeKind, AppTint>;
 
 /** Open an item: its route, or for a file, its folder with it selected. */
 function useOpenItem() {

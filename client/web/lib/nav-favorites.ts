@@ -6,10 +6,20 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import type { NavGroup, NavItem } from '@mantle/web-ui/layout/nav-items';
 import { activeSession } from '@mantle/web-ui/session-registry';
+import { NAV_FAVORITES_MAX, type AppTint } from '@mantle/client-types/app-nav';
+import type { TreeKind } from '@mantle/web-ui/types/tree';
+import { deskItemHref } from '@/lib/home-desk';
 
 /**
- * The destinations this owner has starred, pinned to a Favorites group at the
- * top of the sidebar.
+ * The destinations this login has starred: the sidebar's Favorites tab (the
+ * Favorites group at the top of the list for a login with no tabs).
+ *
+ * An entry is a screen's href (`/settings/agents`), or `/n/<id>` for a
+ * workspace item (an app, a page, a canvas, a file...). `/n/<id>` is the one
+ * link that opens any item for any login, and it outlives a screen's URL
+ * changing. The brain says what the rail shows for each item it may open now
+ * (`navFavoriteItems`: title, icon, colour); an item entry it leaves out (the
+ * item deleted, or no longer read) is hidden, and goes at the next save.
  *
  * Stored on the LOGIN's profile (PUT /api/profile/nav-favorites, read back in
  * GET /api/shell as `navFavorites`), so favourites follow the person to
@@ -89,16 +99,22 @@ export function toggleFavoriteIn(
   href: string,
   scope?: string | null,
 ): string[] {
-  const next = readFavorites(store, scope);
-  const at = next.indexOf(href);
-  if (at === -1) next.push(href);
-  else next.splice(at, 1);
-  try {
-    store.setItem(keyFor(scope), JSON.stringify(next));
-  } catch {
-    /* quota / private mode — the list just won't persist */
-  }
+  const next = toggledList(readFavorites(store, scope), href);
+  writeFavoritesIn(store, next, scope);
   return next;
+}
+
+/** Store a whole list (a move, on a brain from before the profile kept it). */
+export function writeFavoritesIn(
+  store: FavoritesStore,
+  list: readonly string[],
+  scope?: string | null,
+): void {
+  try {
+    store.setItem(keyFor(scope), JSON.stringify(list));
+  } catch {
+    /* quota / private mode: the list just won't persist */
+  }
 }
 
 /**
@@ -128,19 +144,110 @@ export function toggledList(list: readonly string[], href: string): string[] {
   return list.includes(href) ? list.filter((h) => h !== href) : [...list, href];
 }
 
-type ShellFavorites = { navFavorites?: string[] };
+/** One favorite workspace item, as the brain's shell sends it. */
+export type NavFavoriteItem = {
+  /** The stored entry: `/n/<id>`. */
+  href: string;
+  id: string;
+  kind: TreeKind;
+  title: string;
+  icon: string | null;
+  color: AppTint | null;
+};
+
+/** The entry an item is stored as. */
+export const itemFavoriteHref = (id: string): string => `/n/${id}`;
+
+const isItemEntry = (href: string) => href.startsWith('/n/');
+
+/** Where a favorite item's row goes: its screen, or for a file (whose
+ *  address needs its folder) the `/n/` link, which finds it. */
+export function favoriteItemHref(item: Pick<NavFavoriteItem, 'kind' | 'id' | 'href'>): string {
+  return deskItemHref(item.kind, item.id) ?? item.href;
+}
+
+/** One row of the Favorites group: a screen of the nav, or an item. */
+export type FavoriteEntry<I extends NavItem> =
+  | { entry: string; nav: I; item?: undefined }
+  | { entry: string; item: NavFavoriteItem; nav?: undefined };
 
 /**
- * The list, and a toggle.
+ * The favorites in the login's order, each resolved: a screen against the
+ * nav list being rendered (favoriteItems), an item against what the brain
+ * sent. An entry that resolves to neither is left out.
+ */
+export function favoriteEntries<I extends NavItem>(
+  favorites: readonly string[],
+  groups: Array<{ items: I[] }>,
+  items: readonly NavFavoriteItem[],
+): FavoriteEntry<I>[] {
+  const byHref = new Map(groups.flatMap((g) => g.items).map((i) => [i.href, i]));
+  const itemByHref = new Map(items.map((i) => [i.href, i]));
+  const out: FavoriteEntry<I>[] = [];
+  for (const entry of favorites) {
+    const item = itemByHref.get(entry);
+    if (item) {
+      out.push({ entry, item });
+      continue;
+    }
+    const nav = byHref.get(entry);
+    if (nav) out.push({ entry, nav });
+  }
+  return out;
+}
+
+/**
+ * The list without the item entries the brain did not send (the item is
+ * deleted, or the login no longer reads it). Applied on every save, so a
+ * hidden entry does not hold one of the 40 places for long. `items`
+ * undefined: a brain that resolves no items, where nothing is dropped.
+ * A screen's href is never dropped here: a row can hide for a while (Chats
+ * on a brain before the messenger) and come back.
+ */
+export function pruned(
+  list: readonly string[],
+  items: readonly NavFavoriteItem[] | undefined,
+): string[] {
+  if (!items) return [...list];
+  const live = new Set(items.map((i) => i.href));
+  return list.filter((h) => !isItemEntry(h) || live.has(h));
+}
+
+/** The list with the entry at `from` moved to index `to`. An index outside
+ *  the list (an entry not in it) changes nothing. */
+export function moved(list: readonly string[], from: number, to: number): string[] {
+  const next = [...list];
+  if (from < 0 || from >= next.length || to < 0 || to >= next.length) return next;
+  const [entry] = next.splice(from, 1);
+  next.splice(to, 0, entry!);
+  return next;
+}
+
+/** What a full list says when one more is added. */
+export const FAVORITES_FULL = `You have ${NAV_FAVORITES_MAX} favorites. Remove one first.`;
+
+type ShellFavorites = { navFavorites?: string[]; navFavoriteItems?: NavFavoriteItem[] };
+
+/**
+ * The list, and what changes it.
  *
  * Reads the shell query AppShell already runs (same key, so no second
  * request). Until it lands the list is EMPTY, the honest shared state for the
  * first paint; the server has no localStorage and the shell has no data yet.
+ *
+ * `itemsSupported`: the brain resolves item entries (sends
+ * `navFavoriteItems`). Only then is an item offered a favorite.
  */
 export function useNavFavorites(): {
   favorites: string[];
+  items: NavFavoriteItem[];
+  itemsSupported: boolean;
   isFavorite: (href: string) => boolean;
-  toggleFavorite: (href: string) => void;
+  /** Add or remove one entry. `item`: the look of an item being added, so
+   *  its row shows at once, before the brain answers. */
+  toggleFavorite: (href: string, item?: NavFavoriteItem) => void;
+  /** Move `entry` to where `to` is now (both stored entries). */
+  moveFavorite: (entry: string, to: string) => void;
 } {
   const qc = useQueryClient();
   const toast = useToast();
@@ -150,10 +257,11 @@ export function useNavFavorites(): {
     staleTime: Infinity,
     // Same rule as the shell's own observer of this query: retry once.
     retry: 1,
-    select: (d: ShellFavorites) => d.navFavorites,
+    select: (d: ShellFavorites) => ({ list: d.navFavorites, items: d.navFavoriteItems }),
   });
   const loaded = shell.isSuccess;
-  const server = shell.data; // undefined once loaded ⇒ a brain that predates this
+  const server = shell.data?.list; // undefined once loaded ⇒ a brain that predates this
+  const serverItems = shell.data?.items;
   const legacy = loaded && server === undefined;
 
   // Legacy path: this browser's localStorage, live across tabs, as before.
@@ -172,17 +280,30 @@ export function useNavFavorites(): {
   }, [legacy]);
 
   const save = useCallback(
-    async (next: string[], prev: string[]) => {
-      qc.setQueryData<ShellFavorites>(['shell'], (d) => (d ? { ...d, navFavorites: next } : d));
+    async (next: string[], prev: string[], nextItems?: NavFavoriteItem[]) => {
+      const before = qc.getQueryData<ShellFavorites>(['shell'])?.navFavoriteItems;
+      qc.setQueryData<ShellFavorites>(['shell'], (d) =>
+        d ? { ...d, navFavorites: next, ...(nextItems ? { navFavoriteItems: nextItems } : {}) } : d,
+      );
       try {
-        const res = await apiSend<{ navFavorites: string[] }>('/api/profile/nav-favorites', 'PUT', {
-          navFavorites: next,
-        });
+        const res = await apiSend<{ navFavorites: string[]; navFavoriteItems?: NavFavoriteItem[] }>(
+          '/api/profile/nav-favorites',
+          'PUT',
+          { navFavorites: next },
+        );
         qc.setQueryData<ShellFavorites>(['shell'], (d) =>
-          d ? { ...d, navFavorites: res.navFavorites } : d,
+          d
+            ? {
+                ...d,
+                navFavorites: res.navFavorites,
+                ...(res.navFavoriteItems ? { navFavoriteItems: res.navFavoriteItems } : {}),
+              }
+            : d,
         );
       } catch {
-        qc.setQueryData<ShellFavorites>(['shell'], (d) => (d ? { ...d, navFavorites: prev } : d));
+        qc.setQueryData<ShellFavorites>(['shell'], (d) =>
+          d ? { ...d, navFavorites: prev, navFavoriteItems: before } : d,
+        );
         toast.error('Could not save your favorites');
       }
     },
@@ -205,21 +326,56 @@ export function useNavFavorites(): {
   }, [loaded, server, save]);
 
   const favorites = useMemo(() => (legacy ? local : (server ?? [])), [legacy, local, server]);
+  const items = useMemo(() => serverItems ?? [], [serverItems]);
 
   const toggleFavorite = useCallback(
-    (href: string) => {
+    (href: string, item?: NavFavoriteItem) => {
+      const adding = !favorites.includes(href);
       if (legacy) {
+        if (adding && favorites.length >= NAV_FAVORITES_MAX) return toast.error(FAVORITES_FULL);
         setLocal(toggleFavoriteIn(window.localStorage, href, activeSession()?.id));
         window.dispatchEvent(new CustomEvent(EVENT));
         return;
       }
       if (server === undefined) return; // not loaded yet
-      void save(toggledList(server, href), server);
+      const base = pruned(server, serverItems);
+      if (adding && base.length >= NAV_FAVORITES_MAX) return toast.error(FAVORITES_FULL);
+      const next = toggledList(base, href);
+      const nextItems =
+        serverItems && item && adding
+          ? [...serverItems.filter((i) => i.href !== href), item]
+          : undefined;
+      void save(next, server, nextItems);
     },
-    [legacy, server, save],
+    [favorites, legacy, server, serverItems, save, toast],
+  );
+
+  const moveFavorite = useCallback(
+    (entry: string, to: string) => {
+      // By entry, not by row: a hidden entry between two rows must not shift
+      // the move by one.
+      const at = (list: readonly string[]) => [list.indexOf(entry), list.indexOf(to)] as const;
+      if (legacy) {
+        const next = moved(local, ...at(local));
+        writeFavoritesIn(window.localStorage, next, activeSession()?.id);
+        setLocal(next);
+        window.dispatchEvent(new CustomEvent(EVENT));
+        return;
+      }
+      if (server === undefined) return;
+      void save(pruned(moved(server, ...at(server)), serverItems), server);
+    },
+    [legacy, local, server, serverItems, save],
   );
 
   const isFavorite = useCallback((href: string) => favorites.includes(href), [favorites]);
 
-  return { favorites, isFavorite, toggleFavorite };
+  return {
+    favorites,
+    items,
+    itemsSupported: serverItems !== undefined,
+    isFavorite,
+    toggleFavorite,
+    moveFavorite,
+  };
 }

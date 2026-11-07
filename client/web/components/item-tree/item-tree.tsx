@@ -11,6 +11,7 @@ import { grantErrorText, isNoGrants, moveChangesAccess, type MovePreview } from 
 import { useListWorkspace } from '@/components/workspaces/use-list-workspace';
 import { useWorkspaceJump } from '@/components/workspaces/workspace-hit-tag';
 import { guardedNavigate } from '@/lib/nav-guard';
+import { itemFavoriteHref, useNavFavorites } from '@/lib/nav-favorites';
 import {
   useCallback,
   useEffect,
@@ -47,6 +48,8 @@ import {
   PinOff,
   Search,
   Share2,
+  Star,
+  StarOff,
   Table2,
   TrendingUp,
   X,
@@ -741,6 +744,34 @@ export function ItemTree({
     openFolder(folder);
   };
 
+  // A favorite is the login's own mark too, kept with its sidebar
+  // favorites (the profile's navFavorites, as `/n/<id>`). Offered only by a
+  // brain that says what the sidebar shows for one, and never for a
+  // member's draft, which is not a brain item.
+  const favorites = useNavFavorites();
+  const favoriteRow = (item: TreeItem) => {
+    if (!favorites.itemsSupported || item.source || item.state === 'private') return null;
+    const href = itemFavoriteHref(item.id);
+    const on = favorites.isFavorite(href);
+    return (
+      <DropdownMenuItem
+        onSelect={() =>
+          favorites.toggleFavorite(href, {
+            href,
+            id: item.id,
+            kind,
+            title: item.title,
+            icon: item.icon,
+            color: item.color,
+          })
+        }
+      >
+        {on ? <StarOff /> : <Star />}
+        {on ? 'Remove from favorites' : 'Add to favorites'}
+      </DropdownMenuItem>
+    );
+  };
+
   const togglePin = (item: TreeItem) =>
     void write(() => setTreeItemPinned(item.id, !pinned.has(item.id)), 'Could not change the pin');
 
@@ -875,6 +906,7 @@ export function ItemTree({
                 {pinned.has(item.id) ? 'Unpin' : 'Pin to top'}
               </DropdownMenuItem>
             )}
+            {favoriteRow(item)}
             {canMove(item) && (
               <>
                 <DropdownMenuItem

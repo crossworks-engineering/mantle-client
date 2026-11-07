@@ -18,8 +18,20 @@ import {
 } from '@mantle/web-ui/ui/tooltip';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { activeNavHref } from '@/lib/nav-active';
-import { favoriteItems, useNavFavorites } from '@/lib/nav-favorites';
+import {
+  favoriteEntries,
+  favoriteItemHref,
+  useNavFavorites,
+  type NavFavoriteItem,
+} from '@/lib/nav-favorites';
 import { NAV_SCOPES, railGroups, useNavScope, type NavScope } from '@/lib/nav-scope';
+import { KIND_ICONS } from '@/lib/kind-look';
+import {
+  FavoriteGlyph,
+  FavoriteRow,
+  FavoritesEmpty,
+  FavoritesSortable,
+} from '@/components/layout/sidebar-favorites';
 import { hasArea, navWithAreas } from '@/lib/workspaces';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { useMessengerUnread } from '@/components/messenger/messenger-shell';
@@ -32,8 +44,12 @@ import {
   type NavItem as BaseNavItem,
 } from '@mantle/web-ui/layout/nav-items';
 
-/** A rendered nav item may carry a live badge (e.g. Pending approvals). */
-type NavItem = BaseNavItem & { badge?: number };
+/** A rendered nav item may carry a live badge (e.g. Pending approvals). A
+ *  row of the Favorites group carries its stored `entry`, and an item's row
+ *  its `look` (its own icon and colour). */
+type NavItem = BaseNavItem & { badge?: number; entry?: string; look?: NavFavoriteItem };
+
+const FAVORITES = 'Favorites';
 
 type NavGroup = BaseNavGroup & { items: NavItem[] };
 
@@ -60,7 +76,7 @@ export function SidebarNav({
     void queryClient.invalidateQueries({ queryKey: ['shell'] });
   });
 
-  const { favorites, isFavorite, toggleFavorite } = useNavFavorites();
+  const { favorites, items, isFavorite, toggleFavorite, moveFavorite } = useNavFavorites();
   const { scope, setScope } = useNavScope();
 
   // The shared nav list, with the live pending-approvals badge injected onto
@@ -73,8 +89,9 @@ export function SidebarNav({
   // Screens the login may not manage are not offered (plan 7.1: they hide by
   // the areas /api/shell names; a brain before W5a names none, so all show).
   const areas = useShellWorkspaces()?.areas;
-  // The Work / Settings / Admin choice is the settings area's (nav-scope.ts,
-  // railGroups): a member or a client sees what it may open, flat.
+  // The Favorites / Work / Admin choice is the settings area's (nav-scope.ts,
+  // railGroups): a member or a client sees what it may open, flat, under its
+  // Favorites.
   const scoped = hasArea(areas, 'settings');
   // Chats (Messenger V1 Phase 2): hidden when the brain answers its unread
   // count with 404 (a brain before the messenger), else with that count,
@@ -103,31 +120,37 @@ export function SidebarNav({
 
   // Favorites is a VIEW over the groups above, not a place items move to: a
   // starred screen keeps its home row, exactly as pinning works everywhere
-  // else. `favoriteItems` resolves each href against the LIVE list, which is
-  // what stops a star on a since-retired route becoming a dead row.
-  // Favourites resolve against the FULL list, never the scoped one: a starred
-  // screen must survive the narrowing, which is the whole reason narrowing is
-  // safe. Scoping first would make a star silently stop working in Work mode.
-  const pinned = favoriteItems(favorites, groups);
-  // Favorites is not collapsible: a list the owner curated by hand is already
-  // the short list. Absent entirely when nothing is starred — an empty heading
-  // is worse than none, and it is how this stays invisible until it is used.
-  const withFavorites = (gs: NavGroup[]): NavGroup[] =>
-    pinned.length > 0 ? [{ label: 'Favorites', items: pinned }, ...gs] : gs;
+  // else. Each screen entry resolves against the LIVE list, which is what
+  // stops a star on a since-retired route becoming a dead row, and each item
+  // entry against what the brain sent (an item deleted, or no longer read,
+  // is not there). The FULL list, never the scoped one.
+  const favoriteRows: NavItem[] = favoriteEntries(favorites, groups, items).map((e) =>
+    e.item
+      ? {
+          name: e.item.title || 'Untitled',
+          href: favoriteItemHref(e.item),
+          icon: KIND_ICONS[e.item.kind],
+          entry: e.entry,
+          look: e.item,
+        }
+      : { ...e.nav, entry: e.entry },
+  );
+  const favoritesGroup: NavGroup = { label: FAVORITES, items: favoriteRows };
 
   // Two bases, and which one is in play depends on whether you are TYPING.
   //
-  // Browsing shows the scope you chose. Searching ignores it and looks at
-  // everything, because a filter that only finds what is already on screen is
-  // not a filter — in Work mode, typing "backups" found nothing at all, and
-  // the box gave no hint that it was answering for a subset. A search box that
-  // can return "no matches" for something that plainly exists teaches people
-  // not to trust it.
-  //
-  // Nothing has to be said about where a hit came from: results keep their
-  // group heading, so a match under "System" is visibly outside Work.
-  const browseGroups = withFavorites(railGroups(groups, scope, scoped));
-  const searchGroups = withFavorites(groups);
+  // Browsing shows the tab you chose: Favorites alone, or a slice of the
+  // list. A login with no tabs sees its Favorites above its few screens,
+  // always, so the empty state says where the stars are. Searching ignores
+  // the tab and looks at everything, because a filter that only finds what
+  // is already on screen is not a filter. Results keep their group heading,
+  // so a match under "System" is visibly outside Work.
+  const browseGroups = !scoped
+    ? [favoritesGroup, ...groups]
+    : scope === 'favorites'
+      ? [favoritesGroup]
+      : railGroups(groups, scope, scoped);
+  const searchGroups = favoriteRows.length > 0 ? [favoritesGroup, ...groups] : groups;
 
   // Most-specific-wins rather than a per-item match: "Settings" at `/settings`
   // is a prefix of every other settings route, so an independent test would
@@ -160,7 +183,11 @@ export function SidebarNav({
     );
     const inner = (
       <>
-        <Icon className="size-4 shrink-0" aria-hidden />
+        {item.look ? (
+          <FavoriteGlyph item={item.look} />
+        ) : (
+          <Icon className="size-4 shrink-0" aria-hidden />
+        )}
         <span className="flex-1 truncate group-data-[nav-collapsed=true]/shell:hidden">
           {item.name}
         </span>
@@ -200,7 +227,7 @@ export function SidebarNav({
     // the gesture belongs where the labels are.
     if (collapsed) {
       return (
-        <Tooltip key={item.href}>
+        <Tooltip key={item.entry ?? item.href}>
           <TooltipTrigger asChild>{trigger}</TooltipTrigger>
           <TooltipContent side="right" className="flex items-center gap-2">
             {item.name}
@@ -211,6 +238,29 @@ export function SidebarNav({
             )}
           </TooltipContent>
         </Tooltip>
+      );
+    }
+
+    // A Favorites row: its grip and its menu (Move up, Move down, Remove).
+    if (item.entry) {
+      const entry = item.entry;
+      const index = favoriteRows.findIndex((r) => r.entry === entry);
+      return (
+        <FavoriteRow
+          key={entry}
+          entry={entry}
+          name={item.name}
+          index={index}
+          count={favoriteRows.length}
+          sortable={!filtering}
+          onMove={(to) => {
+            const target = favoriteRows[to]?.entry;
+            if (target) moveFavorite(entry, target);
+          }}
+          onRemove={() => toggleFavorite(entry)}
+        >
+          {trigger}
+        </FavoriteRow>
       );
     }
 
@@ -235,9 +285,10 @@ export function SidebarNav({
             // Quiet until wanted: fifty always-lit stars would compete with the
             // labels they sit beside. It still occupies its space when hidden,
             // so no row jumps when the pointer arrives.
+            // Where nothing hovers (a touch screen) the star always shows.
             starred
               ? 'text-foreground/70 hover:text-foreground'
-              : 'text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover/nav-row:opacity-100',
+              : 'text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover/nav-row:opacity-100 [@media(hover:none)]:opacity-100',
           )}
         >
           <Star className={cn('size-3.5', starred && 'fill-current')} aria-hidden />
@@ -324,7 +375,13 @@ export function SidebarNav({
           <p className="px-3 py-2 text-sm text-muted-foreground">No matches.</p>
         ) : (
           visibleGroups.map((group) => (
-            <NavGroupBlock key={group.label} group={group} renderItem={renderItem} />
+            <NavGroupBlock
+              key={group.label}
+              group={group}
+              renderItem={renderItem}
+              sortable={group.label === FAVORITES && !collapsed}
+              onMove={moveFavorite}
+            />
           ))
         )}
       </nav>
@@ -355,10 +412,21 @@ export function SidebarNav({
 function NavGroupBlock({
   group,
   renderItem,
+  sortable = false,
+  onMove,
 }: {
   group: NavGroup;
   renderItem: (item: NavItem) => React.ReactNode;
+  /** The Favorites group, expanded: its rows drag to a new order. */
+  sortable?: boolean;
+  onMove?: (entry: string, to: string) => void;
 }) {
+  const rows =
+    group.label === FAVORITES && group.items.length === 0 ? (
+      <FavoritesEmpty />
+    ) : (
+      group.items.map(renderItem)
+    );
   return (
     <div className="flex flex-col gap-0.5">
       {/* Hidden at icon-rail width, where a text label has nowhere to go. The
@@ -366,7 +434,16 @@ function NavGroupBlock({
       <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground group-data-[nav-collapsed=true]/shell:hidden">
         {group.label}
       </p>
-      {group.items.map(renderItem)}
+      {sortable && onMove ? (
+        <FavoritesSortable
+          entries={group.items.map((i: NavItem) => i.entry ?? i.href)}
+          onMove={onMove}
+        >
+          {rows}
+        </FavoritesSortable>
+      ) : (
+        rows
+      )}
     </div>
   );
 }
