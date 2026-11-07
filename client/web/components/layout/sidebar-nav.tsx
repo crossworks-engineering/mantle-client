@@ -174,7 +174,7 @@ export function SidebarNav({
             </Badge>
             {/* Collapsed: a dot stands in for the count. */}
             <span
-              className="absolute right-1.5 top-1.5 hidden size-2 rounded-full bg-primary ring-2 ring-sidebar group-data-[nav-collapsed=true]/shell:block"
+              className="absolute right-1.5 top-1.5 hidden size-2 rounded-full bg-primary-ink ring-2 ring-sidebar group-data-[nav-collapsed=true]/shell:block"
               aria-hidden
             />
           </>
@@ -236,7 +236,7 @@ export function SidebarNav({
             // labels they sit beside. It still occupies its space when hidden,
             // so no row jumps when the pointer arrives.
             starred
-              ? 'text-foreground/70 hover:text-foreground'
+              ? 'text-foreground/80 hover:text-foreground'
               : 'text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover/nav-row:opacity-100',
           )}
         >

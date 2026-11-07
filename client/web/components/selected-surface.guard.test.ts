@@ -155,3 +155,33 @@ describe('a selected card keeps 4.5:1 in every theme and mode', () => {
     }
   });
 });
+
+describe('the left sidebar keeps its contrast in every theme and mode', () => {
+  const all = themes();
+  const failing = (min: number, check: (v: Record<string, string>) => number) =>
+    all.filter(([, v]) => check(v) < min).map(([k, v]) => `${k} ${check(v).toFixed(2)}`);
+  const c = (v: Record<string, string>, name: string) => hex(v[name]!);
+  /** A hovered row: `hover:bg-foreground/[0.06]` on the sidebar. */
+  const hovered = (v: Record<string, string>) => over(c(v, 'foreground'), 0.06, c(v, 'sidebar'));
+
+  it('text at 4.5:1: the active, idle, hovered rows, the headings and the filter tabs', () => {
+    expect(
+      failing(4.5, (v) => ratio(c(v, 'sidebar-accent-foreground'), c(v, 'sidebar-accent'))),
+    ).toEqual([]);
+    expect(failing(4.5, (v) => ratio(c(v, 'muted-foreground'), c(v, 'sidebar')))).toEqual([]);
+    expect(failing(4.5, (v) => ratio(c(v, 'foreground'), hovered(v)))).toEqual([]);
+    expect(failing(4.5, (v) => ratio(c(v, 'accent-foreground'), c(v, 'accent')))).toEqual([]);
+    expect(failing(4.5, (v) => ratio(c(v, 'muted-foreground'), c(v, 'muted')))).toEqual([]);
+  });
+
+  it('icons and marks at 3:1: the star, and the folded rail unread dot', () => {
+    const nav = readFileSync(join(web, 'components', 'layout', 'sidebar-nav.tsx'), 'utf8');
+    expect(nav).toContain("? 'text-foreground/80 hover:text-foreground'");
+    expect(nav).toContain('rounded-full bg-primary-ink ring-2 ring-sidebar');
+    const star = (v: Record<string, string>) => over(c(v, 'foreground'), 0.8, c(v, 'sidebar'));
+    expect(failing(3, (v) => ratio(star(v), c(v, 'sidebar')))).toEqual([]);
+    expect(failing(3, (v) => ratio(c(v, 'muted-foreground'), hovered(v)))).toEqual([]);
+    // The dot sits in a sidebar-coloured ring, so the ring is what it meets.
+    expect(failing(3, (v) => ratio(c(v, 'primary-ink'), c(v, 'sidebar')))).toEqual([]);
+  });
+});

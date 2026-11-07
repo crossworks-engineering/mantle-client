@@ -91,7 +91,7 @@ export function ChangelogLink({ onNavigate }: { onNavigate?: () => void }) {
             <>
               {/* Collapsed: the dot moves to the megaphone's corner. */}
               <span
-                className="size-2 shrink-0 rounded-full bg-primary group-data-[nav-collapsed=true]/shell:absolute group-data-[nav-collapsed=true]/shell:right-1.5 group-data-[nav-collapsed=true]/shell:top-1.5 group-data-[nav-collapsed=true]/shell:ring-2 group-data-[nav-collapsed=true]/shell:ring-sidebar"
+                className="size-2 shrink-0 rounded-full bg-primary-ink group-data-[nav-collapsed=true]/shell:absolute group-data-[nav-collapsed=true]/shell:right-1.5 group-data-[nav-collapsed=true]/shell:top-1.5 group-data-[nav-collapsed=true]/shell:ring-2 group-data-[nav-collapsed=true]/shell:ring-sidebar"
                 aria-hidden
               />
               <span className="sr-only">What&apos;s new?</span>
