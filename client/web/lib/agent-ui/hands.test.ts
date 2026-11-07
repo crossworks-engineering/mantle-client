@@ -105,7 +105,17 @@ beforeEach(() => {
   g.HTMLElement = FakeElement;
 });
 
-afterEach(() => {
+/** Every controller a test made, disposed before the window goes: no timer
+ *  of theirs (the late-write release, the note) outlives its test. */
+const live: { dispose: () => void }[] = [];
+function made<T extends { dispose: () => void }>(h: T): T {
+  live.push(h);
+  return h;
+}
+
+afterEach(async () => {
+  for (const h of live.splice(0)) h.dispose();
+  (await import('./hands')).agentHands().dispose();
   for (const k of GLOBALS) g[k] = saved[k];
   vi.useRealTimers();
 });
@@ -124,7 +134,7 @@ async function heldOf(h: { get: () => { held: unknown } }) {
 describe('the request guard and the brain’s refusal', () => {
   it('holds a tagged write the brain refused, and on Allow sends it once untagged', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     answer = (c) => (c.tag ? refusal() : new Response('{"ok":true}', { status: 201 }));
     h.begin('Lesson', { tag: 'lesson:0a0a0a0a-0a0a-40a0-80a0-000000000001' });
     const sent = window.fetch('/api/notes', { method: 'POST', body: '{"title":"x"}' });
@@ -140,7 +150,7 @@ describe('the request guard and the brain’s refusal', () => {
 
   it('Not now sends nothing more', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     answer = (c) => (c.tag ? refusal() : new Response('{}', { status: 201 }));
     h.begin('Agent');
     await h.withCall('0a0a0a0a-0a0a-40a0-80a0-000000000002', async () => undefined);
@@ -154,7 +164,7 @@ describe('the request guard and the brain’s refusal', () => {
 
   it('never tags background bookkeeping: a frame ticket, an open counted', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Lesson', { tag: 'lesson:x' });
     await window.fetch('/api/apps/a1/frame-ticket', { method: 'POST' });
     await window.fetch('/api/tree/items/i1/opened', { method: 'POST' });
@@ -165,7 +175,7 @@ describe('the request guard and the brain’s refusal', () => {
 
   it('a 403 that is not the brain’s refusal is the page’s own answer', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     answer = () => new Response('{"error":"forbidden"}', { status: 403 });
     h.begin('Lesson', { tag: 'lesson:x' });
     const res = await window.fetch('/api/notes', { method: 'POST', body: '{}' });
@@ -177,7 +187,7 @@ describe('the request guard and the brain’s refusal', () => {
 
   it('holds a percent-encoded risky path before it is sent', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     const sent = window.fetch('/api/%73hares', { method: 'POST', body: '{}' });
     const held = await heldOf(h);
@@ -190,7 +200,7 @@ describe('the request guard and the brain’s refusal', () => {
 
   it('a request an action sets off is checked though the action ended the session', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     let caught: unknown = null;
     control.addEventListener('click', () => {
@@ -289,7 +299,7 @@ describe('XHR uploads meet the same guard', () => {
 describe('a call past its expiresAt', () => {
   it('an action it queued that starts too late is not run: window_gone', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     // The first action holds the queue (its cursor travels for a while).
     const first = h.withCall('c1', () => h.click({ id: 'a' }));
@@ -303,7 +313,7 @@ describe('a call past its expiresAt', () => {
 describe('a supersede cancel the agent sets off', () => {
   it('is held, though a plain cancel is the window’s own', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     await window.fetch('/api/assistant/turn/t1/cancel', { method: 'POST' });
     expect(h.get().held).toBeNull();
@@ -323,7 +333,7 @@ describe('a supersede cancel the agent sets off', () => {
 describe('ui_type with replace', () => {
   it('on a field that holds something waits for the user; on an empty one it does not', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     const input = new FakeInput();
     g.document = { querySelectorAll: () => [input] };
     h.begin('Agent');
@@ -345,7 +355,7 @@ describe('ui_type with replace', () => {
 describe('a multipart write the brain refuses', () => {
   it('a fetch with FormData is held and sent again untagged on Allow', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     answer = (c) => (c.tag ? refusal() : new Response('{"ok":true}', { status: 201 }));
     h.begin('Lesson', { tag: 'lesson:x' });
     const form = new FormData();
@@ -363,14 +373,16 @@ describe('a multipart write the brain refuses', () => {
 describe('late writes of the last action', () => {
   it('after Stop, a write within 2 s is still tagged; after that it is not', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Lesson', { tag: 'lesson:late' });
     expect(await h.click({ id: 'add' })).toEqual({ ok: true });
     vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     h.end();
     await window.fetch('/api/notes', { method: 'POST', body: '{}' });
-    // A risky one has nobody to ask any more: it is not sent.
+    // A risky one has nobody to ask any more: it is not sent, and a host
+    // note says so.
     await expect(window.fetch('/api/tasks/1', { method: 'DELETE' })).rejects.toThrow();
+    expect(h.get().note).toBe("Lesson's last action tried to delete something; not sent.");
     vi.advanceTimersByTime(2100);
     await window.fetch('/api/notes', { method: 'POST', body: '{}' });
     expect(calls.map((c) => c.tag)).toEqual(['lesson:late', null]);
@@ -378,7 +390,7 @@ describe('late writes of the last action', () => {
 
   it('after the user takes over, a write within 2 s is tagged and a risky one held', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     await h.withCall('0a0a0a0a-0a0a-40a0-80a0-000000000009', () => h.click({ id: 'add' }));
     const onInput = (h as unknown as { onUserInput: (e: Event) => void }).onUserInput;
@@ -395,10 +407,41 @@ describe('late writes of the last action', () => {
   });
 });
 
+describe('a late write the brain refuses after Stop', () => {
+  it('shows a note, not the raw 403', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    answer = (c) => (c.tag ? refusal() : new Response('{}', { status: 201 }));
+    h.begin('Saskia', { tag: 'lesson:x' });
+    expect(await h.click({ id: 'add' })).toEqual({ ok: true });
+    h.end();
+    await expect(window.fetch('/api/notes', { method: 'POST', body: '{}' })).rejects.toThrow(
+      /^Not sent/,
+    );
+    expect(h.get().note).toBe("Saskia's last action tried to change a setting; not sent.");
+    expect(calls).toHaveLength(1);
+    h.dismissNote();
+    expect(h.get().note).toBeNull();
+  });
+
+  it('a release after the window has gone does not throw', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    expect(await h.click({ id: 'add' })).toEqual({ ok: true });
+    vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    h.end();
+    const win = g.window;
+    g.window = undefined;
+    expect(() => vi.advanceTimersByTime(2100)).not.toThrow();
+    g.window = win;
+  });
+});
+
 describe('Stop really stops', () => {
   it('Stop while the cursor travels: nothing is pressed, the answer is stopped', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     const out = h.click({ id: 'add' });
     await new Promise((r) => setTimeout(r, 100));
@@ -409,7 +452,7 @@ describe('Stop really stops', () => {
 
   it('a lesson begun on a session the user took over leaves it paused', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     // The user's own click (a trusted event) pauses it.
     const onInput = (h as unknown as { onUserInput: (e: Event) => void }).onUserInput;
@@ -425,7 +468,7 @@ describe('Stop really stops', () => {
 describe('links stay in the app', () => {
   it('a click on a link to another origin or a refused route is unsafe_route', async () => {
     const { AgentHands } = await import('./hands');
-    const h = new AgentHands();
+    const h = made(new AgentHands());
     h.begin('Agent');
     const link = new FakeElement();
     control.ancestors['a[href]'] = link;

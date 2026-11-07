@@ -53,11 +53,12 @@ export function AgentOverlay() {
     return () => hands.setNavigator(null);
   }, [router]);
 
-  if (!state.active && !state.consent) return null;
+  if (!state.active && !state.consent && !state.note) return null;
   if (!state.active) {
     return (
       <div data-agent-host="" className="pointer-events-none fixed inset-0 z-[80]">
-        <ConsentPrompt state={state} />
+        {state.consent && <ConsentPrompt state={state} />}
+        {state.note && <LateNote text={state.note} />}
       </div>
     );
   }
@@ -108,6 +109,24 @@ function AgentBar({ state }: { state: HandsState }) {
       <Button size="sm" variant="destructive" onClick={() => agentHands().end()}>
         Stop
         <kbd className="ml-1 rounded border border-border/50 px-1 text-[10px]">Esc</kbd>
+      </Button>
+    </div>
+  );
+}
+
+/** A write of the agent's last action that went nowhere after Stop: said
+ *  here, not left to fail silently or as a raw error. */
+function LateNote({ text }: { text: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="pointer-events-auto absolute bottom-4 left-1/2 flex w-fit max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
+    >
+      <ShieldAlert className="size-4 shrink-0 text-warning-ink" aria-hidden />
+      <span className="min-w-0">{text}</span>
+      <Button size="sm" variant="ghost" onClick={() => agentHands().dismissNote()}>
+        OK
       </Button>
     </div>
   );

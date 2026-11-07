@@ -26,6 +26,39 @@ export function ownerAppSandboxProps(appId: string): {
 } {
   return {
     apiBase: apiUrl(`/api/apps/${appId}`),
-    fetcher: (input, init) => fetch(input, withAuth(init)),
+    fetcher: async (input, init) => readableToolRefusal(input, await fetch(input, withAuth(init))),
   };
+}
+
+/** The relay's reasons it already words itself (share-ui AppSandbox). */
+const RELAY_WORDED = new Set(['review-test-read-only', 'team-rules']);
+
+/**
+ * A tool call the brain refuses with its own plain reason (a draft
+ * preview's build, which an agent edited, may not run the app's tools):
+ * the relay (share-ui AppSandbox) shows a bare 403 as "this app tried to
+ * use a tool it hasn't declared", which would send the builder the wrong
+ * way. So the answer is handed on in the shape the relay shows in the
+ * brain's own words (reason `team-rules`, `error`), with the brain's reason
+ * kept as `refused`. Nothing is retried: the relay and this fetcher send a
+ * tool call once.
+ */
+export async function readableToolRefusal(input: string, res: Response): Promise<Response> {
+  if (res.status !== 403 || !/\/tool-broker(\?|$)/.test(input)) return res;
+  let body: Record<string, unknown>;
+  try {
+    body = (await res.clone().json()) as Record<string, unknown>;
+  } catch {
+    return res;
+  }
+  const reason = typeof body.reason === 'string' ? body.reason : '';
+  const words = typeof body.error === 'string' ? body.error.trim() : '';
+  // An undeclared tool (no reason) keeps the relay's own words, and so do
+  // the reasons it knows.
+  // The brain's refusal of an agent's write is the hands' (lib/agent-ui).
+  if (!reason || !words || RELAY_WORDED.has(reason) || words === 'agent_refused') return res;
+  return new Response(
+    JSON.stringify({ ...body, ok: false, reason: 'team-rules', refused: reason, error: words }),
+    { status: 403, headers: { 'content-type': 'application/json' } },
+  );
 }

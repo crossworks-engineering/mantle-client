@@ -86,7 +86,9 @@ async function guardedXhr<T>(opts: XhrUploadOptions): Promise<T> {
   } catch (err) {
     if (!(err instanceof UploadHttpError) || !isAgentRefusal(err.status, err.body)) throw err;
     if (!(await hands.allowRefused('POST', opts.url, err.status, err.body))) {
-      throw hands.get().active ? new UploadBlockedError() : err;
+      // Not the raw 403 either way: Not now, or a late upload after Stop
+      // (the hands' note says which).
+      throw new UploadBlockedError();
     }
     return hands.track(sendXhr<T>(opts));
   }

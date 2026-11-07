@@ -31,6 +31,7 @@ import {
   isBookkeepingRequest,
   linkRefusal,
   MAX_WAIT_MS,
+  heldText,
   refuse,
   riskOfRequest,
   safeAgentRoute,
@@ -66,6 +67,9 @@ export type HandsState = {
   /** The control pointed at; the overlay follows it as the page moves. */
   spotlight: { el: Element; caption: string } | null;
   held: HeldRequest | null;
+  /** A write of the agent's last action that went nowhere after Stop: a
+   *  small host note says so, instead of a silent block or a raw 403. */
+  note: string | null;
 };
 
 const IDLE: HandsState = {
@@ -76,6 +80,7 @@ const IDLE: HandsState = {
   cursor: null,
   spotlight: null,
   held: null,
+  note: null,
 };
 
 /** How long the cursor takes to reach a target before acting. */
@@ -86,6 +91,8 @@ const QUIET_MS = 250;
  *  the agent's (a debounced save of what it typed), also when the user
  *  stopped or took over meanwhile: tagged, and held when risky. */
 const LATE_MS = 2000;
+/** How long the host note about a late write stays up. */
+const NOTE_MS = 8000;
 /** How long a held request waits for the user before it counts as Not now. */
 const HELD_MS = 120_000;
 
@@ -123,6 +130,9 @@ export class AgentHands {
   /** The wrapper this controller put on `window.fetch`, so it only takes
    *  off its own. */
   private wrapper: typeof fetch | null = null;
+  /** Who drove the session that ended, for the late-write note. */
+  private lastAgent = '';
+  private noteTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── state for the overlay ────────────────────────────────────────────────
 
@@ -176,6 +186,7 @@ export class AgentHands {
     window.removeEventListener('keydown', this.onUserInput, true);
     this.state.held?.answer(false);
     this.refs.clear();
+    this.lastAgent = this.state.agent;
     this.set(IDLE);
     if (this.acting === 0) this.releaseLater();
   }
@@ -187,7 +198,11 @@ export class AgentHands {
     this.releaseTimer = setTimeout(
       () => {
         this.releaseTimer = null;
-        if (!this.state.active && this.acting === 0) this.release();
+        try {
+          if (!this.state.active && this.acting === 0) this.release();
+        } catch {
+          /* the window went away first */
+        }
       },
       Math.max(0, this.lateUntil - Date.now()),
     );
@@ -197,6 +212,36 @@ export class AgentHands {
     this.unwrapFetch();
     this.callTag = null;
     this.lateTag = null;
+  }
+
+  /** Stop every timer and take the guard off now: for a page (or a test)
+   *  that is going away. */
+  dispose(): void {
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    if (this.noteTimer) clearTimeout(this.noteTimer);
+    this.releaseTimer = null;
+    this.noteTimer = null;
+    this.lateUntil = 0;
+    this.end();
+    this.release();
+  }
+
+  /** Say that a late write of the agent's went nowhere (after Stop). */
+  private noteLate(risk: RequestRisk, reason: string | null) {
+    const who = this.lastAgent || 'The agent';
+    this.set({ note: `${who}'s last action tried to ${heldText(risk, reason)}; not sent.` });
+    if (this.noteTimer) clearTimeout(this.noteTimer);
+    this.noteTimer = setTimeout(() => {
+      this.noteTimer = null;
+      this.set({ note: null });
+    }, NOTE_MS);
+  }
+
+  /** Close the host note. */
+  dismissNote(): void {
+    if (this.noteTimer) clearTimeout(this.noteTimer);
+    this.noteTimer = null;
+    this.set({ note: null });
   }
 
   /** The agent drives now: a session runs and the user has not taken over.
@@ -286,8 +331,14 @@ export class AgentHands {
     if (!agents) return { blocked: false, tag: null };
     const risk = riskOfRequest(m, url, body ?? undefined);
     if (risk) {
-      // Stopped mid-action: nobody is asked, nothing is sent.
-      const allowed = this.state.active ? await this.ask(risk, m, url) : false;
+      // Stopped meanwhile: nobody is asked, nothing is sent, and a note
+      // says so.
+      if (!this.state.active) {
+        this.noteLate(risk, null);
+        this.blockedSinceAction = true;
+        return { blocked: true };
+      }
+      const allowed = await this.ask(risk, m, url);
       if (!allowed) {
         this.blockedSinceAction = true;
         return { blocked: true };
@@ -312,9 +363,15 @@ export class AgentHands {
    * False when it is not a refusal (the page's own 403), or Not now.
    */
   async allowRefused(method: string, url: string, status: number, body: unknown): Promise<boolean> {
-    if (!isAgentRefusal(status, body) || !this.state.active) return false;
+    if (!isAgentRefusal(status, body)) return false;
     const reason = (body as { reason?: unknown }).reason;
     const why = typeof reason === 'string' ? reason.slice(0, 40) : null;
+    if (!this.state.active) {
+      // A late write the brain refused after Stop: nobody to ask; the note
+      // says so (the caller keeps the raw 403 off the screen).
+      this.noteLate('refused', why);
+      return false;
+    }
     if (await this.ask('refused', method.toUpperCase(), url, why)) return true;
     this.blockedSinceAction = true;
     return false;
@@ -362,8 +419,12 @@ export class AgentHands {
       }
       if (!isAgentRefusal(res.status, body)) return res;
       if (!(await this.allowRefused(method, url, res.status, body))) {
-        if (!this.state.active) return res;
-        throw new TypeError('Blocked: the user did not allow this request.');
+        // Not the raw 403: the page shows plain words either way.
+        throw new TypeError(
+          this.state.active
+            ? 'Blocked: the user did not allow this request.'
+            : 'Not sent: the agent may not do this, and the user was not there to allow it.',
+        );
       }
       headers.delete(AGENT_CALL_HEADER);
       return send(spare ?? input, { ...init, headers });
@@ -371,7 +432,14 @@ export class AgentHands {
   }
 
   private unwrapFetch() {
-    if (this.realFetch && window.fetch === this.wrapper) window.fetch = this.realFetch;
+    // The window may be gone already (a page unloading, a test's teardown).
+    try {
+      if (this.realFetch && typeof window !== 'undefined' && window.fetch === this.wrapper) {
+        window.fetch = this.realFetch;
+      }
+    } catch {
+      /* nothing left to unwrap */
+    }
     this.realFetch = null;
     this.wrapper = null;
   }
