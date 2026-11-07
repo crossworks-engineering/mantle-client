@@ -347,7 +347,7 @@ export function FilePane({
       <div
         className={`truncate border-b px-3 py-1.5 font-mono text-xs ${
           active
-            ? 'border-primary/40 bg-primary/10 text-primary-ink'
+            ? 'border-primary/40 bg-primary/10 text-foreground'
             : 'border-border bg-muted/30 text-muted-foreground'
         }`}
       >

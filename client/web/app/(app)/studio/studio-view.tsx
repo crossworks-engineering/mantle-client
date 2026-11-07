@@ -514,7 +514,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                   className={
                     'flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left text-[13px] ' +
                     (workerIndex === i
-                      ? 'border-primary bg-[color:var(--selected,color-mix(in_oklab,var(--accent)_50%,transparent))]'
+                      ? 'border-primary bg-selected'
                       : 'border-border hover:bg-accent/60')
                   }
                 >

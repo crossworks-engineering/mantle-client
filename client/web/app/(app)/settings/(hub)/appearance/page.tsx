@@ -83,7 +83,7 @@ function Controls() {
                 className={cn(
                   'flex flex-col items-center gap-1.5 border-border p-2.5 text-xs text-muted-foreground',
                   'hover:bg-accent/40 hover:text-foreground',
-                  'data-[state=checked]:border-primary data-[state=checked]:bg-[color:var(--selected,color-mix(in_oklab,var(--accent)_50%,transparent))] data-[state=checked]:text-foreground',
+                  'data-[state=checked]:border-primary data-[state=checked]:bg-selected data-[state=checked]:text-foreground',
                 )}
               >
                 <Icon className="size-4" aria-hidden />
