@@ -204,7 +204,7 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   know. A notice decides on a list fetched again after the event, so a mute
   set anywhere is seen. While the stream is deaf (the gap, the polling
   fallback) the list itself says which chats moved, and those pop.
-- **Bubbles** (Project Bubble Chat, phase 1; Settings > Profile, off by
+- **Bubbles** (Project Bubble Chat, phases 1 and 2; Settings > Profile, off by
   default, saved in this browser): the toast gives way to a card
   (`components/bubbles/`, the rules in `lib/bubbles/`). It stays until it is
   closed or the chat is read. Both chat systems take one path: the list
@@ -218,7 +218,16 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   shows while a chat window is open (`/chats`, `/assistant`, the side window in
   any shape). A row with a line waiting is highlighted instead (`rowHighlighted`,
   with bubbles on or off). The side window has no list yet, so with only that
-  window open a person's line keeps the toast.
+  window open a person's line keeps the toast. The stack sits with the
+  bottom-right dock until it is dragged; then its place is saved for the login
+  in this browser, and kept on screen by the window's size. The edges under the
+  card stand for the cards that wait: a click shows the next one, with no read
+  and no close, and a new line comes back to the front. The pin holds a card
+  through a read and a mute, and a reload brings it back by reading that one
+  line again through the chat's own routes (the browser keeps the key). A pin
+  goes with its close, its unpin, its line or its chat. A pinned card's close
+  moves no read cursor: it may be a line read long ago, and the lines around it
+  were not on screen.
 - **Desktop**: inside the desktop shell, while the window is hidden, the
   notice goes to the OS instead (`mantleDesktop.notify`, a click opens the
   chat), and the app badge follows the count (`mantleDesktop.setBadge`: the

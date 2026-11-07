@@ -68,12 +68,18 @@ export type MockChats = {
   addThread(id: string, slug: string, title: string): void;
   /** Someone says a line: it counts as unread and the stream says so. */
   say(chat: string, body: string, from?: { id: string; name: string }): void;
+  /** A line is edited: the stream says that seq changed, and gives no text. */
+  edit(chat: string, seq: number, body: string): void;
+  /** A line is deleted: it stays, marked, and the stream says that seq changed. */
+  deleteLine(chat: string, seq: number): void;
   /** A reply starts: a pending row, and the thread stream pings. */
   replyStarts(slug: string): void;
   /** The reply got its text: the row is complete, and the stream pings. */
   replyEnds(slug: string, text: string): void;
   /** The reply failed: the row stays in the count, as on a brain. */
   replyFails(slug: string): void;
+  /** The thread's newest reply is no longer there. */
+  replyGone(slug: string): void;
   /** A finished reply the login has read already. Answers its time. */
   replyRead(slug: string, text: string): string;
   /** The chat was read on another device: the list says 0, and the people's
@@ -196,6 +202,18 @@ export function createMockChats(): MockChats {
       row.unread += 1;
       emit(peopleStreams, { c: chat, seq, kind: 'new', actor: from.id, type: 'message' });
     },
+    edit(chat, seq, body) {
+      const line = (lines.get(chat) ?? []).find((l) => l.seq === seq);
+      if (!line) throw new Error(`no line ${seq} in ${chat}`);
+      line.body = body;
+      emit(peopleStreams, { c: chat, seq, kind: 'edit', actor: line.authorId, type: 'message' });
+    },
+    deleteLine(chat, seq) {
+      const line = (lines.get(chat) ?? []).find((l) => l.seq === seq);
+      if (!line) throw new Error(`no line ${seq} in ${chat}`);
+      line.deletedAt = tick();
+      emit(peopleStreams, { c: chat, seq, kind: 'delete', actor: line.authorId, type: 'message' });
+    },
     replyStarts(slug) {
       const row = threadOf(slug);
       const createdAt = tick();
@@ -228,6 +246,9 @@ export function createMockChats(): MockChats {
       if (!reply) throw new Error(`no pending reply in ${slug}`);
       reply.status = 'failed';
       emit(threadStreams, { agentSlug: slug, direction: 'outbound' });
+    },
+    replyGone(slug) {
+      (replies.get(slug) ?? []).pop();
     },
     replyRead(slug, text) {
       const row = threadOf(slug);
@@ -300,7 +321,9 @@ export function createMockChats(): MockChats {
       if (method === 'GET' && path === '/api/assistant/messages') {
         const slug = url.searchParams.get('agent') ?? '';
         const limit = Number(url.searchParams.get('limit') ?? 100);
-        json(res, 200, { messages: (replies.get(slug) ?? []).slice(-limit) });
+        const before = Date.parse(url.searchParams.get('before') ?? '') || Infinity;
+        const rows = (replies.get(slug) ?? []).filter((r) => Date.parse(r.createdAt) < before);
+        json(res, 200, { messages: rows.slice(-limit) });
         return true;
       }
       if (method === 'GET' && path === '/api/assistant/conversations') {
@@ -333,7 +356,11 @@ export function createMockChats(): MockChats {
           return true;
         }
         const limit = Number(url.searchParams.get('limit') ?? 20);
-        const messages = all.slice(-limit);
+        const after = url.searchParams.get('after_seq');
+        const messages =
+          after === null
+            ? all.slice(-limit)
+            : all.filter((l) => l.seq > Number(after)).slice(0, limit);
         json(res, 200, { messages, hasMore: false, lastSeq: messages.at(-1)?.seq ?? 0 });
         return true;
       }

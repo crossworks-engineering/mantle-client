@@ -3,11 +3,16 @@ import type { MessengerListRow } from '@/lib/messenger/dto';
 import { cardKey, type BubbleCard } from './cards';
 import {
   clearBubbles,
+  forgetPin,
   getBubbleCards,
+  getPinnedKeys,
+  isBubblePinned,
   popBubble,
+  putPinnedBubble,
   reconcileBubbles,
   setBubbleChat,
   setBubbleLogin,
+  togglePinBubble,
 } from './store';
 
 const card = (chat: string, order: number): BubbleCard => ({
@@ -70,6 +75,64 @@ describe('the bubble store', () => {
     setBubbleChat('b', [card('b', 2)]);
     reconcileBubbles([row('a', 0), row('b', 1)]);
     expect(keys()).toEqual(['b:2']);
+  });
+
+  it('a pinned card stays when the chat is read, and goes when unpinned', () => {
+    setBubbleChat('a', [card('a', 1)]);
+    togglePinBubble('a:1');
+    expect(isBubblePinned('a:1')).toBe(true);
+    reconcileBubbles([row('a', 0)]);
+    expect(keys()).toEqual(['a:1']);
+    togglePinBubble('a:1');
+    expect(keys()).toEqual([]);
+  });
+
+  it('a pinned card of a chat no longer listed goes', () => {
+    setBubbleChat('a', [card('a', 1)]);
+    togglePinBubble('a:1');
+    reconcileBubbles([]);
+    expect(keys()).toEqual([]);
+  });
+
+  it('a close takes the pin with it', () => {
+    setBubbleChat('a', [card('a', 1)]);
+    togglePinBubble('a:1');
+    // It moves no cursor: the line may be one read long ago.
+    expect(popBubble(card('a', 1))).toBeNull();
+    expect(isBubblePinned('a:1')).toBe(false);
+    expect(keys()).toEqual([]);
+  });
+
+  it('a pinned card does not hold back the read of the other cards of its chat', () => {
+    setBubbleChat('a', [card('a', 1), card('a', 2)]);
+    togglePinBubble('a:1');
+    expect(popBubble(card('a', 2))).toBe(2);
+    expect(keys()).toEqual(['a:1']);
+  });
+
+  it('a pinned card can be put back after a reload, and only a pinned one', () => {
+    togglePinBubble('a:1');
+    reconcileBubbles([row('a', 0)]);
+    putPinnedBubble(card('a', 1));
+    putPinnedBubble(card('a', 2));
+    expect(keys()).toEqual(['a:1']);
+    expect(getPinnedKeys()).toEqual(['a:1']);
+  });
+
+  it('forgetting a pin drops the card of a chat already read', () => {
+    togglePinBubble('a:1');
+    reconcileBubbles([row('a', 0)]);
+    putPinnedBubble(card('a', 1));
+    forgetPin('a:1');
+    expect(keys()).toEqual([]);
+  });
+
+  it('forgetting a pin drops the card of a chat still unread too: its line is gone', () => {
+    togglePinBubble('a:1');
+    reconcileBubbles([row('a', 1)]);
+    putPinnedBubble(card('a', 1));
+    forgetPin('a:1');
+    expect(keys()).toEqual([]);
   });
 
   it('a new login starts with no cards and its own popped set', () => {

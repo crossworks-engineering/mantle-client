@@ -3,6 +3,7 @@ import type { MessengerListRow, MessengerMessage } from '@/lib/messenger/dto';
 import {
   CARDS_MAX,
   CHATS_PER_SYNC,
+  PINNED_MAX,
   POPPED_MAX,
   addPopped,
   cardFromMessage,
@@ -19,6 +20,7 @@ import {
   rowSignature,
   setChatCards,
   toastWanted,
+  togglePinned,
   type BubbleCard,
 } from './cards';
 
@@ -203,11 +205,23 @@ describe('setChatCards', () => {
     expect(setChatCards([], 'a', [card('a', 1)], ['a:1'])).toEqual([]);
   });
 
+  it('keeps a pinned card of the chat through a new read', () => {
+    const out = setChatCards([card('a', 1)], 'a', [card('a', 3)], [], ['a:1']);
+    expect(out.map((c) => c.key)).toEqual(['a:3', 'a:1']);
+  });
+
   it('holds at most the limit, dropping the oldest', () => {
     const many = Array.from({ length: CARDS_MAX + 5 }, (_, i) => card('a', i));
     const out = setChatCards([], 'a', many, []);
     expect(out).toHaveLength(CARDS_MAX);
     expect(out.at(-1)?.order).toBe(5);
+  });
+
+  it('keeps a pinned card past the limit', () => {
+    const many = Array.from({ length: CARDS_MAX + 5 }, (_, i) => card('a', i));
+    const out = setChatCards([], 'a', many, [], ['a:0']);
+    expect(out).toHaveLength(CARDS_MAX + 1);
+    expect(out.at(-1)?.key).toBe('a:0');
   });
 });
 
@@ -252,6 +266,11 @@ describe('liveCards, the one rule', () => {
   it('drops a popped card', () => {
     const rows = [row({ id: 'a' }), row({ id: 'b' })];
     expect(liveCards(cards, rows, ['a:2']).map((c) => c.key)).toEqual(['a:1', 'b:1']);
+  });
+
+  it('keeps a pinned card through a read and a mute, but not a chat left', () => {
+    const rows = [row({ id: 'a', unread: 0, muted: true })];
+    expect(liveCards(cards, rows, [], ['a:2', 'b:1']).map((c) => c.key)).toEqual(['a:2']);
   });
 });
 
@@ -305,6 +324,10 @@ describe('readAfterPop', () => {
   it('answers null when nothing of the chat was popped', () => {
     expect(readAfterPop('a', [], ['b:1', 'junk'])).toBeNull();
   });
+
+  it('does not wait for a pinned card, which stays through a read', () => {
+    expect(readAfterPop('a', [card('a', 1)], ['a:2'], ['a:1'])).toBe(2);
+  });
 });
 
 describe('the popped set', () => {
@@ -322,6 +345,20 @@ describe('the popped set', () => {
     expect(parsePopped('{')).toEqual([]);
     expect(parsePopped('{"a":1}')).toEqual([]);
     expect(parsePopped('["a:1",2]')).toEqual(['a:1']);
+  });
+});
+
+describe('togglePinned', () => {
+  it('adds and takes out', () => {
+    expect(togglePinned([], 'a:1')).toEqual(['a:1']);
+    expect(togglePinned(['a:1', 'b:2'], 'a:1')).toEqual(['b:2']);
+  });
+
+  it('drops the oldest past the limit', () => {
+    const full = Array.from({ length: PINNED_MAX }, (_, i) => `a:${i}`);
+    const out = togglePinned(full, 'b:1');
+    expect(out).toHaveLength(PINNED_MAX);
+    expect(out[0]).toBe('a:1');
   });
 });
 

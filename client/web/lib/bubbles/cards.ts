@@ -9,7 +9,8 @@
  *   chat is not muted), and its key is not in the popped set.
  *
  * So a chat read anywhere (the screen, the window, another device) drops its
- * cards at the next list refresh, with no event of its own.
+ * cards at the next list refresh, with no event of its own. A pinned card
+ * stays through a read, for as long as its chat is in the list.
  */
 import type { AssistantTimelineRow } from '@mantle/client-types';
 import type { MessengerListRow, MessengerMessage } from '@/lib/messenger/dto';
@@ -50,13 +51,15 @@ export const CHATS_PER_SYNC = 20;
 export const CARDS_MAX = 50;
 /** The popped keys kept in the browser; the oldest go first. */
 export const POPPED_MAX = 200;
+/** The pinned keys kept in the browser; the oldest go first. */
+export const PINNED_MAX = 20;
 
 export function cardKey(chat: string, order: number): string {
   return `${chat}:${order}`;
 }
 
 /** The chat and the order of a key. A chat id holds no colon. */
-function parseKey(key: string): { chat: string; order: number } | null {
+export function parseKey(key: string): { chat: string; order: number } | null {
   const at = key.lastIndexOf(':');
   if (at <= 0) return null;
   const order = Number(key.slice(at + 1));
@@ -155,17 +158,26 @@ export function cardFromReply(
 }
 
 /** Cards with one chat's replaced by `fresh`, what its last read returned: so
- *  a line read, edited or deleted goes with no rule of its own. None that was
- *  popped, newest first, at most CARDS_MAX. */
+ *  a line read, edited or deleted goes with no rule of its own. A pinned card
+ *  of the chat stays. None that was popped, newest first, at most CARDS_MAX
+ *  besides the pinned ones (at most PINNED_MAX). */
 export function setChatCards(
   cards: readonly BubbleCard[],
   chat: string,
   fresh: readonly BubbleCard[],
   popped: readonly string[],
+  pinned: readonly string[] = [],
 ): BubbleCard[] {
-  return [...cards.filter((c) => c.chat !== chat), ...fresh.filter((c) => !popped.includes(c.key))]
+  const byKey = new Map<string, BubbleCard>();
+  for (const c of cards) {
+    if (c.chat !== chat || pinned.includes(c.key)) byKey.set(c.key, c);
+  }
+  for (const c of fresh) {
+    if (!popped.includes(c.key)) byKey.set(c.key, c);
+  }
+  return [...byKey.values()]
     .sort((a, b) => b.at - a.at)
-    .slice(0, CARDS_MAX);
+    .filter((c, i) => i < CARDS_MAX || pinned.includes(c.key));
 }
 
 /** The one rule (above), over the list as it stands. */
@@ -173,9 +185,14 @@ export function liveCards(
   cards: readonly BubbleCard[],
   rows: readonly MessengerListRow[],
   popped: readonly string[],
+  pinned: readonly string[] = [],
 ): BubbleCard[] {
-  const counted = new Set(rows.filter(rowCounts).map((r) => r.id));
-  return cards.filter((c) => counted.has(c.chat) && !popped.includes(c.key));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return cards.filter((c) => {
+    const row = byId.get(c.chat);
+    if (!row) return false;
+    return pinned.includes(c.key) || (rowCounts(row) && !popped.includes(c.key));
+  });
 }
 
 /**
@@ -183,13 +200,15 @@ export function liveCards(
  * a cursor only moves forward, so moving it at the first pop would mark the
  * older cards read. So it moves when the LAST card of the chat goes, to the
  * highest line popped; until then, null. `popped` includes the key just popped.
+ * A pinned card does not wait for this: it stays through a read.
  */
 export function readAfterPop(
   chat: string,
   remaining: readonly BubbleCard[],
   popped: readonly string[],
+  pinned: readonly string[] = [],
 ): number | null {
-  if (remaining.some((c) => c.chat === chat)) return null;
+  if (remaining.some((c) => c.chat === chat && !pinned.includes(c.key))) return null;
   let top: number | null = null;
   for (const key of popped) {
     const k = parseKey(key);
@@ -215,7 +234,13 @@ export function addPopped(popped: readonly string[], key: string): string[] {
   return [...popped, key].slice(-POPPED_MAX);
 }
 
-/** A stored popped set: anything unreadable reads as empty. */
+/** The pinned set with a key added, or taken out if it was there. */
+export function togglePinned(pinned: readonly string[], key: string): string[] {
+  if (pinned.includes(key)) return pinned.filter((k) => k !== key);
+  return [...pinned, key].slice(-PINNED_MAX);
+}
+
+/** A stored set of keys (popped or pinned): anything unreadable reads as empty. */
 export function parsePopped(raw: string | null | undefined): string[] {
   if (!raw) return [];
   try {

@@ -26,10 +26,19 @@ import {
   chatsToSync,
   linesWanted,
   newestReplies,
+  parseKey,
   rowSignature,
   type BubbleCard,
 } from '@/lib/bubbles/cards';
-import { reconcileBubbles, setBubbleChat, setBubbleLogin } from '@/lib/bubbles/store';
+import {
+  forgetPin,
+  getBubbleCards,
+  getPinnedKeys,
+  putPinnedBubble,
+  reconcileBubbles,
+  setBubbleChat,
+  setBubbleLogin,
+} from '@/lib/bubbles/store';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerListRow } from '@/lib/messenger/dto';
 
@@ -37,6 +46,9 @@ import type { MessengerListRow } from '@/lib/messenger/dto';
 const LIST_REFRESH_MS = 60_000;
 /** Rows read of a thread: its replies with the person's lines between them. */
 const THREAD_ROWS = 20;
+/** Rows read of a thread just before a pinned reply's time: a few, in case
+ *  two share a millisecond. */
+const PINNED_THREAD_ROWS = 5;
 
 async function cardsOf(row: MessengerListRow, me: string): Promise<BubbleCard[]> {
   const count = linesWanted(row.unread);
@@ -57,6 +69,36 @@ async function cardsOf(row: MessengerListRow, me: string): Promise<BubbleCard[]>
   return page.messages.flatMap((m) => cardFromMessage(m, row, me) ?? []);
 }
 
+/** A pinned line as it is now, by the chat's own routes, or null if it is gone.
+ *  It is pinned, so a read or a mute does not take it away. */
+async function pinnedCardOf(
+  order: number,
+  row: MessengerListRow,
+  me: string,
+): Promise<BubbleCard | null> {
+  if (row.kind === 'agent') {
+    if (!row.agentSlug) return null;
+    // The key's time is cut to the millisecond and `before` is strict.
+    const qs = new URLSearchParams({
+      agent: row.agentSlug,
+      before: new Date(order + 1).toISOString(),
+      limit: String(PINNED_THREAD_ROWS),
+    });
+    const data = await apiFetch<{ messages?: AssistantTimelineRow[] }>(
+      `/api/assistant/messages?${qs.toString()}`,
+      { cache: 'no-store' },
+    );
+    const at = (data.messages ?? []).filter((r) => Date.parse(r.createdAt) === order);
+    const reply = newestReplies(at, 1)[0];
+    if (!reply) return null;
+    const { replyText } = await import('@/lib/bubbles/reply-text');
+    return cardFromReply(reply, row, replyText(reply.text));
+  }
+  const page = await messengerApi.messages(row.id, { afterSeq: order - 1, limit: 1 });
+  const line = page.messages.find((m) => m.seq === order);
+  return line ? cardFromMessage(line, { ...row, muted: false }, me) : null;
+}
+
 export function BubbleSync() {
   const me = useViewerLogin()?.loginId ?? null;
   const list = useQuery({
@@ -67,15 +109,39 @@ export function BubbleSync() {
   });
   // What each chat looked like when it was last read.
   const seen = useRef(new Map<string, string>());
+  /** The list as last read; null until the first one. */
+  const rowsNow = useRef<readonly MessengerListRow[] | null>(null);
+  // Whose pinned cards were brought back: once, on the first list.
+  const pinsReadFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (me) setBubbleLogin(me);
   }, [me]);
 
+  // Read a pinned line again. A failed read leaves the pin as it is.
+  const readPin = (key: string, login: string) => {
+    if (!rowsNow.current) return;
+    const k = parseKey(key);
+    const row = k && rowsNow.current.find((r) => r.id === k.chat);
+    if (!k || !row) {
+      forgetPin(key);
+      return;
+    }
+    void pinnedCardOf(k.order, row, login)
+      .then((card) => (card ? putPinnedBubble(card) : forgetPin(key)))
+      .catch(() => {});
+  };
+
   const rows = list.data;
   useEffect(() => {
     if (!rows || !me) return;
+    rowsNow.current = rows;
     reconcileBubbles(rows);
+    if (pinsReadFor.current !== me) {
+      pinsReadFor.current = me;
+      const held = new Set(getBubbleCards().map((c) => c.key));
+      for (const key of getPinnedKeys()) if (!held.has(key)) readPin(key, me);
+    }
     for (const row of chatsToSync(rows, seen.current)) {
       const signature = rowSignature(row);
       seen.current.set(row.id, signature);
@@ -98,10 +164,15 @@ export function BubbleSync() {
   // A line edited or deleted, a reaction, or the chat reloaded (people changed,
   // history deleted, my own clear or mute): read the chat again. Its cards stay
   // until the answer replaces them. The same event asks for the fresh list
-  // that does it.
+  // that does it. A pinned card outlives that answer, so it is read on its own.
   useMessengerBus((e) => {
     if (e.kind !== 'effect') return;
-    if (e.effect.reload || e.effect.refetchSeq !== null) seen.current.delete(e.effect.c);
+    if (!e.effect.reload && e.effect.refetchSeq === null) return;
+    seen.current.delete(e.effect.c);
+    if (!me) return;
+    for (const key of getPinnedKeys()) {
+      if (parseKey(key)?.chat === e.effect.c) readPin(key, me);
+    }
   });
 
   return null;
