@@ -600,6 +600,8 @@ export function ChatInspector({
             size="sm"
             className="text-destructive-ink hover:text-destructive-ink"
             disabled={busy !== null}
+            // Everyone's messages go for good: a person's act (lib/agent-ui).
+            data-agent-risk="person"
             onClick={() =>
               setConfirm({
                 title: 'Delete the history for everyone?',

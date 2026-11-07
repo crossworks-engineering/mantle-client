@@ -216,7 +216,15 @@ export function SecretDetail({
           )}
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" onClick={startEdit} disabled={loading}>
+          {/* data-agent-risk: Edit and Reveal read the value; it must stay out of
+              an agent's turn (lib/agent-ui). */}
+          <Button
+            variant="outline"
+            size="sm"
+            data-agent-risk="person"
+            onClick={startEdit}
+            disabled={loading}
+          >
             <Pencil /> Edit
           </Button>
           <Button
@@ -238,7 +246,7 @@ export function SecretDetail({
             {meta.fieldCount} field{meta.fieldCount === 1 ? '' : 's'}
             {meta.hasNote ? ' + note' : ''} · sealed
           </p>
-          <Button onClick={reveal} disabled={loading}>
+          <Button data-agent-risk="person" onClick={reveal} disabled={loading}>
             {loading ? <Loader2 className="animate-spin" /> : <Eye />}
             {loading ? 'Decrypting…' : 'Reveal'}
           </Button>

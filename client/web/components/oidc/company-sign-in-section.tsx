@@ -76,7 +76,12 @@ export function CompanySignInSection() {
               This site requires {label}. Ask an admin to remove the link.
             </p>
           ) : (
-            <Button type="button" variant="outline" onClick={() => setConfirming(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              data-agent-risk="person"
+              onClick={() => setConfirming(true)}
+            >
               Remove the link
             </Button>
           )}

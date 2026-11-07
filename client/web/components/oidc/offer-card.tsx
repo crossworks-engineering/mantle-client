@@ -44,6 +44,7 @@ export function OfferCard() {
         <Button
           type="button"
           variant="ghost"
+          data-agent-risk="person"
           onClick={() => {
             setHidden(true);
             // A link still out in the browser stops here too.

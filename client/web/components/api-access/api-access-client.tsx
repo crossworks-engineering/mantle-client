@@ -701,7 +701,7 @@ function CreateKeyDialog({
               >
                 Cancel
               </Button>
-              <SubmitButton pending={pending}>
+              <SubmitButton pending={pending} data-agent-risk="person">
                 {viaCompany ? `Sign in with ${viaCompany.label}` : 'Make key'}
               </SubmitButton>
             </div>

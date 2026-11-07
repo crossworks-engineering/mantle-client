@@ -582,6 +582,8 @@ export function ToolsClient() {
                   </div>
                   <Switch
                     id="require-approval"
+                    // Only on the press that loosens (lib/agent-ui).
+                    data-agent-risk={settings.requireApproval ? 'person' : undefined}
                     checked={settings.requireApproval}
                     disabled={settingsBusy}
                     onCheckedChange={toggleRequireApproval}
@@ -609,6 +611,8 @@ export function ToolsClient() {
                   </div>
                   <Switch
                     id="egress-gate"
+                    // Only on the press that loosens (lib/agent-ui).
+                    data-agent-risk={settings.egressGate ? 'person' : undefined}
                     checked={settings.egressGate}
                     disabled={settingsBusy}
                     onCheckedChange={toggleEgressGate}

@@ -142,7 +142,9 @@ export function MemberPasswordDialog({
           {field('next', 'New password', 'new-password', true)}
           {field('confirm', 'New password again', 'new-password')}
           <div className="flex justify-end pt-1">
-            <SubmitButton pending={pending}>Change password</SubmitButton>
+            <SubmitButton pending={pending} data-agent-risk="person">
+              Change password
+            </SubmitButton>
           </div>
         </form>
       </DialogContent>

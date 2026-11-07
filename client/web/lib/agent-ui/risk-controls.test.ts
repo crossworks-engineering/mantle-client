@@ -245,6 +245,7 @@ function tagsWith(file: string, needle: string): string[] {
 }
 
 const APP = 'client/web/app/(app)';
+const COMPANY = `${APP}/settings/(hub)/company-sign-in/company-sign-in-client.tsx`;
 const MARK = 'data-agent-risk="person"';
 /** A switch an agent may turn the safe way: marked only on the press that
  *  loosens, as an agent may send only the value that tightens. */
@@ -287,6 +288,40 @@ const PERSON_CONTROLS: readonly (readonly [string, string, string])[] = [
     onWhen("edits.prompt ? undefined : 'person'"),
   ],
   [`${APP}/recall/v2/revisions-panel.tsx`, 'setConfirming(rev)', MARK],
+  // PUT /api/tools/settings
+  [
+    `${APP}/settings/tools/tools-client.tsx`,
+    'checked={settings.requireApproval}',
+    onWhen("settings.requireApproval ? 'person' : undefined"),
+  ],
+  [
+    `${APP}/settings/tools/tools-client.tsx`,
+    'checked={settings.egressGate}',
+    onWhen("settings.egressGate ? 'person' : undefined"),
+  ],
+  // POST /api/secrets/:id/reveal
+  [`${APP}/secrets/secret-detail.tsx`, 'onClick={reveal}', MARK],
+  [`${APP}/secrets/secret-detail.tsx`, 'onClick={startEdit}', MARK],
+  // POST /api/network/deactivate
+  [
+    `${APP}/settings/(hub)/network/network-client.tsx`,
+    "onClick={() =>\n                  run(() => apiSend<NetworkResult>('/api/network/deactivate'",
+    MARK,
+  ],
+  // POST /api/messenger/c/:id/history/delete
+  [`${APP}/chats/chat-inspector.tsx`, 'Delete the history for everyone?', MARK],
+  // POST /api/auth/pair
+  [`${APP}/settings/users/pair-phone-card.tsx`, 'onClick={() => void issue(false)}', MARK],
+  // POST /api/access-keys, POST /api/auth/change-password
+  ['client/web/components/api-access/api-access-client.tsx', '<SubmitButton', MARK],
+  ['client/web/components/member/member-password-dialog.tsx', '<SubmitButton', MARK],
+  // PUT /api/users/sso-setup, POST /api/users/sso-setup/scim-token
+  [COMPANY, '<SubmitButton', MARK],
+  [COMPANY, 'onClick={() => setAsking(true)}', MARK],
+  // /api/auth/oidc: link, unlink, the link offer
+  ['client/web/components/oidc/link-form.tsx', 'type="submit"', MARK],
+  ['client/web/components/oidc/company-sign-in-section.tsx', 'setConfirming(true)', MARK],
+  ['client/web/components/oidc/offer-card.tsx', 'setHidden(true)', MARK],
   // The dev tool console: its call counts as a person's.
   ['client/web/components/dev-tools/request-builder.tsx', 'onClick={() => void send()}', MARK],
 ];

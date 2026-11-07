@@ -302,6 +302,8 @@ function ActivateCard({
                 variant="outline"
                 size="sm"
                 disabled={pending}
+                // The box can go dark: a person's act (lib/agent-ui).
+                data-agent-risk="person"
                 onClick={() =>
                   run(() => apiSend<NetworkResult>('/api/network/deactivate', 'POST'), {
                     poll: true,

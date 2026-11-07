@@ -158,7 +158,7 @@ function PasswordDialog({
               >
                 Cancel
               </Button>
-              <SubmitButton pending={pending} disabled={!password}>
+              <SubmitButton pending={pending} disabled={!password} data-agent-risk="person">
                 {action}
               </SubmitButton>
             </div>
@@ -245,7 +245,7 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
               </FieldDescription>
             </Field>
             <div className="flex justify-end">
-              <SubmitButton pending={false} disabled={!secret.trim()}>
+              <SubmitButton pending={false} disabled={!secret.trim()} data-agent-risk="person">
                 Save secret
               </SubmitButton>
             </div>
@@ -348,7 +348,7 @@ function ScimSection({
         <p className="text-xs text-muted-foreground">Made by {who}.</p>
       )}
       {mayMake && !tokenShown && (
-        <Button variant="outline" onClick={() => setAsking(true)}>
+        <Button variant="outline" data-agent-risk="person" onClick={() => setAsking(true)}>
           {replacing ? 'Make a new token' : 'Make SCIM token'}
         </Button>
       )}

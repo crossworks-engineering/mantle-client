@@ -154,6 +154,8 @@ export function PairPhoneCard({ userId }: { userId: string }) {
               variant="outline"
               size="sm"
               disabled={pending}
+              // The code signs a phone in as the person (lib/agent-ui).
+              data-agent-risk="person"
               onClick={() => void issue(false)}
             >
               Show a new code
@@ -163,7 +165,13 @@ export function PairPhoneCard({ userId }: { userId: string }) {
       ) : (
         <div className="flex items-center gap-3">
           {issued && expired && <p className="text-sm text-muted-foreground">That code expired.</p>}
-          <Button variant="outline" size="sm" disabled={pending} onClick={() => void issue(false)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            data-agent-risk="person"
+            onClick={() => void issue(false)}
+          >
             {pending ? 'Making a code…' : issued || claimedAs ? 'Show a new code' : 'Show a code'}
           </Button>
         </div>

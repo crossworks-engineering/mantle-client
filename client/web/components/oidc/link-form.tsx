@@ -130,7 +130,7 @@ export function LinkForm({
         className={`flex flex-wrap items-center gap-2 ${start ? 'justify-start' : 'justify-end'}`}
       >
         {children}
-        <Button type="submit" disabled={busy || (asks && !password)}>
+        <Button type="submit" data-agent-risk="person" disabled={busy || (asks && !password)}>
           {action}
         </Button>
       </div>
