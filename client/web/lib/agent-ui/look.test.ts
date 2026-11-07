@@ -5,8 +5,12 @@ import {
   askFrame,
   blankSecrets,
   fitSize,
+  fitsBrain,
+  LOOK_MAX_BYTES,
   meets,
   onScreen,
+  overlap,
+  secretRects,
   toPicture,
 } from './look';
 
@@ -53,6 +57,22 @@ describe('the box', () => {
   it('two boxes meet only when they share area', () => {
     expect(meets({ x: 0, y: 0, w: 10, h: 10 }, { x: 9, y: 9, w: 5, h: 5 })).toBe(true);
     expect(meets({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 0, w: 5, h: 5 })).toBe(false);
+  });
+
+  it('a frame shows only where it meets the box', () => {
+    expect(overlap({ x: 0, y: -50, w: 200, h: 150 }, { x: 0, y: 0, w: 1000, h: 600 })).toEqual({
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 100,
+    });
+    expect(overlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 20, y: 0, w: 5, h: 5 }).w).toBe(0);
+  });
+
+  it('the size is counted as the brain counts it', () => {
+    const at = (bytes: number) => 'A'.repeat(Math.ceil((bytes * 4) / 3));
+    expect(fitsBrain(at(LOOK_MAX_BYTES - 3))).toBe(true);
+    expect(fitsBrain(at(LOOK_MAX_BYTES + 3))).toBe(false);
   });
 
   it('a viewport box maps into the picture at its scale', () => {
@@ -111,8 +131,10 @@ describe('secret fields are painted over', () => {
         fillRect: (...r: number[]) => rects.push(r),
       }),
     } as unknown as HTMLCanvasElement;
-    const n = blankSecrets({ x: 0, y: 0, w: 400, h: 300 }, 2, out);
-    expect(n).toBe(2);
+    const scope = { x: 0, y: 0, w: 400, h: 300 };
+    const found = secretRects(scope);
+    expect(found).toHaveLength(2);
+    blankSecrets(found, scope, 2, out);
     expect(rects).toEqual([
       [20, 20, 200, 40],
       [20, 100, 200, 40],
@@ -181,7 +203,7 @@ describe('an app frame draws itself', () => {
     expect(await failed).toBeNull();
   });
 
-  it('only an image data URL counts as a picture', async () => {
+  it('only a PNG data URL counts as a picture', async () => {
     const w = stubWindow();
     const posted: Array<Record<string, unknown>> = [];
     const frameWin = { postMessage: (m: Record<string, unknown>) => posted.push(m) };

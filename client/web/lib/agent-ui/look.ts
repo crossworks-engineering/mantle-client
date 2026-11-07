@@ -79,6 +79,18 @@ export function meets(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
+/** The area two boxes share (empty when they do not meet). */
+export function overlap(a: Rect, b: Rect): Rect {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  return {
+    x,
+    y,
+    w: Math.max(0, Math.min(a.x + a.w, b.x + b.w) - x),
+    h: Math.max(0, Math.min(a.y + a.h, b.y + b.h) - y),
+  };
+}
+
 /** `r` (viewport CSS pixels) in the picture's pixels: `box` maps to the
  *  whole picture at `k` picture pixels per CSS pixel. */
 export function toPicture(r: Rect, box: Rect, k: number): Rect {
@@ -174,7 +186,7 @@ export function askFrame(
       const m = e.data as Record<string, unknown> | null;
       if (e.source !== win || !m || m.v !== 1 || m.kind !== 'look.res' || m.id !== id) return;
       const url = m.ok === true && typeof m.dataUrl === 'string' ? m.dataUrl : '';
-      done(url.startsWith('data:image/') ? url : null);
+      done(url.startsWith('data:image/png;base64,') ? url : null);
     };
     const timer = setTimeout(() => done(null), waitMs);
     window.addEventListener('message', onMessage);
@@ -190,24 +202,51 @@ const loadImage = (src: string) =>
     img.src = src;
   });
 
-/** The frames in `box` drawn into the picture: an app frame asks for its
- *  own picture; any other frame, or one that does not answer, stays blank.
- *  Returns how many stayed blank. */
-async function paintFrames(box: Rect, k: number, out: HTMLCanvasElement): Promise<number> {
-  const frames = [...document.querySelectorAll('iframe')].filter((f) => {
-    const r = rectOf(f);
-    return r.w > 0 && r.h > 0 && meets(r, box) && !f.closest('[data-agent-host]');
-  });
+/** An app frame in the picture: its box, and the part of it on show (cut
+ *  to the scope box and to the scrolling work area it sits in). */
+export type FrameSpot = { frame: HTMLIFrameElement; rect: Rect; shown: Rect };
+
+/** The frames in `box`, read before the pixels are taken: not the agent's
+ *  own layers, and for `work` and `ref` not the assistant panel. */
+function frameSpots(box: Rect, scope: LookScope): FrameSpot[] {
+  const left =
+    scope === 'window' ? '[data-agent-host]' : '[data-agent-host], [data-assistant-panel]';
+  const spots: FrameSpot[] = [];
+  for (const frame of document.querySelectorAll('iframe')) {
+    if (frame.closest(left)) continue;
+    const rect = rectOf(frame);
+    const main = frame.closest('main');
+    const shown = overlap(overlap(rect, box), main ? rectOf(main) : box);
+    if (shown.w > 0 && shown.h > 0) spots.push({ frame, rect, shown });
+  }
+  return spots;
+}
+
+/** Each app frame's own picture painted into the part of its box on show;
+ *  any other frame, or one that does not answer, stays blank. Returns how
+ *  many stayed blank. */
+async function paintFrames(
+  spots: FrameSpot[],
+  box: Rect,
+  k: number,
+  out: HTMLCanvasElement,
+): Promise<number> {
   const ctx = out.getContext('2d')!;
   const drawn = await Promise.all(
-    frames.map(async (f) => {
-      if (f.getAttribute('sandbox') !== 'allow-scripts') return false;
-      const url = await askFrame(f, k);
+    spots.map(async ({ frame, rect, shown }) => {
+      if (frame.getAttribute('sandbox') !== 'allow-scripts') return false;
+      const url = await askFrame(frame, k);
       if (!url) return false;
       try {
         const img = await loadImage(url);
-        const p = toPicture(rectOf(f), box, k);
+        const p = toPicture(rect, box, k);
+        const c = toPicture(shown, box, k);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(c.x, c.y, c.w, c.h);
+        ctx.clip();
         ctx.drawImage(img, p.x, p.y, p.w, p.h);
+        ctx.restore();
         return true;
       } catch {
         return false;
@@ -217,22 +256,28 @@ async function paintFrames(box: Rect, k: number, out: HTMLCanvasElement): Promis
   return drawn.filter((ok) => !ok).length;
 }
 
-/** Paint over every secret field in `box`. Returns how many. */
-export function blankSecrets(box: Rect, k: number, out: HTMLCanvasElement): number {
-  const ctx = out.getContext('2d')!;
-  ctx.fillStyle = '#808080';
-  let n = 0;
+/** The secret fields in `box` (`isSecretField`), read before the pixels
+ *  are taken, so a scroll meanwhile cannot move a box off its field. A field
+ *  inside a marked wrapper is covered by the wrapper's box. */
+export function secretRects(box: Rect): Rect[] {
+  const out: Rect[] = [];
   for (const el of document.querySelectorAll('[data-secret], input')) {
     if (!isSecretField(el)) continue;
-    // A field inside a marked wrapper is covered by the wrapper's box.
     if (el.tagName === 'INPUT' && el.parentElement?.closest('[data-secret]')) continue;
     const r = rectOf(el);
-    if (r.w <= 0 || r.h <= 0 || !meets(r, box)) continue;
+    if (r.w > 0 && r.h > 0 && meets(r, box)) out.push(r);
+  }
+  return out;
+}
+
+/** Paint over each secret box. */
+export function blankSecrets(rects: Rect[], box: Rect, k: number, out: HTMLCanvasElement): void {
+  const ctx = out.getContext('2d')!;
+  ctx.fillStyle = '#808080';
+  for (const r of rects) {
     const p = toPicture(r, box, k);
     ctx.fillRect(p.x, p.y, p.w, p.h);
-    n += 1;
   }
-  return n;
 }
 
 const toBlob = (c: HTMLCanvasElement, type: string, quality?: number) =>
@@ -252,13 +297,17 @@ const base64Of = (b: Blob) =>
     r.readAsDataURL(b);
   });
 
+/** Whether the brain takes a picture of this base64: its size counted as
+ *  the brain counts it. */
+export const fitsBrain = (base64: string) => Math.floor((base64.length * 3) / 4) <= LOOK_MAX_BYTES;
+
 /** The picture as the brain takes it: a PNG, or a JPEG at 0.85 when the PNG
  *  is over LOOK_MAX_BYTES; null when that is still too large. */
 async function encode(out: HTMLCanvasElement): Promise<LookResult['image'] | null> {
-  const png = await toBlob(out, 'image/png');
-  if (png.size <= LOOK_MAX_BYTES) return { mimeType: 'image/png', base64: await base64Of(png) };
-  const jpeg = await toBlob(out, 'image/jpeg', 0.85);
-  if (jpeg.size <= LOOK_MAX_BYTES) return { mimeType: 'image/jpeg', base64: await base64Of(jpeg) };
+  const png = await base64Of(await toBlob(out, 'image/png'));
+  if (fitsBrain(png)) return { mimeType: 'image/png', base64: png };
+  const jpeg = await base64Of(await toBlob(out, 'image/jpeg', 0.85));
+  if (fitsBrain(jpeg)) return { mimeType: 'image/jpeg', base64: jpeg };
   return null;
 }
 
@@ -276,14 +325,18 @@ export async function lookAt(
   const out = document.createElement('canvas');
   out.width = size.w;
   out.height = size.h;
+  // Read before the pixels, so what is painted over matches what was drawn.
+  const secrets = secretRects(box);
   let blankFrames = 0;
   if (desktopCanCapture() && (scope === 'window' || !panelOver(box))) {
     await capture(box, out);
   } else {
+    const spots = frameSpots(box, scope);
     await redraw(box, k, scope, out);
-    blankFrames = await paintFrames(box, k, out);
+    blankFrames = await paintFrames(spots, box, k, out);
   }
-  const blanked = blankSecrets(box, k, out);
+  blankSecrets(secrets, box, k, out);
+  const blanked = secrets.length;
   const image = await encode(out);
   if (!image) return refuse('unsupported', 'The picture is too large. Look at a smaller part.');
   return {
