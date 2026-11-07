@@ -12,6 +12,14 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.14: the in-app agent, area screenshots and an update notice
+
+- **New:** an in-app agent can read and use this window, when a person turns it on. The window asks once per turn, and Stop ends it. Lessons can drive the window too.
+- **New:** area screenshots replace the element picker. A screenshot lands in a workspace as a plain upload.
+- **New:** a notice shows before an update, and the window reloads after it.
+- **Fixed:** selected rows have readable contrast in every theme. The Desk clock opens analogue for a new desk, and a digital clock never wraps.
+- It needs a brain from v0.500.35 for these parts. An older brain answers 404, and they stay hidden.
+
 ## v0.9.13: the company sign-in setup screen
 
 - **New:** Settings > Company sign-in, for an Admin user while the box's mode is on. With the mode `setup`, a client's Microsoft admin enters the client secret, sealed and never shown, tests it, and makes the SCIM token, shown once. Any other mode shows the same values read-only.
