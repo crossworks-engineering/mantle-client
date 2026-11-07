@@ -27,6 +27,7 @@ import {
   serverBubbleCards,
   subscribeBubbles,
 } from '@/lib/bubbles/store';
+import { NO_WORDS } from '@/lib/bubbles/person-text';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 
 export function useBubbleMode() {
@@ -45,7 +46,7 @@ export function BubbleStack() {
       {/* Says a new card once, in words. It stays mounted, or a screen reader
           may not hear what is written into it. */}
       <span role="status" className="sr-only">
-        {top ? `${top.title}: ${top.text}` : ''}
+        {top ? `${top.title}: ${top.text || NO_WORDS}` : ''}
       </span>
       {top ? <Bubble key={top.key} card={top} more={cards.length - 1} /> : null}
     </>
@@ -122,7 +123,7 @@ function Bubble({ card, more }: { card: BubbleCard; more: number }) {
           <span className="block text-xs text-muted-foreground">{card.note}</span>
         ) : null}
         <span className="line-clamp-6 whitespace-pre-line text-sm [overflow-wrap:anywhere]">
-          {card.text || 'Open to read it'}
+          {card.text || NO_WORDS}
         </span>
         {card.cut || more > 0 ? (
           <span className="mt-1 block text-xs text-muted-foreground">

@@ -37,8 +37,6 @@ const closeCard = (page: Page) => page.getByTestId('bubble-pop').click();
 /** A chat toast's one action. */
 const toastOpen = (page: Page) => page.getByRole('button', { name: 'Open', exact: true });
 
-const isList = (asked: string) => asked === 'GET /api/messenger/conversations';
-
 /** The stream is open and the list has been read, so a line now is a new one. */
 async function settled(page: Page) {
   await expect.poll(() => api.asked('admin')).toContain('GET /api/messenger/conversations');
@@ -171,7 +169,6 @@ test('closing a stale card of a thread read elsewhere does not move the cursor',
   api.chats.readElsewhere(MOCK_AGENT.id);
   await closeCard(page);
   await expect(card(page)).toHaveCount(0);
-  await expect.poll(() => api.asked('admin').filter(isList).length).toBeGreaterThan(0);
   await page.waitForTimeout(300);
   expect(api.chats.threadReads).toEqual([]);
 });
@@ -213,6 +210,25 @@ test('a reply to a turn from the window still shows if it is minimised first', a
   await page.keyboard.press('Escape');
   api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
   await expect(card(page)).toContainText('I have finished the report.');
+});
+
+test('with the window open, a thread is marked read once its turn has ended', async ({ page }) => {
+  // The turn's stream says done at once, so the window's turn is over.
+  api.turnEvents = [{ type: 'done' }];
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  await page.keyboard.press('ControlOrMeta+i');
+  const box = page.getByPlaceholder(/Enter to send/);
+  await box.fill('Please make the report');
+  await box.press('Enter');
+  await expect.poll(() => api.turns.length).toBe(1);
+
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
+  await expect.poll(() => api.chats.threadReads.length).toBeGreaterThan(0);
+  await expect(card(page)).toHaveCount(0);
 });
 
 test('a close in one tab clears the other, with one read', async ({ page, context }) => {

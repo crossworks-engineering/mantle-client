@@ -20,6 +20,9 @@ export type BubbleText = {
   note: string | null;
 };
 
+/** What a card says for a line with no words of its own (only an attachment). */
+export const NO_WORDS = 'Open to read it';
+
 /** At most `max` characters, cut at a word when one is near the end. */
 export function clampText(s: string, max: number): string {
   if (s.length <= max) return s;
