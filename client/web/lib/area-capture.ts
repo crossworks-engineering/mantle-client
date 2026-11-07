@@ -10,8 +10,8 @@
  *  - A browser redraws the app's own page into a canvas (modern-screenshot's
  *    domToCanvas) and crops it. No screen share: Mantle only ever pictures
  *    its own page. Known limits, by design: a cross-origin frame or image
- *    can come out blank, a playing video black, and backdrop-filter can
- *    look different.
+ *    can come out blank, a playing video or a WebGL canvas (the Desk's Drift)
+ *    black, and backdrop-filter can look different.
  *
  * A screenshot is saved as if the user had taken the picture to Files and
  * uploaded it: a plain file at the top of Files in the workspace the
@@ -172,6 +172,9 @@ export async function captureWeb(rect: Rect): Promise<Blob> {
   const box = root.getBoundingClientRect();
   const drawn = await domToCanvas(root, {
     scale: window.devicePixelRatio || 1,
+    // The page's own background under everything, so a band the redraw
+    // leaves unpainted (the top of the content area) is not transparent.
+    backgroundColor: getComputedStyle(root).backgroundColor,
     filter: (node) => !(node instanceof Element && node.hasAttribute('data-capture-layer')),
   });
   const crop = canvasCrop(
