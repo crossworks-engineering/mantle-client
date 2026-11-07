@@ -636,6 +636,66 @@ describe('the reminder is the item’s', () => {
   });
 });
 
+describe('a Discard whose reload is cancelled', () => {
+  it('opens the item again about 2 s later, says so, and the next save asks first', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    (g.document as Record<string, unknown>).hasFocus = () => true;
+    // A leave guard asks, and the user says Stay: reload() comes back.
+    const reload = vi.fn(() => {
+      const ask = new Event('beforeunload', { cancelable: true });
+      ask.preventDefault();
+      window.dispatchEvent(ask);
+    });
+    (g.location as Record<string, unknown>).reload = reload;
+    h.begin('Agent');
+    const first = window.fetch('/api/pages/p1/publish', { method: 'POST', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    h.end();
+    const save = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    ((await heldOf(h)) as unknown as { discard: () => void }).discard();
+    // Shut at once: a write right behind the answer opens no new question.
+    const behind = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    await expect(save).rejects.toThrow();
+    await expect(behind).rejects.toThrow();
+    expect(h.get().held).toBeNull();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    await new Promise((r) => setTimeout(r, 2100));
+    expect(h.get().note).toBe("The page didn't reload. Your unsaved change is still here.");
+    // The reminder stands: the next save asks, and Save sends it.
+    const again = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('unsaved');
+    held!.answer(true);
+    expect((await again).status).toBe(200);
+    expect(calls.map((c) => c.url)).toEqual(['/api/pages/p1/draft']);
+  });
+
+  it('a reload no guard asked about keeps the item shut', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    (g.document as Record<string, unknown>).hasFocus = () => true;
+    (g.location as Record<string, unknown>).reload = vi.fn();
+    h.begin('Agent');
+    const first = window.fetch('/api/pages/p1/publish', { method: 'POST', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    h.end();
+    const save = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    ((await heldOf(h)) as unknown as { discard: () => void }).discard();
+    await expect(save).rejects.toThrow();
+    await new Promise((r) => setTimeout(r, 2100));
+    await expect(
+      window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' }),
+    ).rejects.toThrow();
+    expect(h.get().held).toBeNull();
+    expect(h.get().note).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe('a session ended by a login change', () => {
   it('says so, so no cancel is sent as the other login', async () => {
     const { AgentHands } = await import('./hands');

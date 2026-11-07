@@ -97,6 +97,9 @@ const QUIET_MS = 250;
 const LATE_MS = 2000;
 /** How long the host note about a late write stays up. */
 const NOTE_MS = 8000;
+/** How long after a Discard's reload the page may still be here before it
+ *  counts as cancelled. */
+const RELOAD_MS = 2000;
 /** How long a held request waits for the user before it counts as Not now. */
 const HELD_MS = 120_000;
 
@@ -143,6 +146,7 @@ export class AgentHands {
   /** Who drove the session that ended, for the late-write note. */
   private lastAgent = '';
   private noteTimer: ReturnType<typeof setTimeout> | null = null;
+  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── state for the overlay ────────────────────────────────────────────────
 
@@ -285,6 +289,9 @@ export class AgentHands {
     let discarded = false;
     const allowed = await this.ask('unsaved', method, url, null, () => {
       discarded = true;
+      // Shut before the question closes: a write that comes in between
+      // must not open a fresh one.
+      this.discarding.add(key);
     });
     if (allowed) {
       this.tainted.delete(key);
@@ -292,19 +299,87 @@ export class AgentHands {
       return 'save';
     }
     if (discarded) {
-      // Held shut, not cleared: the editor still holds the change until
-      // the page has loaded again, and leaving flushes it.
-      this.tainted.delete(key);
-      this.discarding.add(key);
+      // Held shut (set as Discard was pressed): the editor still holds the
+      // change until the page has loaded again, and leaving flushes it.
+      // The reminder stays, for a reload that does not happen.
       this.blockBeacons();
-      try {
-        location.reload();
-      } catch {
-        /* no page to load again */
-      }
+      this.reloadFor(key);
       return 'discard';
     }
     return 'keep';
+  }
+
+  /**
+   * Load the page again for a discarded change, and open the item again if
+   * that did not happen: a leave guard (the app editor's, Recall's) or the
+   * desktop app's leave dialog, which defaults to Stay, can cancel it.
+   *
+   * `location.reload()` asks the page's leave guards first, synchronously.
+   * When none of them asked the user, the reload goes on and the item stays
+   * shut until the page is gone. When one did, the user may have said Stay:
+   * about 2 s later, if the page still has the focus (a dialog takes it),
+   * or as soon as it has it back, the item opens again; also on a
+   * `pageshow` that brings the page back. The reminder stays, so its next
+   * save asks again, and a host note says the page did not reload.
+   *
+   * Left open: a guard asked, the user said Leave, and the next page took
+   * longer than that to answer while this one still had the focus. Then
+   * the item opens again before the old page goes, and its leave flush may
+   * send the change untagged.
+   */
+  private reloadFor(key: string) {
+    let prompted = false;
+    const onBefore = (e: Event) => {
+      const b = e as BeforeUnloadEvent;
+      prompted =
+        prompted ||
+        b.defaultPrevented ||
+        (typeof b.returnValue === 'string' && b.returnValue !== '');
+    };
+    try {
+      window.addEventListener('beforeunload', onBefore);
+    } catch {
+      /* no window */
+    }
+    try {
+      location.reload();
+    } catch {
+      // No page to load again: it is still here.
+      prompted = true;
+    }
+    try {
+      window.removeEventListener('beforeunload', onBefore);
+      window.addEventListener(
+        'pageshow',
+        (e) => {
+          if ((e as PageTransitionEvent).persisted) this.reloadDidNotHappen(key);
+        },
+        { once: true },
+      );
+    } catch {
+      /* no window */
+    }
+    if (!prompted) return;
+    if (this.reloadTimer) clearTimeout(this.reloadTimer);
+    this.reloadTimer = setTimeout(() => {
+      this.reloadTimer = null;
+      try {
+        if (typeof document === 'undefined' || document.hasFocus()) {
+          this.reloadDidNotHappen(key);
+        } else {
+          window.addEventListener('focus', () => this.reloadDidNotHappen(key), { once: true });
+        }
+      } catch {
+        /* the page went */
+      }
+    }, RELOAD_MS);
+  }
+
+  /** The reload a Discard asked for did not happen: the item opens again,
+   *  its reminder still standing, and a note says so. */
+  private reloadDidNotHappen(key: string) {
+    if (!this.discarding.delete(key)) return;
+    this.showNote("The page didn't reload. Your unsaved change is still here.");
   }
 
   /** Stop every timer and take the guard off now: for a page (or a test)
@@ -312,8 +387,10 @@ export class AgentHands {
   dispose(): void {
     if (this.releaseTimer) clearTimeout(this.releaseTimer);
     if (this.noteTimer) clearTimeout(this.noteTimer);
+    if (this.reloadTimer) clearTimeout(this.reloadTimer);
     this.releaseTimer = null;
     this.noteTimer = null;
+    this.reloadTimer = null;
     this.lateUntil = 0;
     this.tainted.clear();
     this.discarding.clear();
@@ -329,7 +406,12 @@ export class AgentHands {
   /** Say that a late write of the agent's went nowhere (after Stop). */
   private noteLate(risk: RequestRisk, reason: string | null) {
     const who = this.lastAgent || 'The agent';
-    this.set({ note: `${who}'s last action tried to ${heldText(risk, reason)}; not sent.` });
+    this.showNote(`${who}'s last action tried to ${heldText(risk, reason)}; not sent.`);
+  }
+
+  /** A short host note, closed after NOTE_MS. */
+  private showNote(text: string) {
+    this.set({ note: text });
     if (this.noteTimer) clearTimeout(this.noteTimer);
     this.noteTimer = setTimeout(() => {
       this.noteTimer = null;
