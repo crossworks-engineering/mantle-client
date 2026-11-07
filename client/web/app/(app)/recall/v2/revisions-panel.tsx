@@ -120,6 +120,8 @@ export function RevisionsPanel({ map, write }: { map: RecallMapDetailDTO; write:
                 variant="outline"
                 disabled={blocked !== null || write.pending}
                 title={blocked ?? undefined}
+                // A person looks at the text a restore puts live (lib/agent-ui).
+                data-agent-risk="person"
                 onClick={() => setConfirming(rev)}
               >
                 Restore

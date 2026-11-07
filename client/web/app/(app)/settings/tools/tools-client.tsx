@@ -646,7 +646,9 @@ export function ToolsClient() {
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    {/* data-agent-risk: only on the press that loosens (lib/agent-ui). */}
                     <Switch
+                      data-agent-risk={form.enabled ? undefined : 'person'}
                       checked={form.enabled}
                       onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
                     />
@@ -992,6 +994,7 @@ export function ToolsClient() {
 
                 <label className="flex items-center gap-2 text-sm">
                   <Switch
+                    data-agent-risk={form.requiresConfirm ? 'person' : undefined}
                     checked={form.requiresConfirm}
                     onCheckedChange={(v) => setForm((f) => ({ ...f, requiresConfirm: v }))}
                   />

@@ -301,6 +301,7 @@ export function QuestionnaireCard({
               size="sm"
               onClick={submitForm}
               type="button"
+              data-agent-risk="person"
             >
               <Check /> Answer &amp; continue
             </SubmitButton>
@@ -322,6 +323,7 @@ export function QuestionnaireCard({
           {flatOptions.map((opt) => (
             <Button
               key={opt}
+              data-agent-risk="person"
               onClick={() => decide(row.id, 'approve', { answer: opt })}
               disabled={busy}
               size="sm"
@@ -358,7 +360,12 @@ export function QuestionnaireCard({
             disabled={busy}
             className="h-9 min-w-48 flex-1"
           />
-          <SubmitButton pending={busy} disabled={!freeText.trim()} size="sm">
+          <SubmitButton
+            pending={busy}
+            disabled={!freeText.trim()}
+            size="sm"
+            data-agent-risk="person"
+          >
             <Check /> Answer &amp; approve
           </SubmitButton>
         </form>
@@ -371,7 +378,12 @@ export function QuestionnaireCard({
           {/* Semantic action colours come from TOKENS (style guide §2):
               affirmative = primary, the destructive arm = destructive.
               A literal emerald/red ignores the ~40 themes. */}
-          <Button onClick={() => decide(row.id, 'approve')} disabled={busy} size="sm">
+          <Button
+            data-agent-risk="person"
+            onClick={() => decide(row.id, 'approve')}
+            disabled={busy}
+            size="sm"
+          >
             <Check /> {isBudget ? 'Raise budget' : 'Approve'}
           </Button>
           <Button

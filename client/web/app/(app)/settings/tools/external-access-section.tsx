@@ -116,6 +116,8 @@ export function ExternalAccessSection({
         </div>
         <Switch
           id="external-access-switch"
+          // Only on the press that loosens: an agent may switch it off (lib/agent-ui).
+          data-agent-risk={on ? undefined : 'person'}
           checked={on}
           disabled={mutation.isPending || (!on && blocked !== null)}
           onCheckedChange={onToggle}

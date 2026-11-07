@@ -279,7 +279,14 @@ function Workbench({
               Unpublish
             </Button>
           ) : (
-            <Button size="sm" onClick={() => publish(true)} disabled={write.pending}>
+            // data-agent-risk: publishing is a person's act; an agent may
+            // unpublish (lib/agent-ui).
+            <Button
+              size="sm"
+              data-agent-risk="person"
+              onClick={() => publish(true)}
+              disabled={write.pending}
+            >
               <Send />
               Publish
             </Button>

@@ -623,6 +623,8 @@ function Editor({
                 </Button>
                 <Button
                   size="xs"
+                  // A person confirms a prompt; an agent may drop the request (lib/agent-ui).
+                  data-agent-risk="person"
                   onClick={() => answerPrompt(true)}
                   disabled={write.pending || dirty || !current || gone}
                   title={

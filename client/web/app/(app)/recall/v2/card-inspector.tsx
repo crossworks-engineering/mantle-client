@@ -156,6 +156,8 @@ export function CardInspector({
             <Switch
               id="recall-card-prompt"
               aria-label="Prompt"
+              // On, then saved, this confirms a prompt: a person's act (lib/agent-ui).
+              data-agent-risk={edits.prompt ? undefined : 'person'}
               checked={edits.prompt}
               onCheckedChange={(v) => onEdit('prompt', v)}
             />

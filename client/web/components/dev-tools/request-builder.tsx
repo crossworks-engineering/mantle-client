@@ -340,7 +340,8 @@ export function RequestBuilder() {
           <X /> Cancel
         </Button>
       ) : (
-        <Button type="button" size="sm" onClick={() => void send()}>
+        // The console's call counts as a person's own (lib/agent-ui).
+        <Button type="button" size="sm" data-agent-risk="person" onClick={() => void send()}>
           <Send /> {draft.kind === 'http' ? 'Send' : 'Run'}
         </Button>
       )}

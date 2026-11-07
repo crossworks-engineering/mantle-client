@@ -2,9 +2,12 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { elementRefusal } from './model';
 
 /**
- * Every control that switches, adds, signs out or forgets a login carries
+ * Two lists of controls an agent driving the window cannot press.
+ *
+ * The first, the login scan below. Every control that switches, adds, signs out or forgets a login carries
  * `data-agent-risk`, so an agent driving the window cannot press it
  * (lib/agent-ui; the kit's login-change-guard is the second line).
  *
@@ -13,6 +16,10 @@ import { describe, expect, it } from 'vitest';
  * file) are found, and every JSX opening tag whose event handler or href
  * names one of them, or a sign-in-again / add-login path, must carry
  * `data-agent-risk`, itself or on the `asChild` parent it renders through.
+ *
+ * The second, PERSON_CONTROLS at the end: a person's own acts, read from the
+ * mantle repo (packages/tools/src/person-only-acts.ts and the `people` rows of
+ * server/web/lib/auth/route-mcp-ledger.json).
  */
 
 const REPO = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -220,5 +227,93 @@ describe('login controls carry data-agent-risk', () => {
       );
     `;
     expect(loginControls(src).map((c) => c.marked)).toEqual([false, true, true]);
+  });
+});
+
+/** Comments say the same words: only the code counts. */
+const codeOf = (raw: string) =>
+  raw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+
+/** The opening tags a piece of text sits in: `needle` is part of the tag. */
+function tagsWith(file: string, needle: string): string[] {
+  const src = codeOf(readFileSync(join(REPO, file), 'utf8'));
+  const out: string[] = [];
+  for (let at = src.indexOf(needle); at >= 0; at = src.indexOf(needle, at + 1)) {
+    out.push(tagAround(src, at).text);
+  }
+  return out;
+}
+
+const APP = 'client/web/app/(app)';
+const MARK = 'data-agent-risk="person"';
+/** A switch an agent may turn the safe way: marked only on the press that
+ *  loosens, as an agent may send only the value that tightens. */
+const onWhen = (test: string) => `data-agent-risk={${test}}`;
+
+/** [the file, a piece of the control's opening tag, its mark]. */
+const PERSON_CONTROLS: readonly (readonly [string, string, string])[] = [
+  // pending_approve
+  [`${APP}/pending/pending-client.tsx`, "decide(row.id, 'approve')", MARK],
+  ['client/web/components/pending/questionnaire-card.tsx', "decide(row.id, 'approve')", MARK],
+  [
+    'client/web/components/pending/questionnaire-card.tsx',
+    "decide(row.id, 'approve', { answer: opt })",
+    MARK,
+  ],
+  ['client/web/components/pending/questionnaire-card.tsx', 'onClick={submitForm}', MARK],
+  ['client/web/components/pending/questionnaire-card.tsx', 'disabled={!freeText.trim()}', MARK],
+  // api_tool_update: enabled, requires_confirm, external_access
+  [
+    `${APP}/settings/tools/tools-client.tsx`,
+    'checked={form.enabled}',
+    onWhen("form.enabled ? undefined : 'person'"),
+  ],
+  [
+    `${APP}/settings/tools/tools-client.tsx`,
+    'checked={form.requiresConfirm}',
+    onWhen("form.requiresConfirm ? 'person' : undefined"),
+  ],
+  [
+    `${APP}/settings/tools/external-access-section.tsx`,
+    'id="external-access-switch"\n',
+    onWhen("on ? undefined : 'person'"),
+  ],
+  // recall_map_publish, recall_prompt_confirm, recall_revision_restore
+  [`${APP}/recall/v2/map-workbench.tsx`, 'publish(true)', MARK],
+  [`${APP}/recall/v2/card-editor.tsx`, 'answerPrompt(true)', MARK],
+  [
+    `${APP}/recall/v2/card-inspector.tsx`,
+    'checked={edits.prompt}',
+    onWhen("edits.prompt ? undefined : 'person'"),
+  ],
+  [`${APP}/recall/v2/revisions-panel.tsx`, 'setConfirming(rev)', MARK],
+  // The dev tool console: its call counts as a person's.
+  ['client/web/components/dev-tools/request-builder.tsx', 'onClick={() => void send()}', MARK],
+];
+
+/** The same screens' other way: an agent may tighten, so these stay open. */
+const TIGHTENS: readonly (readonly [string, string])[] = [
+  [`${APP}/pending/pending-client.tsx`, "decide(row.id, 'reject')"],
+  ['client/web/components/pending/questionnaire-card.tsx', "decide(row.id, 'reject')"],
+  [`${APP}/recall/v2/map-workbench.tsx`, 'publish(false)'],
+  [`${APP}/recall/v2/card-editor.tsx`, 'answerPrompt(false)'],
+];
+
+describe("a person's own acts carry data-agent-risk", () => {
+  it.each(PERSON_CONTROLS)('%s: %s', (file, needle, mark) => {
+    const tags = tagsWith(file, needle);
+    expect(tags.length).toBeGreaterThan(0);
+    for (const tag of tags) expect(tag).toContain(mark);
+  });
+
+  it.each(TIGHTENS)('%s: %s stays open to an agent', (file, needle) => {
+    const tags = tagsWith(file, needle);
+    expect(tags.length).toBeGreaterThan(0);
+    for (const tag of tags) expect(tag).not.toContain('data-agent-risk');
+  });
+
+  it('the mark answers needs_user', () => {
+    const facts = { inHost: false, risk: 'person', inAlertDialog: false, secret: false };
+    expect(elementRefusal(facts, 'click')).toBe('needs_user');
   });
 });

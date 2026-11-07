@@ -252,7 +252,10 @@ function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; b
 
       <div className="flex items-center gap-2">
         {mayApprove(row, viewer) ? (
+          // data-agent-risk: approving is a person's act; a reject stays open
+          // to an agent, which may tighten (lib/agent-ui).
           <Button
+            data-agent-risk="person"
             onClick={() => decide(row.id, 'approve')}
             disabled={busy}
             size="sm"
