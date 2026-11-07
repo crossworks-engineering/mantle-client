@@ -42,6 +42,7 @@ import {
   type Screen,
 } from './model';
 import { setLoginChangeGuard } from '@mantle/web-ui/login-change-guard';
+import { currentLoginKey, isLoginStorageKey, loginChangedFrom } from './login-pin';
 import { centerOf, factsOf, findByName, findTarget, readScreen, roleOf } from './dom';
 
 export type HeldRequest = {
@@ -110,6 +111,12 @@ export class AgentHands {
   private heldSeq = 0;
   private blockedSinceAction = false;
   private stopped = false;
+  /** Why the session ended, when it was not the user's Stop: the login
+   *  changed under it (another tab), so its calls answer `window_gone`. */
+  private endedBy: 'window_gone' | null = null;
+  /** The login the session acts as (`currentLoginKey` when it began, or the
+   *  turn's pin). undefined: none pinned. */
+  private pinnedLogin: string | null | undefined = undefined;
   /** Bumped by every new session, so an action of an ended one cannot go
    *  on in the next. */
   private generation = 0;
@@ -161,7 +168,7 @@ export class AgentHands {
    *  `lesson:<uuid>`; an in-app agent tags each call in `withCall`). On a
    *  session that runs already it only takes the new name and tag: one the
    *  user took over stays paused until they say go on. */
-  begin(agent: string, opts: { tag?: string } = {}): void {
+  begin(agent: string, opts: { tag?: string; login?: string | null } = {}): void {
     const name = agent.slice(0, 60) || 'The agent';
     if (this.state.active) {
       if (opts.tag) this.callTag = opts.tag;
@@ -169,11 +176,14 @@ export class AgentHands {
       return;
     }
     this.stopped = false;
+    this.endedBy = null;
     this.generation += 1;
     this.callTag = opts.tag ?? null;
+    this.pinnedLogin = opts.login !== undefined ? opts.login : currentLoginKey();
     this.wrapFetch();
     window.addEventListener('pointerdown', this.onUserInput, true);
     window.addEventListener('keydown', this.onUserInput, true);
+    window.addEventListener('storage', this.onStorage);
     this.set({ ...IDLE, active: true, agent: name });
   }
 
@@ -184,6 +194,7 @@ export class AgentHands {
     this.stopped = true;
     window.removeEventListener('pointerdown', this.onUserInput, true);
     window.removeEventListener('keydown', this.onUserInput, true);
+    window.removeEventListener('storage', this.onStorage);
     this.state.held?.answer(false);
     this.refs.clear();
     this.lastAgent = this.state.agent;
@@ -284,6 +295,28 @@ export class AgentHands {
     }
   }
 
+  /** Whether the login changed since the session began (another tab
+   *  switched or signed out): the agent must not act as anyone else. */
+  loginChanged(): boolean {
+    return loginChangedFrom(this.pinnedLogin, currentLoginKey());
+  }
+
+  /** End the session because the login changed: its open and later calls
+   *  answer `window_gone`, and nothing more is sent as it. */
+  endForLoginChange(): void {
+    if (!this.state.active) return;
+    this.endedBy = 'window_gone';
+    // Not the late window either: nothing more goes out tagged as it.
+    this.lateUntil = 0;
+    this.end();
+  }
+
+  private onStorage = (e: StorageEvent) => {
+    if (this.state.active && isLoginStorageKey(e.key) && this.loginChanged()) {
+      this.endForLoginChange();
+    }
+  };
+
   /** Go on after the user took over (the user said so). */
   resume(): void {
     if (this.state.active) this.set({ paused: false });
@@ -329,6 +362,12 @@ export class AgentHands {
     const own = agentOwnRequest(url) && !bodyHasKey(body, 'supersede');
     const agents = this.guarding() && !own;
     if (!agents) return { blocked: false, tag: null };
+    // Another tab changed the login: the agent's write would go as someone
+    // else. The session ends, and nothing is sent.
+    if (m !== 'GET' && m !== 'HEAD' && (this.endedBy === 'window_gone' || this.loginChanged())) {
+      this.endForLoginChange();
+      return { blocked: true };
+    }
     const risk = riskOfRequest(m, url, body ?? undefined);
     if (risk) {
       // Stopped meanwhile: nobody is asked, nothing is sent, and a note
@@ -482,7 +521,13 @@ export class AgentHands {
     const expiresAt = this.callExpiresAt;
     const next = this.queue.then(async () => {
       if (expiresAt !== null && Date.now() >= expiresAt) return refuse('window_gone');
-      if (!this.state.active) return refuse(this.stopped ? 'stopped' : 'no_session');
+      if (!this.state.active) {
+        return refuse(this.endedBy ?? (this.stopped ? 'stopped' : 'no_session'));
+      }
+      if (this.loginChanged()) {
+        this.endForLoginChange();
+        return refuse('window_gone');
+      }
       if (this.state.paused) return refuse('user_took_over');
       const generation = this.generation;
       const alive = () => this.state.active && !this.state.paused && this.generation === generation;
@@ -501,7 +546,9 @@ export class AgentHands {
         const deadline = Date.now() + HELD_MS;
         while (this.state.held && this.state.active && Date.now() < deadline) await sleep(80);
         this.state.held?.answer(false);
-        if (!this.state.active || this.generation !== generation) return refuse('stopped');
+        if (!this.state.active || this.generation !== generation) {
+          return refuse(this.endedBy ?? 'stopped');
+        }
         if (!out.ok && out.error === 'stopped') return out;
         if (this.state.paused) return refuse('user_took_over');
         if (out.ok && this.blockedSinceAction) return refuse('needs_user');

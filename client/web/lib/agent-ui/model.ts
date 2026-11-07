@@ -257,7 +257,10 @@ const REASON_TEXT: Record<string, string> = {
   move: RISK_TEXT.move,
   copy: RISK_TEXT.copy,
   workspace_target: RISK_TEXT.workspace_target,
-  publish: RISK_TEXT.publish,
+  // The brain's `publish` also covers a write into the Admin workspace's
+  // Lessons folder (a lesson plays for everyone).
+  publish: 'publish something or change a lesson',
+  lesson: 'change a lesson',
   sharing_field: RISK_TEXT.share,
   declared_read: 'run something the brain keeps for you',
   body_unchecked: 'send something the brain could not check',

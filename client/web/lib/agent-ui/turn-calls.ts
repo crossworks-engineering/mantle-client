@@ -17,6 +17,7 @@
  */
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { agentHands } from './hands';
+import { currentLoginKey, loginChangedFrom } from './login-pin';
 import { parseTarget, refuse, type AgentResult, type AgentTarget } from './model';
 
 /** This page load's window id: never stored, so a reload or a duplicated
@@ -106,6 +107,10 @@ const ownTurns = new Set<string>();
 /** How far the brain's clock is ahead of this one, per turn (ms), read
  *  from the turn's 202 `Date` header. */
 const clockOffsets = new Map<string, number>();
+/** The login each claimed turn was sent as (`currentLoginKey`). */
+const turnLogins = new Map<string, string | null>();
+/** Turns whose login changed under them: their calls run no more. */
+const goneTurns = new Set<string>();
 
 /** The brain's clock minus this one's, from a response's `Date` header
  *  read at `clientNowMs`; 0 when there is none (a `Date` header is not
@@ -125,6 +130,7 @@ export function claimTurn(turnId: string, serverDate?: string | null): void {
   if (!enabled) return;
   ownTurns.add(turnId);
   clockOffsets.set(turnId, serverClockOffset(serverDate, Date.now()));
+  turnLogins.set(turnId, currentLoginKey());
 }
 const turnAgents = new Map<string, string>();
 /** Turns the user stopped: their later calls answer `stopped`. */
@@ -159,6 +165,15 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
   const call = parseUiCall(raw);
   if (!call || handled.has(call.callId) || !ownTurns.has(turnId)) return;
   handled.add(call.callId);
+  // The login changed since the turn was sent (another tab): this window
+  // no longer acts for it. The session ends and nothing is sent, not even
+  // an answer, which would go as the other login: the brain answers the
+  // call window_gone itself when it expires.
+  if (goneTurns.has(turnId) || loginChangedFrom(turnLogins.get(turnId), currentLoginKey())) {
+    goneTurns.add(turnId);
+    agentHands().endForLoginChange();
+    return;
+  }
   const answer = (result: AgentResult<object>) =>
     apiSend(`/api/assistant/turn/${encodeURIComponent(turnId)}/ui/${call.callId}`, 'POST', {
       windowId: WINDOW_ID,
@@ -182,7 +197,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
   watchStop();
   const hands = agentHands();
   turnAgents.set(turnId, agentName);
-  if (!hands.get().active) hands.begin(agentName);
+  if (!hands.get().active) hands.begin(agentName, { login: turnLogins.get(turnId) ?? null });
   // Checked again as it runs: a call can wait behind the one before it.
   const result = await hands.withCall(
     call.callId,
@@ -200,6 +215,8 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
 export function endAgentTurn(turnId: string): void {
   ownTurns.delete(turnId);
   clockOffsets.delete(turnId);
+  turnLogins.delete(turnId);
+  goneTurns.delete(turnId);
   // Deleted before the session ends, so its end is not read as Stop.
   if (!turnAgents.delete(turnId)) return;
   if (turnAgents.size === 0) agentHands().end();

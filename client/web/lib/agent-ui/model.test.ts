@@ -180,7 +180,8 @@ describe('heldText', () => {
     expect(heldText('refused', 'move')).toBe('move something to another place');
     expect(heldText('refused', 'tree_move')).toBe('move something to another place');
     expect(heldText('refused', 'copy')).toBe('make a copy of something');
-    expect(heldText('refused', 'publish')).toBe('publish something');
+    expect(heldText('refused', 'publish')).toBe('publish something or change a lesson');
+    expect(heldText('refused', 'lesson')).toBe('change a lesson');
     expect(heldText('refused', 'admin_only')).toBe(
       'change something only an Admin user may change',
     );

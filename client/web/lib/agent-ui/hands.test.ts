@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** Who the window is signed in as, as the login pin reads it: a test
+ *  changes it to play another tab switching the login. */
+let loginNow: string | null = 'login:ada';
+vi.mock('./login-pin', async (orig) => ({
+  ...(await orig<typeof import('./login-pin')>()),
+  currentLoginKey: () => loginNow,
+}));
+
 /**
  * The hands in a node run: no DOM, so the few globals they touch are
  * stood in for here (a window with a fetch, a location, the event
@@ -114,6 +122,7 @@ function made<T extends { dispose: () => void }>(h: T): T {
 }
 
 afterEach(async () => {
+  loginNow = 'login:ada';
   for (const h of live.splice(0)) h.dispose();
   (await import('./hands')).agentHands().dispose();
   for (const k of GLOBALS) g[k] = saved[k];
@@ -435,6 +444,52 @@ describe('a late write the brain refuses after Stop', () => {
     g.window = undefined;
     expect(() => vi.advanceTimersByTime(2100)).not.toThrow();
     g.window = win;
+  });
+});
+
+describe('a login change in another tab', () => {
+  it('the next action answers window_gone and does nothing', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    loginNow = 'login:mo';
+    expect(await h.click({ id: 'add' })).toMatchObject({ ok: false, error: 'window_gone' });
+    expect(control.dispatched).not.toContain('click');
+    expect(h.get().active).toBe(false);
+    expect(await h.screen()).toMatchObject({ ok: false, error: 'window_gone' });
+  });
+
+  it('a tagged write after it is not sent, and the session ends', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Lesson', { tag: 'lesson:x' });
+    loginNow = 'login:mo';
+    await expect(window.fetch('/api/notes', { method: 'POST', body: '{}' })).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+    expect(h.get().active).toBe(false);
+  });
+
+  it('the storage event of a login change ends the session at once', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    // Another key, nothing changed: the session runs on.
+    window.dispatchEvent(Object.assign(new Event('storage'), { key: 'mantle_ui_prefs' }));
+    expect(h.get().active).toBe(true);
+    loginNow = 'login:mo';
+    window.dispatchEvent(Object.assign(new Event('storage'), { key: 'mantle_active_session' }));
+    expect(h.get().active).toBe(false);
+    expect(await h.screen()).toMatchObject({ ok: false, error: 'window_gone' });
+  });
+
+  it('the same login (a rotated bearer) changes nothing', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    window.dispatchEvent(Object.assign(new Event('storage'), { key: 'mantle_token' }));
+    expect(h.get().active).toBe(true);
+    expect(await h.click({ id: 'add' })).toEqual({ ok: true });
+    h.end();
   });
 });
 
