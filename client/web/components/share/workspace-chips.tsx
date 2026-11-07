@@ -68,7 +68,10 @@ export function WorkspaceChips({
             variant="outline"
             className={cn(
               'max-w-28 shrink-0 truncate border-transparent',
+              // The tint's fill, but the page's own text: the tint's ink is a
+              // fixed-lightness hue that falls under 4.5:1 in most light themes.
               TINT_CLASSES[look.color],
+              'text-foreground',
               size,
             )}
           >

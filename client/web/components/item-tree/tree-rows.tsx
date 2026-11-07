@@ -790,7 +790,7 @@ export function ItemRow({
             selected
               ? 'bg-accent text-accent-foreground'
               : picked
-                ? 'bg-primary/10 text-foreground ring-1 ring-inset ring-primary/30 hover:bg-primary/15'
+                ? 'bg-selected text-foreground ring-1 ring-inset ring-primary/30'
                 : 'text-foreground/90 hover:bg-foreground/[0.06]',
             selected && picked && 'ring-1 ring-inset ring-primary/40',
           )}

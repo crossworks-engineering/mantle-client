@@ -9,13 +9,15 @@ import { cn } from './lib/utils';
  * themes — chart tokens are calibrated for fills, not for legible text on a
  * tinted version of themselves. Using the regular foreground guarantees
  * contrast, while the colored border + bg tint still encode the tag's identity.
+ * The tint is 12%: at 20% the foreground fell under 4.5:1 on a selected card
+ * in four themes (catppuccin light, 4.1).
  */
 const TAG_COLORS = [
-  'border-chart-1/50 bg-chart-1/20 text-foreground',
-  'border-chart-2/50 bg-chart-2/20 text-foreground',
-  'border-chart-3/50 bg-chart-3/20 text-foreground',
-  'border-chart-4/50 bg-chart-4/20 text-foreground',
-  'border-chart-5/50 bg-chart-5/20 text-foreground',
+  'border-chart-1/50 bg-chart-1/12 text-foreground',
+  'border-chart-2/50 bg-chart-2/12 text-foreground',
+  'border-chart-3/50 bg-chart-3/12 text-foreground',
+  'border-chart-4/50 bg-chart-4/12 text-foreground',
+  'border-chart-5/50 bg-chart-5/12 text-foreground',
 ];
 
 /** Deterministic color class for a tag — the same tag always maps to the

@@ -11,10 +11,8 @@ import { cn } from '../lib/utils';
  * a primary border thickened by a matching ring, over the theme's `selected`
  * surface: a soft accent tint the theme generator solves so the card's own
  * `foreground` and `muted-foreground` text keep 4.5:1 on it, in every theme
- * and mode (a half `bg-accent` did not: Starry Night dark read at 1.3:1).
- * Until the contract package carries `--selected`, the old half accent
- * stands in. `data-dimmed`
- * fades disabled/past/off records.
+ * and mode (a half `bg-accent` did not: Starry Night dark read at 1.4:1).
+ * `data-dimmed` fades disabled/past/off records.
  *
  * The idle fill is `bg-card/70`, not solid: the list panes sit directly on the
  * workspace's Neat backdrop, and hover/selected were already translucent — a
@@ -31,7 +29,7 @@ import { cn } from '../lib/utils';
  * urgent wins; two accent bars is not a marker, it is a gradient.
  */
 export const listCardClass =
-  'block w-full rounded-lg border border-border bg-card/70 p-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:border-primary data-[selected=true]:ring-1 data-[selected=true]:ring-primary data-[selected=true]:bg-[color:var(--selected,color-mix(in_oklab,var(--accent)_50%,transparent))] data-[dimmed=true]:opacity-60 data-[accent]:border-l-[3px] data-[accent=primary]:border-l-primary data-[accent=info]:border-l-info data-[accent=warning]:border-l-warning data-[accent=success]:border-l-success';
+  'block w-full rounded-lg border border-border bg-card/70 p-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:border-primary data-[selected=true]:ring-1 data-[selected=true]:ring-primary data-[selected=true]:bg-selected data-[dimmed=true]:opacity-60 data-[accent]:border-l-[3px] data-[accent=primary]:border-l-primary data-[accent=info]:border-l-info data-[accent=warning]:border-l-warning data-[accent=success]:border-l-success';
 
 /** Semantic accent-bar tones. Status tokens only — never `chart-*` (DATA ink)
  *  and never a literal colour. What each means is the caller's contract; the

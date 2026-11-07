@@ -50,7 +50,8 @@ describe('WorkspaceChips', () => {
         { id: 'a', name: 'Admin', color: null, kind: 'admin' },
       ],
     });
-    expect(html).toMatch(/bg-app-tint-teal text-app-tint-teal-ink[^>]*>Team</);
+    // The tint's fill with the page's text: the tint ink reads under 4.5:1.
+    expect(html).toMatch(/bg-app-tint-teal text-foreground[^>]*>Team</);
     expect(html).toMatch(/bg-secondary[^>]*>Admin</);
   });
 

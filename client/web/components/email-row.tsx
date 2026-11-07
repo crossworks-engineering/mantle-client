@@ -26,7 +26,7 @@ export function EmailRow(props: RowProps) {
       href={props.href}
       className={cn(
         'block border-b border-border px-3 py-2.5 transition-colors',
-        props.selected ? 'bg-accent' : 'hover:bg-accent/50',
+        props.selected ? 'bg-selected' : 'hover:bg-accent/50',
       )}
       aria-current={props.selected ? 'true' : undefined}
     >

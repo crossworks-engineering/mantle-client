@@ -76,7 +76,7 @@ export function AvatarStyleControls() {
             className={cn(
               'flex flex-col items-start gap-0.5 border-border p-2 text-left',
               'hover:bg-accent/40',
-              'data-[state=checked]:border-primary data-[state=checked]:bg-[color:var(--selected,color-mix(in_oklab,var(--accent)_50%,transparent))] data-[state=checked]:ring-1 data-[state=checked]:ring-primary',
+              'data-[state=checked]:border-primary data-[state=checked]:bg-selected data-[state=checked]:ring-1 data-[state=checked]:ring-primary',
             )}
           >
             <span className="text-sm font-medium text-foreground">{t.label}</span>
