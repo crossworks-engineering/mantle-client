@@ -121,7 +121,9 @@ export function GrantAccessView({
   };
 
   return (
-    <div className="space-y-3">
+    // data-agent-risk: who reads an item is the user's to change, so an
+    // agent driving the window presses nothing in here (lib/agent-ui).
+    <div className="space-y-3" data-agent-risk="share">
       <div className="space-y-2">
         <p className="text-sm font-medium">Who can see this</p>
         {!manage && <p className="text-xs text-muted-foreground">{READ_ONLY_PANEL_TEXT}</p>}

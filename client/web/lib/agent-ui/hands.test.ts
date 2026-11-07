@@ -493,6 +493,99 @@ describe('a login change in another tab', () => {
   });
 });
 
+describe('a change the user said Not now to', () => {
+  it('its next save from this page is asked again, after the session too; Save sends it untagged', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    const first = window.fetch('/api/profile/sounds', { method: 'PUT', body: '{"a":1}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    h.end();
+    // The user's own save, untagged, the session over: asked again.
+    const again = window.fetch('/api/profile/sounds', { method: 'PUT', body: '{"a":1}' });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('unsaved');
+    expect((held as unknown as { discard?: unknown }).discard).toBeTypeOf('function');
+    held!.answer(true);
+    expect((await again).status).toBe(200);
+    expect(calls.map((c) => c.tag)).toEqual([null]);
+    // Allowed once: the next one goes as ever.
+    await window.fetch('/api/profile/sounds', { method: 'PUT', body: '{"a":2}' });
+    expect(calls).toHaveLength(2);
+    expect(h.get().held).toBeNull();
+  });
+
+  it('a write the brain refused and the user said Not now to is asked again too', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    answer = (c) => (c.tag ? refusal() : new Response('{}', { status: 200 }));
+    h.begin('Lesson', { tag: 'lesson:x' });
+    const first = window.fetch('/api/notes/n1', { method: 'PATCH', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    h.end();
+    const again = window.fetch('/api/notes/n1', { method: 'PATCH', body: '{}' });
+    expect((await heldOf(h))?.risk).toBe('unsaved');
+    h.get().held!.answer(false);
+    await expect(again).rejects.toThrow();
+    // Another item is not asked about: the user's own write goes as ever.
+    expect((await window.fetch('/api/notes/n2', { method: 'PATCH', body: '{}' })).status).toBe(200);
+  });
+
+  it('the agent sending it again meets the usual hold, and Allow clears it', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    const first = window.fetch('/api/profile/sounds', { method: 'PUT', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    const again = window.fetch('/api/profile/sounds', { method: 'PUT', body: '{}' });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('settings');
+    held!.answer(true);
+    expect((await again).status).toBe(200);
+    h.end();
+    // Nothing is left to ask about.
+    await window.fetch('/api/profile/sounds', { method: 'PUT', body: '{}' });
+    expect(h.get().held).toBeNull();
+    expect(calls).toHaveLength(2);
+  });
+
+  it('Discard the assistant’s change loads the item again and sends nothing', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    const reload = vi.fn();
+    (g.location as Record<string, unknown>).reload = reload;
+    h.begin('Agent');
+    const first = window.fetch('/api/profile/sounds', { method: 'PUT', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    h.end();
+    const again = window.fetch('/api/profile/sounds', { method: 'PUT', body: '{}' });
+    const held = (await heldOf(h)) as unknown as { discard: () => void };
+    held.discard();
+    await expect(again).rejects.toThrow();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('a session ended by a login change', () => {
+  it('says so, so no cancel is sent as the other login', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    expect(h.endedForLoginChange()).toBe(false);
+    loginNow = 'login:mo';
+    h.endForLoginChange();
+    expect(h.endedForLoginChange()).toBe(true);
+    h.begin('Agent');
+    expect(h.endedForLoginChange()).toBe(false);
+    h.end();
+  });
+});
+
 describe('Stop really stops', () => {
   it('Stop while the cursor travels: nothing is pressed, the answer is stopped', async () => {
     const { AgentHands } = await import('./hands');

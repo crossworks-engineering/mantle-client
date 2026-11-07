@@ -29,16 +29,33 @@ export const WINDOW_ID =
 
 let enabled = false;
 let loaded: Promise<boolean> | null = null;
+/** The login the cached setting (and the user's consent) belongs to. */
+let settingLogin: string | null | undefined = undefined;
 
-/** The login's setting, read once per page load (and after a change). */
+/** The login's setting, read once per page load (and after a change, or
+ *  once the login is another one). */
 export function loadAgentUiSetting(force = false): Promise<boolean> {
   if (!loaded || force) {
+    settingLogin = currentLoginKey();
     loaded = apiFetch<{ enabled?: boolean }>('/api/profile/agent-ui').then(
       (r) => (enabled = r.enabled === true),
       () => (enabled = false),
     );
   }
   return loaded;
+}
+
+/**
+ * The setting and the consent are the login's: when another tab switched
+ * the login between turns, both are forgotten (off and unasked) and the
+ * setting is read again as the new login. Until it is, no turn names this
+ * window.
+ */
+function forLoginNow(): void {
+  if (settingLogin === undefined || currentLoginKey() === settingLogin) return;
+  enabled = false;
+  consent = 'unasked';
+  void loadAgentUiSetting(true);
 }
 
 export async function setAgentUiSetting(on: boolean, loginId: string): Promise<boolean> {
@@ -52,11 +69,13 @@ export async function setAgentUiSetting(on: boolean, loginId: string): Promise<b
 }
 
 export function agentUiEnabled(): boolean {
+  forLoginNow();
   return enabled;
 }
 
 /** A turn body with this window named, when the setting is on. */
 export function withWindowId(body: FormData | string, isJson: boolean): FormData | string {
+  forLoginNow();
   if (!enabled) return body;
   if (!isJson && body instanceof FormData) {
     body.set('windowId', WINDOW_ID);
@@ -127,6 +146,7 @@ export function serverClockOffset(
 /** This window sent `turnId` with its window id. `serverDate`: the 202's
  *  `Date` header, so a call's `expiresAt` is judged by the brain's clock. */
 export function claimTurn(turnId: string, serverDate?: string | null): void {
+  forLoginNow();
   if (!enabled) return;
   ownTurns.add(turnId);
   clockOffsets.set(turnId, serverClockOffset(serverDate, Date.now()));
@@ -148,8 +168,13 @@ function watchStop(): void {
   watching = true;
   agentHands().subscribe((s) => {
     if (s.active || turnAgents.size === 0) return;
+    // Ended because another tab changed the login: a cancel now would go
+    // as the other login, so none is sent. The turn's calls go unanswered
+    // here, and the brain answers them window_gone as they expire.
+    const asOther = agentHands().endedForLoginChange();
     for (const turnId of turnAgents.keys()) {
       stoppedTurns.add(turnId);
+      if (asOther) continue;
       void apiFetch(`/api/assistant/turn/${encodeURIComponent(turnId)}/cancel`, {
         method: 'POST',
       }).catch(() => undefined);
@@ -165,6 +190,7 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
   const call = parseUiCall(raw);
   if (!call || handled.has(call.callId) || !ownTurns.has(turnId)) return;
   handled.add(call.callId);
+  forLoginNow();
   // The login changed since the turn was sent (another tab): this window
   // no longer acts for it. The session ends and nothing is sent, not even
   // an answer, which would go as the other login: the brain answers the

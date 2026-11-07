@@ -79,13 +79,55 @@ function tagAround(src: string, at: number): { start: number; text: string } {
   return { start, text: src.slice(start, i + 1) };
 }
 
-const word = (names: Set<string>) => new RegExp(`\\b(${[...names].join('|')})\\b`);
+/** A name used as code, not inside a string ('commit' is a sound's name,
+ *  `/commit` a path) or as a property (`x.commit`). */
+const word = (names: Set<string>) =>
+  new RegExp(`(?<![\\w'"\`/.-])(${[...names].join('|')})(?![\\w'"\`-])`);
 
-/** The controls of one file that change the login, and whether each is marked. */
-export function loginControls(src: string): { tag: string; marked: boolean }[] {
-  if (!ACTIONS.some((a) => src.includes(a)) && !PATHS.test(src)) return [];
-  // Functions that change the login, to a fixed point.
-  const names = new Set(ACTIONS);
+/** A family of risky actions: the calls that do it, the hrefs or handler
+ *  text that lead to it, and what a function body says when it does it. */
+type Family = { actions: readonly string[]; paths: RegExp; bodies: RegExp | null };
+
+const LOGIN: Family = { actions: ACTIONS, paths: PATHS, bodies: null };
+
+/** Commit, publish and discard-draft (fix round 8): a chained write can go
+ *  out after the late window, so the agent may not press them at all. */
+const PUBLISH: Family = {
+  actions: [],
+  paths: /(?!)/,
+  bodies: /\/(commit|publish|unpublish|discard-draft)[`'"/?]/,
+};
+
+/** The open brace of the object literal around `at`, or -1. */
+function objectAround(src: string, at: number): number {
+  let depth = 0;
+  for (let i = at; i >= 0; i--) {
+    const c = src[i];
+    if (c === '}') depth++;
+    else if (c === '{') {
+      if (depth === 0) return i;
+      depth--;
+    }
+  }
+  return -1;
+}
+
+/** The controls of one file that do one of `family`'s actions, and whether
+ *  each is marked: a JSX tag's `data-agent-risk` (or its `asChild`
+ *  parent's), or a header tool or menu entry's `risk`. */
+export function riskyControls(
+  raw: string,
+  family: Family = LOGIN,
+): { tag: string; marked: boolean }[] {
+  // Comments say "commit" and "sign out" too: only the code counts.
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+  const touches =
+    family.actions.some((a) => src.includes(a)) ||
+    family.paths.test(src) ||
+    (family.bodies !== null && family.bodies.test(src));
+  if (!touches) return [];
+  // Functions that do it, to a fixed point.
+  const names = new Set(family.actions);
   const defs = [
     ...src.matchAll(
       /(?:function\s+(\w+)\s*\(|const\s+(\w+)\s*=\s*(?:useCallback\(\s*)?(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>)/g,
@@ -97,13 +139,22 @@ export function loginControls(src: string): { tag: string; marked: boolean }[] {
   for (let grew = true; grew;) {
     grew = false;
     for (const d of defs) {
-      if (!names.has(d.name) && word(names).test(d.body.slice(d.name.length))) {
+      if (names.has(d.name)) continue;
+      const rest = d.body.slice(d.name.length);
+      const direct = family.bodies !== null && family.bodies.test(rest);
+      // A component (capitalised) is not a handler: its body holds the
+      // whole screen.
+      if (/^[A-Z]/.test(d.name)) continue;
+      if (direct || (names.size > 0 && word(names).test(rest))) {
         names.add(d.name);
         grew = true;
       }
     }
   }
+  const named = (text: string) =>
+    (names.size > 0 && word(names).test(text)) || family.paths.test(text);
   const out: { tag: string; marked: boolean }[] = [];
+  // JSX attributes.
   for (const m of src.matchAll(/\b(on[A-Z]\w*|href)=(\{|")/g)) {
     const at = m.index!;
     const valueStart = at + m[0].length - 1;
@@ -111,7 +162,7 @@ export function loginControls(src: string): { tag: string; marked: boolean }[] {
       m[2] === '{'
         ? src.slice(valueStart, closeOf(src, valueStart))
         : src.slice(valueStart, src.indexOf('"', valueStart + 1) + 1);
-    if (!word(names).test(value) && !PATHS.test(value)) continue;
+    if (!named(value)) continue;
     const tag = tagAround(src, at);
     let marked = tag.text.includes('data-agent-risk');
     if (!marked) {
@@ -121,18 +172,34 @@ export function loginControls(src: string): { tag: string; marked: boolean }[] {
     }
     out.push({ tag: tag.text.split('\n')[0]!.trim(), marked });
   }
+  // Header tools and menu entries: `{ key, label, onSelect: ... }`.
+  for (const m of src.matchAll(/\b(onSelect|onClick)\s*:/g)) {
+    const at = m.index!;
+    const open = objectAround(src, at);
+    if (open < 0) continue;
+    const obj = src.slice(open, closeOf(src, open));
+    const value = src.slice(at + m[0].length, at + m[0].length + 200).split(/,\s*\n/)[0]!;
+    if (!named(value)) continue;
+    out.push({
+      tag: obj.split('\n').slice(0, 3).join(' ').replace(/\s+/g, ' ').slice(0, 80),
+      marked: /\brisk\s*:/.test(obj) || obj.includes('data-agent-risk'),
+    });
+  }
   return out;
 }
 
-describe('login controls carry data-agent-risk', () => {
-  const found = DIRS.flatMap((d) => tsxFiles(join(REPO, d)))
+/** The login family, as the round 5 test named it. */
+export const loginControls = (src: string) => riskyControls(src, LOGIN);
+
+const SOURCES = () =>
+  DIRS.flatMap((d) => tsxFiles(join(REPO, d)))
     .filter((file) => !OUTSIDE_SHELL.test(relative(REPO, file)))
-    .flatMap((file) =>
-      loginControls(readFileSync(file, 'utf8')).map((c) => ({
-        file: relative(REPO, file),
-        ...c,
-      })),
-    );
+    .map((file) => ({ file: relative(REPO, file), src: readFileSync(file, 'utf8') }));
+
+describe('login controls carry data-agent-risk', () => {
+  const found = SOURCES().flatMap(({ file, src }) =>
+    loginControls(src).map((c) => ({ file, ...c })),
+  );
 
   it('finds the controls it is meant to (the scan still works)', () => {
     const files = new Set(found.map((c) => c.file));
@@ -161,5 +228,59 @@ describe('login controls carry data-agent-risk', () => {
       );
     `;
     expect(loginControls(src).map((c) => c.marked)).toEqual([false, true, true]);
+  });
+});
+
+describe('commit, publish and discard-draft controls carry data-agent-risk', () => {
+  const found = SOURCES().flatMap(({ file, src }) =>
+    riskyControls(src, PUBLISH).map((c) => ({ file, ...c })),
+  );
+
+  it('finds the controls it is meant to (the scan still works)', () => {
+    const files = new Set(found.map((c) => c.file));
+    for (const f of [
+      'client/web/app/(app)/pages/[id]/page-detail-client.tsx',
+      'client/web/app/(app)/tables/[id]/table-detail-client.tsx',
+      'client/web/app/(app)/draw/[id]/draw-detail-client.tsx',
+      'client/web/app/(app)/apps/[id]/app-detail-client.tsx',
+    ])
+      expect(files).toContain(f);
+  });
+
+  it('every one of them is marked', () => {
+    expect(found.filter((c) => !c.marked)).toEqual([]);
+  });
+
+  it('the scan sees an unmarked one, as a tag and as a menu entry', () => {
+    const src = `
+      const commit = useCallback(async () => { await apiSend(\`/api/pages/\${id}/commit\`, 'POST'); }, []);
+      export const A = () => <Button onClick={() => void commit()}>Commit</Button>;
+      export const B = () => <Button data-agent-risk="publish" onClick={commit}>Commit</Button>;
+      const tools = [
+        { key: 'commit', label: 'Commit', onSelect: () => void commit() },
+        { key: 'commit2', label: 'Commit', risk: 'publish', onSelect: () => void commit() },
+      ];
+    `;
+    expect(riskyControls(src, PUBLISH).map((c) => c.marked)).toEqual([false, true, false, true]);
+  });
+});
+
+describe('share controls carry data-agent-risk', () => {
+  // The Access panel's parts: everything in them changes who reads an item,
+  // so each part's root is marked and the agent presses nothing inside.
+  const ROOTS: [string, RegExp][] = [
+    [
+      'client/web/components/share/grant-access-view.tsx',
+      /<div className="space-y-3" data-agent-risk="share">/,
+    ],
+    ['client/web/components/share/contact-share-section.tsx', /data-agent-risk="share"/],
+    ['client/web/components/share/access-link-box.tsx', /data-agent-risk="share"/],
+    [
+      'client/web/components/share/shared-links-panel.tsx',
+      /label="Revoke link"[\s\S]{0,300}data-agent-risk="share"/,
+    ],
+  ];
+  it.each(ROOTS)('%s is marked', (file, mark) => {
+    expect(readFileSync(join(REPO, file), 'utf8')).toMatch(mark);
   });
 });

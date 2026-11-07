@@ -53,12 +53,15 @@ export function AgentOverlay() {
     return () => hands.setNavigator(null);
   }, [router]);
 
-  if (!state.active && !state.consent && !state.note) return null;
+  if (!state.active && !state.consent && !state.note && !state.held) return null;
   if (!state.active) {
     return (
       <div data-agent-host="" className="pointer-events-none fixed inset-0 z-[80]">
         {state.consent && <ConsentPrompt state={state} />}
         {state.note && <LateNote text={state.note} />}
+        {/* A save of the agent's change the user said Not now to: asked
+            also after the session ended. */}
+        {state.held && <HeldPrompt state={state} />}
       </div>
     );
   }
@@ -175,6 +178,7 @@ function ConsentPrompt({ state }: { state: HandsState }) {
 
 function HeldPrompt({ state }: { state: HandsState }) {
   const held = state.held!;
+  const unsaved = held.risk === 'unsaved';
   const [armed, setArmed] = React.useState(false);
   React.useEffect(() => {
     setArmed(false);
@@ -193,7 +197,9 @@ function HeldPrompt({ state }: { state: HandsState }) {
           <ShieldAlert className="mt-0.5 size-5 shrink-0 text-warning-ink" aria-hidden />
           <div className="min-w-0 space-y-1">
             <h2 id="agent-held-title" className="font-semibold">
-              {state.agent} wants to {heldText(held.risk, held.reason)}
+              {unsaved
+                ? 'Save the changes the assistant made?'
+                : `${state.agent} wants to ${heldText(held.risk, held.reason)}`}
             </h2>
             {held.path && (
               <p className="break-all font-mono text-xs text-muted-foreground">
@@ -201,18 +207,25 @@ function HeldPrompt({ state }: { state: HandsState }) {
               </p>
             )}
             <p className="text-sm text-muted-foreground">
-              {held.risk === 'refused'
-                ? 'The brain keeps this step for you. Allow it once to send it as your own, or do it yourself.'
-                : 'Nothing happens unless you allow it. You can also do this step yourself.'}
+              {unsaved
+                ? 'You said Not now to this change, but it is still here. Saving sends it as your own; discarding loads the item again without it.'
+                : held.risk === 'refused'
+                  ? 'The brain keeps this step for you. Allow it once to send it as your own, or do it yourself.'
+                  : 'Nothing happens unless you allow it. You can also do this step yourself.'}
             </p>
           </div>
         </div>
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          {held.discard && (
+            <Button variant="ghost" onClick={() => held.discard?.()}>
+              Discard the assistant&apos;s change
+            </Button>
+          )}
           <Button variant="outline" onClick={() => held.answer(false)}>
             Not now
           </Button>
           <Button disabled={!armed} onClick={() => held.answer(true)}>
-            Allow once
+            {unsaved ? 'Save' : 'Allow once'}
           </Button>
         </div>
       </div>

@@ -225,6 +225,8 @@ export type RequestRisk =
   | 'reveal'
   /** ui_type with replace on a field that holds something. */
   | 'replace'
+  /** A save of a change the agent made that the user said Not now to. */
+  | 'unsaved'
   /** The brain refused it as the agent's (403 agent_refused); the held
    *  request carries the brain's `reason`. */
   | 'refused';
@@ -243,6 +245,7 @@ export const RISK_TEXT: Record<RequestRisk, string> = {
   discard: 'throw away a draft',
   reveal: 'show a secret',
   replace: 'replace what is there',
+  unsaved: 'save the changes it made',
   refused: 'do something only you may do',
 };
 

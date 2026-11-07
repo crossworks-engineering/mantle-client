@@ -563,6 +563,8 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
               size="sm"
               onClick={() => void commit()}
               disabled={(clipped ? !hasDraft : !dirty) || committing}
+              // Commit publishes: the user's to press (lib/agent-ui).
+              data-agent-risk="publish"
             >
               <GitCommitHorizontal /> Commit
             </Button>

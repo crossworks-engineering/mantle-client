@@ -924,7 +924,13 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       badges={status}
       textActions={
         readOnly ? null : (
-          <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
+          <Button
+            size="sm"
+            onClick={() => void commit()}
+            disabled={!docDirty || committing}
+            // Commit publishes: the user's to press (lib/agent-ui).
+            data-agent-risk="publish"
+          >
             <GitCommitHorizontal /> Commit
           </Button>
         )

@@ -6,12 +6,16 @@ import { describe, expect, it, vi } from 'vitest';
  */
 let loginNow: string | null = 'login:ada';
 const sent: string[] = [];
+let reads = 0;
 vi.mock('./login-pin', async (orig) => ({
   ...(await orig<typeof import('./login-pin')>()),
   currentLoginKey: () => loginNow,
 }));
 vi.mock('@mantle/web-ui/api-fetch', () => ({
-  apiFetch: async () => ({ enabled: true }),
+  apiFetch: async () => {
+    reads += 1;
+    return { enabled: true };
+  },
   apiSend: async (path: string) => {
     sent.push(path);
     return {};
@@ -56,5 +60,24 @@ describe('handleUiCall after a login change', () => {
     // Answered at once (needs_consent while the user is asked), as ever.
     await vi.waitFor(() => expect(sent.length).toBe(1));
     expect(sent).toEqual(['/api/assistant/turn/turn-2/ui/0a0a0a0a-0a0a-40a0-80a0-000000000003']);
+  });
+});
+
+describe('the setting and the consent are the login’s', () => {
+  it('a login change between turns forgets both, and the setting is read again', async () => {
+    const calls = await import('./turn-calls');
+    loginNow = 'login:ada';
+    await calls.loadAgentUiSetting(true);
+    expect(calls.agentUiEnabled()).toBe(true);
+    const before = reads;
+    loginNow = 'login:mo';
+    // No window is named until the new login's setting is read.
+    expect(calls.withWindowId('{"text":"hi"}', true)).toBe('{"text":"hi"}');
+    expect(reads).toBe(before + 1);
+    await calls.loadAgentUiSetting();
+    expect(calls.agentUiEnabled()).toBe(true);
+    expect(JSON.parse(calls.withWindowId('{"text":"hi"}', true) as string).windowId).toBe(
+      calls.WINDOW_ID,
+    );
   });
 });

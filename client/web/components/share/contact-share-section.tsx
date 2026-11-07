@@ -150,7 +150,8 @@ export function ContactShareSection({
   };
 
   return (
-    <div className="space-y-2 border-t border-border pt-3">
+    // data-agent-risk: sharing is the user's own (lib/agent-ui).
+    <div className="space-y-2 border-t border-border pt-3" data-agent-risk="share">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium">Share with contact</p>
         {!adding && (

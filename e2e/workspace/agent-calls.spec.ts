@@ -326,3 +326,34 @@ test('a call past its expiresAt is answered window_gone and not run', async ({ p
   );
   expect(inTime.result).toMatchObject({ ok: true });
 });
+
+test('after Not now, the user’s own save of the agent’s change is asked about again', async ({
+  page,
+}) => {
+  api.agentUi.admin = true;
+  api.refuseAgentWrites = /^\/api\/notes$/;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+
+  await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
+  const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
+  const held = page.getByRole('alertdialog', {
+    name: 'Saskia wants to send, share or publish something',
+  });
+  await held.getByRole('button', { name: 'Not now' }).click();
+  expect((await adding).result).toMatchObject({ ok: false, error: 'needs_user' });
+
+  // The text is still in the box; the user presses Add note themselves.
+  await page.getByRole('button', { name: 'Add note', exact: true }).click();
+  const ask = page.getByRole('alertdialog', { name: 'Save the changes the assistant made?' });
+  await expect(ask.getByRole('button', { name: /Discard the assistant/ })).toBeVisible();
+  await expect(ask.getByRole('button', { name: 'Save' })).toBeEnabled();
+  await ask.getByRole('button', { name: 'Save' }).click();
+  await expect
+    .poll(() => api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes').length)
+    .toBe(2);
+  const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
+  expect(posts[1]!.agentCall).toBeUndefined();
+});

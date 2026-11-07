@@ -71,7 +71,7 @@ export type XhrUploadOptions = {
 export function xhrUpload<T = unknown>(opts: XhrUploadOptions): Promise<T> {
   const hands = agentHands();
   // No agent session: sent at once, as ever.
-  if (!hands.guarding()) return sendXhr<T>(opts);
+  if (!hands.guarding() && !hands.hasTaint()) return sendXhr<T>(opts);
   return guardedXhr<T>(opts);
 }
 

@@ -54,6 +54,9 @@ export type HeldRequest = {
   path: string;
   /** The user's answer. */
   answer: (allow: boolean) => void;
+  /** A held save of the agent's change (`risk` `unsaved`): throw the change
+   *  away instead, by loading the item again. */
+  discard?: () => void;
 };
 
 export type ConsentAsk = { agent: string; answer: (allow: boolean) => void };
@@ -220,9 +223,63 @@ export class AgentHands {
   }
 
   private release() {
-    this.unwrapFetch();
+    // The guard stays while a change the user said Not now to is still in
+    // the page: its next save is asked about (`tainted`).
+    if (this.tainted.size === 0) this.unwrapFetch();
     this.callTag = null;
     this.lateTag = null;
+  }
+
+  // ── a change the user said Not now to ──────────────────────────────────
+
+  /** Writes (`METHOD path`) the user said Not now to, or that went nowhere
+   *  after Stop. The editor still holds the agent's change, so the next
+   *  write to the same item from this page asks first, untagged or not,
+   *  session or not, until the user allows it, discards it, or reloads. */
+  private tainted = new Set<string>();
+
+  private taintKey(method: string, url: string): string {
+    let path = url;
+    try {
+      path = new URL(url, 'http://app.invalid').pathname;
+    } catch {
+      /* the raw text */
+    }
+    return `${method.toUpperCase()} ${path}`;
+  }
+
+  private taint(method: string, url: string) {
+    this.tainted.add(this.taintKey(method, url));
+  }
+
+  /** Whether some write of this page is waiting to be asked about. */
+  hasTaint(): boolean {
+    return this.tainted.size > 0;
+  }
+
+  /** Ask before a tainted write goes: Save sends it as the user's own,
+   *  Discard loads the item again (the change goes), Not now keeps it. */
+  private async askTainted(method: string, url: string): Promise<'save' | 'discard' | 'keep'> {
+    const key = this.taintKey(method, url);
+    let discarded = false;
+    const allowed = await this.ask('unsaved', method, url, null, () => {
+      discarded = true;
+    });
+    if (allowed) {
+      this.tainted.delete(key);
+      if (!this.state.active && this.acting === 0) this.releaseLater();
+      return 'save';
+    }
+    if (discarded) {
+      this.tainted.delete(key);
+      try {
+        location.reload();
+      } catch {
+        /* no page to load again */
+      }
+      return 'discard';
+    }
+    return 'keep';
   }
 
   /** Stop every timer and take the guard off now: for a page (or a test)
@@ -233,8 +290,14 @@ export class AgentHands {
     this.releaseTimer = null;
     this.noteTimer = null;
     this.lateUntil = 0;
+    this.tainted.clear();
     this.end();
     this.release();
+  }
+
+  /** The session ended because the login changed (another tab). */
+  endedForLoginChange(): boolean {
+    return this.endedBy === 'window_gone';
   }
 
   /** Say that a late write of the agent's went nowhere (after Stop). */
@@ -355,6 +418,17 @@ export class AgentHands {
     body?: unknown,
   ): Promise<{ blocked: true } | { blocked: false; tag: string | null }> {
     const m = method.toUpperCase();
+    // A write the user said Not now to before: the agent's change is still
+    // in the editor. The user's own save of it (not set off by an action of
+    // the agent's) is asked about again, session or not. An agent action
+    // sending it again meets the usual hold below.
+    const key = this.taintKey(m, url);
+    const tainted = m !== 'GET' && m !== 'HEAD' && this.tainted.has(key);
+    const agentActing = this.acting > 0 || (this.state.active && !this.state.paused);
+    if (tainted && !agentActing) {
+      const answer = await this.askTainted(m, url);
+      return answer === 'save' ? { blocked: false, tag: null } : { blocked: true };
+    }
     // The agent's: sent while it drives, or while one of its actions runs
     // (the user may have paused or stopped it on the way).
     // The window's own answer and a plain cancel go; a cancel that
@@ -374,14 +448,18 @@ export class AgentHands {
       // says so.
       if (!this.state.active) {
         this.noteLate(risk, null);
+        this.taint(m, url);
         this.blockedSinceAction = true;
         return { blocked: true };
       }
       const allowed = await this.ask(risk, m, url);
       if (!allowed) {
+        this.taint(m, url);
         this.blockedSinceAction = true;
         return { blocked: true };
       }
+      // Allowed: the change has gone, nothing is left to ask about.
+      if (tainted) this.tainted.delete(key);
       // The user allowed it: it goes as theirs, untagged.
       return { blocked: false, tag: null };
     }
@@ -409,9 +487,14 @@ export class AgentHands {
       // A late write the brain refused after Stop: nobody to ask; the note
       // says so (the caller keeps the raw 403 off the screen).
       this.noteLate('refused', why);
+      this.taint(method, url);
       return false;
     }
-    if (await this.ask('refused', method.toUpperCase(), url, why)) return true;
+    if (await this.ask('refused', method.toUpperCase(), url, why)) {
+      this.tainted.delete(this.taintKey(method, url));
+      return true;
+    }
+    this.taint(method, url);
     this.blockedSinceAction = true;
     return false;
   }
@@ -488,6 +571,7 @@ export class AgentHands {
     method: string,
     url: string,
     reason: string | null = null,
+    onDiscard?: () => void,
   ): Promise<boolean> {
     // One question at a time: a second risky request while one waits is
     // refused rather than stacked behind it.
@@ -505,7 +589,24 @@ export class AgentHands {
         this.set({ held: null });
         resolve(allow);
       };
-      this.set({ held: { id, risk, reason, method, path: path.slice(0, 200), answer } });
+      const discard = onDiscard
+        ? () => {
+            if (this.state.held?.id !== id) return;
+            onDiscard();
+            answer(false);
+          }
+        : undefined;
+      this.set({
+        held: {
+          id,
+          risk,
+          reason,
+          method,
+          path: path.slice(0, 200),
+          answer,
+          ...(discard ? { discard } : {}),
+        },
+      });
     });
   }
 
