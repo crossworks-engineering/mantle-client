@@ -10,7 +10,9 @@ import {
   usableRect,
   MIN_CAPTURE_PX,
 } from './area-capture';
-import { isCreateRoute } from './create-workspace';
+import { createWsRewrite, isCreateRoute, setCreateWorkspace } from './create-workspace';
+
+const WS = 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1';
 
 const view = { w: 1000, h: 800 };
 
@@ -145,8 +147,16 @@ describe('screenshotMeta', () => {
 });
 
 describe('where a screenshot lands', () => {
-  it('is not a create route, so the switcher never puts it in a shared workspace', () => {
-    expect(isCreateRoute('/api/screenshots')).toBe(false);
+  it('is a create route, so it lands in the workspace the switcher shows, as an upload does', () => {
+    expect(isCreateRoute('/api/screenshots')).toBe(true);
+    setCreateWorkspace(WS);
+    try {
+      expect(createWsRewrite('/api/screenshots', 'POST')).toBe(`/api/screenshots?ws=${WS}`);
+    } finally {
+      setCreateWorkspace(null);
+    }
+    // All my workspaces: no ?ws=, the brain picks the user's own home.
+    expect(createWsRewrite('/api/screenshots', 'POST')).toBe('/api/screenshots');
   });
 });
 

@@ -1,7 +1,7 @@
 /**
  * Area screenshots: drag a rectangle over the app, capture exactly those
- * pixels, save them as a screenshot item (POST /api/screenshots) and,
- * optionally, hand the saved file to the assistant as context.
+ * pixels, save them to Files (POST /api/screenshots) and, optionally, hand
+ * the saved file to the assistant as context.
  *
  * Two ways to get the pixels, never a DOM-to-image copy (that misses app
  * frames, canvases and fonts, so it would not show what the user saw):
@@ -11,15 +11,14 @@
  *  - A browser shares this tab once (`getDisplayMedia`), one frame is drawn
  *    and cropped, and the share stops at once. The browser asks every time.
  *
- * The brain decides where the file lands, by the export rule: an Admin
- * user's goes to Auto-filed / Screenshots / <month> in Admin (an Admin user
- * has no private workspace); anyone else's to their own private workspace.
- * Wherever it lands, the brain makes it private to the login that took it:
- * only that login lists, opens or reads it, so no other Admin user sees an
- * Admin user's either. That is why /api/screenshots is NOT a create route
- * the switcher's `?ws=` is added to (lib/create-workspace.ts): a screenshot
- * can hold anything that was on screen, so it never lands in a workspace
- * the switcher shows by itself.
+ * A screenshot is saved as if the user had taken the picture to Files and
+ * uploaded it: a plain file at the top of Files in the workspace the
+ * switcher shows (/api/screenshots is a create route, so apiFetch adds the
+ * switcher's `?ws=`, lib/create-workspace.ts; "All my workspaces" lets the
+ * brain pick the user's own create home). It has that workspace's rights:
+ * everyone who reads the workspace reads it. The brain names where it
+ * landed (`landedIn`), and its image model reads the picture to make it
+ * searchable.
  */
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
@@ -146,7 +145,8 @@ export type SavedScreenshot = {
 /** The brain's upload cap for a screenshot. */
 export const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
 
-/** Save a captured PNG as a screenshot item. */
+/** Save a captured PNG to Files (the switcher's workspace: apiFetch's
+ *  create-route rewrite adds `?ws=`). */
 export async function saveScreenshot(png: Blob, meta: ScreenshotMeta): Promise<SavedScreenshot> {
   if (png.size > MAX_SCREENSHOT_BYTES) {
     throw new Error('The area is too large to save (over 10 MB). Capture a smaller area.');

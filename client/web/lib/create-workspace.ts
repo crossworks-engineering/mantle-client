@@ -30,6 +30,8 @@ const CREATE_ROUTES = [
   /^\/api\/formulas$/,
   /^\/api\/presents$/,
   /^\/api\/recall\/maps$/,
+  // An area screenshot is saved to Files as an upload there is.
+  /^\/api\/screenshots$/,
   // A copy or an import makes a new app: its home is where you make it.
   /^\/api\/apps\/[^/]+\/duplicate$/,
   /^\/api\/apps\/import$/,

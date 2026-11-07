@@ -11,7 +11,8 @@ import {
  * the capture, then Attach to chat or Save. The desktop shell's capture is
  * stubbed (the browser's tab share asks the user, which a spec cannot
  * answer), so this drives the layer, the preview and the save, and the
- * brain's answer says where the file landed.
+ * brain's answer says where the file landed: the workspace the switcher
+ * shows, as an upload to Files lands.
  * In-memory brain, no real one.
  */
 
@@ -43,6 +44,15 @@ test.afterEach(async () => {
   await api.close();
 });
 
+/** Pick a workspace in the switcher by its name. */
+async function pickWorkspace(page: Page, name: string) {
+  await page
+    .getByRole('button', { name: /^Workspace:/ })
+    .first()
+    .click();
+  await page.getByRole('menuitemradio', { name: new RegExp(`^${name}( Moderator)?$`) }).click();
+}
+
 async function dragArea(page: Page) {
   const layer = page.getByRole('dialog', { name: 'Capture an area' });
   await expect(layer).toBeVisible();
@@ -54,15 +64,23 @@ async function dragArea(page: Page) {
   await expect(layer).toBeHidden();
 }
 
-test('an Admin user captures an area and attaches it to the chat', async ({ page }) => {
+test('an Admin user captures an area into the switcher workspace and attaches it to the chat', async ({
+  page,
+}) => {
   await signIn(page, 'admin');
+  await pickWorkspace(page, 'Team');
   await page.getByRole('button', { name: 'Capture an area for the assistant' }).click();
   await dragArea(page);
 
   const preview = page.getByRole('dialog', { name: 'Screenshot' });
   await expect(preview.getByRole('img', { name: 'The captured area' })).toBeVisible();
-  // The brain keeps it private to this login, an Admin user's too.
-  await expect(preview.getByText('Once saved, only you can see it.')).toBeVisible();
+  // Saved where an upload goes, for the workspace's people; read by the
+  // brain's image model.
+  await expect(
+    preview.getByText('It is saved to Files in the workspace you are in', { exact: false }),
+  ).toBeVisible();
+  await expect(preview.getByText('image model reads it', { exact: false })).toBeVisible();
+  await expect(preview.getByText('only you can see it', { exact: false })).toHaveCount(0);
   // Nothing is saved before a choice.
   expect(api.screenshots).toHaveLength(0);
   await preview.getByRole('textbox', { name: 'Note' }).fill('the list is cut off');
@@ -71,8 +89,8 @@ test('an Admin user captures an area and attaches it to the chat', async ({ page
   await expect.poll(() => api.screenshots.length).toBe(1);
   const shot = api.screenshots[0]!;
   expect(shot.role).toBe('admin');
-  // Never the switcher's workspace: the brain picks the private home.
-  expect(shot.ws).toBeNull();
+  // The switcher's workspace, as every create names it.
+  expect(shot.ws).toBe(WORKSPACES.team.id);
   expect(shot.meta).toMatchObject({
     rect: { x: 200, y: 150, w: 220, h: 150 },
     shell: 'desktop',
@@ -85,9 +103,7 @@ test('an Admin user captures an area and attaches it to the chat', async ({ page
   // The saved file rides with the next turn as context, and the chat opens
   // (this brain answers no assistant routes, so the chip itself is not drawn).
   await expect(
-    page.getByText(
-      `Screenshot saved in ${WORKSPACES.admin.name} and attached to the chat. Only you can see it.`,
-    ),
+    page.getByText(`Saved to Files in ${WORKSPACES.team.name} and attached to the chat.`),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Toggle assistant (⌘I)' })).toHaveAttribute(
     'aria-pressed',
@@ -105,7 +121,9 @@ test('Esc cancels the selection and saves nothing', async ({ page }) => {
   expect(api.screenshots).toHaveLength(0);
 });
 
-test('a member saves a screenshot to its private workspace, with no attach', async ({ page }) => {
+test('a member on All my workspaces saves one to its own home, with no attach', async ({
+  page,
+}) => {
   await signIn(page, 'member');
   await page.getByRole('button', { name: 'Capture an area for the assistant' }).click();
   await dragArea(page);
@@ -116,8 +134,7 @@ test('a member saves a screenshot to its private workspace, with no attach', asy
   await preview.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect.poll(() => api.screenshots.length).toBe(1);
+  // No workspace named: the brain picks the member's own create home.
   expect(api.screenshots[0]).toMatchObject({ role: 'member', ws: null });
-  await expect(
-    page.getByText(`Screenshot saved in ${WORKSPACES.own.name}. Only you can see it.`),
-  ).toBeVisible();
+  await expect(page.getByText(`Saved to Files in ${WORKSPACES.own.name}.`)).toBeVisible();
 });

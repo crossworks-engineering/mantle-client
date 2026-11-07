@@ -235,8 +235,8 @@ export type MockWorkspaceApi = {
   /** Company sign-in's setup screen (mock-sso-setup.ts). */
   ssoSetup: MockSsoSetup;
   /** Area screenshots saved in this run (POST /api/screenshots): who sent
-   *  it, the `?ws=` it named (none: the brain picks the private home), its
-   *  meta and the PNG's size. */
+   *  it, the `?ws=` it named (none: the brain picks the login's own home),
+   *  its meta and the PNG's size. */
   screenshots: MockScreenshot[];
   close: () => Promise<void>;
 };
@@ -638,7 +638,16 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         meta: JSON.parse(meta) as Record<string, unknown>,
         bytes: raw.length,
       });
-      const home = role === 'admin' ? WORKSPACES.admin : WORKSPACES.own;
+      // As an upload to Files: the named workspace (one of the login's),
+      // else the login's own home.
+      const named = MEMBERSHIP[role].find(
+        (mm) => WORKSPACES[mm.ws].id === url.searchParams.get('ws'),
+      );
+      const home = named
+        ? WORKSPACES[named.ws]
+        : role === 'admin'
+          ? WORKSPACES.admin
+          : WORKSPACES.own;
       return (
         json(res, 201, {
           file: {

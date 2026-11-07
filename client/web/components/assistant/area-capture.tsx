@@ -193,9 +193,9 @@ export function CaptureButton({ canAttach }: { canAttach: boolean }) {
         attachContext({ id: saved.file.id, kind: 'file', label: saved.file.filename });
         openAssistant();
       }
-      // Private to this login wherever it landed (Admin's Auto-filed too).
+      // Where the brain put it: the switcher's workspace, as an upload.
       toast.success(
-        `Screenshot saved${saved.landedIn ? ` in ${saved.landedIn.name}` : ''}${attach ? ' and attached to the chat' : ''}. Only you can see it.`,
+        `Saved to Files${saved.landedIn ? ` in ${saved.landedIn.name}` : ''}${attach ? ' and attached to the chat' : ''}.`,
       );
       end();
     },
@@ -340,8 +340,8 @@ function CapturePreview({
           <DialogTitle>Screenshot</DialogTitle>
           <DialogDescription>
             It shows whatever was in the area, so check it first. Nothing is saved or sent until you
-            choose below. Once saved, only you can see it. The brain&apos;s image model reads it to
-            make it searchable.
+            choose below. It is saved to Files in the workspace you are in, where its people can see
+            it, and the brain&apos;s image model reads it to make it searchable.
           </DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[50vh] justify-center overflow-auto rounded-md border border-border bg-muted/40 p-2 scrollbar-thin">
