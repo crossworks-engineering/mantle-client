@@ -72,6 +72,10 @@ export type MockChats = {
   replyStarts(slug: string): void;
   /** The reply got its text: the row is complete, and the stream pings. */
   replyEnds(slug: string, text: string): void;
+  /** The reply failed: the row stays in the count, as on a brain. */
+  replyFails(slug: string): void;
+  /** A finished reply the login has read already. Answers its time. */
+  replyRead(slug: string, text: string): string;
   /** The chat was read on another device: the list says 0, and the people's
    *  stream says a cursor moved (an assistant thread has no such event). */
   readElsewhere(chat: string): void;
@@ -90,14 +94,23 @@ export type MockChats = {
   ): Promise<boolean>;
 };
 
-const NOW = Date.parse('2026-11-07T10:00:00.000Z');
-
 export function createMockChats(): MockChats {
   const lines = new Map<string, MockChatLine[]>();
   const replies = new Map<string, MockReply[]>();
   const peopleStreams = new Set<ServerResponse>();
   const threadStreams = new Set<ServerResponse>();
-  let clock = NOW;
+  // Behind the browser's own clock, so a read at "now" passes every row.
+  let clock = Date.now() - 3_600_000;
+  // Each thread's read cursor. A POST overwrites it, also backwards, as on a
+  // brain (mantle_read_cursor_mark).
+  const cursors = new Map<string, number>();
+  /** A thread counts every reply past its cursor, whatever its status. */
+  const threadUnread = (slug: string) =>
+    (replies.get(slug) ?? []).filter(
+      (r) => r.direction === 'outbound' && Date.parse(r.createdAt) > (cursors.get(slug) ?? 0),
+    ).length;
+  const rowsNow = () =>
+    chats.rows.map((r) => (r.agentSlug ? { ...r, unread: threadUnread(r.agentSlug) } : r));
   const tick = () => new Date((clock += 1000)).toISOString();
   const rowOf = (id: string) => {
     const row = chats.rows.find((r) => r.id === id);
@@ -199,7 +212,6 @@ export function createMockChats(): MockChats {
       });
       row.lastMessageAt = createdAt;
       row.preview = null;
-      row.unread += 1;
       emit(threadStreams, { agentSlug: slug, direction: 'outbound' });
     },
     replyEnds(slug, text) {
@@ -211,9 +223,35 @@ export function createMockChats(): MockChats {
       row.preview = { authorName: row.title, text: text.slice(0, 80), authorKind: 'agent' };
       emit(threadStreams, { agentSlug: slug, direction: 'outbound' });
     },
+    replyFails(slug) {
+      const reply = (replies.get(slug) ?? []).find((r) => r.status === 'pending');
+      if (!reply) throw new Error(`no pending reply in ${slug}`);
+      reply.status = 'failed';
+      emit(threadStreams, { agentSlug: slug, direction: 'outbound' });
+    },
+    replyRead(slug, text) {
+      const row = threadOf(slug);
+      const createdAt = tick();
+      (replies.get(slug) ?? []).push({
+        id: `${slug}-${createdAt}`,
+        direction: 'outbound',
+        text,
+        model: null,
+        channel: 'web',
+        status: 'complete',
+        error: null,
+        attachments: [],
+        createdAt,
+      });
+      row.lastMessageAt = createdAt;
+      row.preview = { authorName: row.title, text: text.slice(0, 80), authorKind: 'agent' };
+      cursors.set(slug, Date.parse(createdAt));
+      return createdAt;
+    },
     readElsewhere(chat) {
       const row = rowOf(chat);
       row.unread = 0;
+      if (row.agentSlug) cursors.set(row.agentSlug, clock);
       if (row.kind !== 'agent') {
         emit(peopleStreams, {
           c: chat,
@@ -246,12 +284,14 @@ export function createMockChats(): MockChats {
         return true;
       }
       if (method === 'GET' && path === '/api/messenger/conversations') {
-        json(res, 200, { rows: chats.rows });
+        json(res, 200, { rows: rowsNow() });
         return true;
       }
       if (method === 'GET' && path === '/api/messenger/unread') {
         const count = (kind: (r: MockRow) => boolean) =>
-          chats.rows.filter(kind).reduce((sum, r) => sum + r.unread, 0);
+          rowsNow()
+            .filter(kind)
+            .reduce((sum, r) => sum + r.unread, 0);
         const agents = count((r) => r.kind === 'agent');
         const messenger = count((r) => r.kind !== 'agent');
         json(res, 200, { total: messenger + agents, messenger, agents });
@@ -259,13 +299,27 @@ export function createMockChats(): MockChats {
       }
       if (method === 'GET' && path === '/api/assistant/messages') {
         const slug = url.searchParams.get('agent') ?? '';
-        json(res, 200, { messages: replies.get(slug) ?? [] });
+        const limit = Number(url.searchParams.get('limit') ?? 100);
+        json(res, 200, { messages: (replies.get(slug) ?? []).slice(-limit) });
+        return true;
+      }
+      if (method === 'GET' && path === '/api/assistant/conversations') {
+        const conversations = rowsNow()
+          .filter((r) => r.agentSlug)
+          .map((r) => ({
+            agentId: r.id,
+            slug: r.agentSlug,
+            name: r.title,
+            unreadCount: r.unread,
+            lastMessage: null,
+          }));
+        json(res, 200, { conversations });
         return true;
       }
       if (method === 'POST' && path === '/api/assistant/read') {
         const body = JSON.parse(await readBody(req)) as { agentSlug: string; at?: string };
         chats.threadReads.push({ agentSlug: body.agentSlug, at: body.at ?? null });
-        threadOf(body.agentSlug).unread = 0;
+        cursors.set(body.agentSlug, body.at ? Date.parse(body.at) : Date.now());
         json(res, 200, { ok: true });
         return true;
       }

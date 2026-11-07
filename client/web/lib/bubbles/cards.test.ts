@@ -4,19 +4,20 @@ import {
   CARDS_MAX,
   CHATS_PER_SYNC,
   POPPED_MAX,
-  addCards,
   addPopped,
   cardFromMessage,
   cardFromReply,
   cardKey,
   chatWindowOpen,
   chatsToSync,
+  cursorMayMove,
   linesWanted,
   liveCards,
   newestReplies,
   parsePopped,
   readAfterPop,
   rowSignature,
+  setChatCards,
   toastWanted,
   type BubbleCard,
 } from './cards';
@@ -119,6 +120,28 @@ describe('newestReplies', () => {
     ...over,
   });
 
+  it('never reaches past the cursor to a reply already read', () => {
+    const rows = [
+      r({ text: 'read long ago', createdAt: '2026-11-07T09:00:00.000Z' }),
+      r({ status: 'pending', text: '', createdAt: '2026-11-07T10:00:00.000Z' }),
+    ];
+    // The brain counts the pending row: unread 1.
+    expect(newestReplies(rows, 1)).toEqual([]);
+    const failed = [rows[0]!, r({ status: 'failed', createdAt: '2026-11-07T10:00:00.000Z' })];
+    expect(newestReplies(failed, 1)).toEqual([]);
+    const replaced = [rows[0]!, r({ superseded: true, createdAt: '2026-11-07T10:00:00.000Z' })];
+    expect(newestReplies(replaced, 1)).toEqual([]);
+  });
+
+  it('skips a person line between replies when it counts', () => {
+    const rows = [
+      r({ text: 'old', createdAt: '2026-11-07T09:00:00.000Z' }),
+      r({ direction: 'inbound', createdAt: '2026-11-07T09:30:00.000Z' }),
+      r({ text: 'new', createdAt: '2026-11-07T10:00:00.000Z' }),
+    ];
+    expect(newestReplies(rows, 1).map((x) => x.text)).toEqual(['new']);
+  });
+
   it('never takes a pending reply, a failed one or the person own line', () => {
     expect(
       newestReplies(
@@ -159,21 +182,48 @@ describe('cardFromReply', () => {
   });
 });
 
-describe('addCards', () => {
-  it('sorts newest first and holds no key twice', () => {
-    const out = addCards([card('a', 1)], [card('a', 1), card('b', 2), card('c', 3)], []);
-    expect(out.map((c) => c.key)).toEqual(['c:3', 'b:2', 'a:1']);
+describe('setChatCards', () => {
+  it('replaces one chat and sorts the stack newest first', () => {
+    const out = setChatCards([card('a', 1), card('b', 2)], 'a', [card('a', 3)], []);
+    expect(out.map((c) => c.key)).toEqual(['a:3', 'b:2']);
+  });
+
+  it('forgets lines read elsewhere: a chat is what its last read returned', () => {
+    const held = [card('a', 7), card('a', 6), card('a', 5)];
+    expect(setChatCards(held, 'a', [card('a', 8)], []).map((c) => c.key)).toEqual(['a:8']);
+  });
+
+  it('an empty read empties the chat', () => {
+    expect(setChatCards([card('a', 1), card('b', 2)], 'a', [], []).map((c) => c.chat)).toEqual([
+      'b',
+    ]);
   });
 
   it('leaves out what was popped', () => {
-    expect(addCards([], [card('a', 1)], ['a:1'])).toEqual([]);
+    expect(setChatCards([], 'a', [card('a', 1)], ['a:1'])).toEqual([]);
   });
 
   it('holds at most the limit, dropping the oldest', () => {
     const many = Array.from({ length: CARDS_MAX + 5 }, (_, i) => card('a', i));
-    const out = addCards([], many, []);
+    const out = setChatCards([], 'a', many, []);
     expect(out).toHaveLength(CARDS_MAX);
     expect(out.at(-1)?.order).toBe(5);
+  });
+});
+
+describe('cursorMayMove', () => {
+  it('moves when what is unread was all shown', () => {
+    expect(cursorMayMove({ unread: 1 })).toBe(true);
+    expect(cursorMayMove({ unread: 5 })).toBe(true);
+  });
+
+  it('stays when the chat was read in another place, or is gone', () => {
+    expect(cursorMayMove({ unread: 0 })).toBe(false);
+    expect(cursorMayMove(undefined)).toBe(false);
+  });
+
+  it('stays when more is unread than a chat shows', () => {
+    expect(cursorMayMove({ unread: 6 })).toBe(false);
   });
 });
 

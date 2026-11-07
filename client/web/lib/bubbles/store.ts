@@ -6,11 +6,11 @@
  */
 import type { MessengerListRow } from '@/lib/messenger/dto';
 import {
-  addCards,
   addPopped,
   liveCards,
   parsePopped,
   readAfterPop,
+  setChatCards,
   type BubbleCard,
 } from './cards';
 
@@ -20,6 +20,8 @@ const NO_CARDS: readonly BubbleCard[] = [];
 let login: string | null = null;
 let popped: string[] = [];
 let cards: readonly BubbleCard[] = NO_CARDS;
+/** The list as last read: a late read of a chat is judged by it too. */
+let rows: readonly MessengerListRow[] | null = null;
 const listeners = new Set<() => void>();
 
 function changed(next: readonly BubbleCard[]): void {
@@ -48,20 +50,16 @@ export function setBubbleLogin(id: string): void {
   changed(NO_CARDS);
 }
 
-export function addBubbleCards(fresh: readonly BubbleCard[]): void {
-  if (fresh.length > 0) changed(addCards(cards, fresh, popped));
+/** A chat's cards are what its last read returned. */
+export function setBubbleChat(chat: string, fresh: readonly BubbleCard[]): void {
+  const next = setChatCards(cards, chat, fresh, popped);
+  changed(rows ? liveCards(next, rows, popped) : next);
 }
 
 /** The one rule, over a fresh list. */
-export function reconcileBubbles(rows: readonly MessengerListRow[]): void {
-  const next = liveCards(cards, rows, popped);
-  if (next.length !== cards.length) changed(next);
-}
-
-/** Forget a chat's cards (a line edited or deleted, the chat reloaded). The
- *  sync reads the chat again. */
-export function dropBubbleChat(chat: string): void {
-  const next = cards.filter((c) => c.chat !== chat);
+export function reconcileBubbles(fresh: readonly MessengerListRow[]): void {
+  rows = fresh;
+  const next = liveCards(cards, fresh, popped);
   if (next.length !== cards.length) changed(next);
 }
 

@@ -212,7 +212,9 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   and they become cards. A card lives while its row says `unread` is above 0
   and its key is not in the popped set (the browser keeps the keys, never the
   text). The stack runs newest to oldest and a cursor only moves forward, so a
-  close moves the read cursor only when the chat's last card goes. No card
+  close moves the read cursor only when the chat's last card goes, and not when
+  more is unread than a chat shows as cards (five): that would mark lines read
+  that nobody saw. A chat's cards are what its last read returned. No card
   shows while a chat window is open (`/chats`, `/assistant`, the side window in
   any shape). A row with a line waiting is highlighted instead (`rowHighlighted`,
   with bubbles on or off). The side window has no list yet, so with only that

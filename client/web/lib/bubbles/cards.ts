@@ -121,14 +121,17 @@ export function cardFromMessage(
 type ReplyRow = Pick<AssistantTimelineRow, 'direction' | 'status' | 'text' | 'createdAt'> &
   Partial<Pick<AssistantTimelineRow, 'superseded'>>;
 
-/** The newest `count` finished replies of a thread, newest first. A pending
- *  reply has no text yet and a failed one has its own place in the thread. */
+/** The finished replies among the newest `count` of a thread, newest first.
+ *  `count` comes from the brain's unread, which counts every reply past the
+ *  cursor whatever its status. So take those `count` first and filter after:
+ *  the other way round reaches past the cursor, to a reply already read. A
+ *  pending reply has no text yet and a failed one has its place in the thread. */
 export function newestReplies<T extends ReplyRow>(rows: readonly T[], count: number): T[] {
   return rows
-    .filter((r) => r.direction === 'outbound' && r.status === 'complete' && r.text.trim())
-    .filter((r) => !r.superseded)
+    .filter((r) => r.direction === 'outbound')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, count);
+    .slice(0, count)
+    .filter((r) => r.status === 'complete' && r.text.trim() && !r.superseded);
 }
 
 /** The card of an assistant's reply. */
@@ -151,16 +154,18 @@ export function cardFromReply(
   };
 }
 
-/** Cards with `fresh` added: no key twice, none that was popped, newest first,
- *  at most CARDS_MAX. */
-export function addCards(
+/** Cards with one chat's replaced by `fresh`, what its last read returned: so
+ *  a line read, edited or deleted goes with no rule of its own. None that was
+ *  popped, newest first, at most CARDS_MAX. */
+export function setChatCards(
   cards: readonly BubbleCard[],
+  chat: string,
   fresh: readonly BubbleCard[],
   popped: readonly string[],
 ): BubbleCard[] {
-  const byKey = new Map(cards.map((c) => [c.key, c]));
-  for (const c of fresh) if (!popped.includes(c.key)) byKey.set(c.key, c);
-  return [...byKey.values()].sort((a, b) => b.at - a.at).slice(0, CARDS_MAX);
+  return [...cards.filter((c) => c.chat !== chat), ...fresh.filter((c) => !popped.includes(c.key))]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, CARDS_MAX);
 }
 
 /** The one rule (above), over the list as it stands. */
@@ -191,6 +196,17 @@ export function readAfterPop(
     if (k?.chat === chat && (top === null || k.order > top)) top = k.order;
   }
   return top;
+}
+
+/**
+ * Whether closing a chat's last card may move its read cursor, by a list read
+ * just now. Not when the row says nothing is unread: the chat was read in
+ * another place, and an assistant thread's cursor would move back. Not when
+ * more is unread than a chat ever shows as cards: that would mark lines read
+ * that nobody saw, so the row stays highlighted.
+ */
+export function cursorMayMove(row: Pick<MessengerListRow, 'unread'> | undefined): boolean {
+  return !!row && row.unread > 0 && row.unread <= LINES_PER_CHAT;
 }
 
 /** The popped set with one more key: the oldest go first. */

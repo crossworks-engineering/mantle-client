@@ -29,12 +29,7 @@ import {
   rowSignature,
   type BubbleCard,
 } from '@/lib/bubbles/cards';
-import {
-  addBubbleCards,
-  dropBubbleChat,
-  reconcileBubbles,
-  setBubbleLogin,
-} from '@/lib/bubbles/store';
+import { reconcileBubbles, setBubbleChat, setBubbleLogin } from '@/lib/bubbles/store';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerListRow } from '@/lib/messenger/dto';
 
@@ -82,27 +77,31 @@ export function BubbleSync() {
     if (!rows || !me) return;
     reconcileBubbles(rows);
     for (const row of chatsToSync(rows, seen.current)) {
-      seen.current.set(row.id, rowSignature(row));
+      const signature = rowSignature(row);
+      seen.current.set(row.id, signature);
+      // A read the chat has moved on from is dropped: a newer one is coming.
+      const current = () => seen.current.get(row.id) === signature;
       void cardsOf(row, me)
-        .then(addBubbleCards)
+        .then((cards) => {
+          if (current()) setBubbleChat(row.id, cards);
+        })
         .catch(() => {
           // Try again at the next list. The badge and the list still say it.
-          seen.current.delete(row.id);
+          if (current()) seen.current.delete(row.id);
         });
     }
     // Each fetch counts, also when its answer is the same as the last one:
-    // a chat dropped below is read again at the next answer.
+    // a chat forgotten below is read again at the next answer.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rows follows dataUpdatedAt
   }, [list.dataUpdatedAt, me]);
 
-  // A line edited or deleted, or the chat reloaded (people changed, history
-  // deleted, my own clear or mute): read the chat again. The same event asks
-  // for the fresh list that does it.
+  // A line edited or deleted, a reaction, or the chat reloaded (people changed,
+  // history deleted, my own clear or mute): read the chat again. Its cards stay
+  // until the answer replaces them. The same event asks for the fresh list
+  // that does it.
   useMessengerBus((e) => {
     if (e.kind !== 'effect') return;
-    if (!e.effect.reload && e.effect.refetchSeq === null) return;
-    dropBubbleChat(e.effect.c);
-    seen.current.delete(e.effect.c);
+    if (e.effect.reload || e.effect.refetchSeq !== null) seen.current.delete(e.effect.c);
   });
 
   return null;

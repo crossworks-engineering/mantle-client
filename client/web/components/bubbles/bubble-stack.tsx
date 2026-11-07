@@ -19,7 +19,7 @@ import { CONVERSATIONS_KEY } from '@/components/assistant/use-assistant-unread';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useChatFaces } from '@/components/messenger/chat-faces';
 import { READ_PATH, readBody } from '@/lib/assistant-unread';
-import { chatWindowOpen, type BubbleCard } from '@/lib/bubbles/cards';
+import { chatWindowOpen, cursorMayMove, type BubbleCard } from '@/lib/bubbles/cards';
 import { getBubbleMode, serverBubbleMode, subscribeBubbleMode } from '@/lib/bubbles/prefs';
 import {
   getBubbleCards,
@@ -38,9 +38,18 @@ export function BubbleStack() {
   const cards = useSyncExternalStore(subscribeBubbles, getBubbleCards, serverBubbleCards);
   const { panel } = useDockLayout();
   const pathname = usePathname();
-  const top = cards[0];
-  if (mode === 'off' || !top || chatWindowOpen({ panel, pathname })) return null;
-  return <Bubble key={top.key} card={top} more={cards.length - 1} />;
+  if (mode === 'off') return null;
+  const top = chatWindowOpen({ panel, pathname }) ? undefined : cards[0];
+  return (
+    <>
+      {/* Says a new card once, in words. It stays mounted, or a screen reader
+          may not hear what is written into it. */}
+      <span role="status" className="sr-only">
+        {top ? `${top.title}: ${top.text}` : ''}
+      </span>
+      {top ? <Bubble key={top.key} card={top} more={cards.length - 1} /> : null}
+    </>
+  );
 }
 
 function Bubble({ card, more }: { card: BubbleCard; more: number }) {
@@ -54,23 +63,33 @@ function Bubble({ card, more }: { card: BubbleCard; more: number }) {
     else router.push(`/chats/${encodeURIComponent(card.chat)}`);
   };
 
-  const pop = () => {
-    const to = popBubble(card);
-    if (to === null) return;
-    // The last card of this chat went: the chat is seen. A failed read leaves
-    // it unread, and the popped key keeps the card from coming back.
-    const read = card.agentSlug
+  const moveCursor = async (to: number) => {
+    // By the list as it is now, not as this tab last heard it.
+    const rows = await queryClient.fetchQuery({
+      queryKey: messengerKeys.list,
+      queryFn: messengerApi.list,
+      staleTime: 0,
+    });
+    if (!cursorMayMove(rows.find((r) => r.id === card.chat))) return;
+    await (card.agentSlug
       ? // A thread has no seq: its order is the reply's time in ms. The row's
         // own time has more digits than that, so step past it.
         apiSend(READ_PATH, 'POST', readBody(card.agentSlug, new Date(to + 1).toISOString()))
-      : messengerApi.read(card.chat, to);
-    void read
-      .then(() => {
-        void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
-        void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
-        void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
-      })
-      .catch(() => {});
+      : messengerApi.read(card.chat, to));
+    void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
+    void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
+    void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+  };
+
+  const pop = () => {
+    const to = popBubble(card);
+    // The next card takes the place of this one, and a keyboard stays with it.
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>('[data-testid="bubble-pop"]')?.focus(),
+    );
+    // The last card of this chat went: the chat is seen. A failed read leaves
+    // it unread, and the popped key keeps the card from coming back.
+    if (to !== null) void moveCursor(to).catch(() => {});
   };
 
   return (
@@ -80,10 +99,6 @@ function Bubble({ card, more }: { card: BubbleCard; more: number }) {
       aria-label={`Message from ${card.title}`}
       className="pointer-events-auto flex w-full items-start gap-3 rounded-lg bg-popover p-3 text-popover-foreground shadow-lg"
     >
-      {/* Says a new card once, in words. */}
-      <span role="status" className="sr-only">
-        {card.title}: {card.text}
-      </span>
       <ChatAvatar
         name={card.author.name}
         kind={card.author.kind === 'agent' ? 'agent' : 'person'}
@@ -107,7 +122,7 @@ function Bubble({ card, more }: { card: BubbleCard; more: number }) {
           <span className="block text-xs text-muted-foreground">{card.note}</span>
         ) : null}
         <span className="line-clamp-6 whitespace-pre-line text-sm [overflow-wrap:anywhere]">
-          {card.text}
+          {card.text || 'Open to read it'}
         </span>
         {card.cut || more > 0 ? (
           <span className="mt-1 block text-xs text-muted-foreground">

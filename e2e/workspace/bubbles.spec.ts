@@ -37,6 +37,8 @@ const closeCard = (page: Page) => page.getByTestId('bubble-pop').click();
 /** A chat toast's one action. */
 const toastOpen = (page: Page) => page.getByRole('button', { name: 'Open', exact: true });
 
+const isList = (asked: string) => asked === 'GET /api/messenger/conversations';
+
 /** The stream is open and the list has been read, so a line now is a new one. */
 async function settled(page: Page) {
   await expect.poll(() => api.asked('admin')).toContain('GET /api/messenger/conversations');
@@ -115,6 +117,8 @@ test('a group card names the group, and a long paste shows its size', async ({ p
 });
 
 test('an assistant reply shows once, when complete, as its first sentence', async ({ page }) => {
+  // A reply read earlier: it never comes back as new.
+  api.chats.replyRead(MOCK_AGENT.slug, 'An old reply that was read long ago.');
   await bubblesOn(page);
   await signIn(page, 'admin');
   await settled(page);
@@ -135,7 +139,80 @@ test('an assistant reply shows once, when complete, as its first sentence', asyn
   await expect(card(page)).toHaveCount(0);
   await expect.poll(() => api.chats.threadReads).toHaveLength(1);
   expect(api.chats.threadReads[0]?.agentSlug).toBe(MOCK_AGENT.slug);
-  expect(api.chats.threadReads[0]?.at).toBeTruthy();
+  // Just past the reply, so it counts as read and nothing newer does.
+  const row = api.chats.rows.find((r) => r.agentSlug === MOCK_AGENT.slug);
+  expect(Date.parse(api.chats.threadReads[0]!.at!)).toBe(Date.parse(row!.lastMessageAt!) + 1);
+});
+
+test('a failed reply makes no card, and an old reply stays read', async ({ page }) => {
+  api.chats.replyRead(MOCK_AGENT.slug, 'An old reply that was read long ago.');
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  api.chats.replyFails(MOCK_AGENT.slug);
+  await page.waitForTimeout(800);
+  await expect(card(page)).toHaveCount(0);
+});
+
+test('closing a stale card of a thread read elsewhere does not move the cursor', async ({
+  page,
+}) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  api.chats.replyEnds(MOCK_AGENT.slug, 'Done.');
+  await expect(card(page)).toContainText('Done.');
+
+  // A thread read raises no event: this tab still holds the card.
+  api.chats.readElsewhere(MOCK_AGENT.id);
+  await closeCard(page);
+  await expect(card(page)).toHaveCount(0);
+  await expect.poll(() => api.asked('admin').filter(isList).length).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  expect(api.chats.threadReads).toEqual([]);
+});
+
+test('closing the cards of a long unread chat marks nothing read', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  for (let i = 1; i <= 7; i += 1) api.chats.say(CHAT, `Line ${i}`);
+  await expect(card(page)).toContainText('Line 7');
+  await expect(card(page)).toContainText('4 more');
+  for (let i = 0; i < 5; i += 1) await closeCard(page);
+  await expect(card(page)).toHaveCount(0);
+  await page.waitForTimeout(300);
+  // Lines 1 and 2 were never on a card.
+  expect(api.chats.reads).toEqual([]);
+
+  await page.goto('/chats');
+  await expect(page.locator('[data-testid="chat-row"][data-highlighted="true"]')).toHaveCount(1);
+});
+
+test('a reply to a turn from the window still shows if it is minimised first', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  await page.keyboard.press('ControlOrMeta+i');
+  const box = page.getByPlaceholder(/Enter to send/);
+  await box.fill('Please make the report');
+  await box.press('Enter');
+  await expect.poll(() => api.turns.length).toBe(1);
+
+  // The reply's row exists, pending, while the window is open.
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  await page.waitForTimeout(800);
+  expect(api.chats.threadReads).toEqual([]);
+
+  await page.keyboard.press('Escape');
+  api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
+  await expect(card(page)).toContainText('I have finished the report.');
 });
 
 test('a close in one tab clears the other, with one read', async ({ page, context }) => {
