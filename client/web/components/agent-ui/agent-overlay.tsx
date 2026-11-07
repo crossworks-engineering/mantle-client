@@ -207,11 +207,13 @@ function HeldPrompt({ state }: { state: HandsState }) {
               </p>
             )}
             <p className="text-sm text-muted-foreground">
-              {unsaved
-                ? 'You said Not now to this change, but it is still here. Saving sends it as your own; discarding loads the item again without it.'
-                : held.risk === 'refused'
-                  ? 'The brain keeps this step for you. Allow it once to send it as your own, or do it yourself.'
-                  : 'Nothing happens unless you allow it. You can also do this step yourself.'}
+              {unsaved && held.wipesDraft
+                ? 'You said Not now to this change, but it is still here, and the assistant already saved it into the draft. Saving sends it as your own. Discarding throws away the whole unsaved draft, your own edits since the last commit included, and loads the item again at its last commit.'
+                : unsaved
+                  ? 'You said Not now to this change, but it is still here. Saving sends it as your own; discarding loads the item again without it.'
+                  : held.risk === 'refused'
+                    ? 'The brain keeps this step for you. Allow it once to send it as your own, or do it yourself.'
+                    : 'Nothing happens unless you allow it. You can also do this step yourself.'}
             </p>
           </div>
         </div>

@@ -41,6 +41,7 @@ import {
   type RequestRisk,
   type Screen,
 } from './model';
+import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
 import { setLoginChangeGuard } from '@mantle/web-ui/login-change-guard';
 import { currentLoginKey, isLoginStorageKey, loginChangedFrom } from './login-pin';
 import { centerOf, factsOf, findByName, findTarget, readScreen, roleOf } from './dom';
@@ -57,6 +58,10 @@ export type HeldRequest = {
   /** A held save of the agent's change (`risk` `unsaved`): throw the change
    *  away instead, by loading the item again. */
   discard?: () => void;
+  /** The agent's change is already in the item's saved draft: discarding
+   *  throws the whole unsaved draft away, the user's own edits since the
+   *  last commit included. */
+  wipesDraft?: boolean;
 };
 
 export type ConsentAsk = { agent: string; answer: (allow: boolean) => void };
@@ -245,6 +250,13 @@ export class AgentHands {
    *  refused while the page loads again, so the leave flush (a draft save
    *  on pagehide, a beacon) cannot send the change on the way out. */
   private discarding = new Set<string>();
+  /** Items whose draft the agent saved (a tagged draft save or draft-ops
+   *  that went through) in this page: a Discard must revert that draft
+   *  too, or the page loads it again and the next Commit sends it. */
+  private agentDrafts = new Set<string>();
+  /** A request the hands send themselves past a shut item: the Discard's
+   *  own discard-draft (`METHOD path`), once. */
+  private passOnce = new Set<string>();
 
   /** The item a write is to, whatever the write (a draft save, a commit,
    *  a publish all carry its content): `/api/<kind>/<id>`, or the path
@@ -287,12 +299,20 @@ export class AgentHands {
   private async askTainted(method: string, url: string): Promise<'save' | 'discard' | 'keep'> {
     const key = this.taintKey(method, url);
     let discarded = false;
-    const allowed = await this.ask('unsaved', method, url, null, () => {
-      discarded = true;
-      // Shut before the question closes: a write that comes in between
-      // must not open a fresh one.
-      this.discarding.add(key);
-    });
+    const wipesDraft = this.agentDrafts.has(key) && draftKindOf(key) !== null;
+    const allowed = await this.ask(
+      'unsaved',
+      method,
+      url,
+      null,
+      () => {
+        discarded = true;
+        // Shut before the question closes: a write that comes in between
+        // must not open a fresh one.
+        this.discarding.add(key);
+      },
+      wipesDraft,
+    );
     if (allowed) {
       this.tainted.delete(key);
       if (!this.state.active && this.acting === 0) this.releaseLater();
@@ -303,10 +323,39 @@ export class AgentHands {
       // change until the page has loaded again, and leaving flushes it.
       // The reminder stays, for a reload that does not happen.
       this.blockBeacons();
+      // The agent's change is in the saved draft already: revert the draft
+      // to the last commit first, as the user's own step (untagged), or the
+      // page would load it again.
+      if (wipesDraft && !(await this.discardDraft(key))) {
+        this.discarding.delete(key);
+        this.showNote('The draft could not be thrown away, so nothing was changed. Try again.');
+        return 'keep';
+      }
       this.reloadFor(key);
       return 'discard';
     }
     return 'keep';
+  }
+
+  /** Send the item's discard-draft, untagged, past its own shut door. */
+  private async discardDraft(key: string): Promise<boolean> {
+    const path = `/api/${key}/discard-draft`;
+    this.passOnce.add(`POST ${path}`);
+    try {
+      const res = await window.fetch(apiUrl(path), withAuth({ method: 'POST' }));
+      if (!res.ok) return false;
+      this.agentDrafts.delete(key);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      this.passOnce.delete(`POST ${path}`);
+    }
+  }
+
+  /** Note a tagged write that went through: a draft save of the agent's. */
+  private noteAgentWrite(method: string, url: string) {
+    if (isDraftWrite(method, url)) this.agentDrafts.add(itemOfWrite(url));
   }
 
   /**
@@ -394,6 +443,8 @@ export class AgentHands {
     this.lateUntil = 0;
     this.tainted.clear();
     this.discarding.clear();
+    this.agentDrafts.clear();
+    this.passOnce.clear();
     this.end();
     this.release();
   }
@@ -530,6 +581,8 @@ export class AgentHands {
     // in the editor. The user's own save of it (not set off by an action of
     // the agent's) is asked about again, session or not. An agent action
     // sending it again meets the usual hold below.
+    // The Discard's own discard-draft, once, past the shut item.
+    if (this.passOnce.delete(`${m} ${pathOf(url)}`)) return { blocked: false, tag: null };
     const key = this.taintKey(m, url);
     const write = m !== 'GET' && m !== 'HEAD';
     // Discarded, and the page is loading again: nothing goes to it.
@@ -643,6 +696,7 @@ export class AgentHands {
       );
       headers.set(AGENT_CALL_HEADER, guard.tag);
       const res = await send(input, { ...init, headers });
+      if (res.ok) this.noteAgentWrite(method, url);
       if (res.status !== 403) return res;
       let body: unknown = null;
       try {
@@ -683,6 +737,7 @@ export class AgentHands {
     url: string,
     reason: string | null = null,
     onDiscard?: () => void,
+    wipesDraft = false,
   ): Promise<boolean> {
     // One question at a time: a second risky request while one waits is
     // refused rather than stacked behind it.
@@ -716,6 +771,7 @@ export class AgentHands {
           path: path.slice(0, 200),
           answer,
           ...(discard ? { discard } : {}),
+          ...(wipesDraft ? { wipesDraft: true } : {}),
         },
       });
     });
@@ -944,6 +1000,28 @@ export function itemOfWrite(url: string): string {
       path,
     );
   return m ? `${m[1]}/${m[2]}` : path;
+}
+
+function pathOf(url: string): string {
+  try {
+    return new URL(url, 'http://app.invalid').pathname;
+  } catch {
+    return url;
+  }
+}
+
+/** A draft save of an item that has a discard-draft: a page's or a
+ *  drawing's draft, a table's draft or draft-ops. */
+export function isDraftWrite(method: string, url: string): boolean {
+  const m = method.toUpperCase();
+  if (m === 'GET' || m === 'HEAD' || m === 'DELETE') return false;
+  return /^\/api\/(pages|tables|draws)\/[^/]+\/(draft|draft-ops)$/.test(pathOf(url));
+}
+
+/** The kind of an item key that has a discard-draft route, or null. */
+function draftKindOf(key: string): string | null {
+  const m = /^(pages|tables|draws)\/[^/]+$/.exec(key);
+  return m ? m[1]! : null;
 }
 
 /** The roles an option of a menu, a combobox or a tab list has, the

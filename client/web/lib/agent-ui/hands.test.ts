@@ -696,6 +696,97 @@ describe('a Discard whose reload is cancelled', () => {
   });
 });
 
+describe('a Discard after the agent saved the draft', () => {
+  const ITEMS = [
+    { kind: 'pages', save: { method: 'PUT', path: '/api/pages/p1/draft' } },
+    { kind: 'tables', save: { method: 'POST', path: '/api/tables/t1/draft-ops' } },
+    { kind: 'draws', save: { method: 'PUT', path: '/api/draws/d1/draft' } },
+  ] as const;
+
+  it.each(ITEMS)(
+    '$kind: the draft goes back to the last commit, untagged, before the page loads again',
+    async ({ save }) => {
+      const { AgentHands } = await import('./hands');
+      const h = made(new AgentHands());
+      const reload = vi.fn();
+      (g.location as Record<string, unknown>).reload = reload;
+      const item = save.path.replace(/\/(draft|draft-ops)$/, '');
+      h.begin('Lesson', { tag: 'lesson:x' });
+      // The agent's draft save goes through (the brain allows it).
+      await window.fetch(save.path, { method: save.method, body: '{}' });
+      // Its Commit is held, and the user says Not now.
+      const commit = window.fetch(`${item}/commit`, { method: 'POST', body: '{}' });
+      (await heldOf(h))!.answer(false);
+      await expect(commit).rejects.toThrow();
+      h.end();
+      // The user's own save asks, and says the whole draft goes.
+      const mine = window.fetch(save.path, { method: save.method, body: '{}' });
+      const held = (await heldOf(h)) as unknown as { wipesDraft?: boolean; discard: () => void };
+      expect(held.wipesDraft).toBe(true);
+      held.discard();
+      await expect(mine).rejects.toThrow();
+      await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+      expect(calls.map((c) => [c.method, c.url, c.tag])).toEqual([
+        [save.method, save.path, 'lesson:x'],
+        ['POST', `${item}/discard-draft`, null],
+      ]);
+      // And nothing more goes to the item while the page loads again.
+      await expect(window.fetch(save.path, { method: save.method, body: '{}' })).rejects.toThrow();
+      expect(calls).toHaveLength(2);
+    },
+  );
+
+  it('with no draft of the agent’s, Discard only loads the page again', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    const reload = vi.fn();
+    (g.location as Record<string, unknown>).reload = reload;
+    h.begin('Agent');
+    const first = window.fetch('/api/pages/p1/commit', { method: 'POST', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    h.end();
+    const mine = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    const held = (await heldOf(h)) as unknown as { wipesDraft?: boolean; discard: () => void };
+    expect(held.wipesDraft).toBeUndefined();
+    held.discard();
+    await expect(mine).rejects.toThrow();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('a discard-draft that fails changes nothing and says so', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    const reload = vi.fn();
+    (g.location as Record<string, unknown>).reload = reload;
+    answer = (c) =>
+      c.url.endsWith('/discard-draft')
+        ? new Response('{}', { status: 500 })
+        : new Response('{}', { status: 200 });
+    h.begin('Lesson', { tag: 'lesson:x' });
+    await window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    const commit = window.fetch('/api/pages/p1/commit', { method: 'POST', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(commit).rejects.toThrow();
+    h.end();
+    const mine = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    ((await heldOf(h)) as unknown as { discard: () => void }).discard();
+    await expect(mine).rejects.toThrow();
+    await vi.waitFor(() =>
+      expect(h.get().note).toBe(
+        'The draft could not be thrown away, so nothing was changed. Try again.',
+      ),
+    );
+    expect(reload).not.toHaveBeenCalled();
+    // Not shut: the next save asks again.
+    const again = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    expect((await heldOf(h))?.risk).toBe('unsaved');
+    h.get().held!.answer(false);
+    await expect(again).rejects.toThrow();
+  });
+});
+
 describe('a session ended by a login change', () => {
   it('says so, so no cancel is sent as the other login', async () => {
     const { AgentHands } = await import('./hands');
