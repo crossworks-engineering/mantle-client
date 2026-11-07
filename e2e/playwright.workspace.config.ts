@@ -53,7 +53,7 @@ export default defineConfig({
   // next dev on Bun also waits about 10 ms per request, so a page of 45 files
   // comes later still (docs/bun-tooling.md). The Bun lane waits up to 15 s;
   // the Node lane keeps the default.
-  ...(runtime === 'bun' ? { expect: { timeout: 15_000 } } : {}),
+  expect: { timeout: 15_000 },
   use: {
     baseURL,
     trace: 'retain-on-failure',
