@@ -49,6 +49,7 @@
     "lowlight": "^3.3.0",
     "lucide-react": "^1.64.0",
     "marked": "^18.1.2",
+    "modern-screenshot": "4.7.0",
     "next": "~16.4.3",
     "next-themes": "^0.4.6",
     "qrcode": "^1.5.4",

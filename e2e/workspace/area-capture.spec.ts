@@ -9,8 +9,9 @@ import {
 /**
  * The area screenshot (replaced the element picker): drag a rectangle, see
  * the capture, then Attach to chat or Save. The desktop shell's capture is
- * stubbed (the browser's tab share asks the user, which a spec cannot
- * answer), so this drives the layer, the preview and the save, and the
+ * stubbed for most of these; one runs the browser's own redraw of the page,
+ * which never asks for a screen share. They drive the layer, the preview
+ * and the save, and the
  * brain's answer says where the file landed: the workspace the switcher
  * shows, as an upload to Files lands.
  * In-memory brain, no real one.
@@ -137,4 +138,45 @@ test('a member on All my workspaces saves one to its own home, with no attach', 
   // No workspace named: the brain picks the member's own create home.
   expect(api.screenshots[0]).toMatchObject({ role: 'member', ws: null });
   await expect(page.getByText(`Saved to Files in ${WORKSPACES.own.name}.`)).toBeVisible();
+});
+
+test('a browser captures by redrawing the page, with no screen-share prompt', async ({ page }) => {
+  // No desktop shell, and a getDisplayMedia that only records a call.
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    delete w.mantleDesktop;
+    w.__shareAsked = false;
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.getDisplayMedia = async () => {
+        w.__shareAsked = true;
+        throw new DOMException('no', 'NotAllowedError');
+      };
+    }
+  });
+  await signIn(page, 'admin');
+  await page.getByRole('button', { name: 'Capture an area for the assistant' }).click();
+  await dragArea(page);
+
+  const preview = page.getByRole('dialog', { name: 'Screenshot' });
+  const img = preview.getByRole('img', { name: 'The captured area' });
+  await expect(img).toBeVisible();
+  // The PNG is the dragged area at the device scale.
+  const size = await img.evaluate(async (el: HTMLImageElement) => {
+    await el.decode();
+    return { w: el.naturalWidth, h: el.naturalHeight, dpr: window.devicePixelRatio };
+  });
+  expect(size).toEqual({
+    w: Math.round(220 * size.dpr),
+    h: Math.round(150 * size.dpr),
+    dpr: size.dpr,
+  });
+  expect(
+    await page.evaluate(() => (window as unknown as { __shareAsked: boolean }).__shareAsked),
+  ).toBe(false);
+  await preview.getByRole('button', { name: 'Save only' }).click();
+  await expect.poll(() => api.screenshots.length).toBe(1);
+  expect(api.screenshots[0]!.meta).toMatchObject({
+    shell: 'web',
+    rect: { x: 200, y: 150, w: 220, h: 150 },
+  });
 });

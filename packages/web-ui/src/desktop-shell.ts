@@ -56,7 +56,7 @@ export type DesktopShellApi = {
   /** Capture a rectangle of this window (CSS pixels of the viewport) as PNG
    *  bytes, at the screen's scale, with no prompt (area screenshots,
    *  lib/area-capture.ts). Optional: older shells and the Tauri shell lack
-   *  it, and the page falls back to the browser's tab share. */
+   *  it, and the page redraws itself instead (no prompt there either). */
   capture?(rect: { x: number; y: number; w: number; h: number }): Promise<Uint8Array>;
   /** Company sign-in (newer shells only): open a sign-in on this window's brain
    *  in the system browser. The flow comes back as `mantle://oidc`, and the
