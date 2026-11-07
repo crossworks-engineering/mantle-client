@@ -71,30 +71,16 @@ test('types and clicks as the user would, then is stopped', async ({ page }) => 
   expect((await hands(page, 'screen')).error).toBe('stopped');
 });
 
-test('a settings change waits for the user: Not now refuses it, Allow once sends it', async ({
-  page,
-}) => {
+test('a settings change goes as the user would make it: no question, no tag', async ({ page }) => {
   await signIn(page, 'admin');
   await begin(page);
   expect((await hands(page, 'go', '/settings/profile')).ok).toBe(true);
   const sounds = page.getByRole('switch', { name: 'Sounds' });
   await expect(sounds).toBeChecked();
-
-  const first = hands(page, 'click', { role: 'switch', name: 'Sounds' });
-  const held = page.getByRole('alertdialog', { name: 'Lesson wants to change a setting' });
-  await expect(held).toBeVisible();
-  await expect(held.getByText('PUT /api/profile/sounds')).toBeVisible();
-  await held.getByRole('button', { name: 'Not now' }).click();
-  expect((await first).error).toBe('needs_user');
-  expect(api.asked('admin')).not.toContain('PUT /api/profile/sounds');
-
-  const second = hands(page, 'click', { role: 'switch', name: 'Sounds' });
-  await expect(held).toBeVisible();
-  // Armed after a moment, so a click already on its way cannot answer it.
-  await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
-  await held.getByRole('button', { name: 'Allow once' }).click();
-  expect((await second).ok).toBe(true);
+  expect((await hands(page, 'click', { role: 'switch', name: 'Sounds' })).ok).toBe(true);
   await expect.poll(() => api.asked('admin')).toContain('PUT /api/profile/sounds');
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  expect(api.requests.some((r) => r.agentCall !== undefined)).toBe(false);
 });
 
 test('refuses a route with a query, and pauses when the user takes over', async ({ page }) => {

@@ -747,9 +747,7 @@ function ShellFrame({
         <AgentOverlay />
         {/* Lessons: the picker, a link's "Start this lesson?", and the card
             that plays one with the agent's hands. A client login has none. */}
-        {role === 'admin' || role === 'member' ? (
-          <Lessons adminWorkspaceId={shell.workspaces?.find((w) => w.isAdmin)?.id ?? null} />
-        ) : null}
+        {role === 'admin' || role === 'member' ? <Lessons /> : null}
 
         {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}

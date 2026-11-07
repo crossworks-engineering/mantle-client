@@ -81,8 +81,8 @@ else is a plain 404.
 - `retired-links.spec.ts`: old portal links (`/team`, `/hub`, `/client-signin`)
   land on a bare `/login`; old review links land on the home.
 - `lessons.spec.ts`: a lesson from the pages tree's Lessons folder plays
-  with the agent's hands: from the profile menu, step by step, with a
-  settings step left to the user; a `?lesson=` link only offers one, and a
+  with the agent's hands: from the profile menu, step by step, a settings
+  step done as the user would; a `?lesson=` link only offers one, and a
   page outside the folder is refused.
 - `login-brains.spec.ts`: the sign-in screen against more than one brain (the
   desktop shell's per-window brain header) and after every way a sign-in fails.
@@ -92,14 +92,13 @@ else is a plain 404.
 - `agent-calls.spec.ts`: an in-app agent's ui calls reach this window
   (played through the dev build's `window.__mantleAgentCalls`): off by
   default, the profile menu's opt-in, the first call asks the user, allowed
-  calls answer with this window's id, a write the agent sets off names its
-  call (`x-mantle-agent-call`) and a setting the user allows goes without it;
-  a member turns it on too, and its window answers its own agent.
+  calls answer with this window's id, a turn asks once before it clicks or
+  types (Not now refuses the rest of it), and its writes go as the user's
+  own; a member turns it on too, and its window answers its own agent.
 - `agent-hands.spec.ts`: an agent driving the window (lib/agent-ui, through
   the dev build's `window.__mantleAgentHands`): the screen read as labelled
-  controls, typing and clicking, Stop, a settings change held for the
-  user's Block or Allow once, a route with a query refused, and a real
-  click pausing it.
+  controls, typing and clicking, Stop, a settings change made as the user
+  would, a route with a query refused, and a real click pausing it.
 - `area-capture.spec.ts`: the rail's area capture (the desktop capture
   stubbed): drag an area, see it, then Attach to chat (an Admin user) or
   Save (a member, no attach); Esc saves nothing, and the save never names

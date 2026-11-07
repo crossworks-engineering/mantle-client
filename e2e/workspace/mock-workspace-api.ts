@@ -181,7 +181,9 @@ export type MockRequest = {
   path: string;
   query: string;
   role: Role | 'anon';
-  /** The in-app agent's call a request names (`x-mantle-agent-call`). */
+  /** An agent call header a request carried (`x-mantle-agent-call`): the
+   *  client sends none since the agent acts with the user's own rights, so
+   *  a spec can assert it stays unset. */
   agentCall?: string;
 };
 
@@ -267,26 +269,6 @@ export type MockWorkspaceApi = {
    *  stays open, quiet). A stream for a turn id that is not the caller's is
    *  a 404, as on a brain. */
   turnEvents: unknown[];
-  /** Tagged writes (`x-mantle-agent-call`) whose path matches are refused
-   *  403 `{ error: 'agent_refused' }`, as the brain refuses a risky one. */
-  refuseAgentWrites: RegExp | null;
-  /** Where the Lessons folder and its lesson are homed (GET /api/grants/:id):
-   *  the Admin workspace unless a spec moves them. */
-  lessonsHome: WorkspaceKey;
-  /** GET /api/grants/:id sends `homeIsAdmin` (default true); false plays
-   *  a brain before the field. */
-  sendsHomeIsAdmin: boolean;
-  /** GET /api/grants/:id sends `editableOutsideAdmin` (default true); false
-   *  plays a brain before the field (fix round 2). */
-  sendsEditableOutsideAdmin: boolean;
-  /** The lessons are shared to Team with Write: someone outside the Admin
-   *  workspace may change them (`editableOutsideAdmin`, and a Write row). */
-  lessonsEditableOutside: boolean;
-  /** A second top-level "Lessons" folder, homed in Team, listed before the
-   *  Admin workspace's one: only the Admin one is the Lessons folder. */
-  decoyLessonsFolder: boolean;
-  /** The `reason` of the mock's 403 agent_refused. */
-  agentRefusalReason: string;
   close: () => Promise<void>;
 };
 
@@ -300,8 +282,6 @@ export const MOCK_AGENT = {
 /** The lessons the mock brain holds (components/lessons). */
 export const LESSONS = {
   folder: { id: '1e551111-1111-4111-8111-111111111111', name: 'Lessons', path: 'pages.lessons' },
-  /** A Team folder by the same name (`decoyLessonsFolder`). */
-  decoy: { id: '1e555555-5555-4555-8555-555555555555', name: 'Lessons', path: 'pages.lessons_2' },
   lesson: { id: '1e552222-2222-4222-8222-222222222222', title: 'Your sounds' },
   stray: { id: '1e553333-3333-4333-8333-333333333333', title: 'Not a lesson' },
   /** A second lesson whose step writes (a quick note on the Desk). */
@@ -377,21 +357,13 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     uiAnswers: [],
     turns: [],
     turnEvents: [],
-    refuseAgentWrites: null,
-    lessonsHome: 'admin',
-    sendsHomeIsAdmin: true,
-    sendsEditableOutsideAdmin: true,
-    lessonsEditableOutside: false,
-    decoyLessonsFolder: false,
-    agentRefusalReason: 'listed',
     close: async () => undefined,
   };
 
   const cors = {
     'access-control-allow-origin': clientOrigin,
     'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'access-control-allow-headers':
-      'content-type, authorization, last-event-id, idempotency-key, x-mantle-agent-call',
+    'access-control-allow-headers': 'content-type, authorization, last-event-id, idempotency-key',
     'access-control-max-age': '600',
   };
   const send = (res: ServerResponse, status: number, type: string, body: string) => {
@@ -593,14 +565,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
             true
           );
         }
-        if (folder === LESSONS.decoy.id) {
-          const listed = [{ id: LESSONS.stray.id, title: LESSONS.stray.title }];
-          return (json(res, 200, { ...tree(kind, listed, url), folder: lessons }), true);
-        }
         if (!folder) {
-          const decoy = { ...LESSONS.decoy, depth: 1, parentId: null, system: false };
-          const folders = state.decoyLessonsFolder ? [decoy, lessons] : [lessons];
-          return (json(res, 200, { ...tree(kind, items, url), folders, ...echo }), true);
+          return (json(res, 200, { ...tree(kind, items, url), folders: [lessons], ...echo }), true);
         }
       }
       return (json(res, 200, { ...tree(kind, items, url), ...echo }), true);
@@ -794,56 +760,6 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     if (path === '/api/files/files' && method === 'POST') {
       await readBody(req);
       return (json(res, 201, { ok: true }), true);
-    }
-    // The home of the Lessons folder and its lessons (components/lessons
-    // checks it): named only to a user of the home workspace, or an Admin
-    // user, as the brain's GET /api/grants/:id; `homeIsAdmin` and
-    // `editableOutsideAdmin` to anyone who reads it (unless a spec plays an
-    // older brain). The stray page and the decoy folder are Team's.
-    const grantsM = /^\/api\/grants\/([0-9a-f-]{36})$/.exec(path);
-    if (grantsM && method === 'GET') {
-      const id = grantsM[1]!;
-      const homeKey: WorkspaceKey | null =
-        id === LESSONS.folder.id || id === LESSONS.lesson.id || id === LESSONS.note.id
-          ? state.lessonsHome
-          : id === LESSONS.stray.id || id === LESSONS.decoy.id
-            ? 'team'
-            : null;
-      if (!homeKey) return (json(res, 404, { error: 'not found', code: 'not_found' }), true);
-      const names = role === 'admin' || MEMBERSHIP[role].some((m) => m.ws === homeKey);
-      return (
-        json(res, 200, {
-          item: { id, title: '', type: 'page' },
-          home: names
-            ? { wsId: WORKSPACES[homeKey].id, name: WORKSPACES[homeKey].name }
-            : { wsId: null, name: null },
-          ...(state.sendsHomeIsAdmin ? { homeIsAdmin: homeKey === 'admin' } : {}),
-          ...(state.sendsEditableOutsideAdmin
-            ? { editableOutsideAdmin: homeKey !== 'admin' || state.lessonsEditableOutside }
-            : {}),
-          // The rows an Admin user sees: the home, and Team with Write when
-          // the lessons are shared that way.
-          rows:
-            role === 'admin'
-              ? [
-                  { wsId: WORKSPACES[homeKey].id, name: WORKSPACES[homeKey].name, write: false },
-                  ...(state.lessonsEditableOutside
-                    ? [{ wsId: WORKSPACES.team.id, name: WORKSPACES.team.name, write: true }]
-                    : []),
-                ].map((r) => ({
-                  ...r,
-                  isHome: r.wsId === WORKSPACES[homeKey].id,
-                  viaFolder: null,
-                  excluded: false,
-                }))
-              : [],
-          addable: [],
-          mayManage: role === 'admin',
-          mayLink: false,
-          hasLink: false,
-        }),
-        true
-      );
     }
     // A lesson page (components/lessons), in or outside the Lessons folder.
     const lessonM = /^\/api\/pages\/([0-9a-f-]{36})$/.exec(path);
@@ -1050,17 +966,6 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       return json(res, 200, { ok: true });
     }
     if (!role) return json(res, 401, { error: 'Unauthorized' });
-
-    // The brain refuses a tagged risky write (agent UI fix round, section 2).
-    if (
-      typeof agentCall === 'string' &&
-      method !== 'GET' &&
-      method !== 'HEAD' &&
-      state.refuseAgentWrites?.test(path)
-    ) {
-      await readBody(req);
-      return json(res, 403, { error: 'agent_refused', reason: state.agentRefusalReason });
-    }
 
     if (EVERY_LOGIN.some((re) => re.test(path))) {
       if (path === '/api/shell') return json(res, 200, shell(role));

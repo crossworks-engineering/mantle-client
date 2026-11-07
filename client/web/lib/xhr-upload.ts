@@ -7,8 +7,6 @@
 
 import { apiTokenValue, errorMessageOf } from '@mantle/web-ui/api-fetch';
 import { isCrossOrigin, runtimeApiBase } from '@mantle/web-ui/runtime-env';
-import { agentHands } from './agent-ui/hands';
-import { AGENT_CALL_HEADER, isAgentRefusal } from './agent-ui/model';
 import { withCreateWs } from './create-workspace';
 
 export class UploadHttpError extends Error {
@@ -34,17 +32,9 @@ export class UploadStalledError extends Error {
   }
 }
 export class UploadAbortedError extends Error {
-  constructor(message = 'Cancelled.') {
-    super(message);
-    this.name = 'UploadAbortedError';
-  }
-}
-/** Not sent: an agent drove the window and the user said Not now to it.
- *  An abort, so a screen treats it as the cancel it is. */
-export class UploadBlockedError extends UploadAbortedError {
   constructor() {
-    super('Not sent: the user did not allow it.');
-    this.name = 'UploadBlockedError';
+    super('Cancelled.');
+    this.name = 'UploadAbortedError';
   }
 }
 
@@ -61,40 +51,7 @@ export type XhrUploadOptions = {
   onProgress?: (loaded: number, total: number) => void;
 };
 
-/**
- * An upload, through the same guard as every fetch while an agent drives
- * the window (lib/agent-ui/hands.ts): a risky one waits for the user's
- * Allow, one the agent set off carries its tag, and the brain's
- * agent_refused is held and, on Allow, sent once more untagged. With no
- * agent session it is a plain upload.
- */
 export function xhrUpload<T = unknown>(opts: XhrUploadOptions): Promise<T> {
-  const hands = agentHands();
-  // No agent session: sent at once, as ever.
-  if (!hands.guarding() && !hands.hasTaint()) return sendXhr<T>(opts);
-  return guardedXhr<T>(opts);
-}
-
-async function guardedXhr<T>(opts: XhrUploadOptions): Promise<T> {
-  const hands = agentHands();
-  const guard = await hands.guardRequest('POST', opts.url, opts.form);
-  if (guard.blocked) throw new UploadBlockedError();
-  if (!guard.tag) return hands.track(sendXhr<T>(opts));
-  const tagged = { ...opts, headers: { ...opts.headers, [AGENT_CALL_HEADER]: guard.tag } };
-  try {
-    return await hands.track(sendXhr<T>(tagged));
-  } catch (err) {
-    if (!(err instanceof UploadHttpError) || !isAgentRefusal(err.status, err.body)) throw err;
-    if (!(await hands.allowRefused('POST', opts.url, err.status, err.body))) {
-      // Not the raw 403 either way: Not now, or a late upload after Stop
-      // (the hands' note says which).
-      throw new UploadBlockedError();
-    }
-    return hands.track(sendXhr<T>(opts));
-  }
-}
-
-function sendXhr<T>(opts: XhrUploadOptions): Promise<T> {
   const stallMs = opts.stallMs ?? 60_000;
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

@@ -2,15 +2,14 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Hand, MousePointer2, ShieldAlert } from 'lucide-react';
+import { Hand, MousePointer2 } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { agentHands, type HandsState } from '@/lib/agent-ui/hands';
-import { heldText } from '@/lib/agent-ui/model';
 import { claimTurn, handleUiCall, loadAgentUiSetting, WINDOW_ID } from '@/lib/agent-ui/turn-calls';
 import { placeCard } from '@/lib/tour/model';
 
-/** How long a held request's Allow stays disarmed, so a click already on
- *  its way (the agent's, or a stray one) cannot answer it. */
+/** How long a prompt's yes stays disarmed, so a click already on its way
+ *  (the agent's, or a stray one) cannot answer it. */
 const ARM_MS = 800;
 
 function useHands(): HandsState {
@@ -25,8 +24,8 @@ function useHands(): HandsState {
 /**
  * What the user sees while an agent drives this window (lib/agent-ui): the
  * agent's cursor, a spotlight with a caption when it points at something,
- * the bar that says who is acting with Stop, and the question for a held
- * request. Every one of these is `data-agent-host`: the agent cannot read
+ * the bar that says who is acting with Stop, and the questions an in-app
+ * agent asks (this window; acting for this turn). Every one of these is `data-agent-host`: the agent cannot read
  * or press them, and the user's clicks on them do not count as taking over.
  *
  * Renders nothing unless a session runs. In a dev build it also hands the
@@ -53,16 +52,12 @@ export function AgentOverlay() {
     return () => hands.setNavigator(null);
   }, [router]);
 
-  if (!state.active && !state.consent && !state.note && !state.held && !state.turnAsk) return null;
+  if (!state.active && !state.consent && !state.turnAsk) return null;
   if (!state.active) {
     return (
       <div data-agent-host="" className="pointer-events-none fixed inset-0 z-[80]">
         {state.consent && <ConsentPrompt state={state} />}
         {state.turnAsk && <TurnPrompt ask={state.turnAsk} />}
-        {state.note && <LateNote text={state.note} />}
-        {/* A save of the agent's change the user said Not now to: asked
-            also after the session ended. */}
-        {state.held && <HeldPrompt state={state} />}
       </div>
     );
   }
@@ -79,7 +74,6 @@ export function AgentOverlay() {
         />
       )}
       <AgentBar state={state} />
-      {state.held && <HeldPrompt state={state} />}
     </div>
   );
 }
@@ -119,24 +113,6 @@ function AgentBar({ state }: { state: HandsState }) {
   );
 }
 
-/** A write of the agent's last action that went nowhere after Stop: said
- *  here, not left to fail silently or as a raw error. */
-function LateNote({ text }: { text: string }) {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="pointer-events-auto absolute bottom-4 left-1/2 flex w-fit max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
-    >
-      <ShieldAlert className="size-4 shrink-0 text-warning-ink" aria-hidden />
-      <span className="min-w-0">{text}</span>
-      <Button size="sm" variant="ghost" onClick={() => agentHands().dismissNote()}>
-        OK
-      </Button>
-    </div>
-  );
-}
-
 /** "Allow <agent> to act in this window for this turn?": asked at a
  *  turn's first click, type or select. Armed after a moment, like the
  *  others, so a click already on its way cannot answer it. */
@@ -162,8 +138,8 @@ function TurnPrompt({ ask }: { ask: NonNullable<HandsState['turnAsk']> }) {
               Allow {ask.agent} to act in this window for this turn?
             </h2>
             <p className="text-sm text-muted-foreground">
-              It clicks, types and picks as you, within what you may do. Anything that deletes,
-              sends, shares or changes a setting still waits for you. The next turn asks again.
+              It clicks, types and picks as you, with what you may do and nothing more. You can stop
+              it at any time. The next turn asks again.
             </p>
           </div>
         </div>
@@ -203,8 +179,8 @@ function ConsentPrompt({ state }: { state: HandsState }) {
               {ask.agent} wants to show you around in this window
             </h2>
             <p className="text-sm text-muted-foreground">
-              It moves, clicks and types where you can see it, as you. Anything that deletes, sends,
-              shares or changes a setting still waits for you, and Stop ends it.
+              It moves, clicks and types where you can see it, as you, with your own rights. Before
+              it clicks or types in a turn it asks you, and Stop ends it.
             </p>
           </div>
         </div>
@@ -214,65 +190,6 @@ function ConsentPrompt({ state }: { state: HandsState }) {
           </Button>
           <Button disabled={!armed} onClick={() => ask.answer(true)}>
             Allow for this session
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeldPrompt({ state }: { state: HandsState }) {
-  const held = state.held!;
-  const unsaved = held.risk === 'unsaved';
-  const [armed, setArmed] = React.useState(false);
-  React.useEffect(() => {
-    setArmed(false);
-    const t = setTimeout(() => setArmed(true), ARM_MS);
-    return () => clearTimeout(t);
-  }, [held.id]);
-  return (
-    <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-foreground/20">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="agent-held-title"
-        className="w-[min(26rem,calc(100%-2rem))] rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl"
-      >
-        <div className="flex items-start gap-3">
-          <ShieldAlert className="mt-0.5 size-5 shrink-0 text-warning-ink" aria-hidden />
-          <div className="min-w-0 space-y-1">
-            <h2 id="agent-held-title" className="font-semibold">
-              {unsaved
-                ? 'Save the changes the assistant made?'
-                : `${state.agent} wants to ${heldText(held.risk, held.reason)}`}
-            </h2>
-            {held.path && (
-              <p className="break-all font-mono text-xs text-muted-foreground">
-                {held.method} {held.path}
-              </p>
-            )}
-            <p className="text-sm text-muted-foreground">
-              {unsaved && held.wipesDraft
-                ? 'You said Not now to this change, but it is still here, and the assistant already saved it into the draft. Saving sends it as your own. Discarding throws away the whole unsaved draft, your own edits since the last commit included, and loads the item again at its last commit.'
-                : unsaved
-                  ? 'You said Not now to this change, but it is still here. Saving sends it as your own; discarding loads the item again without it.'
-                  : held.risk === 'refused'
-                    ? 'The brain keeps this step for you. Allow it once to send it as your own, or do it yourself.'
-                    : 'Nothing happens unless you allow it. You can also do this step yourself.'}
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          {held.discard && (
-            <Button variant="ghost" onClick={() => held.discard?.()}>
-              Discard the assistant&apos;s change
-            </Button>
-          )}
-          <Button variant="outline" onClick={() => held.answer(false)}>
-            Not now
-          </Button>
-          <Button disabled={!armed} onClick={() => held.answer(true)}>
-            {unsaved ? 'Save' : 'Allow once'}
           </Button>
         </div>
       </div>

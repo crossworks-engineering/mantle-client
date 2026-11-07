@@ -10,10 +10,10 @@
  *  - The first call in a page's life asks the user (a host prompt). Until
  *    they allow it, every call is answered `needs_consent` at once, so the
  *    agent never waits on a person reading a prompt.
- *  - Each call runs on the agent's hands (lib/agent-ui/hands.ts), with all
- *    their guards, and the requests it sets off carry the call's id
- *    (`x-mantle-agent-call`), so the brain refuses a risky one the user did
- *    not allow.
+ *  - A turn's first click, type or select asks the person once whether it
+ *    may act in this window for the rest of the turn ("ask once per turn").
+ *  - Each call runs on the agent's hands (lib/agent-ui/hands.ts), with the
+ *    user's own rights, as the user would: its requests go as the user's.
  */
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { agentHands } from './hands';

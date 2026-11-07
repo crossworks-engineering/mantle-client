@@ -10,18 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@mantle/web-ui/ui/dialog';
-import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { agentHands } from '@/lib/agent-ui/hands';
 import { findTarget } from '@/lib/agent-ui/dom';
-import { lessonCallTag, type AgentResult } from '@/lib/agent-ui/model';
+import type { AgentResult } from '@/lib/agent-ui/model';
 import { listLessons, loadLesson, type LessonEntry } from '@/lib/lessons/source';
-import type {
-  Lesson,
-  LessonAction,
-  LessonCheck,
-  LessonStep,
-  LessonViewer,
-} from '@/lib/lessons/model';
+import type { Lesson, LessonAction, LessonCheck, LessonStep } from '@/lib/lessons/model';
 
 // ── the one place a lesson is asked for ─────────────────────────────────────
 
@@ -73,15 +66,11 @@ async function runAction(a: LessonAction): Promise<AgentResult> {
  * lesson?" card a `?lesson=<id>` link opens (a link never starts one by
  * itself), and the lesson card that plays one with the agent's hands.
  * Every part is `data-agent-host`, so the hands never press it.
- *
- * `adminWorkspaceId`: the Admin workspace, when the viewer is in it (the
- * shell names it). Only lessons homed there are offered (`lessonTrusted`).
  */
-export function Lessons({ adminWorkspaceId }: { adminWorkspaceId: string | null }) {
+export function Lessons() {
   const { picker, offer } = useAsk();
   const [running, setRunning] = React.useState<Lesson | null>(null);
   const [problems, setProblems] = React.useState<string[] | null>(null);
-  const viewer = React.useMemo<LessonViewer>(() => ({ adminWorkspaceId }), [adminWorkspaceId]);
 
   // A link may OFFER a lesson; only the user's Start plays it.
   React.useEffect(() => {
@@ -89,26 +78,21 @@ export function Lessons({ adminWorkspaceId }: { adminWorkspaceId: string | null 
     if (id && /^[0-9a-f-]{36}$/i.test(id)) setAsk({ offer: id });
   }, []);
 
-  const start = React.useCallback(
-    async (id: string) => {
-      setAsk({ picker: false, offer: null });
-      setProblems(null);
-      try {
-        const loaded = await loadLesson(id, viewer);
-        if ('problems' in loaded) setProblems(loaded.problems);
-        else setRunning(loaded.lesson);
-      } catch (err) {
-        setProblems([err instanceof Error ? err.message : 'The lesson could not be loaded.']);
-      }
-    },
-    [viewer],
-  );
+  const start = React.useCallback(async (id: string) => {
+    setAsk({ picker: false, offer: null });
+    setProblems(null);
+    try {
+      const loaded = await loadLesson(id);
+      if ('problems' in loaded) setProblems(loaded.problems);
+      else setRunning(loaded.lesson);
+    } catch (err) {
+      setProblems([err instanceof Error ? err.message : 'The lesson could not be loaded.']);
+    }
+  }, []);
 
   return (
     <div data-agent-host="">
-      {picker && (
-        <LessonPicker viewer={viewer} onStart={start} onClose={() => setAsk({ picker: false })} />
-      )}
+      {picker && <LessonPicker onStart={start} onClose={() => setAsk({ picker: false })} />}
       {offer && !running && (
         <LessonOffer onStart={() => void start(offer)} onClose={() => setAsk({ offer: null })} />
       )}
@@ -132,21 +116,19 @@ export function Lessons({ adminWorkspaceId }: { adminWorkspaceId: string | null 
 }
 
 function LessonPicker({
-  viewer,
   onStart,
   onClose,
 }: {
-  viewer: LessonViewer;
   onStart: (id: string) => void;
   onClose: () => void;
 }) {
   const [lessons, setLessons] = React.useState<LessonEntry[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   React.useEffect(() => {
-    listLessons(viewer).then(setLessons, (err: unknown) =>
+    listLessons().then(setLessons, (err: unknown) =>
       setError(err instanceof Error ? err.message : 'The lessons could not be loaded.'),
     );
-  }, [viewer]);
+  }, []);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-agent-host="">
@@ -163,7 +145,7 @@ function LessonPicker({
           <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />
         ) : lessons.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No lessons yet. An admin adds them as pages in the Admin workspace's Lessons folder.
+            No lessons yet. An admin adds them as pages in the Lessons folder.
           </p>
         ) : (
           <ul className="space-y-1">
@@ -193,9 +175,8 @@ function LessonOffer({ onStart, onClose }: { onStart: () => void; onClose: () =>
         <DialogHeader>
           <DialogTitle>Start this lesson?</DialogTitle>
           <DialogDescription>
-            The link opens a lesson that will use this window while you watch. It only plays lessons
-            from the Admin workspace&apos;s Lessons folder, and anything that deletes, sends, shares
-            or changes a setting still waits for you.
+            The link opens a lesson that will use this window while you watch, as you. It only plays
+            lessons from the Lessons folder, and Stop ends it.
           </DialogDescription>
         </DialogHeader>
         <div className="flex justify-end gap-2">
@@ -221,10 +202,8 @@ function LessonCard({ lesson, onEnd }: { lesson: Lesson; onEnd: () => void }) {
   const last = index === lesson.steps.length - 1;
   const hands = agentHands();
 
-  // The session runs while the card is up; Stop on the bar ends both. Every
-  // write the lesson sets off is tagged as this play's, so the brain
-  // refuses a risky one as it does an agent's. A session the user took
-  // over stays paused: only their Show me goes on.
+  // The session runs while the card is up; Stop on the bar ends both. A
+  // session the user took over stays paused: only their Show me goes on.
   // Begun once per lesson: `onEnd` is read through a ref, so a re-render of
   // the parent (a route change) does not end and restart the session under
   // a running step.
@@ -233,7 +212,7 @@ function LessonCard({ lesson, onEnd }: { lesson: Lesson; onEnd: () => void }) {
     onEndRef.current = onEnd;
   }, [onEnd]);
   React.useEffect(() => {
-    hands.begin(lesson.title, { tag: lessonCallTag(uuid()) });
+    hands.begin(lesson.title);
     const unsub = hands.subscribe((s) => {
       if (!s.active) onEndRef.current();
     });

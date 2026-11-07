@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLessonsFolder, lessonSource, lessonTrusted, parseLesson } from './model';
+import { isLessonsFolder, lessonSource, parseLesson } from './model';
 
 const GOOD = `
 title: Add a task
@@ -115,59 +115,5 @@ describe('a lesson types after what a field holds', () => {
     expect(steps('{ target: { role: textbox, name: Title }, text: a, replace: true }')).toEqual({
       type: { target, text: 'a', replace: true },
     });
-  });
-});
-
-describe('lessonTrusted', () => {
-  const ADMIN_WS = 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0';
-  const TEAM_WS = 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1';
-  const admin = { adminWorkspaceId: ADMIN_WS };
-  const member = { adminWorkspaceId: null };
-  const sure = { homeIsAdmin: true, editableOutsideAdmin: false };
-
-  it('the brain decides it, for every viewer: homed in Admin, changed by nobody else', () => {
-    for (const viewer of [admin, member]) {
-      expect(lessonTrusted(sure, viewer)).toBe(true);
-      expect(lessonTrusted({ ...sure, editableOutsideAdmin: true }, viewer)).toBe(false);
-      expect(lessonTrusted({ ...sure, homeIsAdmin: false, home: { wsId: ADMIN_WS } }, viewer)).toBe(
-        false,
-      );
-    }
-    // An Admin user may change it; that is fine in the Admin workspace.
-    expect(lessonTrusted(sure, admin, true)).toBe(true);
-    // Anyone else may not play a lesson they may change.
-    expect(lessonTrusted(sure, member, true)).toBe(false);
-  });
-
-  it('an older brain: an Admin user checks the home and the Write grants; anyone else gets nothing', () => {
-    const rows = [{ wsId: ADMIN_WS, write: false }];
-    expect(lessonTrusted({ home: { wsId: ADMIN_WS }, rows }, admin)).toBe(true);
-    // A brain with homeIsAdmin but not editableOutsideAdmin is an older one too.
-    expect(lessonTrusted({ homeIsAdmin: true, home: { wsId: null }, rows }, admin)).toBe(true);
-    expect(
-      lessonTrusted(
-        { home: { wsId: ADMIN_WS }, rows: [...rows, { wsId: TEAM_WS, write: true }] },
-        admin,
-      ),
-    ).toBe(false);
-    // A Write grant that is "Removed here" gives nothing.
-    expect(
-      lessonTrusted(
-        {
-          home: { wsId: ADMIN_WS },
-          rows: [...rows, { wsId: TEAM_WS, write: true, excluded: true }],
-        },
-        admin,
-      ),
-    ).toBe(true);
-    expect(lessonTrusted({ home: { wsId: ADMIN_WS } }, admin)).toBe(false);
-    expect(lessonTrusted({ home: { wsId: TEAM_WS }, rows }, admin)).toBe(false);
-    expect(lessonTrusted({ homeIsAdmin: true, home: { wsId: null }, rows }, member)).toBe(false);
-    expect(lessonTrusted({ home: { wsId: null }, rows }, member)).toBe(false);
-  });
-
-  it('a home that could not be read is never trusted', () => {
-    expect(lessonTrusted(null, admin)).toBe(false);
-    expect(lessonTrusted(undefined, member)).toBe(false);
   });
 });

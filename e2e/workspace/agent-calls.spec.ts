@@ -132,24 +132,26 @@ test('the first call asks the user; once allowed, calls run and answer with this
   expect(read.result).toMatchObject({ ok: true });
   await expect(page.getByText('Saskia is using this window.')).toBeVisible();
 
-  // A write the agent sets off names its call; the brain would refuse a
-  // risky one. A setting the user allows goes without the name.
+  // The agent acts with the user's own rights, as the user would: its
+  // writes go as they are, a setting too, with no question and no tag.
   await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
-  const add = await call(page, 'click', { target: { role: 'button', name: 'Add note' } });
+  expect(
+    (await call(page, 'click', { target: { role: 'button', name: 'Add note' } })).result,
+  ).toMatchObject({ ok: true });
   const notePost = api.requests.find((r) => r.method === 'POST' && r.path === '/api/notes');
-  expect(notePost?.agentCall).toBe(add.callId);
+  expect(notePost).toBeTruthy();
+  expect(notePost?.agentCall).toBeUndefined();
 
   expect((await call(page, 'navigate', { path: '/settings/profile' })).result).toMatchObject({
     ok: true,
   });
-  const clicking = call(page, 'click', { target: { role: 'switch', name: 'Sounds' } });
-  const held = page.getByRole('alertdialog', { name: /wants to change a setting/ });
-  await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
-  await held.getByRole('button', { name: 'Allow once' }).click();
-  expect((await clicking).result).toMatchObject({ ok: true });
-  const put = api.requests.find((r) => r.method === 'PUT' && r.path === '/api/profile/sounds');
-  expect(put).toBeTruthy();
-  expect(put?.agentCall).toBeUndefined();
+  expect(
+    (await call(page, 'click', { target: { role: 'switch', name: 'Sounds' } })).result,
+  ).toMatchObject({ ok: true });
+  await expect
+    .poll(() => api.requests.find((r) => r.method === 'PUT' && r.path === '/api/profile/sounds'))
+    .toBeTruthy();
+  expect(api.requests.some((r) => r.agentCall !== undefined)).toBe(false);
 });
 
 test('a turn this window did not send is not acted on here', async ({ page }) => {
@@ -222,51 +224,6 @@ test('Not now refuses, and a call is never run twice', async ({ page }) => {
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
 
-test('a write the brain refuses as the agent’s is held; Allow once sends it again, untagged', async ({
-  page,
-}) => {
-  api.agentUi.admin = true;
-  api.refuseAgentWrites = /^\/api\/notes$/;
-  await signIn(page, 'admin');
-  await ready(page);
-  await call(page, 'screen');
-  await page.getByRole('button', { name: 'Allow for this session' }).click();
-
-  await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
-  const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
-  const held = page.getByRole('alertdialog', {
-    name: 'Saskia wants to send, share or publish something',
-  });
-  await expect(held.getByText('POST /api/notes')).toBeVisible();
-  await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
-  await held.getByRole('button', { name: 'Allow once' }).click();
-  const add = await adding;
-  expect(add.result).toMatchObject({ ok: true });
-  const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
-  expect(posts.map((r) => r.agentCall)).toEqual([add.callId, undefined]);
-});
-
-test('Not now on a refused write sends nothing more, and the agent hears needs_user', async ({
-  page,
-}) => {
-  api.agentUi.admin = true;
-  api.refuseAgentWrites = /^\/api\/notes$/;
-  await signIn(page, 'admin');
-  await ready(page);
-  await call(page, 'screen');
-  await page.getByRole('button', { name: 'Allow for this session' }).click();
-
-  await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
-  const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
-  const held = page.getByRole('alertdialog', {
-    name: 'Saskia wants to send, share or publish something',
-  });
-  await held.getByRole('button', { name: 'Not now' }).click();
-  expect((await adding).result).toMatchObject({ ok: false, error: 'needs_user' });
-  const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
-  expect(posts).toHaveLength(1);
-});
-
 test('a typed text is added after what the field holds', async ({ page }) => {
   api.agentUi.admin = true;
   await signIn(page, 'admin');
@@ -278,12 +235,10 @@ test('a typed text is added after what the field holds', async ({ page }) => {
   await call(page, 'type', { target: box, text: 'milk' });
   const field = page.getByPlaceholder('Jot it down… the first line becomes the title');
   await expect(field).toHaveValue('Buy milk');
-  // Replacing what the field holds waits for the user.
-  const replacing = call(page, 'type', { target: box, text: 'Bread', replace: true });
-  const held = page.getByRole('alertdialog', { name: 'Saskia wants to replace what is there' });
-  await expect(held.getByRole('button', { name: 'Allow once' })).toBeEnabled();
-  await held.getByRole('button', { name: 'Allow once' }).click();
-  expect((await replacing).result).toMatchObject({ ok: true });
+  // replace: true puts it in place of what is there.
+  expect(
+    (await call(page, 'type', { target: box, text: 'Bread', replace: true })).result,
+  ).toMatchObject({ ok: true });
   await expect(field).toHaveValue('Bread');
 });
 
@@ -339,37 +294,6 @@ test('a call past its expiresAt is answered window_gone and not run', async ({ p
     { expiresAt: new Date(Date.now() + 60_000).toISOString() },
   );
   expect(inTime.result).toMatchObject({ ok: true });
-});
-
-test('after Not now, the user’s own save of the agent’s change is asked about again', async ({
-  page,
-}) => {
-  api.agentUi.admin = true;
-  api.refuseAgentWrites = /^\/api\/notes$/;
-  await signIn(page, 'admin');
-  await ready(page);
-  await call(page, 'screen');
-  await page.getByRole('button', { name: 'Allow for this session' }).click();
-
-  await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
-  const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
-  const held = page.getByRole('alertdialog', {
-    name: 'Saskia wants to send, share or publish something',
-  });
-  await held.getByRole('button', { name: 'Not now' }).click();
-  expect((await adding).result).toMatchObject({ ok: false, error: 'needs_user' });
-
-  // The text is still in the box; the user presses Add note themselves.
-  await page.getByRole('button', { name: 'Add note', exact: true }).click();
-  const ask = page.getByRole('alertdialog', { name: 'Save the changes the assistant made?' });
-  await expect(ask.getByRole('button', { name: /Discard the assistant/ })).toBeVisible();
-  await expect(ask.getByRole('button', { name: 'Save' })).toBeEnabled();
-  await ask.getByRole('button', { name: 'Save' }).click();
-  await expect
-    .poll(() => api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes').length)
-    .toBe(2);
-  const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
-  expect(posts[1]!.agentCall).toBeUndefined();
 });
 
 test('a turn asks once before it acts; Not now refuses the rest of it; a new turn asks again', async ({

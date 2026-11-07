@@ -62,13 +62,14 @@ problem in words instead of playing it.
 
 ## What a lesson cannot do
 
-The hands guard every lesson as they guard any agent:
+A lesson acts with the user's own rights, as the user would. The hands
+guard it as they guard any agent:
 
-- A request that deletes, sends, shares, publishes or changes a setting
-  waits for the user's **Allow once**.
-- A confirm button in an alert dialog, and a control marked
-  `data-agent-risk`, are the user's to press. The step then becomes the
-  user's to do, and its check confirms it.
+- Anything in an alert dialog, and a control marked `data-agent-risk` (a
+  sign-out or a login switch), are the user's to press. The step then
+  becomes the user's to do, and its check confirms it.
+- A link that leaves the app, or opens a route the app shell does not
+  have, is not followed.
 - The hands never type into a password or other secret field, and never act
   inside an app's frame.
 - A real click or key press by the user pauses the lesson. **Stop** (or Esc)
