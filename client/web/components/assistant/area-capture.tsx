@@ -17,15 +17,12 @@ import { createWorkspace } from '@/lib/create-workspace';
 import {
   captureDesktop,
   captureErrorMessage,
+  captureWeb,
   desktopCanCapture,
   dragRect,
-  grabFrame,
   saveScreenshot,
   screenshotMeta,
-  shareThisTab,
-  stopStream,
   usableRect,
-  webCanCapture,
   type Point,
   type Rect,
 } from '@/lib/area-capture';
@@ -38,53 +35,6 @@ type Phase =
   | { at: 'selecting' }
   | { at: 'grabbing'; rect: Rect }
   | { at: 'preview'; shot: Shot };
-
-/**
- * The tab share a capture holds, owned by one button. In the nav drawer the
- * click that starts a capture also closes the drawer, which unmounts the
- * button while the browser still asks for the share: released then, the
- * holder stops the share it holds, and stops at once any share granted
- * after (never left recording with nothing to end it). `revive` undoes a
- * release for a remount (React's strict mode mounts twice).
- */
-export function shareHolder() {
-  let stream: MediaStream | null = null;
-  let live = true;
-  return {
-    /** The share held now, or null. */
-    get current(): MediaStream | null {
-      return stream;
-    },
-    /** Whether the button is still there to finish a capture. */
-    get live(): boolean {
-      return live;
-    },
-    /** Keep a granted share; after a release, stop it at once. Whether it
-     *  was kept. */
-    adopt(s: MediaStream): boolean {
-      if (!live) {
-        stopStream(s);
-        return false;
-      }
-      stream = s;
-      return true;
-    },
-    /** Stop the share held (the capture ended or took its frame). */
-    stop(): void {
-      stopStream(stream);
-      stream = null;
-    },
-    /** The button is gone: stop the share, and any granted later. */
-    release(): void {
-      live = false;
-      stopStream(stream);
-      stream = null;
-    },
-    revive(): void {
-      live = true;
-    },
-  };
-}
 
 /** Two animation frames: the overlay is gone from the screen before the
  *  pixels are read, so it is never in the picture. */
@@ -104,54 +54,28 @@ export function CaptureButton({ canAttach }: { canAttach: boolean }) {
   const { attachContext, openAssistant } = useDockActions();
   const { pinnedContext } = useDockSession();
   const [phase, setPhase] = useState<Phase>({ at: 'idle' });
-  const share = useRef(shareHolder()).current;
   /** The preview's object URL, revoked if the button goes with it open. */
   const previewUrl = useRef<string | null>(null);
   const pinned = useRef(pinnedContext);
   pinned.current = pinnedContext;
 
-  // Read after mount: the server render has no window, and the first client
-  // render must match it.
-  const [supported, setSupported] = useState(false);
-  useEffect(() => setSupported(desktopCanCapture() || webCanCapture()), []);
+  /** Whether the button is still there to show what a capture made. */
+  const live = useRef(true);
 
   const end = useCallback(() => {
-    share.stop();
     if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
     previewUrl.current = null;
     setPhase({ at: 'idle' });
-  }, [share]);
+  }, []);
 
-  // A share left open (the tab closed mid-select, an unmount: the nav
-  // drawer closing on the click) stops with the button, and so does one
-  // the browser grants after it is gone (shareHolder).
   useEffect(() => {
-    share.revive();
+    live.current = true;
     return () => {
-      share.release();
+      live.current = false;
       if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
       previewUrl.current = null;
     };
-  }, [share]);
-
-  const start = useCallback(async () => {
-    if (phase.at !== 'idle') return;
-    if (!desktopCanCapture()) {
-      // The browser asks first, inside this click (a user gesture), so the
-      // share bar has settled before the user drags.
-      try {
-        const granted = await shareThisTab();
-        // The button went while the browser asked: stopped, nothing more.
-        if (!share.adopt(granted)) return;
-        // Ending the share from the browser's own bar cancels the capture.
-        granted.getVideoTracks()[0]?.addEventListener('ended', end, { once: true });
-      } catch (err) {
-        if (share.live) toast.error(captureErrorMessage(err));
-        return;
-      }
-    }
-    if (share.live) setPhase({ at: 'selecting' });
-  }, [phase.at, end, toast, share]);
+  }, []);
 
   const grab = useCallback(
     async (rect: Rect) => {
@@ -159,19 +83,17 @@ export function CaptureButton({ canAttach }: { canAttach: boolean }) {
       await afterPaint();
       const view = { w: window.innerWidth, h: window.innerHeight };
       try {
-        const held = share.current;
-        const png = held ? await grabFrame(held, rect, view) : await captureDesktop(rect);
-        share.stop();
-        if (!share.live) return;
+        const png = desktopCanCapture() ? await captureDesktop(rect) : await captureWeb(rect);
+        if (!live.current) return;
         const url = URL.createObjectURL(png);
         previewUrl.current = url;
         setPhase({ at: 'preview', shot: { png, url, rect, view } });
       } catch (err) {
-        if (share.live) toast.error(captureErrorMessage(err));
+        if (live.current) toast.error(captureErrorMessage(err));
         end();
       }
     },
-    [end, toast, share],
+    [end, toast],
   );
 
   const save = useCallback(
@@ -202,12 +124,10 @@ export function CaptureButton({ canAttach }: { canAttach: boolean }) {
     [attachContext, openAssistant, end, toast],
   );
 
-  if (!supported) return null;
-
   return (
     <>
       <Button
-        onClick={() => void start()}
+        onClick={() => phase.at === 'idle' && setPhase({ at: 'selecting' })}
         size="icon"
         variant="ghost"
         className="size-8"

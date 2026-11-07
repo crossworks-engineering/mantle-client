@@ -3,13 +3,15 @@
  * pixels, save them to Files (POST /api/screenshots) and, optionally, hand
  * the saved file to the assistant as context.
  *
- * Two ways to get the pixels, never a DOM-to-image copy (that misses app
- * frames, canvases and fonts, so it would not show what the user saw):
+ * Two ways to get the pixels, neither asks the user for anything:
  *
  *  - The desktop shell captures its own window (`mantleDesktop.capture`,
- *    Electron's capturePage). No prompt.
- *  - A browser shares this tab once (`getDisplayMedia`), one frame is drawn
- *    and cropped, and the share stops at once. The browser asks every time.
+ *    Electron's capturePage).
+ *  - A browser redraws the app's own page into a canvas (modern-screenshot's
+ *    domToCanvas) and crops it. No screen share: Mantle only ever pictures
+ *    its own page. Known limits, by design: a cross-origin frame or image
+ *    can come out blank, a playing video black, and backdrop-filter can
+ *    look different.
  *
  * A screenshot is saved as if the user had taken the picture to Files and
  * uploaded it: a plain file at the top of Files in the workspace the
@@ -49,31 +51,20 @@ export function usableRect(r: Rect): boolean {
   return r.w >= MIN_CAPTURE_PX && r.h >= MIN_CAPTURE_PX;
 }
 
-/** A viewport rectangle in a shared frame's pixels: the frame is the tab at
- *  its device scale, so each side scales by the frame's width (or height)
- *  over the viewport's. Clamped to the frame. */
-export function frameCrop(rect: Rect, view: Size, frame: Size): Rect {
-  const sx = frame.w / view.w;
-  const sy = frame.h / view.h;
-  const x = Math.min(Math.max(0, Math.round(rect.x * sx)), frame.w);
-  const y = Math.min(Math.max(0, Math.round(rect.y * sy)), frame.h);
+/** A viewport rectangle in the pixels of a canvas drawn from `root` (the
+ *  rendered element's box in viewport CSS pixels): moved by the root's
+ *  origin, scaled by the canvas over the root, clamped to the canvas. */
+export function canvasCrop(rect: Rect, root: Rect, canvas: Size): Rect {
+  const sx = canvas.w / root.w;
+  const sy = canvas.h / root.h;
+  const x = Math.min(Math.max(0, Math.round((rect.x - root.x) * sx)), canvas.w);
+  const y = Math.min(Math.max(0, Math.round((rect.y - root.y) * sy)), canvas.h);
   return {
     x,
     y,
-    w: Math.max(1, Math.min(Math.round(rect.w * sx), frame.w - x)),
-    h: Math.max(1, Math.min(Math.round(rect.h * sy), frame.h - y)),
+    w: Math.max(1, Math.min(Math.round(rect.w * sx), canvas.w - x)),
+    h: Math.max(1, Math.min(Math.round(rect.h * sy), canvas.h - y)),
   };
-}
-
-/** Whether a shared frame is this tab: the same shape as the viewport (within
- *  a few percent). A whole screen or another window is a different shape
- *  almost always, and cropping it by this tab's rectangle would save the
- *  wrong pixels. */
-export function frameIsThisTab(frame: Size, view: Size, tolerance = 0.04): boolean {
-  if (frame.w <= 0 || frame.h <= 0 || view.w <= 0 || view.h <= 0) return false;
-  const a = frame.w / frame.h;
-  const b = view.w / view.h;
-  return Math.abs(a - b) / b <= tolerance;
 }
 
 /** What rides with a screenshot (the brain's allowlist, the same caps). */
@@ -172,81 +163,41 @@ export async function captureDesktop(rect: Rect): Promise<Blob> {
   return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/png' });
 }
 
-/** Whether this browser can share a tab at all. */
-export function webCanCapture(): boolean {
-  return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
-}
-
-/**
- * Ask the browser to share this tab. Must run inside the click that started
- * the capture (a user gesture). The hints ask for the current tab; Safari and
- * Firefox ignore them and let the user choose, which `grabFrame` checks.
- */
-export async function shareThisTab(): Promise<MediaStream> {
-  const options = {
-    video: { displaySurface: 'browser' },
-    audio: false,
-    preferCurrentTab: true,
-    selfBrowserSurface: 'include',
-    surfaceSwitching: 'exclude',
-  } as DisplayMediaStreamOptions;
-  return navigator.mediaDevices.getDisplayMedia(options);
-}
-
-/** Frames let pass before the one that is kept (see grabFrame). */
-const FRESH_FRAMES = 3;
-
-export function stopStream(stream: MediaStream | null): void {
-  for (const track of stream?.getTracks() ?? []) track.stop();
-}
-
-/** One frame of a shared tab, cropped to `rect` (viewport CSS pixels), as a
- *  PNG. Refuses a frame that is not this tab's shape. */
-export async function grabFrame(stream: MediaStream, rect: Rect, view: Size): Promise<Blob> {
-  const video = document.createElement('video');
-  video.muted = true;
-  video.playsInline = true;
-  video.srcObject = stream;
-  try {
-    await video.play();
-    // A fresh share can hand over a black first frame, or one taken while
-    // the selection layer was still on screen: let a few frames pass.
-    const rvfc = (
-      video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void }
-    ).requestVideoFrameCallback;
-    for (let i = 0; i < FRESH_FRAMES; i++) {
-      await new Promise<void>((resolve) => {
-        if (rvfc) rvfc.call(video, () => resolve());
-        else setTimeout(resolve, 120);
-      });
-    }
-    const frame = { w: video.videoWidth, h: video.videoHeight };
-    if (!frameIsThisTab(frame, view)) {
-      throw new Error('Share this tab to capture it, not a window or the whole screen.');
-    }
-    const crop = frameCrop(rect, view, frame);
-    const canvas = document.createElement('canvas');
-    canvas.width = crop.w;
-    canvas.height = crop.h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('This browser cannot draw the capture.');
-    ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
-    return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('The capture could not be saved as PNG.'))),
-        'image/png',
-      ),
-    );
-  } finally {
-    video.srcObject = null;
-  }
+/** The page's own capture of a viewport rectangle, as a PNG: the body is
+ *  redrawn at the device scale, leaving out the selection layer, and cut to
+ *  the rectangle. */
+export async function captureWeb(rect: Rect): Promise<Blob> {
+  const { domToCanvas } = await import('modern-screenshot');
+  const root = document.body;
+  const box = root.getBoundingClientRect();
+  const drawn = await domToCanvas(root, {
+    scale: window.devicePixelRatio || 1,
+    filter: (node) => !(node instanceof Element && node.hasAttribute('data-capture-layer')),
+  });
+  const crop = canvasCrop(
+    rect,
+    { x: box.x, y: box.y, w: box.width, h: box.height },
+    {
+      w: drawn.width,
+      h: drawn.height,
+    },
+  );
+  const canvas = document.createElement('canvas');
+  canvas.width = crop.w;
+  canvas.height = crop.h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('This browser cannot draw the capture.');
+  ctx.drawImage(drawn, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('The capture could not be saved as PNG.'))),
+      'image/png',
+    ),
+  );
 }
 
 /** The words for a capture that failed or was turned down. */
 export function captureErrorMessage(err: unknown): string {
-  if (err instanceof DOMException && err.name === 'NotAllowedError') {
-    return 'Screen sharing was not allowed, so nothing was captured.';
-  }
   if (!(err instanceof Error)) return 'The capture failed.';
   // The desktop shell's refusal comes wrapped by Electron's IPC: its own
   // words only.

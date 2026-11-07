@@ -3,9 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   captureErrorMessage,
+  canvasCrop,
   dragRect,
-  frameCrop,
-  frameIsThisTab,
   screenshotMeta,
   usableRect,
   MIN_CAPTURE_PX,
@@ -41,9 +40,11 @@ describe('dragRect', () => {
   });
 });
 
-describe('frameCrop', () => {
-  it('scales a viewport rectangle to a frame at device scale', () => {
-    expect(frameCrop({ x: 100, y: 50, w: 200, h: 100 }, view, { w: 2000, h: 1600 })).toEqual({
+describe('canvasCrop', () => {
+  const root = { x: 0, y: 0, w: 1000, h: 800 };
+
+  it('scales a viewport rectangle to a canvas drawn at device scale', () => {
+    expect(canvasCrop({ x: 100, y: 50, w: 200, h: 100 }, root, { w: 2000, h: 1600 })).toEqual({
       x: 200,
       y: 100,
       w: 400,
@@ -51,22 +52,28 @@ describe('frameCrop', () => {
     });
   });
 
-  it('never reaches past the frame', () => {
-    const c = frameCrop({ x: 900, y: 700, w: 400, h: 400 }, view, { w: 1000, h: 800 });
-    expect(c.x + c.w).toBeLessThanOrEqual(1000);
-    expect(c.y + c.h).toBeLessThanOrEqual(800);
-  });
-});
-
-describe('frameIsThisTab', () => {
-  it('takes a frame of the viewport shape', () => {
-    expect(frameIsThisTab({ w: 2000, h: 1600 }, view)).toBe(true);
-    expect(frameIsThisTab({ w: 2010, h: 1600 }, view)).toBe(true);
+  it('keeps whole pixels at a fractional scale', () => {
+    expect(canvasCrop({ x: 101, y: 33, w: 51, h: 17 }, root, { w: 1500, h: 1200 })).toEqual({
+      x: 152,
+      y: 50,
+      w: 77,
+      h: 26,
+    });
   });
 
-  it('refuses a screen or window of another shape', () => {
-    expect(frameIsThisTab({ w: 3840, h: 1080 }, view)).toBe(false);
-    expect(frameIsThisTab({ w: 0, h: 0 }, view)).toBe(false);
+  it('moves by the root origin when the root does not start at the viewport corner', () => {
+    expect(
+      canvasCrop(
+        { x: 120, y: 90, w: 50, h: 40 },
+        { x: 20, y: 40, w: 980, h: 760 },
+        { w: 1960, h: 1520 },
+      ),
+    ).toEqual({ x: 200, y: 100, w: 100, h: 80 });
+  });
+
+  it('never reaches past the canvas', () => {
+    const c = canvasCrop({ x: 900, y: 700, w: 400, h: 400 }, root, { w: 1000, h: 800 });
+    expect(c).toEqual({ x: 900, y: 700, w: 100, h: 100 });
   });
 });
 
