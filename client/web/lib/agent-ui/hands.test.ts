@@ -342,6 +342,59 @@ describe('ui_type with replace', () => {
   });
 });
 
+describe('a multipart write the brain refuses', () => {
+  it('a fetch with FormData is held and sent again untagged on Allow', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = new AgentHands();
+    answer = (c) => (c.tag ? refusal() : new Response('{"ok":true}', { status: 201 }));
+    h.begin('Lesson', { tag: 'lesson:x' });
+    const form = new FormData();
+    form.set('file', new Blob(['x']), 'x.txt');
+    const sent = window.fetch('/api/files/files', { method: 'POST', body: form });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('refused');
+    held!.answer(true);
+    expect((await sent).status).toBe(201);
+    expect(calls.map((c) => c.tag)).toEqual(['lesson:x', null]);
+    h.end();
+  });
+});
+
+describe('late writes of the last action', () => {
+  it('after Stop, a write within 2 s is still tagged; after that it is not', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = new AgentHands();
+    h.begin('Lesson', { tag: 'lesson:late' });
+    expect(await h.click({ id: 'add' })).toEqual({ ok: true });
+    vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    h.end();
+    await window.fetch('/api/notes', { method: 'POST', body: '{}' });
+    // A risky one has nobody to ask any more: it is not sent.
+    await expect(window.fetch('/api/tasks/1', { method: 'DELETE' })).rejects.toThrow();
+    vi.advanceTimersByTime(2100);
+    await window.fetch('/api/notes', { method: 'POST', body: '{}' });
+    expect(calls.map((c) => c.tag)).toEqual(['lesson:late', null]);
+  });
+
+  it('after the user takes over, a write within 2 s is tagged and a risky one held', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = new AgentHands();
+    h.begin('Agent');
+    await h.withCall('0a0a0a0a-0a0a-40a0-80a0-000000000009', () => h.click({ id: 'add' }));
+    const onInput = (h as unknown as { onUserInput: (e: Event) => void }).onUserInput;
+    onInput({ isTrusted: true, target: null } as unknown as Event);
+    expect(h.get().paused).toBe(true);
+    await window.fetch('/api/notes', { method: 'POST', body: '{}' });
+    const deleting = window.fetch('/api/tasks/1', { method: 'DELETE' });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('delete');
+    held!.answer(false);
+    await expect(deleting).rejects.toThrow();
+    expect(calls.map((c) => c.tag)).toEqual(['0a0a0a0a-0a0a-40a0-80a0-000000000009']);
+    h.end();
+  });
+});
+
 describe('Stop really stops', () => {
   it('Stop while the cursor travels: nothing is pressed, the answer is stopped', async () => {
     const { AgentHands } = await import('./hands');

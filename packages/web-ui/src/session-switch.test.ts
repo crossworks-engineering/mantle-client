@@ -749,3 +749,41 @@ function tok(uid: string, jti: string, act?: string): string {
     .replace(/=+$/, '');
   return `${payload}.sig`;
 }
+
+describe('the login-change guard (an agent drives the window)', () => {
+  it('a switch, a sign-out and a forget do nothing at all while it says so', async () => {
+    const { registry, switcher } = await fresh();
+    const guard = await import('./login-change-guard');
+    const signOut = await import('./sign-out');
+    const b = registry.signInSession({ email: 'b@example.com', token: 'b.sig' })!;
+    const a = registry.signInSession({ email: 'a@example.com', token: 'a.sig' })!;
+    guard.setLoginChangeGuard(() => true);
+
+    expect(await switcher.switchSession(b.id)).toBe('unavailable');
+    await switcher.signOutActive();
+    await switcher.signOutSession(b.id);
+    await switcher.forgetSession(b.id);
+    await signOut.performSignOut();
+
+    expect(calls).toEqual([]);
+    expect(assigned).toEqual([]);
+    expect(map.get('mantle_token')).toBe('a.sig');
+    expect(registry.activeSession()?.id).toBe(a.id);
+    expect(registry.listSessions()).toHaveLength(2);
+
+    // Once the agent stops (or the user takes over), it runs as ever.
+    guard.setLoginChangeGuard(() => false);
+    expect(await switcher.switchSession(b.id)).toBe('switched');
+    guard.setLoginChangeGuard(null);
+  });
+
+  it('a guard that throws does not block', async () => {
+    await fresh();
+    const guard = await import('./login-change-guard');
+    guard.setLoginChangeGuard(() => {
+      throw new Error('x');
+    });
+    expect(guard.loginChangeBlocked()).toBe(false);
+    guard.setLoginChangeGuard(null);
+  });
+});

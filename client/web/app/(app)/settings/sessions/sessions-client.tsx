@@ -118,7 +118,9 @@ export function SessionsClient() {
                 Logins on this device
               </h2>
               {canHoldSeveral && (
-                <Button asChild size="sm">
+                // data-agent-risk on every control here that adds, switches,
+                // signs out or forgets a login: the user's own (lib/agent-ui).
+                <Button asChild size="sm" data-agent-risk="session">
                   <a href={ADD_LOGIN_PATH}>
                     <Plus /> Add
                   </a>
@@ -172,12 +174,17 @@ export function SessionsClient() {
                 </h2>
                 <div className="flex shrink-0 gap-2">
                   {!selected.active && selected.hasToken && selected.origin === here && (
-                    <Button size="sm" disabled={busy !== null} onClick={() => onSwitch(selected)}>
+                    <Button
+                      size="sm"
+                      disabled={busy !== null}
+                      onClick={() => onSwitch(selected)}
+                      data-agent-risk="session"
+                    >
                       <Repeat /> Switch
                     </Button>
                   )}
                   {!selected.hasToken && (
-                    <Button asChild size="sm">
+                    <Button asChild size="sm" data-agent-risk="session">
                       <a href={signInAgainPath(selected.id)}>Sign in again</a>
                     </Button>
                   )}
@@ -218,6 +225,7 @@ export function SessionsClient() {
                   size="sm"
                   disabled={busy !== null}
                   onClick={() => setConfirm({ kind: 'signout', session: selected })}
+                  data-agent-risk="session"
                 >
                   <LogOut /> Sign out
                 </Button>
@@ -227,6 +235,7 @@ export function SessionsClient() {
                   disabled={busy !== null}
                   className="text-destructive-ink hover:text-destructive-ink"
                   onClick={() => setConfirm({ kind: 'forget', session: selected })}
+                  data-agent-risk="session"
                 >
                   <Trash2 /> Forget
                 </Button>
@@ -259,6 +268,7 @@ export function SessionsClient() {
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={onConfirm}
+              data-agent-risk="session"
             >
               {confirm?.kind === 'forget' ? 'Forget login' : 'Sign out'}
             </AlertDialogAction>

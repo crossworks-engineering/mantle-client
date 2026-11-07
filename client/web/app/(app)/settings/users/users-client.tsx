@@ -798,7 +798,8 @@ function SignOutEverywhereButton({ user, isSelf }: { user: UserRow; isSelf: bool
   return (
     <AlertDialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
       <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm" className="shrink-0">
+        {/* data-agent-risk: a sign-out is the user's own (lib/agent-ui). */}
+        <Button variant="outline" size="sm" className="shrink-0" data-agent-risk="session">
           Sign out everywhere
         </Button>
       </AlertDialogTrigger>
@@ -822,6 +823,7 @@ function SignOutEverywhereButton({ user, isSelf }: { user: UserRow; isSelf: bool
               e.preventDefault();
               void run();
             }}
+            data-agent-risk="session"
           >
             {busy ? 'Signing out…' : 'Sign out everywhere'}
           </AlertDialogAction>

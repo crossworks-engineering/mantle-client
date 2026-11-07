@@ -62,6 +62,8 @@ export function NeutralSignOutButton() {
     <Button
       variant="outline"
       disabled={busy}
+      // A sign-out is the user's own (lib/agent-ui).
+      data-agent-risk="session"
       onClick={async () => {
         setBusy(true);
         await performSignOut();

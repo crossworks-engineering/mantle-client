@@ -471,6 +471,7 @@ export function ProfileMenu({
                 e.preventDefault();
                 void signOutEverywhereNow();
               }}
+              data-agent-risk="session"
             >
               {busy ? 'Signing out…' : 'Sign out everywhere'}
             </AlertDialogAction>

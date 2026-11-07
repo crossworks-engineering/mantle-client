@@ -40,6 +40,7 @@ import {
   type RequestRisk,
   type Screen,
 } from './model';
+import { setLoginChangeGuard } from '@mantle/web-ui/login-change-guard';
 import { centerOf, factsOf, findByName, findTarget, readScreen, roleOf } from './dom';
 
 export type HeldRequest = {
@@ -81,6 +82,10 @@ const IDLE: HandsState = {
 const CURSOR_MS = 350;
 /** The screen counts as settled once no request has been open this long. */
 const QUIET_MS = 250;
+/** A write that starts this soon after the agent's last action is still
+ *  the agent's (a debounced save of what it typed), also when the user
+ *  stopped or took over meanwhile: tagged, and held when risky. */
+const LATE_MS = 2000;
 /** How long a held request waits for the user before it counts as Not now. */
 const HELD_MS = 120_000;
 
@@ -110,6 +115,14 @@ export class AgentHands {
   /** When the in-app agent's current call expires (epoch ms): an action it
    *  queued that only starts after that is not run (`window_gone`). */
   private callExpiresAt: number | null = null;
+  /** Until when a write still counts as the last action's (LATE_MS after
+   *  it ended), and the tag it carried. */
+  private lateUntil = 0;
+  private lateTag: string | null = null;
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The wrapper this controller put on `window.fetch`, so it only takes
+   *  off its own. */
+  private wrapper: typeof fetch | null = null;
 
   // ── state for the overlay ────────────────────────────────────────────────
 
@@ -164,13 +177,32 @@ export class AgentHands {
     this.state.held?.answer(false);
     this.refs.clear();
     this.set(IDLE);
-    if (this.acting === 0) this.release();
+    if (this.acting === 0) this.releaseLater();
   }
 
-  /** The guard and the tag go once no session runs and no action does. */
+  /** The guard and the tag go once no session runs and no action does,
+   *  and the last action's late writes have had their LATE_MS. */
+  private releaseLater() {
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    this.releaseTimer = setTimeout(
+      () => {
+        this.releaseTimer = null;
+        if (!this.state.active && this.acting === 0) this.release();
+      },
+      Math.max(0, this.lateUntil - Date.now()),
+    );
+  }
+
   private release() {
     this.unwrapFetch();
     this.callTag = null;
+    this.lateTag = null;
+  }
+
+  /** The agent drives now: a session runs and the user has not taken over.
+   *  A login switch or sign-out is refused then (the kit's login guard). */
+  drivingNow(): boolean {
+    return !this.state.paused && (this.state.active || this.acting > 0);
   }
 
   /** Ask the user whether an in-app agent may use this window, for the
@@ -229,7 +261,9 @@ export class AgentHands {
    *  is not paused, or one of its actions is running): only then does
    *  `guardRequest` have anything to do. */
   guarding(): boolean {
-    return this.acting > 0 || (this.state.active && !this.state.paused);
+    return (
+      this.acting > 0 || (this.state.active && !this.state.paused) || Date.now() < this.lateUntil
+    );
   }
 
   /**
@@ -264,7 +298,10 @@ export class AgentHands {
     // A write the agent set off carries its tag: the brain refuses a risky
     // one that is tagged. Background bookkeeping (a frame ticket, an open
     // counted) is the screen's, not the agent's write: never tagged.
-    const tag = m !== 'GET' && m !== 'HEAD' && !isBookkeepingRequest(m, url) ? this.callTag : null;
+    const tag =
+      m !== 'GET' && m !== 'HEAD' && !isBookkeepingRequest(m, url)
+        ? (this.callTag ?? (Date.now() < this.lateUntil ? this.lateTag : null))
+        : null;
     return { blocked: false, tag };
   }
 
@@ -301,7 +338,7 @@ export class AgentHands {
     const real = window.fetch.bind(window);
     this.realFetch = window.fetch;
     const send = (input: RequestInfo | URL, init?: RequestInit) => this.track(real(input, init));
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    this.wrapper = window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase();
@@ -334,8 +371,9 @@ export class AgentHands {
   }
 
   private unwrapFetch() {
-    if (this.realFetch) window.fetch = this.realFetch;
+    if (this.realFetch && window.fetch === this.wrapper) window.fetch = this.realFetch;
     this.realFetch = null;
+    this.wrapper = null;
   }
 
   private ask(
@@ -402,7 +440,10 @@ export class AgentHands {
         return out;
       } finally {
         this.acting -= 1;
-        if (this.acting === 0 && !this.state.active) this.release();
+        // Its late writes are still its own for LATE_MS.
+        this.lateUntil = Date.now() + LATE_MS;
+        this.lateTag = this.callTag;
+        if (this.acting === 0 && !this.state.active) this.releaseLater();
       }
     });
     this.queue = next.catch(() => undefined);
@@ -661,6 +702,13 @@ let hands: AgentHands | null = null;
 
 /** This window's one controller. */
 export function agentHands(): AgentHands {
-  hands ??= new AgentHands();
+  if (!hands) {
+    const made = new AgentHands();
+    hands = made;
+    // A login switch or sign-out never runs while the agent drives: its
+    // control is data-agent-risk, and this is the second line (the switch
+    // writes the device's login list before any request the guard sees).
+    setLoginChangeGuard(() => made.drivingNow());
+  }
   return hands;
 }
