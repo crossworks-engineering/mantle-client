@@ -742,7 +742,7 @@ function ShellFrame({
         <TourOverlay />
 
         {/* While an agent drives this window (a lesson): its cursor, its
-            spotlight, the Stop bar and the question for a held request.
+            spotlight, the Stop bar and the per-turn question.
             Renders nothing otherwise. See lib/agent-ui. */}
         <AgentOverlay />
         {/* Lessons: the picker, a link's "Start this lesson?", and the card

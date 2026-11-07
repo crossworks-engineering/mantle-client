@@ -276,6 +276,21 @@ describe('links stay in the app', () => {
     expect(control.dispatched).not.toContain('click');
     h.end();
   });
+
+  it('a select that would first press such a link is unsafe_route too', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    const link = new FakeElement();
+    control.ancestors['a[href]'] = link;
+    link.attrs.href = 'https://elsewhere.invalid/x';
+    expect(await h.select({ id: 'link' }, 'Report')).toMatchObject({
+      ok: false,
+      error: 'unsafe_route',
+    });
+    expect(control.dispatched).not.toContain('click');
+    h.end();
+  });
 });
 
 describe('ui_type', () => {

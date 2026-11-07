@@ -12,7 +12,7 @@
  *    first, then acts with real pointer and keyboard-free events, so React
  *    and Radix handlers run as they do for a user.
  *  - It never presses its own controls (`data-agent-host`), a control
- *    marked `data-agent-risk` (sign-out, a login switch, Commit, sharing),
+ *    marked `data-agent-risk` (sign-out, a login switch),
  *    anything in a confirm (`alertdialog`), or a link out of the app; it
  *    never reads or types in a secret field.
  *  - Any real click or key press by the user outside the agent's controls
@@ -452,7 +452,7 @@ export class AgentHands {
     const found = findTarget(target, this.refs);
     if ('error' in found) return { error: refuse(found.error) };
     const refusal: AgentRefusal | null =
-      action === 'click' ? pressRefusal(found.el) : elementRefusal(factsOf(found.el), action);
+      action === 'type' ? elementRefusal(factsOf(found.el), action) : pressRefusal(found.el);
     if (refusal) return { error: refuse(refusal) };
     return found;
   }
@@ -496,7 +496,7 @@ function pressRefusal(el: Element): AgentRefusal | null {
 }
 
 /** Where pressing `el` would go: its own or its link's href. A role=link
- *  with none acts by script, and its requests meet the request guard. */
+ *  with none acts by script, as the user's own press would. */
 function hrefOf(el: Element): string | null {
   const link = el.closest('a[href], area[href]');
   if (link) return link.getAttribute('href');

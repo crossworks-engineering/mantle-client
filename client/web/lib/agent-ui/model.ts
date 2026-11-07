@@ -187,7 +187,7 @@ export const APP_SHELL_ROUTES: ReadonlySet<string> = new Set([
  * must stay on the app's origin and land on a path `safeAgentRoute` takes.
  * A `javascript:`, `mailto:` or other-origin link is refused, and so is one
  * to the sign-in screens or the API. A link with no href (a role=link that
- * acts by script) is left to the request guard.
+ * acts by script) acts as the user's own press would.
  */
 export function linkRefusal(href: string | null, pageUrl: string): AgentRefusal | null {
   if (href === null) return null;
