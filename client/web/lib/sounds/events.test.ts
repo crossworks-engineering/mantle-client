@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   activityChanges,
-  agentLineSounds,
   callTroubleSound,
   chatLineSound,
   commitFailedSound,
@@ -166,18 +165,5 @@ describe('activityChanges', () => {
       failures: [],
     });
     expect(next.starts).toEqual(['t']);
-  });
-});
-
-describe('agentLineSounds', () => {
-  it('stays quiet on the assistant screen, where the reply sounds', () => {
-    expect(agentLineSounds('/assistant')).toBe(false);
-    expect(agentLineSounds('/assistant/abc')).toBe(false);
-  });
-
-  it('sounds anywhere else', () => {
-    expect(agentLineSounds('/chats')).toBe(true);
-    expect(agentLineSounds('/assistant-settings')).toBe(true);
-    expect(agentLineSounds(null)).toBe(true);
   });
 });

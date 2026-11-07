@@ -13,6 +13,12 @@ import { Label } from '@mantle/web-ui/ui/label';
 import { Slider } from '@mantle/web-ui/ui/slider';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { cn } from '@mantle/web-ui/lib/utils';
+import {
+  getBubbleMode,
+  serverBubbleMode,
+  setBubbleMode,
+  subscribeBubbleMode,
+} from '@/lib/bubbles/prefs';
 import { play } from '@/lib/sounds/play';
 import {
   getSoundPrefs,
@@ -30,6 +36,7 @@ export function useSoundPrefs() {
 
 export function SoundSettings() {
   const prefs = useSoundPrefs();
+  const bubbleMode = useSyncExternalStore(subscribeBubbleMode, getBubbleMode, serverBubbleMode);
   // The login this tab shows: the save names it (lib/sounds/sync.ts).
   const loginId = useViewerLogin()?.loginId;
 
@@ -80,6 +87,21 @@ export function SoundSettings() {
             play('notification', { force: true });
           }}
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="chatBubbles">Chat bubbles</Label>
+          <Switch
+            id="chatBubbles"
+            checked={bubbleMode === 'on'}
+            onCheckedChange={(on) => setBubbleMode(on ? 'on' : 'off')}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          A small card shows each new chat message and stays until you close it. While a chat window
+          is open, the chat is highlighted in the list instead. Saved in this browser.
+        </p>
       </div>
 
       <div className="space-y-2">

@@ -123,10 +123,3 @@ export function activityChanges(
   }
   return { known: next, starts, ends };
 }
-
-/** A new line in an assistant thread is a notice from the brain (it wrote to
- *  me), except where its reply sound already plays: on the assistant
- *  screen, where the turn stream sounds `reply`. */
-export function agentLineSounds(pathname: string | null | undefined): boolean {
-  return !/^\/assistant(\/|$)/.test(pathname ?? '');
-}

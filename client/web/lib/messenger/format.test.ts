@@ -15,6 +15,7 @@ import {
   previewLine,
   rowAddress,
   rowBadge,
+  rowHighlighted,
   rowMatches,
   stampLabel,
   viaChip,
@@ -199,6 +200,18 @@ describe('row addresses', () => {
     expect(agentIdOf('c1')).toBeNull();
     expect(agentIdOf('agent:')).toBeNull();
     expect(agentIdOf(null)).toBeNull();
+  });
+});
+
+describe('rowHighlighted', () => {
+  it('marks a row with a line waiting', () => {
+    expect(rowHighlighted({ unread: 1, muted: false }, false)).toBe(true);
+  });
+
+  it('leaves a read row, a muted row and the open row alone', () => {
+    expect(rowHighlighted({ unread: 0, muted: false }, false)).toBe(false);
+    expect(rowHighlighted({ unread: 3, muted: true }, false)).toBe(false);
+    expect(rowHighlighted({ unread: 3, muted: false }, true)).toBe(false);
   });
 });
 

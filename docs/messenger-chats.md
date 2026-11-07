@@ -204,6 +204,19 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   know. A notice decides on a list fetched again after the event, so a mute
   set anywhere is seen. While the stream is deaf (the gap, the polling
   fallback) the list itself says which chats moved, and those pop.
+- **Bubbles** (Project Bubble Chat, phase 1; Settings > Profile, off by
+  default, saved in this browser): the toast gives way to a card
+  (`components/bubbles/`, the rules in `lib/bubbles/`). It stays until it is
+  closed or the chat is read. Both chat systems take one path: the list
+  changes, the sync reads that chat's new lines through the chat's own routes,
+  and they become cards. A card lives while its row says `unread` is above 0
+  and its key is not in the popped set (the browser keeps the keys, never the
+  text). The stack runs newest to oldest and a cursor only moves forward, so a
+  close moves the read cursor only when the chat's last card goes. No card
+  shows while a chat window is open (`/chats`, `/assistant`, the side window in
+  any shape). A row with a line waiting is highlighted instead (`rowHighlighted`,
+  with bubbles on or off). The side window has no list yet, so with only that
+  window open a person's line keeps the toast.
 - **Desktop**: inside the desktop shell, while the window is hidden, the
   notice goes to the OS instead (`mantleDesktop.notify`, a click opens the
   chat), and the app badge follows the count (`mantleDesktop.setBadge`: the

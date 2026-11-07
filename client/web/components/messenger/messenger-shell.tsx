@@ -24,8 +24,14 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { useDockLayout } from '@/components/assistant/assistant-dock';
 import { CONVERSATIONS_KEY } from '@/components/assistant/use-assistant-unread';
+import { BubbleSync } from '@/components/bubbles/bubble-sync';
+import { useBubbleMode } from '@/components/bubbles/bubble-stack';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
+import { toastWanted } from '@/lib/bubbles/cards';
+import { getBubbleMode } from '@/lib/bubbles/prefs';
+import { clearBubbles } from '@/lib/bubbles/store';
 import { useDocumentVisible } from '@/lib/use-document-visible';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerListRow } from '@/lib/messenger/dto';
@@ -38,7 +44,7 @@ import {
   railCount,
   shouldPop,
 } from '@/lib/messenger/notify';
-import { agentLineSounds, chatLineSound } from '@/lib/sounds/events';
+import { chatLineSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
 import { CallRinger } from '@/components/calls/call-ringer';
 import { CallUnloadGuard } from '@/components/calls/call-store';
@@ -82,6 +88,11 @@ export function MessengerShell() {
   const [desktop, setDesktop] = useState(false);
   useEffect(() => setDesktop(!!desktopShell()), []);
   const live = on && liveStreamWanted({ visible, desktop });
+  const bubbleMode = useBubbleMode();
+  // Switched off: no cards wait for the day it is switched on again.
+  useEffect(() => {
+    if (bubbleMode === 'off') clearBubbles();
+  }, [bubbleMode]);
 
   // The desktop shell's badge follows the count, and clears when this
   // window stops counting (signed out, no messenger).
@@ -97,6 +108,7 @@ export function MessengerShell() {
     <>
       <MessengerLiveSync enabled={live} />
       {live ? <MessengerNotices /> : null}
+      {live && bubbleMode === 'on' ? <BubbleSync /> : null}
       {live ? <CallRinger /> : null}
       <AssistantReadFollower />
       <CallUnloadGuard />
@@ -119,6 +131,9 @@ function MessengerNotices() {
   const me = useShellWorkspaces()?.loginId ?? null;
   const path = useRef(pathname);
   path.current = pathname;
+  const { panel } = useDockLayout();
+  const panelRef = useRef(panel);
+  panelRef.current = panel;
   const shown = useRef(new Set<string>());
   // The last seq seen of each chat; null until the first list.
   const known = useRef<Map<string, number> | null>(null);
@@ -150,20 +165,6 @@ function MessengerNotices() {
       if (shown.current.size > SHOWN_KEEP) {
         shown.current.delete(shown.current.values().next().value!);
       }
-      // An assistant thread pops nothing (its replies have their own
-      // places), but a line the agent wrote is a notice from the brain:
-      // `notification`, unless the assistant screen sounds its reply.
-      const agentRow = rows.find((r) => r.id === c && r.kind === 'agent');
-      if (agentRow) {
-        if (agentRow.muted || document.visibilityState !== 'visible') return;
-        if (!agentLineSounds(path.current)) return;
-        const page = await messengerApi.messages(c, { afterSeq: seq - 1, limit: 1 });
-        const line = page.messages.find((m) => m.seq === seq);
-        if (line?.authorKind === 'agent' && !line.deletedAt) {
-          play('notification', { once: `agent-line:${c}:${seq}` });
-        }
-        return;
-      }
       const row = rows.find((r) => r.id === c && r.kind !== 'agent');
       // A chat the list does not know (yet), or a muted one: no notice.
       if (!row || row.muted) return;
@@ -185,6 +186,16 @@ function MessengerNotices() {
       }
       // A line that names me chimes as a mention instead.
       play(chatLineSound(message, me), { once: `chat-line:${c}:${seq}` });
+      // With bubbles on, the card or the row's highlight says it instead.
+      if (
+        !toastWanted({
+          bubbles: getBubbleMode() === 'on',
+          panel: panelRef.current,
+          pathname: path.current,
+        })
+      ) {
+        return;
+      }
       toast.push({
         kind: 'info',
         message: text.body ? `${text.title}: ${text.body}` : text.title,
