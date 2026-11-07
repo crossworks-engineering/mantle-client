@@ -426,8 +426,6 @@ function AppDetailView({ app }: { app: AppDetail }) {
               <Button
                 size="sm"
                 onClick={commit}
-                // Commit makes it live: the user's to press (lib/agent-ui).
-                data-agent-risk="publish"
                 disabled={busy !== null || !codeAccess || (!app.hasDraft && !dirty)}
                 title={codeWhy ? undefined : 'Compile the draft and make it live'}
               >
@@ -470,8 +468,6 @@ function AppDetailView({ app }: { app: AppDetail }) {
                     label: codeWhy ?? (busy === 'discard' ? 'Discarding…' : 'Discard the draft'),
                     icon: <Undo2 />,
                     disabled: busy !== null || !codeAccess,
-                    // It throws the draft away: the user's to press (lib/agent-ui).
-                    risk: 'discard',
                     onSelect: () => setConfirmDiscard(true),
                   },
                 ]

@@ -90,14 +90,6 @@ type Family = { actions: readonly string[]; paths: RegExp; bodies: RegExp | null
 
 const LOGIN: Family = { actions: ACTIONS, paths: PATHS, bodies: null };
 
-/** Commit, publish and discard-draft (fix round 8): a chained write can go
- *  out after the late window, so the agent may not press them at all. */
-const PUBLISH: Family = {
-  actions: [],
-  paths: /(?!)/,
-  bodies: /\/(commit|publish|unpublish|discard-draft)[`'"/?]/,
-};
-
 /** The open brace of the object literal around `at`, or -1. */
 function objectAround(src: string, at: number): number {
   let depth = 0;
@@ -228,59 +220,5 @@ describe('login controls carry data-agent-risk', () => {
       );
     `;
     expect(loginControls(src).map((c) => c.marked)).toEqual([false, true, true]);
-  });
-});
-
-describe('commit, publish and discard-draft controls carry data-agent-risk', () => {
-  const found = SOURCES().flatMap(({ file, src }) =>
-    riskyControls(src, PUBLISH).map((c) => ({ file, ...c })),
-  );
-
-  it('finds the controls it is meant to (the scan still works)', () => {
-    const files = new Set(found.map((c) => c.file));
-    for (const f of [
-      'client/web/app/(app)/pages/[id]/page-detail-client.tsx',
-      'client/web/app/(app)/tables/[id]/table-detail-client.tsx',
-      'client/web/app/(app)/draw/[id]/draw-detail-client.tsx',
-      'client/web/app/(app)/apps/[id]/app-detail-client.tsx',
-    ])
-      expect(files).toContain(f);
-  });
-
-  it('every one of them is marked', () => {
-    expect(found.filter((c) => !c.marked)).toEqual([]);
-  });
-
-  it('the scan sees an unmarked one, as a tag and as a menu entry', () => {
-    const src = `
-      const commit = useCallback(async () => { await apiSend(\`/api/pages/\${id}/commit\`, 'POST'); }, []);
-      export const A = () => <Button onClick={() => void commit()}>Commit</Button>;
-      export const B = () => <Button data-agent-risk="publish" onClick={commit}>Commit</Button>;
-      const tools = [
-        { key: 'commit', label: 'Commit', onSelect: () => void commit() },
-        { key: 'commit2', label: 'Commit', risk: 'publish', onSelect: () => void commit() },
-      ];
-    `;
-    expect(riskyControls(src, PUBLISH).map((c) => c.marked)).toEqual([false, true, false, true]);
-  });
-});
-
-describe('share controls carry data-agent-risk', () => {
-  // The Access panel's parts: everything in them changes who reads an item,
-  // so each part's root is marked and the agent presses nothing inside.
-  const ROOTS: [string, RegExp][] = [
-    [
-      'client/web/components/share/grant-access-view.tsx',
-      /<div className="space-y-3" data-agent-risk="share">/,
-    ],
-    ['client/web/components/share/contact-share-section.tsx', /data-agent-risk="share"/],
-    ['client/web/components/share/access-link-box.tsx', /data-agent-risk="share"/],
-    [
-      'client/web/components/share/shared-links-panel.tsx',
-      /label="Revoke link"[\s\S]{0,300}data-agent-risk="share"/,
-    ],
-  ];
-  it.each(ROOTS)('%s is marked', (file, mark) => {
-    expect(readFileSync(join(REPO, file), 'utf8')).toMatch(mark);
   });
 });

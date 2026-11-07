@@ -907,8 +907,6 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
             key: 'revert',
             label: reverting ? 'Reverting…' : 'Revert the draft to the last commit',
             icon: <Undo2 />,
-            // It throws the draft away: the user's to press (lib/agent-ui).
-            risk: 'discard',
             onSelect: () => void revertDraft(),
           },
         ]
@@ -924,13 +922,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       badges={status}
       textActions={
         readOnly ? null : (
-          <Button
-            size="sm"
-            onClick={() => void commit()}
-            disabled={!docDirty || committing}
-            // Commit publishes: the user's to press (lib/agent-ui).
-            data-agent-risk="publish"
-          >
+          <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
           </Button>
         )

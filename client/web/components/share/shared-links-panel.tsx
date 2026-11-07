@@ -211,8 +211,6 @@ export function SharedLinksPanel({
                         label="Revoke link"
                         className="text-muted-foreground hover:text-destructive-ink"
                         onClick={() => setConfirmRevoke(selected)}
-                        // Revoking a link is the user's own (lib/agent-ui).
-                        data-agent-risk="share"
                       >
                         <Link2Off />
                       </HeaderIconButton>

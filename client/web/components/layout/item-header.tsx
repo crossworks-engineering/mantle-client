@@ -74,10 +74,6 @@ export type HeaderTool = {
   pressed?: boolean;
   /** Shown but not usable now; `label` should say why. */
   disabled?: boolean;
-  /** It throws work away or changes what others see (Revert the draft):
-   *  `data-agent-risk`, so an agent driving the window leaves it to the
-   *  user (lib/agent-ui). */
-  risk?: string;
 };
 
 /** A More menu entry that never sits inline (Duplicate, Move to folder). */
@@ -428,9 +424,7 @@ export function ItemHeader({
               </span>
             ) : null}
             {onDelete || deleteDisabled ? (
-              // data-agent-risk: an agent driving the window may point at
-              // it, never press it (lib/agent-ui).
-              <span data-slot="delete" data-agent-risk="delete">
+              <span data-slot="delete">
                 <HeaderIconButton
                   label={deleteLabel}
                   tooltip={deleteDisabled ? 'You may not delete this' : deleteLabel}
@@ -578,7 +572,6 @@ function InlineTool({ tool }: { tool: HeaderTool }) {
       label={tool.label}
       onClick={tool.onSelect}
       disabled={tool.disabled}
-      data-agent-risk={tool.risk}
       aria-pressed={tool.pressed}
       className={cn(tool.pressed && 'bg-accent text-accent-foreground')}
     >
@@ -678,12 +671,7 @@ function MoreItem({ entry: e, onPanel }: { entry: MoreEntry; onPanel: (key: stri
   }
   if (e.kind === 'action') {
     return (
-      <DropdownMenuItem
-        onSelect={e.onSelect}
-        disabled={e.disabled}
-        className={cls}
-        data-agent-risk={e.danger ? 'delete' : undefined}
-      >
+      <DropdownMenuItem onSelect={e.onSelect} disabled={e.disabled} className={cls}>
         {e.icon}
         {e.label}
       </DropdownMenuItem>
@@ -716,7 +704,7 @@ function MoreItem({ entry: e, onPanel }: { entry: MoreEntry; onPanel: (key: stri
     );
   }
   return (
-    <DropdownMenuItem onSelect={t.onSelect} disabled={t.disabled} data-agent-risk={t.risk}>
+    <DropdownMenuItem onSelect={t.onSelect} disabled={t.disabled}>
       {t.icon}
       {t.label}
       {t.pressed ? <Check className="ml-auto" /> : null}

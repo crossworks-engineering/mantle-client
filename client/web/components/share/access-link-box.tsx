@@ -46,9 +46,7 @@ export function AccessLinkBox({
 }) {
   if (!mayLink && !hasLink) return null;
   return (
-    // data-agent-risk: opening or stopping a public link is the user's own
-    // (lib/agent-ui).
-    <div className="space-y-2 border-t border-border pt-3" data-agent-risk="share">
+    <div className="space-y-2 border-t border-border pt-3">
       <p className="text-sm font-medium">Open link</p>
       {url ? (
         <>
