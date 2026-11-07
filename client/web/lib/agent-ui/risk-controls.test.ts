@@ -253,6 +253,19 @@ const onWhen = (test: string) => `data-agent-risk={${test}}`;
 
 /** [the file, a piece of the control's opening tag, its mark]. */
 const PERSON_CONTROLS: readonly (readonly [string, string, string])[] = [
+  // A save that reaches the same gate: a prompt keeps its match on a person's save,
+  // and a tool saved here skips "require approval for agent-built tools".
+  [
+    `${APP}/recall/v2/card-editor.tsx`,
+    'onClick={save}',
+    onWhen("card.kind === 'prompt' ? 'person' : undefined"),
+  ],
+  [
+    `${APP}/settings/tools/tools-client.tsx`,
+    'pending={saveMutation.isPending}',
+    onWhen("settings.requireApproval ? 'person' : undefined"),
+  ],
+  ['client/web/components/dev-tools/save-tool-dialog.tsx', 'pending={pending}', MARK],
   // pending_approve
   [`${APP}/pending/pending-client.tsx`, "decide(row.id, 'approve')", MARK],
   ['client/web/components/pending/questionnaire-card.tsx', "decide(row.id, 'approve')", MARK],

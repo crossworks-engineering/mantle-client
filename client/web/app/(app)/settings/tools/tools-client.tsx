@@ -1009,7 +1009,10 @@ export function ToolsClient() {
                   <Button type="button" variant="outline" onClick={close}>
                     Cancel
                   </Button>
-                  <SubmitButton pending={saveMutation.isPending}>
+                  <SubmitButton
+                    data-agent-risk={settings.requireApproval ? 'person' : undefined}
+                    pending={saveMutation.isPending}
+                  >
                     {editing.mode === 'create' ? 'Create tool' : 'Save tool'}
                   </SubmitButton>
                 </div>

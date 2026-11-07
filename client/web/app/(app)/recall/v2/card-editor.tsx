@@ -509,6 +509,7 @@ function Editor({
           </Button>
         )}
         <SubmitButton
+          data-agent-risk={card.kind === 'prompt' ? 'person' : undefined}
           size="sm"
           pending={saving}
           disabled={!dirty || !valid || gone || (write.pending && !saving)}

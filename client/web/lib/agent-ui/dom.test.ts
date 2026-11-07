@@ -69,6 +69,14 @@ describe('controls behind an open modal', () => {
   });
 });
 
+describe('a person-only mark', () => {
+  it('a span inside a marked button counts', () => {
+    const button = { getAttribute: () => 'person' };
+    expect(factsOf(el('SPAN', {}, { 'data-agent-risk': button })).risk).toBe('person');
+    expect(factsOf(el('SPAN')).risk).toBeNull();
+  });
+});
+
 describe('a confirm', () => {
   it('any element inside an alert dialog counts, not only a button', () => {
     const dialog = el('DIV', { role: 'alertdialog' });

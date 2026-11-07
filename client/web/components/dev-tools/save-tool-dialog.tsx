@@ -437,7 +437,9 @@ export function SaveToolDialog({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <SubmitButton pending={pending}>Create tool</SubmitButton>
+              <SubmitButton data-agent-risk="person" pending={pending}>
+                Create tool
+              </SubmitButton>
             </div>
           </form>
         )}

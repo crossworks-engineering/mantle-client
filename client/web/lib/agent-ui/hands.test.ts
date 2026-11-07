@@ -262,6 +262,36 @@ describe('Stop really stops', () => {
   });
 });
 
+describe('a person-only mark', () => {
+  const marked = () => {
+    const button = new FakeElement();
+    button.attrs['data-agent-risk'] = 'person';
+    return button;
+  };
+
+  it('a click on a marked control is needs_user, and no click fires', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    control.ancestors['[data-agent-risk]'] = marked();
+    expect(await h.click({ id: 'x' })).toMatchObject({ ok: false, error: 'needs_user' });
+    expect(control.dispatched).not.toContain('click');
+    h.end();
+  });
+
+  it('a mark that lands during the cursor move still stops the press', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    const clicking = h.click({ id: 'x' });
+    await new Promise((r) => setTimeout(r, 100));
+    control.ancestors['[data-agent-risk]'] = marked();
+    expect(await clicking).toMatchObject({ ok: false, error: 'needs_user' });
+    expect(control.dispatched).not.toContain('click');
+    h.end();
+  });
+});
+
 describe('links stay in the app', () => {
   it('a click on a link to another origin or a refused route is unsafe_route', async () => {
     const { AgentHands } = await import('./hands');

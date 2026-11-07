@@ -365,6 +365,9 @@ export class AgentHands {
       if ('error' in el) return el.error;
       await this.moveTo(el.el);
       if (!alive()) return refuse('stopped');
+      // A mark can change during the move: the press answers to it as it is now.
+      const late = pressRefusal(el.el);
+      if (late) return refuse(late);
       press(el.el);
       await this.settle(null, 3000);
       return { ok: true };
@@ -402,6 +405,8 @@ export class AgentHands {
         return { ok: true };
       }
       // A menu, a combobox or a tab list: open it, then press the option.
+      const late = pressRefusal(el.el);
+      if (late) return refuse(late);
       if (roleOf(el.el) !== 'tab' && roleOf(el.el) !== 'radio') press(el.el);
       await this.settle(null, 1500);
       if (!alive()) return refuse('stopped');
