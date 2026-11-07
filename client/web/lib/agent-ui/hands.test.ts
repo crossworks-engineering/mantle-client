@@ -571,6 +571,71 @@ describe('a change the user said Not now to', () => {
   });
 });
 
+describe('the reminder is the item’s', () => {
+  it('a Commit (or ⌘S) after Not now to a draft save is asked about too', async () => {
+    const { AgentHands, itemOfWrite } = await import('./hands');
+    expect(itemOfWrite('/api/pages/p1/draft')).toBe(itemOfWrite('/api/pages/p1/commit'));
+    expect(itemOfWrite('https://brain.invalid/api/pages/p1')).toBe('pages/p1');
+    expect(itemOfWrite('/api/files/files/f1')).toBe('files/files/f1');
+    expect(itemOfWrite('/api/pages/p2/commit')).not.toBe(itemOfWrite('/api/pages/p1/commit'));
+    const h = made(new AgentHands());
+    answer = (c) => (c.tag ? refusal() : new Response('{}', { status: 200 }));
+    h.begin('Agent');
+    await h.withCall('0a0a0a0a-0a0a-40a0-80a0-00000000000a', async () => undefined);
+    const draft = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{"doc":{}}' });
+    (await heldOf(h))!.answer(false);
+    await expect(draft).rejects.toThrow();
+    h.end();
+    const commit = window.fetch('/api/pages/p1/commit', { method: 'POST', body: '{"doc":{}}' });
+    const held = await heldOf(h);
+    expect(held?.risk).toBe('unsaved');
+    held!.answer(false);
+    await expect(commit).rejects.toThrow();
+    expect(calls.filter((c) => c.url.includes('/commit'))).toHaveLength(0);
+  });
+
+  it('after Discard, no write to the item leaves, fetch or beacon, while the page loads again', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    const reload = vi.fn();
+    (g.location as Record<string, unknown>).reload = reload;
+    const beacons: string[] = [];
+    vi.stubGlobal('navigator', {
+      sendBeacon: (url: string) => {
+        beacons.push(url);
+        return true;
+      },
+    });
+    h.begin('Agent');
+    const first = window.fetch('/api/pages/p1/publish', { method: 'POST', body: '{}' });
+    (await heldOf(h))!.answer(false);
+    await expect(first).rejects.toThrow();
+    h.end();
+    const save = window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' });
+    ((await heldOf(h)) as unknown as { discard: () => void }).discard();
+    await expect(save).rejects.toThrow();
+    expect(reload).toHaveBeenCalledTimes(1);
+    // The leave flush on the way out: refused, and nobody is asked.
+    await expect(
+      window.fetch('/api/pages/p1/draft', { method: 'PUT', body: '{}' }),
+    ).rejects.toThrow();
+    await expect(
+      window.fetch('/api/pages/p1/commit', { method: 'POST', body: '{}' }),
+    ).rejects.toThrow();
+    expect(h.get().held).toBeNull();
+    expect(navigator.sendBeacon('/api/pages/p1/draft', '{}')).toBe(false);
+    expect(h.beaconRefused('/api/pages/p1/draft')).toBe(true);
+    // Another item goes as ever.
+    expect((await window.fetch('/api/pages/p2/draft', { method: 'PUT', body: '{}' })).status).toBe(
+      200,
+    );
+    expect(navigator.sendBeacon('/api/pages/p2/draft', '{}')).toBe(true);
+    expect(calls.map((c) => c.url)).toEqual(['/api/pages/p2/draft']);
+    expect(beacons).toEqual(['/api/pages/p2/draft']);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('a session ended by a login change', () => {
   it('says so, so no cancel is sent as the other login', async () => {
     const { AgentHands } = await import('./hands');

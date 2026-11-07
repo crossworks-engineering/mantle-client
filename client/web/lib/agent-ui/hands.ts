@@ -225,7 +225,7 @@ export class AgentHands {
   private release() {
     // The guard stays while a change the user said Not now to is still in
     // the page: its next save is asked about (`tainted`).
-    if (this.tainted.size === 0) this.unwrapFetch();
+    if (this.tainted.size === 0 && this.discarding.size === 0) this.unwrapFetch();
     this.callTag = null;
     this.lateTag = null;
   }
@@ -237,15 +237,16 @@ export class AgentHands {
    *  write to the same item from this page asks first, untagged or not,
    *  session or not, until the user allows it, discards it, or reloads. */
   private tainted = new Set<string>();
+  /** Items whose agent change the user discarded: every write to them is
+   *  refused while the page loads again, so the leave flush (a draft save
+   *  on pagehide, a beacon) cannot send the change on the way out. */
+  private discarding = new Set<string>();
 
-  private taintKey(method: string, url: string): string {
-    let path = url;
-    try {
-      path = new URL(url, 'http://app.invalid').pathname;
-    } catch {
-      /* the raw text */
-    }
-    return `${method.toUpperCase()} ${path}`;
+  /** The item a write is to, whatever the write (a draft save, a commit,
+   *  a publish all carry its content): `/api/<kind>/<id>`, or the path
+   *  itself for a write that is not to an item. Exported as `itemOfWrite`. */
+  private taintKey(_method: string, url: string): string {
+    return itemOfWrite(url);
   }
 
   private taint(method: string, url: string) {
@@ -254,7 +255,27 @@ export class AgentHands {
 
   /** Whether some write of this page is waiting to be asked about. */
   hasTaint(): boolean {
-    return this.tainted.size > 0;
+    return this.tainted.size > 0 || this.discarding.size > 0;
+  }
+
+  /** While the page loads again after a Discard, a beacon to a discarded
+   *  item is refused too. */
+  private blockBeacons() {
+    try {
+      const nav = navigator as Navigator & { __agentBeacons?: true };
+      if (!nav.sendBeacon || nav.__agentBeacons) return;
+      const real = nav.sendBeacon.bind(nav);
+      nav.sendBeacon = (url: string | URL, data?: BodyInit | null) =>
+        this.discarding.has(itemOfWrite(String(url))) ? false : real(url, data);
+      nav.__agentBeacons = true;
+    } catch {
+      /* no beacons here */
+    }
+  }
+
+  /** Whether a beacon to `url` would be refused now (for its test). */
+  beaconRefused(url: string): boolean {
+    return this.discarding.has(itemOfWrite(url));
   }
 
   /** Ask before a tainted write goes: Save sends it as the user's own,
@@ -271,7 +292,11 @@ export class AgentHands {
       return 'save';
     }
     if (discarded) {
+      // Held shut, not cleared: the editor still holds the change until
+      // the page has loaded again, and leaving flushes it.
       this.tainted.delete(key);
+      this.discarding.add(key);
+      this.blockBeacons();
       try {
         location.reload();
       } catch {
@@ -291,6 +316,7 @@ export class AgentHands {
     this.noteTimer = null;
     this.lateUntil = 0;
     this.tainted.clear();
+    this.discarding.clear();
     this.end();
     this.release();
   }
@@ -423,7 +449,10 @@ export class AgentHands {
     // the agent's) is asked about again, session or not. An agent action
     // sending it again meets the usual hold below.
     const key = this.taintKey(m, url);
-    const tainted = m !== 'GET' && m !== 'HEAD' && this.tainted.has(key);
+    const write = m !== 'GET' && m !== 'HEAD';
+    // Discarded, and the page is loading again: nothing goes to it.
+    if (write && this.discarding.has(key)) return { blocked: true };
+    const tainted = write && this.tainted.has(key);
     const agentActing = this.acting > 0 || (this.state.active && !this.state.paused);
     if (tainted && !agentActing) {
       const answer = await this.askTainted(m, url);
@@ -815,6 +844,24 @@ export class AgentHands {
     }
     return false;
   }
+}
+
+/** The item a write is to: `/api/<kind>/<id>` (`/api/files/files/<id>`,
+ *  `/api/recall/maps/<id>` count their two-part kinds), so a draft save, a
+ *  commit and a publish of one page are one item. A path that names no
+ *  item is its own key. */
+export function itemOfWrite(url: string): string {
+  let path = url;
+  try {
+    path = new URL(url, 'http://app.invalid').pathname;
+  } catch {
+    /* the raw text */
+  }
+  const m =
+    /^\/api\/((?:files\/files|files\/folders|recall\/maps|tree\/items)|[a-z-]+)\/([^/]+)/.exec(
+      path,
+    );
+  return m ? `${m[1]}/${m[2]}` : path;
 }
 
 /** The roles an option of a menu, a combobox or a tab list has, the
