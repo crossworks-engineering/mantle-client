@@ -354,3 +354,71 @@ test('a turn asks once before it acts; Not now refuses the rest of it; a new tur
     'Bread',
   );
 });
+
+test('ui_look: a picture of the work area, an app frame drawn into it, a secret painted over', async ({
+  page,
+}) => {
+  api.agentUi.admin = true;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+
+  // An app frame in the work area that answers a `look` with a red picture
+  // of itself, as the brain's frame document does, and a secret field.
+  await page.evaluate(() => {
+    const main = document.querySelector('main[data-tour="main"]')!;
+    const frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.style.cssText =
+      'position:absolute;top:0;left:0;width:200px;height:100px;border:0;z-index:50';
+    frame.srcdoc = `<script>
+      addEventListener('message', function (e) {
+        var m = e.data; if (!m || m.kind !== 'look') return;
+        var c = document.createElement('canvas'); c.width = 20; c.height = 10;
+        var g = c.getContext('2d'); g.fillStyle = '#ff0000'; g.fillRect(0, 0, 20, 10);
+        parent.postMessage({ v: 1, kind: 'look.res', id: m.id, ok: true, dataUrl: c.toDataURL() }, '*');
+      });
+    </script>`;
+    const secret = document.createElement('div');
+    secret.setAttribute('data-secret', '');
+    secret.style.cssText =
+      'position:absolute;top:120px;left:0;width:200px;height:40px;background:#00ff00;z-index:50';
+    main.append(frame, secret);
+  });
+  await page.waitForTimeout(300);
+
+  const looked = await call(page, 'look', { scope: 'work' });
+  const r = looked.result as {
+    ok: boolean;
+    scope: string;
+    width: number;
+    height: number;
+    blanked: number;
+    blankFrames: number;
+    image: { mimeType: string; base64: string };
+  };
+  expect(r).toMatchObject({ ok: true, scope: 'work', blankFrames: 0 });
+  expect(r.blanked).toBeGreaterThanOrEqual(1);
+  expect(r.image.mimeType).toBe('image/png');
+  expect(Math.max(r.width, r.height)).toBeLessThanOrEqual(1568);
+  expect((r.image.base64.length * 3) / 4).toBeLessThanOrEqual(1024 * 1024);
+
+  // The frame's own picture is in its box; the secret is a grey box.
+  const px = await page.evaluate(async ({ base64, width }) => {
+    const main = document.querySelector('main[data-tour="main"]')!.getBoundingClientRect();
+    const k = width / main.width;
+    const img = new Image();
+    img.src = `data:image/png;base64,${base64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d')!;
+    g.drawImage(img, 0, 0);
+    const at = (x: number, y: number) => [...g.getImageData(x * k, y * k, 1, 1).data.slice(0, 3)];
+    return { frame: at(100, 50), secret: at(100, 140) };
+  }, r.image);
+  expect(px.frame).toEqual([255, 0, 0]);
+  expect(px.secret).toEqual([128, 128, 128]);
+});

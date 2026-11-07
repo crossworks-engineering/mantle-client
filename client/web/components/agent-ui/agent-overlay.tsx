@@ -98,7 +98,9 @@ function AgentBar({ state }: { state: HandsState }) {
       <span className="min-w-0 truncate">
         {state.paused
           ? `${state.agent} paused: you took over.`
-          : `${state.agent} is using this window.`}
+          : state.looking
+            ? 'Looking at your window'
+            : `${state.agent} is using this window.`}
       </span>
       {state.paused && (
         <Button size="sm" variant="outline" onClick={() => agentHands().resume()}>
