@@ -4,6 +4,7 @@ import {
   agentMemoryConfigFromForm,
   agentParamsFromForm,
   brainHasAgentThinkingEffort,
+  cloneFormFromAgent,
   defaultToolLoading,
   emptyForm,
   formFromAgent,
@@ -11,6 +12,56 @@ import {
   validateAgent,
 } from './agent-form-state';
 import type { AgentSummary, FormState, MemoryConfig } from './agent-form-state';
+
+describe('cloneFormFromAgent', () => {
+  const donor = (over: Partial<AgentSummary>) =>
+    ({
+      slug: 'donor',
+      name: 'Donor',
+      role: 'responder',
+      provider: 'openrouter',
+      model: 'anthropic/claude-haiku-4.5',
+      systemPrompt: 'Be useful.',
+      priority: 100,
+      enabled: true,
+      avatar: { style: 'bottts', seed: 'donor' },
+      backupEnabled: false,
+      viaTailnet: false,
+      backupViaTailnet: false,
+      memoryConfig: {},
+      params: {},
+      ...over,
+    }) as AgentSummary;
+
+  it('keeps the role of an assistant or a responder, so the Assistant list offers it', () => {
+    expect(cloneFormFromAgent(donor({ role: 'assistant' })).role).toBe('assistant');
+    expect(cloneFormFromAgent(donor({ role: 'responder' })).role).toBe('responder');
+  });
+
+  it('lands any other donor as custom', () => {
+    for (const role of ['custom', 'extractor', 'summarizer', 'reflector', 'worker'] as const) {
+      expect(cloneFormFromAgent(donor({ role })).role).toBe('custom');
+    }
+  });
+
+  it('sits one priority below the donor, floored at 0', () => {
+    expect(cloneFormFromAgent(donor({ priority: 100 })).priority).toBe('99');
+    expect(cloneFormFromAgent(donor({ priority: 1 })).priority).toBe('0');
+    expect(cloneFormFromAgent(donor({ priority: 0 })).priority).toBe('0');
+  });
+
+  it('lands disabled with no avatar, whatever the donor holds', () => {
+    const form = cloneFormFromAgent(donor({ enabled: true }));
+    expect(form.enabled).toBe(false);
+    expect(form.avatar).toBeNull();
+  });
+
+  it('keeps the rest of the donor', () => {
+    const form = cloneFormFromAgent(donor({ systemPrompt: 'Answer as a tutor.' }));
+    expect(form.systemPrompt).toBe('Answer as a tutor.');
+    expect(form.model).toBe('anthropic/claude-haiku-4.5');
+  });
+});
 
 /**
  * The agents form's pure layer. Until phase 1 lifted this out of a 2,147-line

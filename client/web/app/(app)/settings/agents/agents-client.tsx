@@ -72,6 +72,7 @@ import {
   brainHasAgentThinkingEffort,
   agentMemoryConfigFromForm,
   agentParamsFromForm,
+  cloneFormFromAgent,
   defaultsForRole,
   emptyForm,
   formFromAgent,
@@ -327,20 +328,18 @@ export function AgentsClient() {
   // Clone: open the CREATE form pre-seeded from a donor row. The clone is
   // operator-authored, so the boot reconcile never touches it — the stable way
   // to build on a system agent's proven config (overriding a manifest agent
-  // in place would be silently reverted by the next update's def sync). It
-  // lands as role 'custom' and DISABLED: a second enabled responder would
-  // enter priority resolution and could shadow the persona on Telegram/web —
-  // promoting a clone is a deliberate act. Avatar resets so twins stay
-  // tellable-apart; the slug regenerates from the editable name.
+  // in place would be silently reverted by the next update's def sync). What it
+  // keeps and resets is in cloneFormFromAgent: an assistant or a responder keeps
+  // its role, so the workspace Assistant list offers the clone; it sits one
+  // priority below the donor and lands DISABLED, so it cannot shadow the donor,
+  // and enabling it is a deliberate act. The slug regenerates from the editable
+  // name.
   const openClone = (donor: AgentSummary) => {
     const name = `${donor.name} copy`;
     setForm({
-      ...formFromAgent(donor),
+      ...cloneFormFromAgent(donor),
       name,
       slug: slugify(name, { maxLength: 64 }),
-      role: 'custom',
-      enabled: false,
-      avatar: null,
     });
     setSlugTouched(false);
     setEditing({ mode: 'create' });
