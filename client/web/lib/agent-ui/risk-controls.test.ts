@@ -322,6 +322,24 @@ const PERSON_CONTROLS: readonly (readonly [string, string, string])[] = [
   ['client/web/components/oidc/link-form.tsx', 'type="submit"', MARK],
   ['client/web/components/oidc/company-sign-in-section.tsx', 'setConfirming(true)', MARK],
   ['client/web/components/oidc/offer-card.tsx', 'setHidden(true)', MARK],
+  // PATCH /api/apps/:id: dataReadOnly, trustTools, mcpAccess
+  [
+    'client/web/components/app-nav/app-informational-switch.tsx',
+    'onCheckedChange={(v) => void change(v)}',
+    onWhen("on ? 'person' : undefined"),
+  ],
+  [
+    'client/web/components/app-nav/app-trust-tools-switch.tsx',
+    'onCheckedChange={(v) => (v ? setConfirm(true)',
+    onWhen("on ? undefined : 'person'"),
+  ],
+  [
+    'client/web/components/share/grant-access-view.tsx',
+    'onCheckedChange={on.onMcpAccess}',
+    onWhen("view.app.mcpAccess ? undefined : 'person'"),
+  ],
+  // POST /api/telegram/pair: the confirm, not the look-up
+  ['client/web/components/telegram/telegram-pair-form.tsx', 'onClick={confirm}', MARK],
   // The dev tool console: its call counts as a person's.
   ['client/web/components/dev-tools/request-builder.tsx', 'onClick={() => void send()}', MARK],
 ];
@@ -332,6 +350,7 @@ const TIGHTENS: readonly (readonly [string, string])[] = [
   ['client/web/components/pending/questionnaire-card.tsx', "decide(row.id, 'reject')"],
   [`${APP}/recall/v2/map-workbench.tsx`, 'publish(false)'],
   [`${APP}/recall/v2/card-editor.tsx`, 'answerPrompt(false)'],
+  ['client/web/components/telegram/telegram-pair-form.tsx', 'void lookUp()'],
 ];
 
 describe("a person's own acts carry data-agent-risk", () => {

@@ -314,6 +314,7 @@ export function GrantAccessView({
             <Switch
               checked={view.app.mcpAccess}
               disabled={busy}
+              data-agent-risk={view.app.mcpAccess ? undefined : 'person'}
               onCheckedChange={on.onMcpAccess}
               aria-label="MCP access"
             />

@@ -75,6 +75,7 @@ export function AppTrustToolsSwitch({ app }: { app: AppDetail }) {
         id={id}
         checked={on}
         disabled={sending !== null}
+        data-agent-risk={on ? undefined : 'person'}
         onCheckedChange={(v) => (v ? setConfirm(true) : void send(false))}
         aria-describedby={`${id}-hint`}
       />

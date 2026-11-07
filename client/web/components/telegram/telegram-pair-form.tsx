@@ -129,6 +129,7 @@ export function TelegramPairForm({ onPaired }: { onPaired?: () => void }) {
           <Button
             type="button"
             size="sm"
+            data-agent-risk="person"
             onClick={confirm}
             disabled={busy}
             aria-describedby={confirmError ? CONFIRM_ERROR_ID : undefined}

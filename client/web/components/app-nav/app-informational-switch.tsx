@@ -62,6 +62,7 @@ export function AppInformationalSwitch({ app }: { app: AppDetail }) {
         id={id}
         checked={on}
         disabled={sending !== null}
+        data-agent-risk={on ? 'person' : undefined}
         onCheckedChange={(v) => void change(v)}
         aria-describedby={`${id}-hint`}
       />
