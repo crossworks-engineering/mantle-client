@@ -405,20 +405,23 @@ test('ui_look: a picture of the work area, an app frame drawn into it, a secret 
   expect((r.image.base64.length * 3) / 4).toBeLessThanOrEqual(1024 * 1024);
 
   // The frame's own picture is in its box; the secret is a grey box.
-  const px = await page.evaluate(async ({ base64, width }) => {
-    const main = document.querySelector('main[data-tour="main"]')!.getBoundingClientRect();
-    const k = width / main.width;
-    const img = new Image();
-    img.src = `data:image/png;base64,${base64}`;
-    await img.decode();
-    const c = document.createElement('canvas');
-    c.width = img.width;
-    c.height = img.height;
-    const g = c.getContext('2d')!;
-    g.drawImage(img, 0, 0);
-    const at = (x: number, y: number) => [...g.getImageData(x * k, y * k, 1, 1).data.slice(0, 3)];
-    return { frame: at(100, 50), secret: at(100, 140) };
-  }, r.image);
+  const px = await page.evaluate(
+    async ({ base64, width }) => {
+      const main = document.querySelector('main[data-tour="main"]')!.getBoundingClientRect();
+      const k = width / main.width;
+      const img = new Image();
+      img.src = `data:image/png;base64,${base64}`;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext('2d')!;
+      g.drawImage(img, 0, 0);
+      const at = (x: number, y: number) => [...g.getImageData(x * k, y * k, 1, 1).data.slice(0, 3)];
+      return { frame: at(100, 50), secret: at(100, 140) };
+    },
+    { base64: r.image.base64, width: r.width },
+  );
   expect(px.frame).toEqual([255, 0, 0]);
   expect(px.secret).toEqual([128, 128, 128]);
 });
