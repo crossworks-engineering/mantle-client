@@ -802,6 +802,28 @@ describe('a session ended by a login change', () => {
   });
 });
 
+describe('a lesson the user started', () => {
+  it('acts without the turn question: its Start is the yes', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Your sounds', { tag: 'lesson:x' });
+    expect(await h.click({ id: 'add' })).toEqual({ ok: true });
+    expect(h.get().turnAsk).toBeNull();
+    expect(control.dispatched).toContain('click');
+    h.end();
+  });
+
+  it('Stop answers a turn question that is still open as Not now', async () => {
+    const { AgentHands } = await import('./hands');
+    const h = made(new AgentHands());
+    h.begin('Agent');
+    const asking = h.askTurn('Saskia');
+    expect(h.get().turnAsk?.agent).toBe('Saskia');
+    h.end();
+    expect(await asking).toBe(false);
+  });
+});
+
 describe('Stop really stops', () => {
   it('Stop while the cursor travels: nothing is pressed, the answer is stopped', async () => {
     const { AgentHands } = await import('./hands');

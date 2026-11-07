@@ -43,6 +43,20 @@ async function call(
   return api.uiAnswers.find((a) => a.callId === id)!;
 }
 
+/** A turn's first click, type or select: it asks "Allow Saskia to act in
+ *  this window for this turn?" first (ask once per turn); Allow, then its
+ *  answer. */
+async function firstAct(page: Page, action: string, args: Record<string, unknown>, allow = true) {
+  const going = call(page, action, args);
+  const ask = page.getByRole('alertdialog', {
+    name: 'Allow Saskia to act in this window for this turn?',
+  });
+  const button = ask.getByRole('button', { name: allow ? 'Allow' : 'Not now', exact: true });
+  await expect(button).toBeEnabled();
+  await button.click();
+  return going;
+}
+
 async function ready(page: Page) {
   await page.waitForFunction(() => '__mantleAgentCalls' in window);
   await page.evaluate(async (turn) => {
@@ -120,7 +134,7 @@ test('the first call asks the user; once allowed, calls run and answer with this
 
   // A write the agent sets off names its call; the brain would refuse a
   // risky one. A setting the user allows goes without the name.
-  await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
+  await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
   const add = await call(page, 'click', { target: { role: 'button', name: 'Add note' } });
   const notePost = api.requests.find((r) => r.method === 'POST' && r.path === '/api/notes');
   expect(notePost?.agentCall).toBe(add.callId);
@@ -218,7 +232,7 @@ test('a write the brain refuses as the agent’s is held; Allow once sends it ag
   await call(page, 'screen');
   await page.getByRole('button', { name: 'Allow for this session' }).click();
 
-  await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
+  await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
   const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
   const held = page.getByRole('alertdialog', {
     name: 'Saskia wants to send, share or publish something',
@@ -242,7 +256,7 @@ test('Not now on a refused write sends nothing more, and the agent hears needs_u
   await call(page, 'screen');
   await page.getByRole('button', { name: 'Allow for this session' }).click();
 
-  await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
+  await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
   const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
   const held = page.getByRole('alertdialog', {
     name: 'Saskia wants to send, share or publish something',
@@ -260,7 +274,7 @@ test('a typed text is added after what the field holds', async ({ page }) => {
   await call(page, 'screen');
   await page.getByRole('button', { name: 'Allow for this session' }).click();
   const box = { role: 'textbox', name: 'Quick note' };
-  await call(page, 'type', { target: box, text: 'Buy ' });
+  await firstAct(page, 'type', { target: box, text: 'Buy ' });
   await call(page, 'type', { target: box, text: 'milk' });
   const field = page.getByPlaceholder('Jot it down… the first line becomes the title');
   await expect(field).toHaveValue('Buy milk');
@@ -337,7 +351,7 @@ test('after Not now, the user’s own save of the agent’s change is asked abou
   await call(page, 'screen');
   await page.getByRole('button', { name: 'Allow for this session' }).click();
 
-  await call(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
+  await firstAct(page, 'type', { target: { role: 'textbox', name: 'Quick note' }, text: 'Milk' });
   const adding = call(page, 'click', { target: { role: 'button', name: 'Add note' } });
   const held = page.getByRole('alertdialog', {
     name: 'Saskia wants to send, share or publish something',
@@ -356,4 +370,63 @@ test('after Not now, the user’s own save of the agent’s change is asked abou
     .toBe(2);
   const posts = api.requests.filter((r) => r.method === 'POST' && r.path === '/api/notes');
   expect(posts[1]!.agentCall).toBeUndefined();
+});
+
+test('a turn asks once before it acts; Not now refuses the rest of it; a new turn asks again', async ({
+  page,
+}) => {
+  api.agentUi.admin = true;
+  await signIn(page, 'admin');
+  await ready(page);
+  await call(page, 'screen');
+  await page.getByRole('button', { name: 'Allow for this session' }).click();
+  const box = { role: 'textbox', name: 'Quick note' };
+  const ask = page.getByRole('alertdialog', {
+    name: 'Allow Saskia to act in this window for this turn?',
+  });
+
+  // Reads never ask.
+  expect((await call(page, 'screen')).result).toMatchObject({ ok: true });
+  await expect(ask).toHaveCount(0);
+
+  // Not now: this call and the rest of the turn are the user's.
+  const refused = await firstAct(page, 'type', { target: box, text: 'Milk' }, false);
+  expect(refused.result).toMatchObject({ ok: false, error: 'needs_user' });
+  expect((await call(page, 'type', { target: box, text: 'Milk' })).result).toMatchObject({
+    ok: false,
+    error: 'needs_user',
+  });
+  await expect(ask).toHaveCount(0);
+  await expect(page.getByPlaceholder('Jot it down… the first line becomes the title')).toHaveValue(
+    '',
+  );
+
+  // A new turn asks again; once allowed, its next acting call does not.
+  await page.evaluate(() => {
+    (
+      window as unknown as { __mantleAgentCalls: { claimTurn: (t: string) => void } }
+    ).__mantleAgentCalls.claimTurn('turn-e2e-2');
+  });
+  const second = await (async () => {
+    const id = callId();
+    await page.evaluate(
+      ([data]) => {
+        void (
+          window as unknown as {
+            __mantleAgentCalls: {
+              handleUiCall: (t: string, d: unknown, a: string) => Promise<void>;
+            };
+          }
+        ).__mantleAgentCalls.handleUiCall('turn-e2e-2', data, 'Saskia');
+      },
+      [{ callId: id, action: 'type', args: { target: box, text: 'Bread' } }] as const,
+    );
+    await ask.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect.poll(() => api.uiAnswers.find((a) => a.callId === id)).toBeTruthy();
+    return api.uiAnswers.find((a) => a.callId === id)!;
+  })();
+  expect(second.result).toMatchObject({ ok: true });
+  await expect(page.getByPlaceholder('Jot it down… the first line becomes the title')).toHaveValue(
+    'Bread',
+  );
 });

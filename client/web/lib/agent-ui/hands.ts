@@ -70,6 +70,9 @@ export type HandsState = {
   active: boolean;
   /** An in-app agent asks to use this window (lib/agent-ui/turn-calls). */
   consent: ConsentAsk | null;
+  /** An in-app agent's turn asks, at its first click, type or select,
+   *  whether it may act in this window for the rest of the turn. */
+  turnAsk: ConsentAsk | null;
   agent: string;
   paused: boolean;
   cursor: { x: number; y: number } | null;
@@ -84,6 +87,7 @@ export type HandsState = {
 const IDLE: HandsState = {
   active: false,
   consent: null,
+  turnAsk: null,
   agent: '',
   paused: false,
   cursor: null,
@@ -208,6 +212,7 @@ export class AgentHands {
     window.removeEventListener('keydown', this.onUserInput, true);
     window.removeEventListener('storage', this.onStorage);
     this.state.held?.answer(false);
+    this.state.turnAsk?.answer(false);
     this.refs.clear();
     this.lastAgent = this.state.agent;
     this.set(IDLE);
@@ -497,6 +502,23 @@ export class AgentHands {
         },
       };
       this.set({ consent: ask });
+    });
+  }
+
+  /** Ask whether an in-app agent may act (click, type, select) in this
+   *  window for the rest of its turn. Not now, or Stop meanwhile, is a no. */
+  askTurn(agent: string): Promise<boolean> {
+    this.state.turnAsk?.answer(false);
+    return new Promise((resolve) => {
+      const ask: ConsentAsk = {
+        agent: agent.slice(0, 60) || 'The assistant',
+        answer: (allow) => {
+          if (this.state.turnAsk !== ask) return;
+          this.set({ turnAsk: null });
+          resolve(allow);
+        },
+      };
+      this.set({ turnAsk: ask });
     });
   }
 

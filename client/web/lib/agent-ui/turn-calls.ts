@@ -184,6 +184,32 @@ function watchStop(): void {
   });
 }
 
+/** The actions that change something on the screen: each turn asks the
+ *  person once before its first one (Jason, 2026-11-07, "ask once per
+ *  turn"). Reads (screen, navigate, point, wait) need only the page's
+ *  consent. */
+const ACTING = new Set(['click', 'type', 'select']);
+
+/** Each turn's answer to "act in this window for this turn?": asked at its
+ *  first acting call, kept for the rest of the turn. */
+const turnActs = new Map<string, 'allowed' | 'refused' | Promise<boolean>>();
+
+/** Whether this turn may act: asks the person the first time. */
+function mayActThisTurn(turnId: string, agentName: string): Promise<boolean> | boolean {
+  const known = turnActs.get(turnId);
+  if (known === 'allowed') return true;
+  if (known === 'refused') return false;
+  if (known) return known;
+  const asking = agentHands()
+    .askTurn(agentName)
+    .then((ok) => {
+      turnActs.set(turnId, ok ? 'allowed' : 'refused');
+      return ok;
+    });
+  turnActs.set(turnId, asking);
+  return asking;
+}
+
 /** Run one call from the brain and answer it. Each call id once, whichever
  *  of the page's stream readers hears it first. */
 export async function handleUiCall(turnId: string, raw: unknown, agentName: string): Promise<void> {
@@ -224,6 +250,18 @@ export async function handleUiCall(turnId: string, raw: unknown, agentName: stri
   const hands = agentHands();
   turnAgents.set(turnId, agentName);
   if (!hands.get().active) hands.begin(agentName, { login: turnLogins.get(turnId) ?? null });
+  // A click, type or select: the turn asks the person once; Not now
+  // refuses this call and the rest of the turn's acting calls.
+  if (ACTING.has(call.action)) {
+    const ok = await mayActThisTurn(turnId, agentName);
+    if (stoppedTurns.has(turnId)) return void answer(refuse('stopped'));
+    if (!ok) {
+      return void answer(
+        refuse('needs_user', 'The user said Not now to acting in this window for this turn.'),
+      );
+    }
+    if (callExpired(call, Date.now(), offset)) return void answer(refuse('window_gone'));
+  }
   // Checked again as it runs: a call can wait behind the one before it.
   const result = await hands.withCall(
     call.callId,
@@ -243,6 +281,7 @@ export function endAgentTurn(turnId: string): void {
   clockOffsets.delete(turnId);
   turnLogins.delete(turnId);
   goneTurns.delete(turnId);
+  turnActs.delete(turnId);
   // Deleted before the session ends, so its end is not read as Stop.
   if (!turnAgents.delete(turnId)) return;
   if (turnAgents.size === 0) agentHands().end();

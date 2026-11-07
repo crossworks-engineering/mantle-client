@@ -53,11 +53,12 @@ export function AgentOverlay() {
     return () => hands.setNavigator(null);
   }, [router]);
 
-  if (!state.active && !state.consent && !state.note && !state.held) return null;
+  if (!state.active && !state.consent && !state.note && !state.held && !state.turnAsk) return null;
   if (!state.active) {
     return (
       <div data-agent-host="" className="pointer-events-none fixed inset-0 z-[80]">
         {state.consent && <ConsentPrompt state={state} />}
+        {state.turnAsk && <TurnPrompt ask={state.turnAsk} />}
         {state.note && <LateNote text={state.note} />}
         {/* A save of the agent's change the user said Not now to: asked
             also after the session ended. */}
@@ -68,6 +69,7 @@ export function AgentOverlay() {
   return (
     <div data-agent-host="" className="pointer-events-none fixed inset-0 z-[80]">
       {state.consent && <ConsentPrompt state={state} />}
+      {state.turnAsk && <TurnPrompt ask={state.turnAsk} />}
       {state.spotlight && <Spotlight el={state.spotlight.el} caption={state.spotlight.caption} />}
       {state.cursor && !state.paused && (
         <MousePointer2
@@ -131,6 +133,49 @@ function LateNote({ text }: { text: string }) {
       <Button size="sm" variant="ghost" onClick={() => agentHands().dismissNote()}>
         OK
       </Button>
+    </div>
+  );
+}
+
+/** "Allow <agent> to act in this window for this turn?": asked at a
+ *  turn's first click, type or select. Armed after a moment, like the
+ *  others, so a click already on its way cannot answer it. */
+function TurnPrompt({ ask }: { ask: NonNullable<HandsState['turnAsk']> }) {
+  const [armed, setArmed] = React.useState(false);
+  React.useEffect(() => {
+    setArmed(false);
+    const t = setTimeout(() => setArmed(true), ARM_MS);
+    return () => clearTimeout(t);
+  }, [ask]);
+  return (
+    <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-foreground/20">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="agent-turn-title"
+        className="w-[min(26rem,calc(100%-2rem))] rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl"
+      >
+        <div className="flex items-start gap-3">
+          <Hand className="mt-0.5 size-5 shrink-0 text-primary-ink" aria-hidden />
+          <div className="min-w-0 space-y-1">
+            <h2 id="agent-turn-title" className="font-semibold">
+              Allow {ask.agent} to act in this window for this turn?
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              It clicks, types and picks as you, within what you may do. Anything that deletes,
+              sends, shares or changes a setting still waits for you. The next turn asks again.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={() => ask.answer(false)}>
+            Not now
+          </Button>
+          <Button disabled={!armed} onClick={() => ask.answer(true)}>
+            Allow
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
