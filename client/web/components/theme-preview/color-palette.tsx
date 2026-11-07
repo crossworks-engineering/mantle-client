@@ -36,6 +36,7 @@ const GROUPS: Array<{ label: string; hint?: string; tokens: string[] }> = [
       'secondary-foreground',
       'accent',
       'accent-foreground',
+      'selected',
       'destructive',
       'destructive-foreground',
       'success',
