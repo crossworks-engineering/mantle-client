@@ -418,6 +418,27 @@ export function formFromAgent(a: AgentSummary): FormState {
   };
 }
 
+/**
+ * The create form a Clone opens with, before its new name and slug.
+ *
+ * A clone of an assistant or a responder keeps that role, so the workspace
+ * Assistant list offers it. Any other donor (a specialist, a worker) lands as
+ * custom. The clone sits one priority below its donor, floored at 0, and lands
+ * disabled: on the same priority a clone could win the brain's default pick
+ * (role assistant beats responder on a tie, then slug decides) and shadow the
+ * donor. The brain's own clone (cloneAgentFields) keeps the same two rules. The
+ * avatar resets so the two stay tellable apart.
+ */
+export function cloneFormFromAgent(donor: AgentSummary): FormState {
+  return {
+    ...formFromAgent(donor),
+    role: donor.role === 'assistant' || donor.role === 'responder' ? donor.role : 'custom',
+    priority: String(Math.max(0, donor.priority - 1)),
+    enabled: false,
+    avatar: null,
+  };
+}
+
 export type ToolLoading = NonNullable<AgentParamsDTO['tool_loading']>;
 
 export const TOOL_LOADING_OPTIONS: readonly { value: ToolLoading; label: string; hint: string }[] =
