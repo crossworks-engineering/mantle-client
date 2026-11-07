@@ -186,7 +186,7 @@ function watchStop(): void {
 
 /** The actions that change something on the screen: each turn asks the
  *  person once before its first one (Jason, 2026-11-07, "ask once per
- *  turn"). Reads (screen, navigate, point, wait) need only the page's
+ *  turn"). Reads (screen, look, navigate, point, wait) need only the page's
  *  consent. */
 const ACTING = new Set(['click', 'type', 'select']);
 
@@ -300,6 +300,11 @@ export async function runUiCall(call: UiCall): Promise<AgentResult<object>> {
   switch (call.action) {
     case 'screen':
       return hands.screen();
+    case 'look': {
+      // The brain always names the scope; anything else is the work area.
+      const scope = a.scope === 'window' || a.scope === 'ref' ? a.scope : 'work';
+      return hands.look(scope, scope === 'ref' ? str(a.ref) : null);
+    }
     case 'navigate':
       return hands.go(str(a.path));
     case 'click': {

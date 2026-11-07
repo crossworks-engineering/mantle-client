@@ -39,6 +39,7 @@ import {
 import { setLoginChangeGuard } from '@mantle/web-ui/login-change-guard';
 import { currentLoginKey, isLoginStorageKey, loginChangedFrom } from './login-pin';
 import { centerOf, factsOf, findByName, findTarget, readScreen, roleOf } from './dom';
+import { lookAt, type LookResult, type LookScope } from './look';
 
 export type ConsentAsk = { agent: string; answer: (allow: boolean) => void };
 
@@ -54,6 +55,9 @@ export type HandsState = {
   cursor: { x: number; y: number } | null;
   /** The control pointed at; the overlay follows it as the page moves. */
   spotlight: { el: Element; caption: string } | null;
+  /** The agent takes a picture of the window now (`ui_look`): the bar says
+   *  so. */
+  looking: boolean;
 };
 
 const IDLE: HandsState = {
@@ -64,6 +68,7 @@ const IDLE: HandsState = {
   paused: false,
   cursor: null,
   spotlight: null,
+  looking: false,
 };
 
 /** How long the cursor takes to reach a target before acting. */
@@ -344,6 +349,26 @@ export class AgentHands {
       const read = readScreen();
       this.refs = read.refs;
       return { ok: true, screen: read.screen };
+    });
+  }
+
+  /** A picture of the window (lib/agent-ui/look.ts): the work area, the
+   *  whole window, or the element of a ref from the last screen read. A
+   *  read: nothing on the page changes. */
+  look(scope: LookScope, ref: string | null): Promise<AgentResult<LookResult>> {
+    return this.run(async () => {
+      let el: Element | null = null;
+      if (scope === 'ref') {
+        const found = findTarget({ ref: ref ?? '' }, this.refs);
+        if ('error' in found) return refuse(found.error);
+        el = found.el;
+      }
+      this.set({ looking: true });
+      try {
+        return await lookAt(scope, el);
+      } finally {
+        this.set({ looking: false });
+      }
     });
   }
 

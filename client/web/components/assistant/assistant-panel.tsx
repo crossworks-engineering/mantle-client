@@ -190,6 +190,9 @@ export function AssistantPanel() {
   return (
     <div
       ref={panelRef}
+      // The agent's picture of the work area leaves the panel out
+      // (lib/agent-ui/look.ts).
+      data-assistant-panel=""
       className={cn(
         'fixed inset-x-0 bottom-0 top-[var(--top-bar-h)] z-20 bg-background md:left-[var(--nav-w)] lg:right-[var(--activity-w)]',
         // Column: a right column beside the visible editor (lg+ only — below lg

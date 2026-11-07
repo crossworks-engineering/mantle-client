@@ -30,7 +30,7 @@ async function setup() {
   const hands = agentHands();
   vi.spyOn(hands, 'begin').mockImplementation(() => undefined);
   vi.spyOn(hands, 'askConsent').mockResolvedValue(true);
-  for (const m of ['click', 'type', 'select', 'screen', 'point'] as const)
+  for (const m of ['click', 'type', 'select', 'screen', 'point', 'look'] as const)
     vi.spyOn(hands, m).mockResolvedValue({ ok: true } as never);
   await calls.loadAgentUiSetting(true);
   return { calls, hands };
@@ -93,12 +93,36 @@ describe('ask once per turn', () => {
     const { calls, hands } = await setup();
     const askTurn = vi.spyOn(hands, 'askTurn').mockResolvedValue(true);
     calls.claimTurn('turn-r', null);
-    for (const action of ['screen', 'point'])
+    for (const action of ['screen', 'point', 'look'])
       await (
         await run(calls, 'turn-r', action, { target: { id: 'x' }, caption: 'c' })
       ).done;
     expect(askTurn).not.toHaveBeenCalled();
     askTurn.mockRestore();
+  });
+
+  it('look takes the scope the brain names, and a ref only with the ref scope', async () => {
+    const { calls, hands } = await setup();
+    const look = vi.mocked(hands.look);
+    look.mockClear();
+    calls.claimTurn('turn-l', null);
+    for (const args of [
+      { scope: 'work' },
+      { scope: 'window' },
+      { scope: 'ref', ref: 'r7' },
+      { scope: 'odd', ref: 'r7' },
+      {},
+    ])
+      await (
+        await run(calls, 'turn-l', 'look', args)
+      ).done;
+    expect(look.mock.calls).toEqual([
+      ['work', null],
+      ['window', null],
+      ['ref', 'r7'],
+      ['work', null],
+      ['work', null],
+    ]);
   });
 
   it('Not now refuses that call and the rest of the turn, without asking again', async () => {
