@@ -14,7 +14,11 @@ import {
   Search as SearchIcon,
   SunMoon,
   User as UserIcon,
+  GraduationCap,
 } from 'lucide-react';
+import { openLessonPicker } from '@/components/lessons/lessons';
+import { useViewerLogin } from '@/components/workspaces/use-shell-workspaces';
+import { agentUiEnabled, loadAgentUiSetting, setAgentUiSetting } from '@/lib/agent-ui/turn-calls';
 import { currentBrainOrigin } from '@mantle/web-ui/session-registry';
 import { signInAgainPath, signOutActive, switchSession } from '@mantle/web-ui/session-switch';
 import { useSessions, type HeldSession } from '@mantle/web-ui/use-sessions';
@@ -34,6 +38,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuPortal,
@@ -300,6 +305,12 @@ export function ProfileMenu({
           </DropdownMenuItem>
         )}
 
+        <DropdownMenuItem onSelect={() => openLessonPicker()} className="cursor-pointer">
+          <GraduationCap className="size-4" /> Lessons
+        </DropdownMenuItem>
+        {/* In-app agents may drive this window once this is on
+            (lib/agent-ui/turn-calls): an Admin user's and a member's. */}
+        <AgentUiToggle />
         {manages ? (
           <DropdownMenuItem asChild>
             <Link href="/settings/profile" onClick={onNavigate} className="cursor-pointer">
@@ -375,6 +386,8 @@ export function ProfileMenu({
             disabled={busy}
             onClick={() => void switchTo(s)}
             className="cursor-pointer"
+            // The login is the user's to change (lib/agent-ui).
+            data-agent-risk="session"
           >
             <Avatar className="size-5">
               <AvatarFallback className="text-[9px] font-semibold">
@@ -392,7 +405,7 @@ export function ProfileMenu({
           </DropdownMenuItem>
         ))}
         {holdsLogins && (
-          <DropdownMenuItem asChild>
+          <DropdownMenuItem asChild data-agent-risk="session">
             <a href="/login?add=1" className="cursor-pointer">
               <Plus className="size-4" /> Add login…
             </a>
@@ -412,6 +425,7 @@ export function ProfileMenu({
           onClick={signOut}
           disabled={busy}
           className="cursor-pointer text-destructive-ink focus:text-destructive-ink"
+          data-agent-risk="session"
         >
           <LogOut className="size-4" />{' '}
           {busy ? 'Working…' : others.length > 0 ? 'Sign out of this login' : 'Sign out'}
@@ -420,6 +434,7 @@ export function ProfileMenu({
           onSelect={() => setEverywhereOpen(true)}
           disabled={busy}
           className="cursor-pointer"
+          data-agent-risk="session"
         >
           <MonitorOff className="size-4" /> Sign out everywhere
         </DropdownMenuItem>
@@ -456,6 +471,7 @@ export function ProfileMenu({
                 e.preventDefault();
                 void signOutEverywhereNow();
               }}
+              data-agent-risk="session"
             >
               {busy ? 'Signing out…' : 'Sign out everywhere'}
             </AlertDialogAction>
@@ -463,5 +479,28 @@ export function ProfileMenu({
         </AlertDialogContent>
       </AlertDialog>
     </DropdownMenu>
+  );
+}
+
+/** "Let agents use this window": the login's own opt-in, off by default. */
+function AgentUiToggle() {
+  const loginId = useViewerLogin()?.loginId;
+  const [on, setOn] = useState(agentUiEnabled());
+  useEffect(() => {
+    void loadAgentUiSetting().then(setOn);
+  }, []);
+  return (
+    <DropdownMenuCheckboxItem
+      checked={on}
+      disabled={!loginId}
+      onSelect={(e) => e.preventDefault()}
+      onCheckedChange={(next) => {
+        if (!loginId) return;
+        void setAgentUiSetting(next === true, loginId).then(setOn, () => undefined);
+      }}
+      className="cursor-pointer"
+    >
+      Let agents use this window
+    </DropdownMenuCheckboxItem>
   );
 }

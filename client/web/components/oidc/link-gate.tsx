@@ -22,6 +22,8 @@ export function LinkGate({ children }: { children: React.ReactNode }) {
           variant="ghost"
           className="w-full"
           onClick={() => void signOutActive()}
+          // A sign-out is the user's own (lib/agent-ui).
+          data-agent-risk="session"
         >
           Sign out
         </Button>

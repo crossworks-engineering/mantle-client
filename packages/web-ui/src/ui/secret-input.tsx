@@ -44,7 +44,9 @@ export const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
   ({ className, wrapperClassName, noun = 'password', disabled, ...props }, ref) => {
     const [shown, setShown] = React.useState(false);
     return (
-      <div className={cn('relative w-full', wrapperClassName)}>
+      // data-secret: an agent driving the window never reads or types in it,
+      // shown or not (client lib/agent-ui).
+      <div data-secret="" className={cn('relative w-full', wrapperClassName)}>
         <Input
           ref={ref}
           type={shown ? 'text' : 'password'}

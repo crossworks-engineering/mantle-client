@@ -167,9 +167,26 @@ const EVERY_LOGIN = [
   /^\/api\/workspaces(\/|$)/,
   /^\/api\/profile\/home-desk$/,
   /^\/api\/profile\/sounds$/,
+  /^\/api\/profile\/agent-ui$/,
+  /^\/api\/assistant\/turn\/[^/]+\/ui\/[0-9a-f-]{36}$/,
+  // A turn, its live stream and its cancel (agent UI fix round): the 202
+  // names the turn `turn-<loginId>.<key>` (a member's `ws-<loginId>.<key>`).
+  /^\/api\/assistant\/turn$/,
+  /^\/api\/assistant\/turn\/[^/]+\/(stream|cancel)$/,
+  /^\/api\/assistant\/messages$/,
+  /^\/api\/assistant\/thread$/,
 ];
 
-export type MockRequest = { method: string; path: string; query: string; role: Role | 'anon' };
+export type MockRequest = {
+  method: string;
+  path: string;
+  query: string;
+  role: Role | 'anon';
+  /** An agent call header a request carried (`x-mantle-agent-call`): the
+   *  client sends none since the agent acts with the user's own rights, so
+   *  a spec can assert it stays unset. */
+  agentCall?: string;
+};
 
 /** A page a spec made through POST /api/pages, and where the brain put it. */
 export type MockCreated = { id: string; title: string; ws: WorkspaceKey; role: Role };
@@ -240,7 +257,73 @@ export type MockWorkspaceApi = {
   updateNotice: { on: boolean; version: string } | null;
   /** The brain is restarting: every request is the front door's 502. */
   down: boolean;
+  /** Area screenshots saved in this run (POST /api/screenshots): who sent
+   *  it, the `?ws=` it named (none: the brain picks the login's own home),
+   *  its meta and the PNG's size. */
+  screenshots: MockScreenshot[];
+  /** The pages tree holds a top-level Lessons folder (components/lessons). */
+  lessons: boolean;
+  /** Each login's "Let agents use this window" (GET/PUT /api/profile/agent-ui). */
+  agentUi: Partial<Record<Role, boolean>>;
+  /** The answers windows sent to in-app agent calls
+   *  (POST /api/assistant/turn/:turnId/ui/:callId). */
+  uiAnswers: { role: Role; turnId: string; callId: string; windowId: unknown; result: unknown }[];
+  /** The turns sent (POST /api/assistant/turn): the Idempotency-Key and
+   *  the turn id the 202 gave for it, as a brain mints it from the session. */
+  turns: { role: Role; key: string; turnId: string; windowId: unknown }[];
+  /** What a turn's live stream sends, in order, once it is opened (then it
+   *  stays open, quiet). A stream for a turn id that is not the caller's is
+   *  a 404, as on a brain. */
+  turnEvents: unknown[];
   close: () => Promise<void>;
+};
+
+/** The one assistant agent of the mock brain (GET /api/assistant/thread). */
+export const MOCK_AGENT = {
+  id: '5a5a5a5a-5a5a-45a5-85a5-5a5a5a5a5a5a',
+  slug: 'saskia',
+  name: 'Saskia',
+} as const;
+
+/** The lessons the mock brain holds (components/lessons). */
+export const LESSONS = {
+  folder: { id: '1e551111-1111-4111-8111-111111111111', name: 'Lessons', path: 'pages.lessons' },
+  lesson: { id: '1e552222-2222-4222-8222-222222222222', title: 'Your sounds' },
+  stray: { id: '1e553333-3333-4333-8333-333333333333', title: 'Not a lesson' },
+  /** A second lesson whose step writes (a quick note on the Desk). */
+  note: { id: '1e554444-4444-4444-8444-444444444444', title: 'A quick note' },
+  noteYaml: [
+    'title: A quick note',
+    'steps:',
+    '  - say: A quick note lands in Notes.',
+    '    do:',
+    '      - type: { target: { role: textbox, name: Quick note }, text: Milk }',
+    '      - click: { role: button, name: Add note }',
+  ].join('\n'),
+  yaml: [
+    'title: Your sounds',
+    'steps:',
+    '  - say: Your profile holds your own settings.',
+    '    do:',
+    '      - go: /settings/profile',
+    '    check: { route: /settings/profile }',
+    '  - say: Sounds turns the app sounds on or off.',
+    '    point: { role: switch, name: Sounds }',
+    '    do:',
+    '      - click: { role: switch, name: Sounds }',
+    '    check: { visible: { role: switch, name: Sounds } }',
+    '  - say: That is all. Back to your Desk.',
+    '    do:',
+    '      - go: /',
+    '    check: { route: / }',
+  ].join('\n'),
+} as const;
+
+export type MockScreenshot = {
+  role: Role;
+  ws: string | null;
+  meta: Record<string, unknown>;
+  bytes: number;
 };
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -276,6 +359,12 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     ssoSetup: newMockSsoSetup(),
     updateNotice: null,
     down: false,
+    screenshots: [],
+    lessons: false,
+    agentUi: {},
+    uiAnswers: [],
+    turns: [],
+    turnEvents: [],
     close: async () => undefined,
   };
 
@@ -470,6 +559,24 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           true
         );
       }
+      // The Lessons folder, when a spec asks for it (components/lessons).
+      if (kind === 'pages' && state.lessons) {
+        const folder = url.searchParams.get('folder');
+        const lessons = { ...LESSONS.folder, depth: 1, parentId: null, system: false };
+        if (folder === LESSONS.folder.id) {
+          const listed = [LESSONS.note, LESSONS.lesson].map((l) => ({ id: l.id, title: l.title }));
+          return (
+            json(res, 200, {
+              ...tree(kind, listed, url),
+              folder: lessons,
+            }),
+            true
+          );
+        }
+        if (!folder) {
+          return (json(res, 200, { ...tree(kind, items, url), folders: [lessons], ...echo }), true);
+        }
+      }
       return (json(res, 200, { ...tree(kind, items, url), ...echo }), true);
     }
     // The landing page of the current workspace (task d78e7bde): the
@@ -618,10 +725,83 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         true
       );
     }
+    // An area screenshot: kept, and answered as the brain does (an Admin
+    // user's lands in Auto-filed, anyone else's in its private workspace;
+    // either way private to the login that took it).
+    if (path === '/api/screenshots' && method === 'POST') {
+      const raw = await readBody(req);
+      const meta = /name="meta"\r\n\r\n([^\r]*)\r\n/.exec(raw)?.[1];
+      const png = raw.includes('Content-Type: image/png') && raw.includes('PNG');
+      if (!meta || !png) return (json(res, 400, { error: 'meta and a PNG file required' }), true);
+      const n = state.screenshots.length + 1;
+      const id = `5c5c5c5c-5c5c-45c5-85c5-${String(n).padStart(12, '0')}`;
+      state.screenshots.push({
+        role,
+        ws: url.searchParams.get('ws'),
+        meta: JSON.parse(meta) as Record<string, unknown>,
+        bytes: raw.length,
+      });
+      // As an upload to Files: the named workspace (one of the login's),
+      // else the login's own home.
+      const named = MEMBERSHIP[role].find(
+        (mm) => WORKSPACES[mm.ws].id === url.searchParams.get('ws'),
+      );
+      const home = named
+        ? WORKSPACES[named.ws]
+        : role === 'admin'
+          ? WORKSPACES.admin
+          : WORKSPACES.own;
+      return (
+        json(res, 201, {
+          file: {
+            id,
+            filename: `screenshot-${n}.png`,
+            sizeBytes: raw.length,
+            mimeType: 'image/png',
+          },
+          landedIn: { id: home.id, name: home.name },
+        }),
+        true
+      );
+    }
     // A file sent to Files; the screen's lists do not change here.
     if (path === '/api/files/files' && method === 'POST') {
       await readBody(req);
       return (json(res, 201, { ok: true }), true);
+    }
+    // A lesson page (components/lessons), in or outside the Lessons folder.
+    const lessonM = /^\/api\/pages\/([0-9a-f-]{36})$/.exec(path);
+    if (
+      lessonM &&
+      method === 'GET' &&
+      [LESSONS.lesson.id, LESSONS.stray.id, LESSONS.note.id].includes(lessonM[1]! as never)
+    ) {
+      const yaml =
+        lessonM[1] === LESSONS.lesson.id
+          ? LESSONS.yaml
+          : lessonM[1] === LESSONS.note.id
+            ? LESSONS.noteYaml
+            : 'title: Stray\nsteps:\n  - say: x';
+      return (
+        json(res, 200, {
+          page: {
+            id: lessonM[1],
+            mayEdit: role === 'admin',
+            doc: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'codeBlock',
+                  attrs: { language: 'lesson' },
+                  content: [{ type: 'text', text: yaml }],
+                },
+              ],
+            },
+            draft: null,
+          },
+        }),
+        true
+      );
     }
     const pageM = /^\/api\/pages\/([0-9a-f-]{36})$/.exec(path);
     if (pageM && method === 'GET') {
@@ -766,7 +946,14 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     const url = new URL(req.url ?? '/', MOCK_API_ORIGIN);
     const path = url.pathname;
     const role = roleOfToken(req.headers.authorization);
-    state.requests.push({ method, path, query: url.search, role: role ?? 'anon' });
+    const agentCall = req.headers['x-mantle-agent-call'];
+    state.requests.push({
+      method,
+      path,
+      query: url.search,
+      role: role ?? 'anon',
+      ...(typeof agentCall === 'string' ? { agentCall } : {}),
+    });
     if (state.down) return send(res, 502, 'text/html', '<h1>502 Bad Gateway</h1>');
 
     if (PUBLIC.some((re) => re.test(path))) {
@@ -796,6 +983,46 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
 
     if (EVERY_LOGIN.some((re) => re.test(path))) {
       if (path === '/api/shell') return json(res, 200, shell(role));
+      // A turn: 202 with the id minted from the session and the key, never
+      // the key itself; the reply comes over the stream.
+      if (path === '/api/assistant/turn' && method === 'POST') {
+        const raw = await readBody(req);
+        const key = String(req.headers['idempotency-key'] ?? '');
+        let windowId: unknown;
+        try {
+          windowId = (JSON.parse(raw) as { windowId?: unknown }).windowId;
+        } catch {
+          windowId = undefined;
+        }
+        const turnId = `${role === 'admin' ? 'turn' : 'ws'}-${LOGINS[role].loginId}.${key}`;
+        state.turns.push({ role, key, turnId, windowId });
+        return json(res, 202, { turnId, stream: true });
+      }
+      const turnM = /^\/api\/assistant\/turn\/([^/]+)\/(stream|cancel)$/.exec(path);
+      if (turnM) {
+        const own = state.turns.some((t) => t.turnId === turnM[1] && t.role === role);
+        if (!own) return json(res, 404, { error: 'not found' });
+        if (turnM[2] === 'cancel') return json(res, 200, { ok: true });
+        res.writeHead(200, {
+          ...cors,
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-store',
+        });
+        res.write(':\n\n');
+        for (const ev of state.turnEvents) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+        return;
+      }
+      if (path === '/api/assistant/messages') return json(res, 200, { messages: [] });
+      // The chat a turn is sent from: one agent, an empty thread.
+      if (path === '/api/assistant/thread') {
+        const agent = { id: MOCK_AGENT.id, slug: MOCK_AGENT.slug, name: MOCK_AGENT.name };
+        return json(res, 200, {
+          agents: [{ ...agent, role: 'assistant', model: 'mock' }],
+          agent: { ...agent, model: 'mock', avatar: null },
+          messages: [],
+          assigned: null,
+        });
+      }
       if (path === '/api/profile/home-desk') {
         const stored = state.desks[role] ?? { homeDesk: null, version: 0 };
         if (method === 'GET') return json(res, 200, stored);
@@ -815,6 +1042,37 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           const saved = { homeDesk: body.homeDesk, version: stored.version + 1 };
           state.desks[role] = saved;
           return json(res, 200, saved);
+        }
+      }
+      // A window's answer to an in-app agent's ui call: kept for the spec.
+      const uiM = /^\/api\/assistant\/turn\/([^/]+)\/ui\/([0-9a-f-]{36})$/.exec(path);
+      if (uiM && method === 'POST') {
+        const body = JSON.parse((await readBody(req)) || '{}') as {
+          windowId?: unknown;
+          result?: unknown;
+        };
+        state.uiAnswers.push({
+          role,
+          turnId: uiM[1]!,
+          callId: uiM[2]!,
+          windowId: body.windowId,
+          result: body.result,
+        });
+        return json(res, 200, { ok: true });
+      }
+      // "Let agents use this window" (agent UI phase 3): the login's own.
+      if (path === '/api/profile/agent-ui') {
+        if (method === 'GET') return json(res, 200, { enabled: state.agentUi[role] === true });
+        if (method === 'PUT') {
+          const body = JSON.parse((await readBody(req)) || '{}') as {
+            enabled?: unknown;
+            loginId?: unknown;
+          };
+          if (body.loginId !== LOGINS[role].loginId) {
+            return json(res, 403, { error: 'login-mismatch', code: 'login-mismatch' });
+          }
+          state.agentUi[role] = body.enabled === true;
+          return json(res, 200, { enabled: state.agentUi[role] });
         }
       }
       if (path === '/api/profile/sounds') {

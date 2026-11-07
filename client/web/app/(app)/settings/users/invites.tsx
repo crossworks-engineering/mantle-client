@@ -203,8 +203,11 @@ export function InviteDialog({
               <Field>
                 <FieldLabel htmlFor="invite-link">Invite link</FieldLabel>
                 <div className="flex items-center gap-2">
+                  {/* data-secret: an agent driving the window never reads it
+                      (lib/agent-ui). */}
                   <Input
                     id="invite-link"
+                    data-secret=""
                     readOnly
                     value={inviteLink(window.location.origin, created.linkPath)}
                     onFocus={(e) => e.currentTarget.select()}
@@ -226,6 +229,7 @@ export function InviteDialog({
                 <div className="flex items-center gap-2">
                   <Input
                     id="invite-code"
+                    data-secret=""
                     readOnly
                     value={created.code}
                     className="font-mono"

@@ -3,14 +3,15 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Button } from '@mantle/web-ui/ui/button';
-import { AssistantButton, HighlightButton } from '@/components/assistant/assistant-dock';
+import { AssistantButton } from '@/components/assistant/assistant-dock';
+import { CaptureButton } from '@/components/assistant/area-capture';
 import { HelpLauncher } from '@/components/help/help-launcher';
 import { useShellRole } from '@/components/layout/shell-role';
 
 /**
  * The strip at the foot of the rail, and the last of the old footer bar. Four
  * controls in the order they are reached for: collapse the rail, explain this
- * screen, pick content to hand over, talk to the assistant.
+ * screen, capture an area to hand over, talk to the assistant.
  *
  * Three icons and one label, not four of either. The Assistant is the anchor of
  * the strip and the only one worth a word at this width; naming all four would
@@ -34,16 +35,17 @@ export function RailToolbar({
   showCollapse?: boolean;
   /** Drawer only: fired (capture phase) on any toolbar click, closing the
    *  drawer BEFORE the launcher's own handler opens its surface. The assistant
-   *  panel (z-20), help rail (z-20) and pick mode (z-40) all render behind the
+   *  panel (z-20) and help rail (z-20) render behind the
    *  modal Sheet (z-50), so a launcher tapped inside the open drawer would
    *  otherwise appear to do nothing. Capture runs first in the same dispatch,
    *  and React processes the whole queue before re-rendering, so the button's
    *  handler still fires after the drawer state flips. */
   onLaunch?: () => void;
 }) {
-  // The launchers by the brain's role: help, marker pick and the Assistant
-  // for an admin; the same Assistant for a member, on its own threads (W7c:
-  // no pending questions, its own unread count); none for a client (no
+  // The launchers by the brain's role: help for an admin; the area capture
+  // and the Assistant for an admin and a member (a member's on its own
+  // threads, W7c: no pending questions, its own unread count, and its
+  // screenshots land in its private workspace); none for a client (no
   // client chat yet).
   const role = useShellRole();
   return (
@@ -75,11 +77,9 @@ export function RailToolbar({
         </Button>
       )}
 
-      {role === 'admin' ? (
-        <>
-          <HelpLauncher />
-          <HighlightButton />
-        </>
+      {role === 'admin' ? <HelpLauncher /> : null}
+      {role === 'admin' || role === 'member' ? (
+        <CaptureButton canAttach={role === 'admin'} />
       ) : null}
 
       {/* Pushed to the far end of the row so the strip reads as "three utilities,

@@ -76,6 +76,7 @@ describe('every item kind the brain creates names the workspace', () => {
       '/api/formulas',
       '/api/presents',
       '/api/recall/maps',
+      '/api/screenshots',
     ]) {
       expect(isCreateRoute(p), p).toBe(true);
     }

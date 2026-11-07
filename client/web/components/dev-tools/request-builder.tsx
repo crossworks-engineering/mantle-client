@@ -189,6 +189,7 @@ function EnvironmentControls() {
                   keyPlaceholder="variable"
                   valuePlaceholder="value — use as {{variable}}"
                   addLabel="Add variable"
+                  secretValues
                 />
               </div>
             ))}
@@ -520,6 +521,7 @@ export function RequestBuilder() {
                   keyPlaceholder="query key"
                   valuePlaceholder="value — {{vars}} allowed"
                   addLabel="Add param"
+                  secretValues
                 />
               </TabsContent>
 
@@ -530,6 +532,7 @@ export function RequestBuilder() {
                   keyPlaceholder="header"
                   valuePlaceholder="value — {{secret:service/label}} allowed"
                   addLabel="Add header"
+                  secretValues
                 />
                 <p className="pt-2 text-[11px] text-muted-foreground">
                   Vault refs like <code className="font-mono">{'{{secret:mapbox/default}}'}</code>{' '}
@@ -575,6 +578,9 @@ export function RequestBuilder() {
                 </div>
                 {draft.body.mode !== 'none' && (
                   <Textarea
+                    // data-secret: a body may carry a credential; an agent
+                    // driving the window never reads it (lib/agent-ui).
+                    data-secret=""
                     value={draft.body.text}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, body: { ...d.body, text: e.target.value } }))
@@ -616,7 +622,10 @@ export function RequestBuilder() {
                 {draft.auth.mode === 'bearer' && (
                   <div className="space-y-1.5">
                     <Label className="text-xs">Token</Label>
+                    {/* data-secret: an agent driving the window never reads or
+                        types in it (lib/agent-ui). */}
                     <Input
+                      data-secret=""
                       value={draft.auth.token ?? ''}
                       onChange={(e) =>
                         setDraft((d) => ({ ...d, auth: { ...d.auth, token: e.target.value } }))

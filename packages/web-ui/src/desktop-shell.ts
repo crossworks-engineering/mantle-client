@@ -53,6 +53,11 @@ export type DesktopShellApi = {
     /** The email to prefill, once, when this window was opened by the above. */
     takeLoginHint(): Promise<{ email: string } | null>;
   };
+  /** Capture a rectangle of this window (CSS pixels of the viewport) as PNG
+   *  bytes, at the screen's scale, with no prompt (area screenshots,
+   *  lib/area-capture.ts). Optional: older shells and the Tauri shell lack
+   *  it, and the page falls back to the browser's tab share. */
+  capture?(rect: { x: number; y: number; w: number; h: number }): Promise<Uint8Array>;
   /** Company sign-in (newer shells only): open a sign-in on this window's brain
    *  in the system browser. The flow comes back as `mantle://oidc`, and the
    *  shell loads it on this window's /auth/oidc. False: not opened (the shell

@@ -72,6 +72,7 @@
     "./share/table-presenter": "./src/share/table-presenter.tsx",
     "./session-registry": "./src/session-registry.ts",
     "./session-switch": "./src/session-switch.ts",
+    "./login-change-guard": "./src/login-change-guard.ts",
     "./use-sessions": "./src/use-sessions.ts",
     "./sign-out": "./src/sign-out.ts",
     "./slugify": "./src/slugify.ts",

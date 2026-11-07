@@ -49,6 +49,8 @@ import { HelpRailProvider, useHelpRail } from '@/components/help/help-rail-conte
 import { HelpRail } from '@/components/help/help-rail';
 import { TourProvider } from '@/components/tour/tour-provider';
 import { TourOverlay } from '@/components/tour/tour-overlay';
+import { AgentOverlay } from '@/components/agent-ui/agent-overlay';
+import { Lessons } from '@/components/lessons/lessons';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { MessengerShell } from '@/components/messenger/messenger-shell';
@@ -57,7 +59,6 @@ import { RingCard } from '@/components/calls/ring-card';
 import { LinkGate } from '@/components/oidc/link-gate';
 import { OfferCard } from '@/components/oidc/offer-card';
 import { ProviderAlertBanner } from '@/components/needs-you/provider-alert-banner';
-import { PickMode } from '@/components/assistant/pick-mode';
 import { UpdateNotice } from '@/components/update-notice/update-notice';
 import { ZenModeContext } from '@/components/layout/zen-mode';
 import { SearchPalette } from '@/components/search/search-palette';
@@ -579,7 +580,7 @@ function ShellFrame({
         onToggleNav={toggleNav}
         showCollapse={!inDrawer}
         // The launchers open surfaces that live BEHIND the modal drawer
-        // (assistant z-20, help z-20, pick-mode z-40 vs the Sheet's z-50), so
+        // (assistant z-20, help z-20 vs the Sheet's z-50), so
         // in the drawer every toolbar tap must also close it or the tap
         // appears dead. Not wired to navigation like the other bands' —
         // launchers don't navigate — hence its own prop.
@@ -746,10 +747,13 @@ function ShellFrame({
             See components/tour. */}
         <TourOverlay />
 
-        {/* Marker pick mode: highlights markable rows + intercepts their clicks
-            while picking; renders nothing otherwise. It hands to the owner
-            assistant: an admin's. */}
-        {role === 'admin' ? <PickMode /> : null}
+        {/* While an agent drives this window (a lesson): its cursor, its
+            spotlight, the Stop bar and the per-turn question.
+            Renders nothing otherwise. See lib/agent-ui. */}
+        <AgentOverlay />
+        {/* Lessons: the picker, a link's "Start this lesson?", and the card
+            that plays one with the agent's hands. A client login has none. */}
+        {role === 'admin' || role === 'member' ? <Lessons /> : null}
 
         {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}

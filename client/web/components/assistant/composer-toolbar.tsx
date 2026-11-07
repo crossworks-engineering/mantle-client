@@ -1,8 +1,8 @@
-import { Loader2, MapPin, Mic, MicOff, Paperclip, SquareDashedMousePointer } from 'lucide-react';
+import { Loader2, MapPin, Mic, MicOff, Paperclip } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 
 /**
- * The composer's controls: attach, pick, share-location, mic, a row at the
+ * The composer's controls: attach, share-location, mic, a row at the
  * left of the action row along the bottom of the box (Send at its right).
  *
  * Lifted out of `assistant-client` when converting it off raw `<button>` —
@@ -19,7 +19,6 @@ export function ComposerToolbar({
   agentReady,
   sending,
   onAttachClick,
-  onPick,
   shareLocation,
   onToggleShareLocation,
   recording,
@@ -31,8 +30,6 @@ export function ComposerToolbar({
   sending: boolean;
   /** null: no attach button (a chat that takes text only, W7c). */
   onAttachClick: (() => void) | null;
-  /** null: no pick button (pick mode is an Admin user's). */
-  onPick: (() => void) | null;
   shareLocation: boolean;
   onToggleShareLocation: () => void;
   recording: boolean;
@@ -56,21 +53,6 @@ export function ComposerToolbar({
           aria-label="Attach images or documents"
         >
           <Paperclip aria-hidden />
-        </Button>
-      )}
-      {/* Marker — enter pick mode (minimises the chat) to attach
-                      files, pages, notes… as context for the next turn. */}
-      {onPick && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onPick}
-          disabled={!agentReady || sending}
-          className="text-muted-foreground"
-          title="Pick content to attach (files, pages, notes…)"
-          aria-label="Pick content to attach"
-        >
-          <SquareDashedMousePointer aria-hidden />
         </Button>
       )}
       {/* Share-location toggle — sticky opt-in. When on, each send

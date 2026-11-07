@@ -1,5 +1,6 @@
 import { apiUrl, resetCookieUpgrade, withAuth } from './api-fetch';
 import { setAssetToken } from './asset-url';
+import { loginChangeBlocked } from './login-change-guard';
 import { runSignOutResets } from './session-reset';
 import { activeLogin, activeSession, forgetSessions } from './session-registry';
 import { tokenStore } from './token-store';
@@ -48,6 +49,8 @@ export { onSignOut } from './session-reset';
  * login held on this device is left exactly as it was.
  */
 export async function performSignOut(): Promise<void> {
+  // An agent driving the window never signs the login out (login-change-guard).
+  if (loginChangeBlocked()) return;
   // Everything about WHO is signing out is read before the first await:
   // another tab can switch logins while the revoke is in flight, and the
   // login it switched to is not this sign-out's to forget or to revoke.

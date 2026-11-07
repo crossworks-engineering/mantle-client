@@ -222,6 +222,7 @@ export function SecretForm({
         <FormField>
           <FieldLabel htmlFor="secret-note">Note (encrypted)</FieldLabel>
           <Textarea
+            data-secret=""
             id="secret-note"
             value={form.note}
             onChange={(e) => setForm({ ...form, note: e.target.value })}

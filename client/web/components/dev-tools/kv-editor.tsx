@@ -19,12 +19,17 @@ export function KvEditor({
   keyPlaceholder = 'key',
   valuePlaceholder = 'value',
   addLabel = 'Add row',
+  secretValues = false,
 }: {
   entries: KeyValueEntry[];
   onChange: (next: KeyValueEntry[]) => void;
   keyPlaceholder?: string;
   valuePlaceholder?: string;
   addLabel?: string;
+  /** The values may hold a credential (a header, a query param, an
+   *  environment variable): `data-secret`, so an agent driving the window
+   *  never reads or types in them (lib/agent-ui). */
+  secretValues?: boolean;
 }) {
   const update = (id: string, patch: Partial<KeyValueEntry>) =>
     onChange(entries.map((e) => (e.id === id ? { ...e, ...patch } : e)));
@@ -45,6 +50,7 @@ export function KvEditor({
             className="h-8 flex-1 font-mono text-xs"
           />
           <Input
+            {...(secretValues ? { 'data-secret': '' } : {})}
             value={e.value}
             onChange={(ev) => update(e.id, { value: ev.target.value })}
             placeholder={valuePlaceholder}

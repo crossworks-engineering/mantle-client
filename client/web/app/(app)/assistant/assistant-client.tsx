@@ -106,13 +106,13 @@ export function AssistantClient({
     removeContext,
     dismissPinnedContext,
     clearContext,
-    startPicking,
     registerTurnListener,
     attachContext,
   } = useAssistantDock();
   // Everything that rides this turn as context: the screen-pinned node (the open
-  // page/table/app) PLUS any pick-mode chips, deduped. Pinned nodes survive a
-  // send (they stay attached while you're on the screen); pick-mode chips clear.
+  // page/table/app) PLUS any attached chips (uploads, screenshots), deduped.
+  // Pinned nodes survive a send (they stay attached while you're on the
+  // screen); attached chips clear.
   const pickedContext = useMemo(() => {
     const seen = new Set(pinnedContext.map((r) => r.id));
     return pendingContext.filter((r) => !seen.has(r.id));
@@ -231,9 +231,14 @@ export function AssistantClient({
   // when the route returns 202; consumed by the phase effect on done/error).
   // `startedAt` lets the safety poll find the turn's outbound row even if the
   // `turn-start` event (which carries the id) was missed.
-  const pendingTurnRef = useRef<{ optimisticId: string; turnId: string; startedAt: string } | null>(
-    null,
-  );
+  const pendingTurnRef = useRef<{
+    optimisticId: string;
+    /** The 202's turn id: the stream and Stop use it. */
+    turnId: string;
+    /** This send's key: the dock's settle signal names it. */
+    idempotencyKey: string;
+    startedAt: string;
+  } | null>(null);
   const [error, setError] = useState<string>();
   // An over-long message that was parked in a note — shown as a normal (not
   // destructive) line with a link, so the user can open what was sent.
@@ -954,9 +959,9 @@ export function AssistantClient({
     setDraft('');
     // This turn supersedes any follow-up chip (accepted or ignored alike).
     dismissSuggestion();
-    // Open the live status stream for this turn (same uuid the server keys it
-    // on) the instant we start — before the POST — so we catch the early steps.
-    setActiveTurnId(idempotencyKey);
+    // The live status stream opens on the turn id the brain's 202 gives
+    // (`turn-<loginId>.<key>`), never on the idempotency key: the stream,
+    // Stop and the supersede cancel all take that id.
     setSending(true);
 
     try {
@@ -1045,9 +1050,11 @@ export function AssistantClient({
         // done/error. Hand them the turn — keep the optimistic bubble + spinner.
         pendingTurnRef.current = {
           optimisticId,
-          turnId: idempotencyKey,
+          turnId: data.turnId,
+          idempotencyKey,
           startedAt: optimistic.createdAt,
         };
+        setActiveTurnId(data.turnId);
         if (data.warnings?.length) setError(data.warnings.join(' · '));
       }
     } catch (err) {
@@ -1299,7 +1306,7 @@ export function AssistantClient({
                 question without leaving the screen. Focused-section chips (the
                 Pages gutter marks, with a snippet of each marked block) follow,
                 so it's unambiguous the assistant sees exactly what you selected.
-                Pick-mode chips come last and clear after a send. */}
+                Attached chips come last and clear after a send. */}
             {linkedUploads.length > 0 && (
               <div className="flex flex-wrap gap-1.5" aria-live="polite">
                 {linkedUploads.map((u) => (
@@ -1565,7 +1572,6 @@ export function AssistantClient({
                     onAttachClick={
                       features.attachments ? () => fileInputRef.current?.click() : null
                     }
-                    onPick={features.pick ? startPicking : null}
                     shareLocation={shareLocation}
                     onToggleShareLocation={() => void toggleShareLocation()}
                     recording={recording}

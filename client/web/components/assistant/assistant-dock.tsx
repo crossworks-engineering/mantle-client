@@ -1,6 +1,13 @@
 'use client';
 
 import {
+  claimTurn,
+  endAgentTurn,
+  handleUiCall,
+  loadAgentUiSetting,
+  withWindowId,
+} from '@/lib/agent-ui/turn-calls';
+import {
   createContext,
   useCallback,
   useContext,
@@ -17,7 +24,6 @@ import {
   PanelRight,
   PictureInPicture2,
   Sparkles,
-  SquareDashedMousePointer,
 } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
@@ -66,7 +72,9 @@ export type TurnResponse = {
  *  turn id (202) — the reply then arrives over the live stream, and the caller
  *  reconciles to the durable row. The dock drives its own mini-chat off the
  *  stream in that case; the /assistant page reconciles its transcript. */
-export type TurnAck = { turnId: string; warnings?: string[] };
+/** `stream`: the brain streams this turn live (a member's turn too, on a
+ *  brain that streams them); absent from an older brain. */
+export type TurnAck = { turnId: string; warnings?: string[]; stream?: boolean };
 export type TurnPostResult = TurnResponse | TurnAck;
 
 export type RunTurnInput = {
@@ -95,7 +103,7 @@ export type AssistantPanelState = 'closed' | 'open' | 'min';
 
 /** The content surfaces that can be attached as assistant context — the single
  *  source of truth for the set. `ContextKind` is derived from it, so runtime
- *  consumers (pick-mode's guard) and the type cannot drift apart: adding a kind
+ *  consumers and the type cannot drift apart: adding a kind
  *  here is the only edit needed.
  *
  *  Every entry names a `nodes.type` in the brain, but see `ContextRef` — that
@@ -211,7 +219,7 @@ type AssistantDockApi = {
   setActiveAgentSlug: (slug?: string) => void;
   // ── surface-pinned context (the open page/table/app rides every turn) ──
   /** A node pinned by the current screen — sent with EVERY turn (survives a send,
-   *  unlike pick-mode chips) so the specialist always knows what you're editing. */
+   *  unlike attached chips) so the specialist always knows what you're editing. */
   pinnedContext: ContextRef[];
   /** Replace the pinned set (the surface hook owns this; cleared on leave). */
   setPinnedContext: (refs: ContextRef[]) => void;
@@ -278,23 +286,15 @@ type AssistantDockApi = {
   /** Subscribe to turn-settled events; returns an unsubscribe. A surface hook
    *  uses this to refresh its editor when a turn that edited its node completes. */
   registerTurnListener: (fn: TurnSettledListener) => () => void;
-  // ── marker context-pick (consumed by <PickMode/>, the composer, the bubbles) ──
-  /** Nodes marked to ride along with the next turn as context. */
+  // ── hand-attached context (chat uploads, area screenshots, the bubbles) ──
+  /** Nodes attached to ride along with the next turn as context. */
   pendingContext: ContextRef[];
-  /** Add a marked node (deduped by id, capped). */
+  /** Attach a node (deduped by id, capped). */
   attachContext: (ref: ContextRef) => void;
-  /** Drop one marked node. */
+  /** Drop one attached node. */
   removeContext: (id: string) => void;
-  /** Clear all marked nodes (called after a successful send). */
+  /** Clear all attached nodes (called after a successful send). */
   clearContext: () => void;
-  /** True while in pick mode — the screen behind highlights markable rows. */
-  picking: boolean;
-  /** Enter pick mode (also minimises an open panel so the screen is navigable). */
-  startPicking: () => void;
-  /** Leave pick mode. */
-  stopPicking: () => void;
-  /** picking ⇄ not — what the marker bubble toggles. */
-  togglePicking: () => void;
 };
 
 /**
@@ -327,9 +327,6 @@ type DockActions = Pick<
   | 'setDockWidth'
   | 'setDockResizing'
   | 'registerTurnListener'
-  | 'startPicking'
-  | 'stopPicking'
-  | 'togglePicking'
 >;
 type DockLayout = Pick<
   AssistantDockApi,
@@ -348,7 +345,6 @@ type DockSession = Pick<
   | 'surfaceSelection'
   | 'surfaceChanges'
   | 'activeContextNodeId'
-  | 'picking'
 >;
 
 /** Compile-time proof that the three partitions cover every field. Add one to
@@ -431,6 +427,9 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const [messages, setMessages] = useState<DockMsg[]>([]);
   const [agentSlug, setAgentSlug] = useState<string | undefined>(undefined);
   const [agentName, setAgentName] = useState('Assistant');
+  const agentNameRef = useRef(agentName);
+  agentNameRef.current = agentName;
+
   const agentRef = useRef<string | undefined>(undefined);
   // The live-stream routes of a turn are an Admin user's (W7c): any other
   // login's reply is read from its thread by the safety poll below. A ref,
@@ -438,6 +437,13 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const adminUser = useIsAdminUser();
   const adminUserRef = useRef(adminUser);
   adminUserRef.current = adminUser;
+  // Whether this login lets agents use the window (lib/agent-ui/turn-calls):
+  // read once, so a turn can name the window. Every login with a chat (an
+  // Admin user or a member); a brain whose member turns do not stream never
+  // offers a member the ui tools, so the setting changes nothing there.
+  useEffect(() => {
+    void loadAgentUiSetting();
+  }, []);
 
   // ── Global panel UI state ──
   const [panel, setPanel] = useState<AssistantPanelState>('closed');
@@ -450,9 +456,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   }, [panel]);
   const [activeAgentSlug, setActiveAgentSlugState] = useState<string | undefined>(undefined);
 
-  // ── Marker context-pick state ──
+  // ── Hand-attached context ──
   const [pendingContext, setPendingContext] = useState<ContextRef[]>([]);
-  const [picking, setPicking] = useState(false);
   // ── Surface-pinned context + focus directive (owned by the surface hook) ──
   const [pinnedContextRaw, setPinnedContextState] = useState<ContextRef[]>([]);
   // Pinned refs the user dismissed via the composer "×" — they want a general
@@ -709,7 +714,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
   const attachContext = useCallback((ref: ContextRef) => {
     setPendingContext((prev) => {
-      if (prev.some((r) => r.id === ref.id)) return prev; // already marked
+      if (prev.some((r) => r.id === ref.id)) return prev; // already attached
       if (prev.length >= MAX_CONTEXT) return prev; // cap — silently ignore extras
       return [...prev, ref];
     });
@@ -719,18 +724,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
     [],
   );
   const clearContext = useCallback(() => setPendingContext([]), []);
-
-  const startPicking = useCallback(() => {
-    setPicking(true);
-    setPanel((p) => (p === 'open' ? 'min' : p)); // free the screen to navigate + click rows
-  }, []);
-  const stopPicking = useCallback(() => setPicking(false), []);
-  const togglePicking = useCallback(() => {
-    setPicking((on) => {
-      if (!on) setPanel((p) => (p === 'open' ? 'min' : p));
-      return !on;
-    });
-  }, []);
 
   // Seed the selected agent from the pref the picker writes, so the panel
   // opens on your last-used agent without a URL param. Kept URI-encoded, as
@@ -750,7 +743,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const openAssistant = useCallback(
     (slug?: string) => {
       if (slug) setActiveAgentSlug(slug);
-      setPicking(false); // opening the full chat ends any in-progress pick
       setPanel('open');
     },
     [setActiveAgentSlug],
@@ -759,7 +751,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const close = useCallback(() => setPanel('closed'), []);
   const toggle = useCallback(() => {
     setPanel((p) => (p === 'open' ? 'min' : 'open'));
-    setPicking(false); // showing the chat (or minimising it) ends pick mode
   }, []);
 
   // ⌘I / Ctrl+I toggles the panel. Registered HERE, once per app, not in
@@ -820,6 +811,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       botId: string,
       target: { agentSlug?: string; nodeId: string | null },
       sinceIso: string,
+      /** The brain said this turn streams (its 202's `stream`). */
+      streams = false,
     ) => {
       // A new turn supersedes whatever was still streaming.
       stopDockStream();
@@ -829,9 +822,11 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       // The reply row's durable id, once `turn-start` says it. The safety poll
       // reads it lazily, and falls back to pairing by time when it never comes.
       let outboundId: string | null = null;
-      // No live stream for a login that is not an Admin user (W7c): the poll
-      // alone reads the reply, so it may give up as if the stream had died.
-      const live = adminUserRef.current;
+      // An Admin user's turn always streams. Anyone else's streams when the
+      // brain says so in its 202 (`stream: true`, member turns stream since
+      // agent UI phase 3); else the poll alone reads the reply, so it may
+      // give up as if the stream had died (W7c).
+      const live = adminUserRef.current || streams;
       let streamDead = !live;
       const subscribedAt = Date.now();
 
@@ -849,6 +844,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
         if (settled) return;
         settled = true;
         stopDockStream();
+        endAgentTurn(turnId);
         setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, ...patch } : m)));
         fireTurnSettled({
           agentSlug: target.agentSlug,
@@ -874,6 +870,11 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
               }
               if (ev.type === 'turn-start') {
                 if (typeof ev.data?.outboundId === 'string') outboundId = ev.data.outboundId;
+                return;
+              }
+              // An in-app agent's ui tool call for this window (agent UI).
+              if ((ev as { type: string }).type === 'ui-call') {
+                void handleUiCall(turnId, ev.data, agentNameRef.current);
                 return;
               }
               if (ev.type === 'text-delta' && typeof ev.data?.text === 'string') {
@@ -1012,6 +1013,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       // up but upstream is alive → re-attach, don't surface it.)
       const headers: Record<string, string> = { 'idempotency-key': input.idempotencyKey };
       if (input.isJson) headers['content-type'] = 'application/json';
+      // The turn names this window when the login lets agents use it.
+      const turnBody = withWindowId(input.body, input.isJson);
       const RETRY_DEADLINE_MS = 6 * 60_000;
       const startedAt = Date.now();
       let attempt = 0;
@@ -1023,7 +1026,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
           try {
             res = await fetch(
               apiUrl('/api/assistant/turn'),
-              withAuth({ method: 'POST', headers, body: input.body }),
+              withAuth({ method: 'POST', headers, body: turnBody }),
             );
           } catch {
             // Network drop / connection reset mid-turn — the turn is still
@@ -1065,6 +1068,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
               // bot bubble pending and let the stream type it out + settle it.
               // plus the durable-row safety poll, bounded in the SERVER's clock
               // (the ack's Date header) so client clock skew cannot hide the row.
+              // Its ui calls run in this window, and no other.
+              claimTurn(data.turnId, res.headers.get('date'));
               subscribeDockTurn(
                 data.turnId,
                 botId,
@@ -1074,6 +1079,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
                   firstSentAtMs: startedAt,
                   nowMs: Date.now(),
                 }),
+                data.stream === true,
               );
               return data;
             }
@@ -1127,9 +1133,9 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
   // ── Three contexts, not one ────────────────────────────────────────────────
   // This was ONE value of 45 fields memoised on all 45, so a change to any of
-  // them re-rendered every consumer. Measured on /tasks: toggling `picking` —
-  // which only <PickMode/> reads — re-rendered the 630-line app shell and the
-  // question watcher just as often as PickMode itself. `messages` is in here
+  // them re-rendered every consumer. Measured on /tasks: toggling the old pick
+  // mode's flag, which one overlay read, re-rendered the 630-line app shell and
+  // the question watcher just as often as that overlay. `messages` is in here
   // too, so that fan-out fired on every streaming token.
   //
   // Split by WHAT CHANGES, which turned out to match what consumers ask for:
@@ -1163,9 +1169,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       setDockWidth,
       setDockResizing,
       registerTurnListener,
-      startPicking,
-      stopPicking,
-      togglePicking,
     }),
     [
       runTurn,
@@ -1192,9 +1195,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       setDockWidth,
       setDockResizing,
       registerTurnListener,
-      startPicking,
-      stopPicking,
-      togglePicking,
     ],
   );
 
@@ -1228,7 +1228,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       surfaceSelection,
       surfaceChanges,
       activeContextNodeId,
-      picking,
     }),
     [
       messages,
@@ -1242,7 +1241,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       surfaceSelection,
       surfaceChanges,
       activeContextNodeId,
-      picking,
     ],
   );
 
@@ -1386,7 +1384,7 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
           label there regardless. */}
       <span className="truncate group-data-[nav-collapsed=true]/shell:hidden">Assistant</span>
       {needsYou ? (
-        /* Corner badge, same shape as HighlightButton's attachment count —
+        /* Corner badge, a small count pip,
            absolutely positioned so it adds NO min-content width (see the
            className comment above). aria-hidden: the count is already in the
            accessible name. */
@@ -1403,55 +1401,6 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
             aria-hidden
           />
         )
-      )}
-    </Button>
-  );
-}
-
-/**
- * Highlight-content button — the "pick context first" entry point in the rail
- * toolbar. Toggles pick mode (<PickMode/> highlights markable rows on the screen
- * behind); a trailing count shows how many nodes are attached.
- */
-export function HighlightButton() {
-  const { picking, togglePicking, pendingContext } = useAssistantDock();
-  const count = pendingContext.length;
-
-  return (
-    /* Icon-only: this lives in the rail's bottom toolbar, where "Highlight
-       content" is three times the width of the column's whole control strip.
-       Active state is the accent surface rather than `variant="default"` — it
-       matches the help launcher beside it, and it leaves `primary` free to mean
-       the attachment count (a primary pip on a primary fill is invisible). */
-    <Button
-      onClick={togglePicking}
-      size="icon"
-      variant="ghost"
-      className={cn(
-        'relative size-8',
-        picking &&
-          'bg-accent text-accent-foreground ring-2 ring-ring ring-offset-1 ring-offset-sidebar',
-      )}
-      aria-pressed={picking}
-      aria-label={
-        picking
-          ? 'Stop highlighting'
-          : `Highlight content to send to the assistant${count > 0 ? ` — ${count} attached` : ''}`
-      }
-      title={
-        picking
-          ? 'Picking — click a row to attach (Esc when done)'
-          : 'Highlight content to send to the assistant'
-      }
-    >
-      <SquareDashedMousePointer aria-hidden />
-      {count > 0 && (
-        <span
-          className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-sidebar"
-          aria-hidden
-        >
-          {count}
-        </span>
       )}
     </Button>
   );

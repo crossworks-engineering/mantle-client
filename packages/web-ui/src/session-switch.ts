@@ -1,5 +1,6 @@
 import { apiUrl, resetCookieUpgrade } from './api-fetch';
 import { setAssetToken } from './asset-url';
+import { loginChangeBlocked } from './login-change-guard';
 import { isCrossOrigin } from './runtime-env';
 import { runSessionFlushes } from './session-flush';
 import {
@@ -140,6 +141,8 @@ async function moveCookieTo(token: string): Promise<void> {
 }
 
 export async function switchSession(id: string, to: string = '/'): Promise<SwitchOutcome> {
+  // An agent driving the window never switches the login (login-change-guard).
+  if (loginChangeBlocked()) return 'unavailable';
   const session = listSessions().find((s) => s.id === id);
   if (!session) return 'unavailable';
   if (session.origin !== currentBrainOrigin()) return 'other-brain';
@@ -173,6 +176,7 @@ export async function switchSession(id: string, to: string = '/'): Promise<Switc
  * landing differs. Always ends in a page load.
  */
 export async function signOutActive(): Promise<void> {
+  if (loginChangeBlocked()) return;
   const revoked = tokenStore.get();
   await performSignOut();
   for (const next of switchableSessions()) {
@@ -195,6 +199,7 @@ export async function signOutActive(): Promise<void> {
  * listed because a brain was down.
  */
 export async function signOutSession(id: string): Promise<void> {
+  if (loginChangeBlocked()) return;
   if (activeSession()?.id === id) return signOutActive();
   const session = listSessions().find((s) => s.id === id);
   const token = sessionToken(id);
@@ -216,6 +221,7 @@ export async function signOutSession(id: string): Promise<void> {
  *  is gone. Its bearer stays valid there until it expires or is revoked from
  *  that brain's own device list, which is what the screen says. */
 export async function forgetSession(id: string): Promise<void> {
+  if (loginChangeBlocked()) return;
   const wasActive = activeSession()?.id === id;
   removeSession(id);
   if (!wasActive) return;

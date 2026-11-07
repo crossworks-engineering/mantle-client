@@ -321,8 +321,10 @@ function NewKeyPanel({
   onDone: () => void;
 }) {
   const ex = exampleCommands(origin, minted.secret);
+  // data-secret: the key shows here in full, so an agent reading the window
+  // sees none of this block.
   return (
-    <div className="space-y-3 border-b border-border bg-primary/5 p-4 md:p-5">
+    <div data-secret="" className="space-y-3 border-b border-border bg-primary/5 p-4 md:p-5">
       <p className="text-sm">
         <span className="font-medium">{minted.name}</span> is ready. Copy the key now: it is shown
         only once. Keep it like a password.
