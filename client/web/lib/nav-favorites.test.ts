@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { Bot, Palette, User, type LucideIcon } from 'lucide-react';
 import type { NavGroup } from '@mantle/web-ui/layout/nav-items';
 import {
+  favoriteEntries,
+  favoriteItemHref,
   favoriteItems,
+  itemFavoriteHref,
+  moved,
+  pruned,
   readFavorites,
   toggleFavoriteIn,
   type FavoritesStore,
+  type NavFavoriteItem,
 } from './nav-favorites';
 import { activeNavHref } from './nav-active';
 
@@ -205,5 +211,69 @@ describe('favourites per login', () => {
     const store = keyedStore({ [KEY]: JSON.stringify(['/pages']) });
     toggleFavoriteIn(store, '/pages', 'session-a');
     expect(readFavorites(store, 'session-a')).toEqual([]);
+  });
+});
+
+describe('favorite items (an app, a page, a file...)', () => {
+  const PAGE = '11111111-1111-4111-8111-111111111111';
+  const FILE = '22222222-2222-4222-8222-222222222222';
+  const GONE = '33333333-3333-4333-8333-333333333333';
+  const page: NavFavoriteItem = {
+    href: itemFavoriteHref(PAGE),
+    id: PAGE,
+    kind: 'pages',
+    title: 'Plan',
+    icon: 'lucide:rocket',
+    color: 'violet',
+  };
+  const file: NavFavoriteItem = { ...page, href: itemFavoriteHref(FILE), id: FILE, kind: 'files' };
+  const groups: NavGroup[] = [
+    { label: 'Settings', items: [{ name: 'Profile', href: '/settings/profile', icon }] },
+  ];
+
+  it('are stored as the /n/ link', () => {
+    expect(itemFavoriteHref(PAGE)).toBe(`/n/${PAGE}`);
+  });
+
+  it('mix with screens in the login’s order, each resolved', () => {
+    const list = [page.href, '/settings/profile', itemFavoriteHref(GONE), '/gone', file.href];
+    const rows = favoriteEntries(list, groups, [file, page]);
+    expect(rows.map((r) => r.entry)).toEqual([page.href, '/settings/profile', file.href]);
+    expect(rows[0]?.item).toEqual(page);
+    expect(rows[1]?.nav?.name).toBe('Profile');
+  });
+
+  it('open on their screen; a file on the /n/ link, which finds its folder', () => {
+    expect(favoriteItemHref(page)).toBe(`/pages/${PAGE}`);
+    expect(favoriteItemHref(file)).toBe(`/n/${FILE}`);
+  });
+
+  it('an item the brain did not send goes at the next save; a screen never does', () => {
+    const list = ['/chats', page.href, itemFavoriteHref(GONE), '/settings/profile'];
+    expect(pruned(list, [page])).toEqual(['/chats', page.href, '/settings/profile']);
+  });
+
+  it('nothing goes on a brain that resolves no items', () => {
+    const list = [itemFavoriteHref(GONE), '/settings/profile'];
+    expect(pruned(list, undefined)).toEqual(list);
+  });
+});
+
+describe('moved', () => {
+  const list = ['a', 'b', 'c', 'd'];
+
+  it('moves down and up', () => {
+    expect(moved(list, 0, 2)).toEqual(['b', 'c', 'a', 'd']);
+    expect(moved(list, 3, 1)).toEqual(['a', 'd', 'b', 'c']);
+  });
+
+  it('changes nothing for an index outside the list', () => {
+    expect(moved(list, -1, 2)).toEqual(list);
+    expect(moved(list, 1, 4)).toEqual(list);
+  });
+
+  it('does not change the list it was given', () => {
+    moved(list, 0, 3);
+    expect(list).toEqual(['a', 'b', 'c', 'd']);
   });
 });

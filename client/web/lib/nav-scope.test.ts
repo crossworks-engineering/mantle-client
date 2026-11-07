@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Bot, type LucideIcon } from 'lucide-react';
 import { NAV_GROUPS, type NavGroup } from '@mantle/web-ui/layout/nav-items';
-import { railGroups, scopeGroups, type NavScope } from './nav-scope';
+import { railGroups, scopeGroups, storedScope, type NavScope } from './nav-scope';
 import { navWithAreas } from './workspaces';
 
 /**
@@ -15,43 +15,59 @@ import { navWithAreas } from './workspaces';
 const icon = Bot as LucideIcon;
 const names = (groups: NavGroup[]) => groups.flatMap((g) => g.items).map((i) => i.name);
 const labels = (groups: NavGroup[]) => groups.map((g) => g.label);
+const hrefs = (groups: NavGroup[]) => groups.flatMap((g) => g.items).map((i) => i.href);
 
 describe('admin', () => {
   const admin = scopeGroups(NAV_GROUPS, 'admin');
   const shown = names(admin);
 
-  it('carries the plumbing and the System group', () => {
+  it('carries every setting and the System group, whole', () => {
+    expect(labels(admin)).toEqual(['Settings', 'System']);
+    for (const label of ['Settings', 'System']) {
+      expect(admin.find((g) => g.label === label)).toEqual(
+        NAV_GROUPS.find((g) => g.label === label),
+      );
+    }
+  });
+
+  it('carries what the Settings tab held until 2026-11-07, and the plumbing', () => {
     expect(shown).toEqual(
-      expect.arrayContaining(['Backups', 'Updates', 'Audit log', 'Peers', 'Users', 'Debug']),
+      expect.arrayContaining([
+        'Agents',
+        'AI workers',
+        'MCP',
+        'Profile',
+        'Appearance',
+        'Workspaces',
+        'Company sign-in',
+        'Tools',
+        'API keys',
+        'Services',
+        'Backups',
+        'Updates',
+        'Audit log',
+        'Users',
+        'Debug',
+      ]),
     );
-    const system = NAV_GROUPS.find((g) => g.label === 'System');
-    expect(admin.find((g) => g.label === 'System')).toEqual(system);
   });
 
-  it('shows the admin features only — nothing Work or Settings already shows', () => {
-    const elsewhere = new Set([
-      ...names(scopeGroups(NAV_GROUPS, 'work')),
-      ...names(scopeGroups(NAV_GROUPS, 'settings')),
-    ]);
-    for (const name of shown) expect(elsewhere.has(name)).toBe(false);
+  it('shows nothing Work shows', () => {
+    const work = new Set(names(scopeGroups(NAV_GROUPS, 'work')));
+    for (const name of shown) expect(work.has(name)).toBe(false);
     expect(shown).not.toContain('Pages');
-    expect(shown).not.toContain('Agents');
+    expect(shown).not.toContain('Models');
   });
+});
 
-  it('with Work and Settings, covers the whole list, so no screen is out of reach', () => {
-    const all = new Set(names(NAV_GROUPS));
-    const covered = new Set([
-      ...shown,
-      ...names(scopeGroups(NAV_GROUPS, 'work')),
-      ...names(scopeGroups(NAV_GROUPS, 'settings')),
-    ]);
-    expect(covered).toEqual(all);
-  });
-
-  it('shows no group heading with nothing under it', () => {
-    expect(labels(admin)).not.toContain('Workspace');
-    expect(labels(admin)).not.toContain('Review');
-    for (const group of admin) expect(group.items.length).toBeGreaterThan(0);
+describe('work and admin, together', () => {
+  it('are the whole list, each row once, so no screen is lost', () => {
+    const both = [
+      ...hrefs(scopeGroups(NAV_GROUPS, 'work')),
+      ...hrefs(scopeGroups(NAV_GROUPS, 'admin')),
+    ];
+    expect(new Set(both).size).toBe(both.length);
+    expect(both.sort()).toEqual(hrefs(NAV_GROUPS).sort());
   });
 });
 
@@ -62,13 +78,15 @@ describe('work', () => {
     expect(labels(work)).toEqual(['Workspace', 'Review']);
   });
 
-  it('keeps those groups WHOLE — it selects groups, it does not thin them', () => {
+  it('keeps those groups WHOLE: it selects groups, it does not thin them', () => {
     const source = NAV_GROUPS.filter((g) => g.label === 'Workspace' || g.label === 'Review');
     expect(names(work)).toEqual(names(source));
   });
 
-  it('carries the daily surfaces', () => {
-    expect(names(work)).toEqual(expect.arrayContaining(['Pages', 'Tasks', 'Email', 'Pending']));
+  it('carries the daily surfaces, and Review', () => {
+    expect(names(work)).toEqual(
+      expect.arrayContaining(['Pages', 'Tasks', 'Email', 'Pending', 'Models', 'Discover']),
+    );
   });
 
   it('hides the machine', () => {
@@ -77,56 +95,23 @@ describe('work', () => {
   });
 });
 
-describe('settings', () => {
-  const settings = scopeGroups(NAV_GROUPS, 'settings');
-  const shown = names(settings);
+describe('favorites', () => {
+  it('shows no nav group: the sidebar puts the Favorites group there', () => {
+    expect(scopeGroups(NAV_GROUPS, 'favorites')).toEqual([]);
+  });
+});
 
-  it('carries Workspaces', () => {
-    expect(shown).toContain('Workspaces');
+describe('a stored choice', () => {
+  it('reads the three tabs as themselves', () => {
+    for (const s of ['favorites', 'work', 'admin'] as const) expect(storedScope(s)).toBe(s);
   });
 
-  it('carries Company sign-in, where the steps send a Microsoft admin', () => {
-    expect(shown).toContain('Company sign-in');
+  it('reads the old Settings tab as Admin, which holds its rows now', () => {
+    expect(storedScope('settings')).toBe('admin');
   });
 
-  it('carries the four Jason named', () => {
-    // The only part of the mapping that is not a proposal.
-    expect(shown).toEqual(expect.arrayContaining(['Agents', 'AI workers', 'MCP', 'Profile']));
-  });
-
-  it('carries what those four need to be useful', () => {
-    // An agent with no tools, no keys and no accounts is not configured.
-    expect(shown).toEqual(
-      expect.arrayContaining(['Tools', 'Tool groups', 'Skills', 'API keys', 'Accounts', 'Models']),
-    );
-  });
-
-  it('leaves the plumbing to admin', () => {
-    // Capability versus plumbing is the line; these are the box, not the job.
-    for (const plumbing of ['Backups', 'Updates', 'Audit log', 'Logins', 'Peers', 'Debug']) {
-      expect(shown).not.toContain(plumbing);
-    }
-  });
-
-  it('shows no group heading with nothing under it', () => {
-    for (const group of settings) expect(group.items.length).toBeGreaterThan(0);
-  });
-
-  it('is a slice, not a superset — the daily screens are not in it', () => {
-    // If this ever fails, `settings` has quietly become `admin` with extra
-    // steps and the middle option has stopped earning its place.
-    expect(shown).not.toContain('Pages');
-  });
-
-  it('every href it names still exists in the nav', () => {
-    // The mapping is a flat list of strings and nothing type-checks it against
-    // the real routes: a renamed href would silently drop a screen out of the
-    // scope it belongs to, with no error anywhere.
-    const live = new Set(NAV_GROUPS.flatMap((g) => g.items).map((i) => i.href));
-    const scopedHrefs = settings.flatMap((g) => g.items).map((i) => i.href);
-    for (const href of scopedHrefs) expect(live.has(href)).toBe(true);
-    // …and the set is not silently empty.
-    expect(scopedHrefs.length).toBeGreaterThan(10);
+  it('reads anything else as no choice', () => {
+    for (const v of [null, '', 'all', 'Work']) expect(storedScope(v)).toBe(null);
   });
 });
 
@@ -141,7 +126,7 @@ describe('a group the scope empties', () => {
 });
 
 describe('the rail (W5c: one shell for every login)', () => {
-  const scopes: NavScope[] = ['work', 'settings', 'admin'];
+  const scopes: NavScope[] = ['favorites', 'work', 'admin'];
 
   it('a login that manages the brain gets the chosen scope', () => {
     for (const scope of scopes) {
@@ -162,7 +147,7 @@ describe('the rail (W5c: one shell for every login)', () => {
         expect.arrayContaining(['Pages', 'Notes', 'Files', 'Tables', 'Draw', 'Apps', 'Workspaces']),
       );
     }
-    // Under the old Work scope Workspaces was out of reach: it is a Settings row.
+    // Under the Work scope Workspaces would be out of reach: it is a Settings row.
     expect(names(scopeGroups(permitted, 'work'))).not.toContain('Workspaces');
   });
 });

@@ -23,12 +23,12 @@ export const ADMIN_ROWS = [
   'Secrets',
 ] as const;
 
-export const NAV_SCOPES = ['Work', 'Settings', 'Admin'] as const;
+export const NAV_SCOPES = ['Favorites', 'Work', 'Admin'] as const;
 
 /**
- * An admin's rail, narrowed to one scope (lib/nav-scope.ts). The three are
- * slices: Admin shows the admin features only, so no one scope is the whole
- * menu and a row is looked for under the scope that holds it.
+ * An admin's rail, on one tab (lib/nav-scope.ts). Work and Admin are two
+ * slices of the menu (Favorites is the login's own short list), so a row is
+ * looked for under the tab that holds it.
  */
 export async function scopedNav(page: Page, scope: (typeof NAV_SCOPES)[number]) {
   const nav = page.getByRole('navigation', { name: 'Primary' });
@@ -38,7 +38,7 @@ export async function scopedNav(page: Page, scope: (typeof NAV_SCOPES)[number]) 
   return nav;
 }
 
-/** Which of `names` an admin's rail shows under any of the three scopes. */
+/** Which of `names` an admin's rail shows under any of the tabs. */
 export async function rowsInAnyScope(page: Page, names: readonly string[]): Promise<Set<string>> {
   const seen = new Set<string>();
   for (const scope of NAV_SCOPES) {
@@ -52,8 +52,8 @@ export async function rowsInAnyScope(page: Page, names: readonly string[]): Prom
 
 /**
  * The rail's nav, opened to every row a member may see. A member holds no
- * settings area: it gets no Work / Settings / Admin choice at all, and its
- * rows are all there, flat.
+ * settings area: it gets no Favorites / Work / Admin choice at all, and its
+ * rows are all there, flat, under its Favorites.
  */
 export async function wholeNav(page: Page) {
   const nav = page.getByRole('navigation', { name: 'Primary' });
@@ -72,6 +72,8 @@ export const ANY_LOGIN = [
   /^\/api\/profile\/home-desk$/,
   // The login's own sound choice (GET and PUT), for every login.
   /^\/api\/profile\/sounds$/,
+  // The login's own sidebar favorites (PUT), for every login.
+  /^\/api\/profile\/nav-favorites$/,
   /^\/api\/version$/,
   /^\/api\/appearance(\/|$)/,
   /^\/api\/auth\//,

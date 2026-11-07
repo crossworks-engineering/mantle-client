@@ -20,7 +20,7 @@ import {
 } from '@/lib/workspaces';
 import { KIND_LABELS, type DeskWidgetId } from '@/lib/home-desk';
 import { DeskWidget } from '../desk-widget';
-import { KIND_ICONS } from './items';
+import { KIND_ICONS } from '@/lib/kind-look';
 
 // ── Quick note and Quick task ──────────────────────────────────────────────
 
