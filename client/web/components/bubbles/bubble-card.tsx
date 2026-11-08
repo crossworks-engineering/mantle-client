@@ -108,7 +108,7 @@ export function Bubble({
 }) {
   const replying = draft !== null;
   const router = useRouter();
-  const { openAssistant } = useDockActions();
+  const { openAssistant, openChat } = useDockActions();
   const faceOf = useChatFaces();
   const pinned = isBubblePinned(card.key);
   const close = useBubbleClose(card);
@@ -119,7 +119,8 @@ export function Bubble({
     // A keyboard click (detail 0) has no press of its own to be a drag.
     if (dragged.current && e.detail > 0) return;
     if (card.agentSlug) openAssistant(card.agentSlug);
-    else router.push(`/chats/${encodeURIComponent(card.chat)}`);
+    // The Chats window opens on that chat (plan R4), beside the screen.
+    else openChat(card.chat);
   };
 
   const pop = (e: ReactMouseEvent) => {

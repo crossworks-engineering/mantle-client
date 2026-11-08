@@ -1,11 +1,11 @@
 'use client';
 
 import {
+  Columns2,
   History,
   Maximize2,
   MessageSquarePlus,
   Minus,
-  PanelRight,
   PictureInPicture2,
   type LucideIcon,
 } from 'lucide-react';
@@ -16,32 +16,32 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@mantle/web-ui/ui/tooltip';
-import type { AssistantAgentOption } from '@mantle/client-types';
 import { useAssistantDock, type AssistantDisplay } from '@/components/assistant/assistant-dock';
 import { switchableShapes } from './assistant-shapes';
-import { AgentSelect } from './agent-select';
 import { NEW_CHAT_LABEL, PREVIOUS_CHATS_LABEL } from './chat-threads-state';
 
 /**
  * The assistant header's controls (Jason, 2026-10-13): no "..." menu any more.
- * One row of icon buttons, each naming itself in a tooltip on hover, then the
- * agent picker, the only dropdown left:
+ * One row of icon buttons, each naming itself in a tooltip on hover:
  *
  *   Previous chats · New chat · the panel shapes you can switch to (the
  *   current one is left out: in Side, Window and Full; wide screens only) ·
- *   Minimise · agent
+ *   Minimise
+ *
+ * No agent picker (Jason, 2026-11-08): the Chats window's list picks the
+ * agent, as it picks a person or a group.
  *
  * Previous chats and New chat are left out on a brain older than New chat.
  */
-const SHAPE_ICONS: Record<AssistantDisplay, LucideIcon> = {
-  docked: PanelRight,
+/** Side is two columns, not a panel glyph: the chat room's Details button is
+ *  the panel glyph, and both sit in one header in the Chats window. */
+export const SHAPE_ICONS: Record<AssistantDisplay, LucideIcon> = {
+  docked: Columns2,
   popout: PictureInPicture2,
   full: Maximize2,
 };
 
 export function AssistantHeaderControls({
-  agents,
-  selected,
   threads,
   showingPrevious,
   newChatDisabled,
@@ -50,8 +50,6 @@ export function AssistantHeaderControls({
   onMinimise,
   embedded = false,
 }: {
-  agents: AssistantAgentOption[];
-  selected: string;
   /** False on a brain older than New chat: Previous chats and New chat are left out. */
   threads: boolean;
   showingPrevious: boolean;
@@ -60,7 +58,7 @@ export function AssistantHeaderControls({
   onNewChat: () => void;
   onMinimise: () => void;
   /** Inside the Chats screen (Messenger V1 Phase 2): no window shapes, no
-   *  Minimise, no agent picker (the list picks the agent). */
+   *  Minimise. */
   embedded?: boolean;
 }) {
   const { display, setDisplay } = useAssistantDock();
@@ -93,14 +91,6 @@ export function AssistantHeaderControls({
           />
         ))}
         {embedded ? null : <IconAction icon={Minus} label="Minimise (Esc)" onClick={onMinimise} />}
-        {agents.length > 0 && !embedded && (
-          <AgentSelect
-            agents={agents}
-            selected={selected}
-            size="xs"
-            className="ml-1 w-auto max-w-44"
-          />
-        )}
       </div>
     </TooltipProvider>
   );

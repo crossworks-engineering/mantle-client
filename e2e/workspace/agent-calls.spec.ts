@@ -1,3 +1,4 @@
+import { agentView } from './window-view';
 import { expect, test, type Page } from '@playwright/test';
 import { LOGINS, signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
 
@@ -248,8 +249,9 @@ test('the chat streams, answers and stops on the 202’s turn id, never the key'
   api.agentUi.admin = true;
   const id = callId();
   api.turnEvents = [{ type: 'ui-call', data: { callId: id, action: 'screen', args: {} } }];
+  await agentView(page);
   await signIn(page, 'admin');
-  await page.getByRole('button', { name: 'Toggle assistant (⌘I)' }).click();
+  await page.getByRole('button', { name: 'Toggle chats (⌘I)' }).click();
   const box = page.getByPlaceholder(/Enter to send/);
   await box.fill('Show me around');
   await box.press('Enter');

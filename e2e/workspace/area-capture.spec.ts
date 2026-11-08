@@ -106,7 +106,7 @@ test('an Admin user captures an area into the switcher workspace and attaches it
   await expect(
     page.getByText(`Saved to Files in ${WORKSPACES.team.name} and attached to the chat.`),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Toggle assistant (⌘I)' })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Toggle chats (⌘I)' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );

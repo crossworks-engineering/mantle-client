@@ -71,6 +71,8 @@ type MockReply = {
 
 export type MockChats = {
   on: boolean;
+  /** A brain without the messenger: every /api/messenger route answers 404. */
+  missing: boolean;
   rows: MockRow[];
   /** A chat of people, listed with nothing unread. */
   addChat(id: string, title: string, kind?: 'direct' | 'group'): void;
@@ -154,6 +156,7 @@ export function createMockChats(): MockChats {
 
   const chats: MockChats = {
     on: false,
+    missing: false,
     rows: [],
     reads: [],
     threadReads: [],
@@ -309,6 +312,10 @@ export function createMockChats(): MockChats {
       }
     },
     async handle(req, res, url, path, json, cors, readBody) {
+      if (chats.missing && path.startsWith('/api/messenger/')) {
+        json(res, 404, { error: 'not found' });
+        return true;
+      }
       if (!chats.on) return false;
       const method = req.method ?? 'GET';
       const hold = (streams: Set<ServerResponse>) => {
@@ -331,6 +338,23 @@ export function createMockChats(): MockChats {
       }
       if (method === 'GET' && path === '/api/messenger/conversations') {
         json(res, 200, { rows: rowsNow() });
+        return true;
+      }
+      if (method === 'GET' && path === '/api/messenger/directory') {
+        // The agents with a thread, and Ann (New chat's pick list).
+        const entries = [
+          ...chats.rows
+            .filter((r) => r.agentSlug)
+            .map((r) => ({
+              kind: 'agent',
+              id: r.id,
+              name: r.title,
+              online: false,
+              slug: r.agentSlug,
+            })),
+          { kind: 'login', id: 'ann-id', name: 'Ann', online: false },
+        ];
+        json(res, 200, { entries });
         return true;
       }
       if (method === 'GET' && path === '/api/messenger/unread') {
@@ -372,6 +396,54 @@ export function createMockChats(): MockChats {
         return true;
       }
       // A reaction, as the chat's own button gives it.
+      // One chat, as the room reads it (GET /api/messenger/c/:id).
+      const one = /^\/api\/messenger\/c\/([^/]+)$/.exec(path);
+      if (one && method === 'GET') {
+        const id = decodeURIComponent(one[1]!);
+        const row = chats.rows.find((x) => x.id === id && x.kind !== 'agent');
+        if (!row) {
+          json(res, 404, { error: 'not found' });
+          return true;
+        }
+        json(res, 200, {
+          conversation: {
+            id,
+            kind: row.kind,
+            title: row.kind === 'group' ? row.title : null,
+            icon: null,
+            color: null,
+            info: null,
+            createdBy: null,
+            createdAt: new Date(0).toISOString(),
+            archivedAt: null,
+            lastSeq: row.lastSeq ?? 0,
+            lastMessageAt: row.lastMessageAt,
+            workspaceId: null,
+            agentId: null,
+            participants: [
+              {
+                kind: 'login',
+                id: 'ann-id',
+                name: row.kind === 'group' ? 'Ann' : row.title,
+                admin: false,
+                leftAt: null,
+              },
+            ],
+            me: {
+              admin: true,
+              lastReadSeq: 0,
+              clearedBeforeSeq: 0,
+              muted: row.muted,
+              leftSeq: null,
+            },
+          },
+        });
+        return true;
+      }
+      if (method === 'POST' && /^\/api\/messenger\/c\/[^/]+\/typing$/.test(path)) {
+        json(res, 200, { ok: true });
+        return true;
+      }
       const r = /^\/api\/messenger\/c\/([^/]+)\/messages\/(\d+)\/reactions$/.exec(path);
       if (r && method === 'POST') {
         const chat = decodeURIComponent(r[1]!);

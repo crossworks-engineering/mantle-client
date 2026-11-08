@@ -34,7 +34,7 @@ import {
 } from '@/components/layout/sidebar-favorites';
 import { hasArea, navWithAreas } from '@/lib/workspaces';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
-import { useMessengerUnread } from '@/components/messenger/messenger-shell';
+import { useMessengerUnread } from '@/components/messenger/use-messenger-unread';
 import { withChats } from '@/lib/messenger/nav';
 import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
 import { withCompanySignIn } from '@/lib/sso-setup';

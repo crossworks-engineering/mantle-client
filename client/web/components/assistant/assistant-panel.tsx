@@ -7,8 +7,9 @@ import { RailHandle } from '@mantle/web-ui/ui/rail-handle';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useAssistantDock } from './assistant-dock';
 import { ASSISTANT_W_MAX, ASSISTANT_W_MIN } from '@/lib/nav-width';
+import { isWide, stepsAsideOnRoute } from './window-view';
 
-/** The thread — transcript, composer, the strips — behind a dynamic import.
+/** The Chats window (list, rooms, the assistant thread) behind a dynamic import.
  *
  *  This one import is the app's largest single lever: the thread pulls
  *  `assistant-client`, which pulls `rich-text`, which pulls the whole page-
@@ -20,18 +21,14 @@ import { ASSISTANT_W_MAX, ASSISTANT_W_MIN } from '@/lib/nav-width';
  *
  *  `ssr: false` because it is client-only anyway and there is nothing to
  *  pre-render behind a `hidden` panel. */
-const AssistantThreadClient = dynamic(
-  () =>
-    import('@/app/(app)/assistant/assistant-thread-client').then((m) => m.AssistantThreadClient),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full w-full items-center justify-center">
-        <Spinner />
-      </div>
-    ),
-  },
-);
+const WindowChats = dynamic(() => import('./window-chats').then((m) => m.WindowChats), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center">
+      <Spinner />
+    </div>
+  ),
+});
 
 /** Keyboard resize steps for the window's corner grip. There is deliberately no
  *  minimum here: `setPopout` runs every value through the dock's `clampPopout`,
@@ -96,8 +93,6 @@ export function AssistantPanel() {
   const {
     panel,
     everOpened,
-    activeAgentSlug,
-    agentName,
     minimize,
     display,
     dockWidth,
@@ -149,13 +144,24 @@ export function AssistantPanel() {
         // picker) takes Escape first: closing it must not also minimise the
         // panel. Radix closes its layer on this same keydown, later.
         if (document.querySelector('[data-radix-popper-content-wrapper]')) return;
+        // A part inside took this Escape already (the mention list, a
+        // search, an edit, the details overlay).
+        if (e.defaultPrevented) return;
+        // The column and the window sit beside a screen that is in use: an
+        // Escape in a part of that screen belongs to it. From the window, or
+        // with nothing focused (the page body), it minimises. A shape that
+        // covers the screen (the rule a route change uses) minimises from
+        // anywhere.
+        const at = document.activeElement;
+        const onScreenPart = !!at && at !== document.body && !panelRef.current?.contains(at);
+        if (onScreenPart && !stepsAsideOnRoute(display, isWide())) return;
         e.preventDefault();
         minimize();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [panel, minimize]);
+  }, [panel, minimize, display, panelRef]);
 
   // A window that has never been placed needs a first box, and that needs a
   // viewport — so it is resolved on the first switch to the window, not while
@@ -172,7 +178,7 @@ export function AssistantPanel() {
   // fast navigation away does not leave work queued.
   useEffect(() => {
     if (everOpened) return;
-    const warm = () => void import('@/app/(app)/assistant/assistant-thread-client');
+    const warm = () => void import('./window-chats');
     if (typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(warm, { timeout: 4000 });
       return () => window.cancelIdleCallback?.(id);
@@ -224,7 +230,7 @@ export function AssistantPanel() {
       // the content, not something layered over it.
       role={isWindow ? 'dialog' : undefined}
       aria-modal={isWindow ? false : undefined}
-      aria-label={isWindow ? `${agentName} assistant` : undefined}
+      aria-label={isWindow ? 'Chats' : undefined}
       // The landing spot for the focus move above. -1 so it takes focus
       // programmatically without joining the tab order.
       tabIndex={-1}
@@ -254,7 +260,7 @@ export function AssistantPanel() {
         />
       )}
 
-      <AssistantThreadClient slugHint={activeAgentSlug} />
+      <WindowChats />
 
       {/* The window's size grip. Bottom-right, the corner every desktop window
           is sized from, and drawn at rest like every other draggable edge in

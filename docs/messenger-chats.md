@@ -217,8 +217,9 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   that nobody saw. A chat's cards are what its last read returned. No card
   shows while a chat window is open (`/chats`, `/assistant`, the side window in
   any shape). A row with a line waiting is highlighted instead (`rowHighlighted`,
-  with bubbles on or off). The side window has no list yet, so with only that
-  window open a person's line keeps the toast. The stack sits with the
+  with bubbles on or off), and with bubbles on no toast pops: the Chats
+  window has the list now. A click on a person's card opens that chat in
+  the Chats window, beside the screen. The stack sits with the
   bottom-right dock until it is dragged; then its place is saved for the login
   in this browser, and kept on screen by the window's size. The edges under the
   card stand for the cards that wait: a click shows the next one, with no read
@@ -263,6 +264,52 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   while the tab is visible, so the count clears as replies are read and a
   reply that lands in a background tab still counts. The assistant's reply
   stream is closed in a background browser tab as well.
+
+## The Chats window
+
+The dock's panel (⌘I, the Chats button in the rail) holds the messenger
+beside any screen, like a phone (Project Bubble Chat phase 5, plan page
+`e3d1b641` on the dev brain). `components/assistant/window-chats.tsx`.
+
+- **Two views.** The list (`chat-list.tsx`, the screen's own: people,
+  groups and agents, search and New on top), then one chat with a back
+  button. A person or a group opens `ChatRoom` with `inWindow`: the back
+  button first, no Focus slot, Open in Chats and the window's shape and
+  Minimise buttons as header tools. An agent opens its thread in the dock's
+  shape; the row picks the dock's agent, so there is no agent picker. New
+  chat fills the window. Nothing in the window reads or writes a chat by
+  itself: it uses the screen's parts and their routes.
+- **The back count.** Inside a chat, the back button shows the unread lines
+  of every other chat (muted ones left out), with one short pulse when the
+  count changes.
+- **It stays open.** A route change steps aside only the full shape (and
+  every shape below `lg`, where all are the overlay). The column and the
+  movable window stay open while the person moves between screens.
+- **What it keeps.** The dock holds the view (`windowView`: the list, the
+  agent, or a chat id), saved per login in this browser (`mantle_window_view:
+  <login>`, an id only). A reload opens the window again if it was open
+  (`mantle_window_open:<login>` in this tab's session storage, so a new tab
+  starts with it closed). The first open shows the list.
+- **Minimised reads nothing.** A room shows only while the window is open,
+  so a line that lands in a minimised window stays unread; the list and the
+  directory stop polling until it opens again.
+- **Escape.** It minimises the column or the movable window from inside
+  it or with nothing focused, never from a part of the screen beside it,
+  and never when a part inside took it first (the mention list, a search,
+  an edit, the details overlay). The full shape minimises from anywhere.
+- **Drafts.** A room's unsent text is kept in memory by chat
+  (`lib/messenger/drafts.ts`, never browser storage), so back, another chat
+  and Open in Chats lose nothing. The agent thread stays mounted once opened,
+  hidden while another view shows, and is not marked read while hidden.
+- **Notices.** The chat the open window shows counts as on screen, as
+  `/chats/<id>` does: no toast, no card, no line sound for it.
+- **An agent with no messages** has no list row (the brain lists an agent
+  thread once it has a line or is a favourite). While the list holds no
+  agent row, an "Ask the assistant" button above it opens the dock's agent
+  (or the brain's default). New chat reaches any agent, and so do
+  `/assistant` and every "open the assistant" action (`openAssistant`).
+- **A brain without the messenger** (its list answers 404): the window is
+  the assistant's thread, with no back button, and the list stops polling.
 
 ## Live delivery
 
@@ -351,6 +398,9 @@ Unit tests, `pnpm test` (pure functions, no DOM):
   connect, and the polling fallback against a fake silent stream (it polls
   every 5 seconds once silent past the heartbeat, never while keep-alives
   arrive, and stops when the stream speaks).
+- `components/assistant/window-view.test.ts` and `lib/messenger/drafts.test.ts`:
+  the Chats window's saved view, which shapes step aside on a route change,
+  and the draft keeper.
 - `lib/messenger/format.test.ts`, `mentions.test.ts`, `notify.test.ts`,
   `nav.test.ts`, `faces.test.ts`, `group-info.test.ts`: the words and
   times (the via chip and the preview with it), mentions, when a notice

@@ -14,9 +14,8 @@
  * dynamic import so the editor bundle stays off every other route.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { MessageSquareText, Plus } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { MessageSquareText } from 'lucide-react';
 import { ApiError } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
@@ -24,26 +23,15 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useItemAddress } from '@/components/layout/use-item-address';
 import { useZenMode } from '@/components/layout/zen-mode';
 import { useListQuery } from '@/components/list-search';
-import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
-import { messengerApi, messengerKeys } from '@/lib/messenger/api';
-import { rowMatches } from '@/lib/messenger/format';
-import { ChatRow } from './chat-row';
 import { AgentThread } from './agent-thread';
+import { ChatList, useChatListData } from './chat-list';
 import { agentIdOf, rowAddress } from '@/lib/messenger/format';
 import { ChatRoom, type FirstMessage } from './chat-room';
-import { ColumnSearch } from './column-search';
 import { NewChatPane } from './new-chat-pane';
-import { useChatFaces } from '@/components/messenger/chat-faces';
-
-/** A slow safety net under the stream (which refreshes the list itself). */
-const LIST_REFRESH_MS = 60_000;
-/** Who is online moves slowly (the brain's two-minute window). */
-const DIRECTORY_REFRESH_MS = 60_000;
 
 export function ChatsClient() {
   const { zen } = useZenMode();
   const address = useItemAddress('chats');
-  const me = useShellWorkspaces()?.loginId ?? null;
   const { query, setQuery } = useListQuery();
   // The New message form fills the chat pane (no dialog); opening a chat
   // from anywhere (a row, a toast, the address) closes it.
@@ -73,26 +61,8 @@ export function ChatsClient() {
       }),
     [],
   );
-  const faceOf = useChatFaces();
-
-  const listQuery = useQuery({
-    queryKey: messengerKeys.list,
-    queryFn: messengerApi.list,
-    refetchInterval: LIST_REFRESH_MS,
-  });
-  const directory = useQuery({
-    queryKey: messengerKeys.directory,
-    queryFn: () => messengerApi.directory(),
-    refetchInterval: DIRECTORY_REFRESH_MS,
-  });
-  const online = useMemo(
-    () => new Set((directory.data ?? []).filter((e) => e.online).map((e) => e.id)),
-    [directory.data],
-  );
-
-  // People chats, groups and assistant threads, in the brain's order.
-  const rows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
-  const shown = useMemo(() => rows.filter((r) => rowMatches(r, query)), [rows, query]);
+  const data = useChatListData();
+  const { me, faceOf, listQuery, directory, online, rows } = data;
   const selectedId = address.id;
   // Opening a chat closes the form once the address has moved, so the old
   // room never flashes in between.
@@ -135,54 +105,18 @@ export function ChatsClient() {
   }
 
   const list = (
-    <aside aria-label="Chats" className="flex h-full min-h-0 flex-col bg-muted/20">
-      <div className="flex items-center gap-1.5 border-b border-border p-2">
-        <ColumnSearch
-          value={query}
-          onChange={setQuery}
-          placeholder="Search chats…"
-          label="Search chats"
-        />
-        <Button
-          ref={newButton}
-          size="icon-sm"
-          onClick={startNew}
-          aria-label="New chat"
-          title="New chat"
-        >
-          <Plus aria-hidden />
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-2" data-testid="chat-list">
-        {listQuery.isPending ? (
-          <div className="flex justify-center p-6">
-            <Spinner />
-          </div>
-        ) : shown.length === 0 ? (
-          <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-            {query.trim() ? 'No chats match' : 'No chats yet. Start one with New chat.'}
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {shown.map((row) => (
-              <li key={`${row.kind}:${row.id}`}>
-                <ChatRow
-                  row={row}
-                  me={me}
-                  online={online}
-                  selected={!composing && rowAddress(row) === selectedId}
-                  faceOf={faceOf}
-                  onOpen={() => {
-                    setComposing(false);
-                    address.open(rowAddress(row));
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </aside>
+    <ChatList
+      ref={newButton}
+      data={data}
+      query={query}
+      onQuery={setQuery}
+      onNew={startNew}
+      selected={composing ? null : selectedId}
+      onOpen={(row) => {
+        setComposing(false);
+        address.open(rowAddress(row));
+      }}
+    />
   );
 
   return (

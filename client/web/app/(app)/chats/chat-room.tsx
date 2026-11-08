@@ -9,7 +9,15 @@
  * moves when the newest message is on screen and the tab is visible.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDefaultLayout } from 'react-resizable-panels';
 import { ArrowDown, Bell, BellOff, PanelRight, Phone, PhoneOff, Pin, PinOff } from 'lucide-react';
@@ -27,6 +35,7 @@ import {
 import { Button } from '@mantle/web-ui/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@mantle/web-ui/ui/resizable';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ItemHeader, type HeaderTool } from '@/components/layout/item-header';
 import { callSession, useCallState } from '@/components/calls/call-store';
@@ -107,6 +116,18 @@ export type FirstMessage = {
   clientMsgId: string;
 };
 
+/** The Chats window's frame around a room (Bubble Chat phase 5): the same
+ *  room, with the window's way back and its own buttons in the header. */
+export type RoomInWindow = {
+  /** Before the title: back to the window's list. */
+  back: ReactNode;
+  /** The window's buttons, after the room's own (they fold into More as the
+   *  window narrows, like every header tool). */
+  tools: HeaderTool[];
+  /** The header is the movable window's title bar. */
+  onHeaderPointerDown?: (e: React.PointerEvent) => void;
+};
+
 export function ChatRoom({
   id,
   row,
@@ -115,6 +136,7 @@ export function ChatRoom({
   firstMessages,
   onFirstSent,
   onGone,
+  inWindow,
 }: {
   id: string;
   /** The list's row, while the list has it (title, people, presence). */
@@ -130,6 +152,9 @@ export function ChatRoom({
   onFirstSent?: (c: string) => void;
   /** The chat is not mine to read (left, removed, never in it). */
   onGone: () => void;
+  /** Shown in the Chats window, not on the screen: no Focus slot (it hides
+   *  the screen's folders) and no maximised back link. */
+  inWindow?: RoomInWindow;
 }) {
   const queryClient = useQueryClient();
   const conversationQuery = useQuery({
@@ -634,9 +659,12 @@ export function ChatRoom({
       return !open;
     });
   };
+  // The window's room has DOM ids and a saved layout of its own: it can
+  // sit beside the screen's room.
+  const sfx = inWindow ? '-window' : '';
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: 'chats:inspector',
-    panelIds: inspectorOpen && !narrow ? ['room', 'inspector'] : ['room'],
+    id: `chats:inspector${sfx}`,
+    panelIds: inspectorOpen && !narrow ? [`room${sfx}`, `inspector${sfx}`] : [`room${sfx}`],
     onlySaveAfterUserInteractions: true,
     storage: typeof window === 'undefined' ? NO_STORAGE : window.localStorage,
   });
@@ -807,80 +835,95 @@ export function ChatRoom({
     const gone =
       conversationQuery.error instanceof ApiError && conversationQuery.error.status === 404;
     return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-        {gone ? 'This chat is not available.' : 'Could not load this chat.'}
+      <div className="flex h-full flex-col">
+        {inWindow ? (
+          <div className="flex items-center gap-2 border-b border-border px-2 py-1.5">
+            {inWindow.back}
+          </div>
+        ) : null}
+        <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+          {gone ? 'This chat is not available.' : 'Could not load this chat.'}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="chat-room">
-      <ItemHeader
-        sticky
-        section="Chats"
-        visual={
-          <ChatAvatar
-            name={title}
-            kind={group ? 'group' : 'person'}
-            look={look}
-            face={
-              peer
-                ? faceOf({
-                    kind: 'login',
-                    id: peer.id,
-                    avatar: peer.avatar,
-                    photoVersion: peer.photoVersion,
-                  })
-                : null
-            }
-            online={peerOnline}
-            size="sm"
-          />
-        }
-        title={title}
-        subtitle={
-          <span className={peerOnline ? 'text-success-ink' : 'text-muted-foreground'}>
-            {presence}
-          </span>
-        }
-        tools={[
-          ...(callTool ? [callTool] : []),
-          {
-            key: 'details',
-            label: detailsOpen ? 'Hide details' : 'Details',
-            icon: <PanelRight />,
-            pressed: detailsOpen,
-            onSelect: toggleInspector,
-          },
-        ]}
-        more={[
-          ...(left
-            ? []
-            : [
-                {
-                  key: 'mute',
-                  label: muted ? 'Unmute' : 'Mute',
-                  icon: muted ? <Bell /> : <BellOff />,
-                  onSelect: () => void setting(() => messengerApi.update(id, { muted: !muted })),
-                },
-              ]),
-          {
-            key: 'pin',
-            label: pinned ? 'Unpin' : 'Pin',
-            icon: pinned ? <PinOff /> : <Pin />,
-            onSelect: () => void setting(() => messengerApi.pin('conversation', id, !pinned)),
-          },
-        ]}
-      />
+      <div
+        onPointerDown={inWindow?.onHeaderPointerDown}
+        className={cn(inWindow?.onHeaderPointerDown && 'cursor-grab active:cursor-grabbing')}
+      >
+        <ItemHeader
+          sticky
+          section={inWindow ? undefined : 'Chats'}
+          focus={!inWindow}
+          lead={inWindow?.back}
+          visual={
+            <ChatAvatar
+              name={title}
+              kind={group ? 'group' : 'person'}
+              look={look}
+              face={
+                peer
+                  ? faceOf({
+                      kind: 'login',
+                      id: peer.id,
+                      avatar: peer.avatar,
+                      photoVersion: peer.photoVersion,
+                    })
+                  : null
+              }
+              online={peerOnline}
+              size="sm"
+            />
+          }
+          title={title}
+          subtitle={
+            <span className={peerOnline ? 'text-success-ink' : 'text-muted-foreground'}>
+              {presence}
+            </span>
+          }
+          tools={[
+            ...(callTool ? [callTool] : []),
+            {
+              key: 'details',
+              label: detailsOpen ? 'Hide details' : 'Details',
+              icon: <PanelRight />,
+              pressed: detailsOpen,
+              onSelect: toggleInspector,
+            },
+            ...(inWindow?.tools ?? []),
+          ]}
+          more={[
+            ...(left
+              ? []
+              : [
+                  {
+                    key: 'mute',
+                    label: muted ? 'Unmute' : 'Mute',
+                    icon: muted ? <Bell /> : <BellOff />,
+                    onSelect: () => void setting(() => messengerApi.update(id, { muted: !muted })),
+                  },
+                ]),
+            {
+              key: 'pin',
+              label: pinned ? 'Unpin' : 'Pin',
+              icon: pinned ? <PinOff /> : <Pin />,
+              onSelect: () => void setting(() => messengerApi.pin('conversation', id, !pinned)),
+            },
+          ]}
+        />
+      </div>
       <div ref={frame} className="relative flex min-h-0 flex-1 flex-col">
         <ResizablePanelGroup
           orientation="horizontal"
-          id="chats:inspector"
+          id={`chats:inspector${sfx}`}
           defaultLayout={defaultLayout}
           onLayoutChanged={onLayoutChanged}
           className="min-h-0 flex-1 items-stretch overflow-hidden"
         >
-          <ResizablePanel id="room" minSize="360px">
+          <ResizablePanel id={`room${sfx}`} minSize={inWindow ? '280px' : '360px'}>
             <div className="flex h-full min-h-0 flex-col">
               <p className="sr-only" aria-live="polite">
                 {announce}
@@ -1020,6 +1063,8 @@ export function ChatRoom({
                     onSend={(body, mentions) => void send(body, mentions)}
                     onTyping={onTyping}
                     people={others}
+                    draftKey={id}
+                    id={inWindow ? 'chat-composer-text-window' : undefined}
                   />
                 )}
               </div>
@@ -1027,7 +1072,12 @@ export function ChatRoom({
           </ResizablePanel>
           {inspectorColumn ? <ResizableHandle withHandle /> : null}
           {inspectorColumn && conversation ? (
-            <ResizablePanel id="inspector" defaultSize="320px" minSize="260px" maxSize="480px">
+            <ResizablePanel
+              id={`inspector${sfx}`}
+              defaultSize="320px"
+              minSize="260px"
+              maxSize="480px"
+            >
               <div className="h-full min-h-0 overflow-y-auto border-l border-border scrollbar-thin">
                 <ChatInspector
                   conversation={conversation}
@@ -1052,7 +1102,10 @@ export function ChatRoom({
             onKeyDown={(e) => {
               // Not an Escape from a dialog it opened (a portal bubbles here).
               if (e.key !== 'Escape' || e.defaultPrevented) return;
-              if (e.currentTarget.contains(e.target as Node)) setOverlayOpen(false);
+              if (!e.currentTarget.contains(e.target as Node)) return;
+              // Taken here: the Chats window around it must not minimise too.
+              e.preventDefault();
+              setOverlayOpen(false);
             }}
           >
             <ChatInspector

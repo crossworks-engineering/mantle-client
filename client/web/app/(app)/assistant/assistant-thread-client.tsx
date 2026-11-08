@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { GitCompareArrows, Highlighter, MapPin } from 'lucide-react';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
@@ -68,12 +68,19 @@ const ASSIGNED_SEEN_KEY = 'mantle_assistant_assigned_seen';
 export function AssistantThreadClient({
   slugHint,
   embedded = false,
+  back,
+  shown = true,
 }: {
   slugHint?: string;
   /** Rendered in the Chats screen as an agent row's thread (Messenger V1
    *  Phase 2), not in the dock: no dock controls, the slug is the row's,
    *  and the thread is read while it shows. */
   embedded?: boolean;
+  /** In the Chats window: the way back to its list, first in the header. */
+  back?: ReactNode;
+  /** False while the Chats window shows another view: the thread stays
+   *  mounted (the draft and a live reply survive) but is not read. */
+  shown?: boolean;
 }) {
   const {
     minimize,
@@ -126,7 +133,7 @@ export function AssistantThreadClient({
   const visible = useDocumentVisible();
   useMarkThreadRead(
     threadQuery.data?.agent?.slug,
-    (embedded || panel === 'open') && visible && view.kind === 'live' && !busy,
+    (embedded || panel === 'open') && shown && visible && view.kind === 'live' && !busy,
   );
 
   useEffect(() => {
@@ -151,7 +158,7 @@ export function AssistantThreadClient({
     );
   }
 
-  const { agents: agentList, agent, messages } = threadQuery.data;
+  const { agent, messages } = threadQuery.data;
   const openThread = threadQuery.data.thread ?? null;
   const threadsSupported = 'thread' in threadQuery.data;
 
@@ -197,7 +204,8 @@ export function AssistantThreadClient({
           !embedded && display === 'popout' && 'cursor-grab select-none active:cursor-grabbing',
         )}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          {back}
           {/* No initials branch: the agent always has an avatar now — the seed
               falls back to its slug when no record is stored. The corner badge
               is the agent's experience level (display only; hover explains). */}
@@ -253,8 +261,6 @@ export function AssistantThreadClient({
             the width. */}
         <div className="ml-auto">
           <AssistantHeaderControls
-            agents={agentList}
-            selected={agent?.slug ?? ''}
             threads={!!agent && threadsSupported}
             showingPrevious={view.kind !== 'live'}
             newChatDisabled={startingNew || busy}

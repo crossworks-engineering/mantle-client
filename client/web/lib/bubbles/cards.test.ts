@@ -382,18 +382,10 @@ describe('chatWindowOpen', () => {
 
 describe('toastWanted', () => {
   it('always pops with bubbles off', () => {
-    expect(toastWanted({ bubbles: false, panel: 'closed', pathname: '/chats' })).toBe(true);
-    expect(toastWanted({ bubbles: false, panel: 'closed', pathname: '/tables' })).toBe(true);
+    expect(toastWanted({ bubbles: false })).toBe(true);
   });
 
-  it('gives way to the card or the highlight with bubbles on', () => {
-    expect(toastWanted({ bubbles: true, panel: 'closed', pathname: '/tables' })).toBe(false);
-    expect(toastWanted({ bubbles: true, panel: 'min', pathname: '/tables' })).toBe(false);
-    expect(toastWanted({ bubbles: true, panel: 'closed', pathname: '/chats' })).toBe(false);
-  });
-
-  it('stays while only the side window is open, which has no list yet', () => {
-    expect(toastWanted({ bubbles: true, panel: 'open', pathname: '/tables' })).toBe(true);
-    expect(toastWanted({ bubbles: true, panel: 'open', pathname: '/chats' })).toBe(false);
+  it('gives way to the card, the highlight or the back count with bubbles on', () => {
+    expect(toastWanted({ bubbles: true })).toBe(false);
   });
 });

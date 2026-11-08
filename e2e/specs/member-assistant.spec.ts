@@ -51,10 +51,9 @@ test.describe('member assistant chat', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL((u) => u.pathname === '/', { timeout: 60_000 });
 
-    await page
-      .getByRole('button', { name: /Toggle assistant/ })
-      .first()
-      .click();
+    // The Chats window opens on its list; the deep link opens the
+    // assistant's own thread in it (a new login has no row for it yet).
+    await page.goto('/assistant');
     const box = page.getByPlaceholder(/Message your assistant/);
     await expect(box).toBeEnabled({ timeout: 30_000 });
 

@@ -1,3 +1,4 @@
+import { agentView } from './window-view';
 import { expect, test, type Page } from '@playwright/test';
 import {
   MOCK_AGENT,
@@ -311,6 +312,8 @@ test('no live card while the window is open; it shows when the window is minimis
   page,
 }) => {
   await bubblesOn(page);
+  // The Chats window opens on the assistant's thread, not its list.
+  await agentView(page);
   await signIn(page, 'admin');
   await settled(page);
 
