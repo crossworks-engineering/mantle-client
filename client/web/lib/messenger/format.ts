@@ -206,6 +206,16 @@ export function rowBadge(
   return { text: badgeCount(n), label, muted: row.muted, mention: row.mention };
 }
 
+/** Whether a row is highlighted: a line waits in it. It reads the list and
+ *  nothing else, so it goes when the chat is read anywhere. Never a muted chat
+ *  (its grey pill counts), never the one open. */
+export function rowHighlighted(
+  row: Pick<MessengerListRow, 'unread' | 'muted'>,
+  selected: boolean,
+): boolean {
+  return row.unread > 0 && !row.muted && !selected;
+}
+
 /** The list search: the title, a participant's name or the last line. */
 export function rowMatches(
   row: Pick<MessengerListRow, 'title' | 'participants' | 'preview'>,

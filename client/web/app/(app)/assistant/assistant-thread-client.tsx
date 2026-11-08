@@ -120,10 +120,13 @@ export function AssistantThreadClient({
   // Showing the live thread marks it read for every login (the messenger's
   // count includes an Admin user's replies too): while the dock or the Chats
   // row shows it in a visible tab, so a reply in a background tab still counts.
+  // Not while this window's turn runs: the reply's row is there already, pending,
+  // and a cursor past it would leave the finished reply read, unseen, if the
+  // window is minimised before it ends.
   const visible = useDocumentVisible();
   useMarkThreadRead(
     threadQuery.data?.agent?.slug,
-    (embedded || panel === 'open') && visible && view.kind === 'live',
+    (embedded || panel === 'open') && visible && view.kind === 'live' && !busy,
   );
 
   useEffect(() => {

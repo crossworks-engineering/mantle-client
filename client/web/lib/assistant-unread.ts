@@ -59,7 +59,8 @@ export function pingChangesUnread(data: string): boolean {
   }
 }
 
-/** The body of POST /api/assistant/read for one thread. */
-export function readBody(agentSlug: string): { agentSlug: string } {
-  return { agentSlug };
+/** The body of POST /api/assistant/read for one thread: read up to now, or up
+ *  to `at`. */
+export function readBody(agentSlug: string, at?: string): { agentSlug: string; at?: string } {
+  return at ? { agentSlug, at } : { agentSlug };
 }

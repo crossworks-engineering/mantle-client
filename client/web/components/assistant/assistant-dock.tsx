@@ -42,6 +42,7 @@ import { useIsAdminUser, useViewerAreas } from '@/components/workspaces/use-shel
 import { chatFeatures, turnRefusalText } from '@/lib/assistant-turn-refusal';
 import { useAssistantUnreadCount } from './use-assistant-unread';
 import { ASSISTANT_W_DEFAULT, clampAssistantWidth } from '@/lib/nav-width';
+import { trackPointer } from '@/lib/track-pointer';
 import type { TurnEvent } from '@mantle/client-types';
 import {
   replyPollDelayMs,
@@ -547,10 +548,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   }, [setPopout]);
 
   // One gesture, two jobs: from the header it moves the window, from the corner
-  // grip it resizes. Listeners go on the WINDOW, not the element, so a fast
-  // drag that outruns the pointer keeps tracking instead of dropping the window
-  // wherever the cursor happened to leave it. The box is written to storage on
-  // release rather than per frame — a drag is ~60 writes a second otherwise.
+  // grip it resizes. The box is written to storage on release rather than per
+  // frame — a drag is ~60 writes a second otherwise.
   const dragPopout = useCallback(
     (e: React.PointerEvent, mode: 'move' | 'resize') => {
       const base = popoutRef.current;
@@ -591,16 +590,12 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
         el.style.setProperty('--popout-w', `${next.w}px`);
         el.style.setProperty('--popout-h', `${next.h}px`);
       };
-      const onUp = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
+      trackPointer(onMove, () => {
         // Now React catches up with where the window actually is: one render,
         // one storage write.
         if (popoutRef.current) setPopoutState(popoutRef.current);
         savePopout();
-      };
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
+      });
     },
     [setPopout, savePopout],
   );

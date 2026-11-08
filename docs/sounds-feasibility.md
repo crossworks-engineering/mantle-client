@@ -86,7 +86,7 @@ the client falls back to the browser's copy on a brain without it.
 | success | 330 ms | E6 then A6, a fourth up, bell | **a save you clicked went through, an upload batch went through (wired)** |
 | warning | 320 ms | F#5 twice, triangle | **mic or speaker blocked, an upload refused, a commit that changed elsewhere (wired)** |
 | danger | 370 ms | E5 then C#5, minor third down, triangle | **assistant turn, run or Activity item failed; a save, commit, decision or call join refused (wired)** |
-| notification | 360 ms | one E6 bell | **a model provider starts failing, the assistant writes to you (wired)** |
+| notification | 360 ms | one E6 bell | **a model provider starts failing (wired)** |
 | commit | 230 ms | A6 gliding to C#6 over a low A4 body | **page, table, drawing, app or config committed, an app draft or a Studio version saved (wired)** |
 | action | 50 ms | one A6 tick | **a question answered, a tool call approved or rejected (wired)** |
 | attention | 700 ms | A5, E6, A6 rising, held bell | **a question or a tool call waits for you (wired)** |
@@ -159,9 +159,10 @@ things:
   non-saves takes a flag (`saves` in network, `form` in connectors).
 - **Every notification:** the client has no bell or inbox; the brain's
   notices in the app are the chat lines (`message` / `mention`), the waiting
-  approvals (`attention`), provider outages and now a line the assistant
-  writes to me in its thread (`notification`, not on the assistant screen,
-  where the reply sounds, and never for my own line).
+  approvals (`attention`) and provider outages. A line the assistant writes to
+  me outside a turn has no sound yet: an earlier branch for it could never run
+  (an assistant thread is not on the messenger stream), and Project Bubble Chat
+  removed it. Its phase 3 gives both systems one sound.
 - **Activity column:** `live-column.tsx` → `start` when a new item starts
   running, `complete` or `danger` when it ends (`activityChanges`). Items
   running at load are quiet; a conversation turn's end is left to `reply`.

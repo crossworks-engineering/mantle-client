@@ -168,10 +168,13 @@ rectangle. One alpha per role; do not invent new numbers per screen:
 | Field-look controls (`Input`, `Textarea`, `SelectTrigger`, `TagInput`, the outline `Button`, bordered filter chips) | `bg-transparent` — the `border-input` outline IS the affordance | the kit components; never re-add a fill at a call site (`border-input bg-background` is the smell to grep for) |
 | Tabs (`TabsList` track / active tab)                                                                                | `bg-muted/60` track, `bg-background/70` active                  | the kit's `ui/tabs`                                                                                            |
 | Reader / detail panes                                                                                               | no fill at all                                                  | the pane inherits the shell's ground                                                                           |
+| Chat bubble (the card outside the chat windows)                                                                     | `bg-card/70` + `backdrop-blur`, no border, `shadow-lg`          | `components/bubbles/bubble-stack.tsx`; solid under `prefers-reduced-transparency`                              |
 
 - **Floating layers stay opaque**: `popover`, dialogs, dropdown/select menus,
   toasts, tooltips. A menu floating over arbitrary content needs a solid
-  ground — translucency there is noise, not continuity.
+  ground — translucency there is noise, not continuity. The chat bubble is the
+  owner's one exception: it floats over the work and stays until it is closed,
+  so the work must show through it. The blur keeps its text readable.
 - **Sticky bars take the blur**: content scrolls UNDER them, and `/60` alone
   would let it fight the bar's own text. `backdrop-blur` + `/60` keeps the
   hue of the backdrop without the legibility fight. (`/80` was tried first

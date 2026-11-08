@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiEventStream, apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 import { useDocumentVisible } from '@/lib/use-document-visible';
+import { messengerKeys } from '@/lib/messenger/api';
 import {
   CONVERSATIONS_PATH,
   READ_PATH,
@@ -63,6 +64,10 @@ export function AssistantUnreadSync() {
     return apiEventStream(THREAD_STREAM_PATH, (data) => {
       if (pingChangesUnread(data)) {
         void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+        // The one chat list and its count carry the thread too. The query
+        // above may have no reader here, so it cannot be left to pass this on.
+        void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
+        void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
       }
     });
   }, [live, queryClient]);

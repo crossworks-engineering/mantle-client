@@ -8,7 +8,14 @@ import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useReadByAll } from '@/components/messenger/messenger-live';
 import type { MessengerListRow } from '@/lib/messenger/dto';
 import { groupLook, type ChatFace, type FaceOf } from '@/lib/messenger/faces';
-import { directPeer, listTime, otherPeople, previewLine, rowBadge } from '@/lib/messenger/format';
+import {
+  directPeer,
+  listTime,
+  otherPeople,
+  previewLine,
+  rowBadge,
+  rowHighlighted,
+} from '@/lib/messenger/format';
 
 /** Re-render the relative times once a minute. */
 function useMinute(): Date {
@@ -53,13 +60,18 @@ export function ChatRow({
   const read = line?.mine && row.lastSeq !== null && readByAll >= row.lastSeq;
   const Tick = read ? CheckCheck : Check;
   const badge = rowBadge(row);
+  // A line waits here. Where a chat window is open this says so, in place of
+  // a bubble (Project Bubble Chat).
+  const highlighted = rowHighlighted(row, selected);
   return (
     <ListCard
       onClick={onOpen}
       selected={selected}
+      accent={highlighted ? 'info' : undefined}
       aria-current={selected ? 'true' : undefined}
       data-testid="chat-row"
-      className="flex items-start gap-3"
+      data-highlighted={highlighted || undefined}
+      className={cn('flex items-start gap-3', highlighted && 'bg-info/10')}
     >
       <ChatAvatar
         name={row.title}

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { expect, type Page } from '@playwright/test';
 import { GONE_ROUTE, MEMBER_OPEN } from './shell-nav';
+import { createMockChats, type MockChats } from './mock-chats';
 import { newMockStatus, statusAnswer, type MockStatus } from './mock-status';
 import { newMockSsoSetup, ssoSetupAnswer, type MockSsoSetup } from './mock-sso-setup';
 
@@ -280,6 +281,8 @@ export type MockWorkspaceApi = {
    *  stays open, quiet). A stream for a turn id that is not the caller's is
    *  a 404, as on a brain. */
   turnEvents: unknown[];
+  /** The chats (mock-chats.ts): off unless a spec turns them on. */
+  chats: MockChats;
   close: () => Promise<void>;
 };
 
@@ -371,6 +374,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     uiAnswers: [],
     turns: [],
     turnEvents: [],
+    chats: createMockChats(),
     close: async () => undefined,
   };
 
@@ -999,6 +1003,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       return json(res, 200, { ok: true });
     }
     if (!role) return json(res, 401, { error: 'Unauthorized' });
+
+    if (await state.chats.handle(req, res, url, path, json, cors, readBody)) return;
 
     if (EVERY_LOGIN.some((re) => re.test(path))) {
       if (path === '/api/shell') return json(res, 200, shell(role));
