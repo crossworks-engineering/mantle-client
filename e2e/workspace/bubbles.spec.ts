@@ -7,7 +7,7 @@ import {
 } from './mock-workspace-api';
 
 /**
- * Chat bubbles, phases 1 and 2: one source and one seen state for both chat
+ * Chat bubbles, phases 1 and 2 (phase 3 is bubbles-work.spec.ts): one source and one seen state for both chat
  * systems. A card comes from the one chat list. It stays until it is closed or
  * the chat is read anywhere. While a chat window is open no card shows and the
  * chat's row is highlighted instead. It has the look, the edges, the drag and
@@ -115,7 +115,7 @@ test('a group card names the group, and a long paste shows its size', async ({ p
   await expect(card(page)).not.toContainText('Crewb');
 });
 
-test('an assistant reply shows once, when complete, as its first sentence', async ({ page }) => {
+test('an assistant reply shows once, when complete, as its lead paragraph', async ({ page }) => {
   // A reply read earlier: it never comes back as new.
   api.chats.replyRead(MOCK_AGENT.slug, 'An old reply that was read long ago.');
   await bubblesOn(page);
@@ -128,7 +128,7 @@ test('an assistant reply shows once, when complete, as its first sentence', asyn
   await expect(card(page)).toHaveCount(0);
 
   const rest = 'The details go on for a long time here. '.repeat(20);
-  api.chats.replyEnds(MOCK_AGENT.slug, `I have **finished** the report for you. ${rest}`);
+  api.chats.replyEnds(MOCK_AGENT.slug, `I have **finished** the report for you.\n\n${rest}`);
   await expect(card(page)).toContainText(MOCK_AGENT.name);
   await expect(card(page)).toContainText('I have finished the report for you.');
   await expect(card(page)).not.toContainText('The details');
@@ -210,6 +210,8 @@ test('a reply to a turn from the window still shows if it is minimised first', a
 
   await page.keyboard.press('Escape');
   api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
+  // The turn's stream ends, as a brain's does: the live card gives way.
+  api.pushTurnEvent({ type: 'done', data: {} });
   await expect(card(page)).toContainText('I have finished the report.');
 });
 

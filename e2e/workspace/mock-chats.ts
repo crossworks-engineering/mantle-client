@@ -47,6 +47,15 @@ type MockRow = {
   agentSlug?: string;
 };
 
+type MockToolStats = {
+  calls: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  queued: number;
+  failures: { slug: string; error: string }[];
+};
+
 type MockReply = {
   id: string;
   direction: 'inbound' | 'outbound';
@@ -57,6 +66,7 @@ type MockReply = {
   error: null;
   attachments: unknown[];
   createdAt: string;
+  toolStats?: MockToolStats;
 };
 
 export type MockChats = {
@@ -74,8 +84,9 @@ export type MockChats = {
   deleteLine(chat: string, seq: number): void;
   /** A reply starts: a pending row, and the thread stream pings. */
   replyStarts(slug: string): void;
-  /** The reply got its text: the row is complete, and the stream pings. */
-  replyEnds(slug: string, text: string): void;
+  /** The reply got its text: the row is complete, and the stream pings.
+   *  `toolStats`: the brain's tally of the turn's tools. */
+  replyEnds(slug: string, text: string, toolStats?: MockToolStats): void;
   /** The reply failed: the row stays in the count, as on a brain. */
   replyFails(slug: string): void;
   /** The thread's newest reply is no longer there. */
@@ -87,6 +98,13 @@ export type MockChats = {
   readElsewhere(chat: string): void;
   /** The reads this run asked for. */
   reads: { chat: string; seq: number }[];
+  /** The lines this login sent (POST /api/messenger/c/:id/messages). */
+  sent: { chat: string; body: string }[];
+  /** The chats this login may not write in: a send there is refused, as a
+   *  brain refuses a login that may not write by hand. */
+  readOnly: Set<string>;
+  /** The reactions this login gave. */
+  reacted: { chat: string; seq: number; emoji: string }[];
   threadReads: { agentSlug: string; at: string | null }[];
   /** Serve the routes this module owns. False: not one of them. */
   handle(
@@ -137,6 +155,9 @@ export function createMockChats(): MockChats {
     rows: [],
     reads: [],
     threadReads: [],
+    sent: [],
+    reacted: [],
+    readOnly: new Set(),
     addChat(id, title, kind = 'direct') {
       chats.rows.push({
         kind,
@@ -232,12 +253,13 @@ export function createMockChats(): MockChats {
       row.preview = null;
       emit(threadStreams, { agentSlug: slug, direction: 'outbound' });
     },
-    replyEnds(slug, text) {
+    replyEnds(slug, text, toolStats) {
       const row = threadOf(slug);
       const reply = (replies.get(slug) ?? []).find((r) => r.status === 'pending');
       if (!reply) throw new Error(`no pending reply in ${slug}`);
       reply.status = 'complete';
       reply.text = text;
+      if (toolStats) reply.toolStats = toolStats;
       row.preview = { authorName: row.title, text: text.slice(0, 80), authorKind: 'agent' };
       emit(threadStreams, { agentSlug: slug, direction: 'outbound' });
     },
@@ -346,6 +368,15 @@ export function createMockChats(): MockChats {
         json(res, 200, { ok: true });
         return true;
       }
+      // A reaction, as the chat's own button gives it.
+      const r = /^\/api\/messenger\/c\/([^/]+)\/messages\/(\d+)\/reactions$/.exec(path);
+      if (r && method === 'POST') {
+        const chat = decodeURIComponent(r[1]!);
+        const { emoji } = JSON.parse(await readBody(req)) as { emoji: string };
+        chats.reacted.push({ chat, seq: Number(r[2]), emoji });
+        json(res, 200, { ok: true });
+        return true;
+      }
       const m = /^\/api\/messenger\/c\/([^/]+)\/(messages|read)$/.exec(path);
       if (!m) return false;
       const chat = decodeURIComponent(m[1]!);
@@ -362,6 +393,53 @@ export function createMockChats(): MockChats {
             ? all.slice(-limit)
             : all.filter((l) => l.seq > Number(after)).slice(0, limit);
         json(res, 200, { messages, hasMore: false, lastSeq: messages.at(-1)?.seq ?? 0 });
+        return true;
+      }
+      // A line of mine: as on a brain, it moves my read cursor to it.
+      if (m[2] === 'messages' && method === 'POST') {
+        const all = lines.get(chat);
+        if (!all) {
+          json(res, 404, { error: 'not found' });
+          return true;
+        }
+        const { body, clientMsgId } = JSON.parse(await readBody(req)) as {
+          body: string;
+          clientMsgId?: string;
+        };
+        if (chats.readOnly.has(chat)) {
+          json(res, 403, { error: 'You can read this chat, not write in it.' });
+          return true;
+        }
+        chats.sent.push({ chat, body });
+        const row = rowOf(chat);
+        const seq = (row.lastSeq ?? 0) + 1;
+        const createdAt = tick();
+        const line: MockChatLine = {
+          id: `${chat}-${seq}`,
+          conversationId: chat,
+          seq,
+          authorKind: 'login',
+          authorId: 'me',
+          authorName: 'Me',
+          via: null,
+          body,
+          attachments: [],
+          mentions: [],
+          replyToSeq: null,
+          clientMsgId: null,
+          status: 'complete',
+          event: null,
+          editedAt: null,
+          deletedAt: null,
+          createdAt,
+          reactions: [],
+        };
+        all.push(line);
+        row.lastSeq = seq;
+        row.lastMessageAt = createdAt;
+        row.unread = 0;
+        emit(peopleStreams, { c: chat, seq, kind: 'new', actor: 'me', type: 'message' });
+        json(res, 200, { message: { ...line, clientMsgId: clientMsgId ?? null } });
         return true;
       }
       if (m[2] === 'read' && method === 'POST') {

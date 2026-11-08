@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * The bubble stack (Project Bubble Chat, phases 1 and 2): one card, and the
- * edges of the cards behind it. A card stays until it is closed or the chat is
+ * The bubble stack (Project Bubble Chat, phases 1 to 3): one card, and the
+ * edges of the cards behind it. A live card, for a turn this tab sent, goes in
+ * front of them while it runs. A card stays until it is closed or the chat is
  * read; a pinned one stays until it is unpinned. No card shows while a chat
  * window is open: there, the chat's row is highlighted instead.
  *
@@ -17,24 +18,15 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type RefObject,
 } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
-import { Pin, PinOff, X } from 'lucide-react';
-import { apiSend } from '@mantle/web-ui/api-fetch';
-import { cn } from '@mantle/web-ui/lib/utils';
-import { Button } from '@mantle/web-ui/ui/button';
+import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
-import { useDockActions, useDockLayout } from '@/components/assistant/assistant-dock';
-import { CONVERSATIONS_KEY } from '@/components/assistant/use-assistant-unread';
-import { ChatAvatar } from '@/components/messenger/chat-avatar';
-import { useChatFaces } from '@/components/messenger/chat-faces';
+import { useDockLayout, useDockSession } from '@/components/assistant/assistant-dock';
 import { useViewerLogin } from '@/components/workspaces/use-shell-workspaces';
-import { READ_PATH, readBody } from '@/lib/assistant-unread';
-import { chatWindowOpen, cursorMayMove, type BubbleCard } from '@/lib/bubbles/cards';
+import { chatWindowOpen, type BubbleCard } from '@/lib/bubbles/cards';
+import { LIVE_HOLD_MS, liveHeld, liveTurnOf } from '@/lib/bubbles/live';
 import {
   DRAG_SLOP,
   clampPlace,
@@ -43,21 +35,12 @@ import {
   type BubblePlace,
 } from '@/lib/bubbles/place';
 import { getBubbleMode, serverBubbleMode, subscribeBubbleMode } from '@/lib/bubbles/prefs';
-import {
-  getBubbleCards,
-  isBubblePinned,
-  popBubble,
-  serverBubbleCards,
-  subscribeBubbles,
-  togglePinBubble,
-} from '@/lib/bubbles/store';
+import { getBubbleCards, serverBubbleCards, subscribeBubbles } from '@/lib/bubbles/store';
 import { NO_WORDS } from '@/lib/bubbles/person-text';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import { trackPointer } from '@/lib/track-pointer';
-
-/** A control is seen on hover, on keyboard focus, and always on a touch screen. */
-const REVEAL =
-  'opacity-0 transition-opacity group-hover/bubble:opacity-100 group-has-[:focus-visible]/bubble:opacity-100 [@media(hover:none)]:opacity-100';
+import { Bubble } from './bubble-card';
+import { LiveBubble } from './live-bubble';
 
 export function useBubbleMode() {
   return useSyncExternalStore(subscribeBubbleMode, getBubbleMode, serverBubbleMode);
@@ -74,12 +57,87 @@ function moveTo(node: HTMLElement, p: BubblePlace) {
   node.style.top = `${p.y}px`;
 }
 
+/** The live card's state: the dock's newest turn, while it runs, and for a
+ *  moment after, until the reply's own card comes (lib/bubbles/live.ts). */
+function useLiveCard(cards: readonly BubbleCard[], visible: boolean) {
+  const { messages, agentSlug, agentName } = useDockSession();
+  // The list the sync keeps fresh; this only reads it.
+  const rows = useQuery({
+    queryKey: messengerKeys.list,
+    queryFn: messengerApi.list,
+    enabled: false,
+  }).data;
+  const turn = liveTurnOf(messages);
+  const row = rows?.find(
+    (r) => r.kind === 'agent' && (agentSlug ? r.agentSlug === agentSlug : r.title === agentName),
+  );
+  const chat = row?.id ?? null;
+  const keysNow = chat ? cards.filter((c) => c.chat === chat).map((c) => c.key) : [];
+  const [end, setEnd] = useState<{
+    id: string;
+    at: number;
+    keys: readonly string[];
+    shown: boolean;
+    over: boolean;
+  } | null>(null);
+  const [closed, setClosed] = useState<string | null>(null);
+  /** The turn seen running, and its chat's cards when it started: a card
+   *  that is not among them is this turn's reply. */
+  const running = useRef<{ id: string; keys: readonly string[] } | null>(null);
+  const seen = useRef({ visible, keysNow });
+  seen.current = { visible, keysNow };
+
+  const id = turn?.id;
+  const pending = turn?.pending;
+  useEffect(() => {
+    if (!id) return;
+    if (pending) {
+      if (running.current?.id !== id) running.current = { id, keys: seen.current.keysNow };
+      return;
+    }
+    if (running.current?.id !== id) return;
+    const keys = running.current.keys;
+    running.current = null;
+    const at = Date.now();
+    setEnd({ id, at, keys, shown: seen.current.visible, over: false });
+    const t = window.setTimeout(
+      () => setEnd((e) => (e?.id === id ? { ...e, over: true } : e)),
+      LIVE_HOLD_MS,
+    );
+    return () => window.clearTimeout(t);
+  }, [id, pending]);
+
+  if (!turn || closed === turn.id) return null;
+  const on =
+    turn.pending ||
+    (end?.id === turn.id &&
+      liveHeld({
+        shownAtEnd: end.shown,
+        closed: false,
+        failed: turn.error,
+        keysAtStart: end.keys,
+        keysNow,
+        endedAt: end.at,
+        now: end.over ? end.at + LIVE_HOLD_MS : end.at,
+      }));
+  if (!on) return null;
+  return {
+    turn,
+    agentSlug,
+    title: row?.title ?? agentName,
+    chat,
+    close: () => setClosed(turn.id),
+  };
+}
+
 export function BubbleStack() {
   const mode = useBubbleMode();
   const cards = useSyncExternalStore(subscribeBubbles, getBubbleCards, serverBubbleCards);
   const { panel } = useDockLayout();
   const pathname = usePathname();
   const login = useViewerLogin()?.loginId ?? null;
+  const hidden = mode === 'off' || chatWindowOpen({ panel, pathname });
+  const live = useLiveCard(cards, !hidden);
   const [place, setPlace] = useState<BubblePlace | null>(null);
   const [turned, setTurned] = useState({ front: '', by: 0 });
   const rootRef = useRef<HTMLDivElement>(null);
@@ -93,16 +151,18 @@ export function BubbleStack() {
     setPlace(login ? readPlace(login) : null);
   }, [login]);
 
-  // A new line comes to the front: the turn through the stack holds only while
-  // the same card leads it.
-  const front = cards[0]?.key ?? '';
+  // The deck: the live card first, then the cards. A new line comes to the
+  // front: the turn through the deck holds only while the same item leads it.
+  const deck = cards.length + (live ? 1 : 0);
+  const front = live ? `live:${live.turn.id}` : (cards[0]?.key ?? '');
   const by = turned.front === front ? turned.by : 0;
-  const shown =
-    mode === 'off' || chatWindowOpen({ panel, pathname }) ? undefined : cards[by % cards.length];
-  const shownKey = shown?.key;
+  const at = deck ? by % deck : 0;
+  const liveShown = !hidden && live && at === 0 ? live : null;
+  const shown = hidden || liveShown ? undefined : cards[live ? at - 1 : at];
+  const shownKey = liveShown ? front : shown?.key;
   // A card of another height, or edges that come or go, can push it off screen.
-  const shownText = shown?.text;
-  const hasEdges = cards.length > 1;
+  const shownText = liveShown ? `${liveShown.turn.text.length}` : shown?.text;
+  const hasEdges = deck > 1;
 
   // On screen, for this card and this window. Written to the node and not to
   // the place, so a bigger window brings the place back.
@@ -146,15 +206,20 @@ export function BubbleStack() {
     );
   };
 
-  const more = cards.length - 1;
+  const more = deck - 1;
   return (
     <>
       {/* Says a new card once, in words. It stays mounted, or a screen reader
-          may not hear what is written into it. */}
+          may not hear what is written into it. A live card says only that
+          the assistant works, not each word it writes. */}
       <span role="status" className="sr-only">
-        {shown ? `${shown.title}: ${shown.text || NO_WORDS}` : ''}
+        {liveShown
+          ? `${liveShown.title} is working`
+          : shown
+            ? `${shown.title}: ${shown.text || NO_WORDS}`
+            : ''}
       </span>
-      {shown ? (
+      {liveShown || shown ? (
         <div
           ref={rootRef}
           data-testid="bubble-stack"
@@ -162,9 +227,22 @@ export function BubbleStack() {
           // A photo is an image: the browser's own image drag would end ours.
           onDragStart={(e) => e.preventDefault()}
           style={place ? { position: 'fixed', left: place.x, top: place.y } : undefined}
-          className="group/bubble pointer-events-auto relative isolate w-80 max-w-[calc(100vw-2rem)] touch-none select-none self-end"
+          className="group/bubble pointer-events-auto relative isolate w-88 max-w-[calc(100vw-2rem)] touch-none select-none self-end"
         >
-          <Bubble key={shown.key} card={shown} more={more} dragged={dragged} />
+          {liveShown ? (
+            <LiveBubble
+              key={front}
+              live={liveShown.turn}
+              agentSlug={liveShown.agentSlug}
+              title={liveShown.title}
+              chat={liveShown.chat}
+              more={more}
+              dragged={dragged}
+              onClose={liveShown.close}
+            />
+          ) : shown ? (
+            <Bubble key={shown.key} card={shown} more={more} dragged={dragged} />
+          ) : null}
           {more > 0 ? (
             <RowButton
               data-bubble-control
@@ -189,133 +267,5 @@ export function BubbleStack() {
         </div>
       ) : null}
     </>
-  );
-}
-
-function Bubble({
-  card,
-  more,
-  dragged,
-}: {
-  card: BubbleCard;
-  more: number;
-  dragged: RefObject<boolean>;
-}) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { openAssistant } = useDockActions();
-  const faceOf = useChatFaces();
-  const pinned = isBubblePinned(card.key);
-
-  const open = (e: ReactMouseEvent) => {
-    // A keyboard click (detail 0) has no press of its own to be a drag.
-    if (dragged.current && e.detail > 0) return;
-    if (card.agentSlug) openAssistant(card.agentSlug);
-    else router.push(`/chats/${encodeURIComponent(card.chat)}`);
-  };
-
-  const moveCursor = async (to: number) => {
-    // By the list as it is now, not as this tab last heard it.
-    const rows = await queryClient.fetchQuery({
-      queryKey: messengerKeys.list,
-      queryFn: messengerApi.list,
-      staleTime: 0,
-    });
-    if (!cursorMayMove(rows.find((r) => r.id === card.chat))) return;
-    await (card.agentSlug
-      ? // A thread has no seq: its order is the reply's time in ms. The row's
-        // own time has more digits than that, so step past it.
-        apiSend(READ_PATH, 'POST', readBody(card.agentSlug, new Date(to + 1).toISOString()))
-      : messengerApi.read(card.chat, to));
-    void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
-    void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
-    void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
-  };
-
-  const pop = (e: ReactMouseEvent) => {
-    // The second click of a double click would close the card that came next,
-    // unseen.
-    if (e.detail > 1) return;
-    const to = popBubble(card);
-    // The next card takes the place of this one, and a keyboard stays with it.
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLElement>('[data-testid="bubble-pop"]')?.focus(),
-    );
-    // The last card of this chat went: the chat is seen. A failed read leaves
-    // it unread, and the popped key keeps the card from coming back. A pinned
-    // card's close reads nothing (popBubble).
-    if (to !== null) void moveCursor(to).catch(() => {});
-  };
-
-  return (
-    <div
-      data-testid="bubble-card"
-      role="group"
-      aria-label={`Message from ${card.title}`}
-      className="relative rounded-2xl bg-card/70 text-card-foreground shadow-lg backdrop-blur [@media(prefers-reduced-transparency:reduce)]:bg-card"
-    >
-      <RowButton
-        onClick={open}
-        data-testid="bubble-open"
-        className="block w-full rounded-2xl p-3"
-        title="Open the chat"
-      >
-        {/* Past the avatar on its left, and clear of the controls on its right. */}
-        <span className="block truncate pl-5 pr-11 text-sm font-medium">{card.title}</span>
-        {card.note ? (
-          <span className="block text-xs text-muted-foreground">{card.note}</span>
-        ) : null}
-        <span className="line-clamp-6 whitespace-pre-line text-sm [overflow-wrap:anywhere]">
-          {card.text || NO_WORDS}
-        </span>
-        {card.cut || more > 0 ? (
-          <span className="mt-1 block text-xs text-muted-foreground">
-            {[card.cut ? 'Open to read more' : null, more > 0 ? `${more} more` : null]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-        ) : null}
-      </RowButton>
-      <ChatAvatar
-        name={card.author.name}
-        kind={card.author.kind === 'agent' ? 'agent' : 'person'}
-        face={faceOf({
-          kind: card.author.kind,
-          id: card.author.id,
-          slug: card.agentSlug,
-          avatar: card.author.avatar,
-          photoVersion: card.author.photoVersion,
-        })}
-        size="md"
-        className="absolute -left-3 -top-3 rounded-full ring-2 ring-card"
-      />
-      <div className="absolute right-1.5 top-1.5 flex">
-        <Button
-          variant="ghost"
-          size="icon-2xs"
-          onClick={() => togglePinBubble(card.key)}
-          data-bubble-control
-          data-testid="bubble-pin"
-          aria-pressed={pinned}
-          aria-label={`Pin the message from ${card.title}`}
-          title={pinned ? 'Unpin' : 'Pin'}
-          className={cn(!pinned && REVEAL)}
-        >
-          {pinned ? <PinOff aria-hidden /> : <Pin aria-hidden />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-2xs"
-          onClick={pop}
-          data-bubble-control
-          data-testid="bubble-pop"
-          aria-label={`Close the message from ${card.title}`}
-          title="Close"
-          className={REVEAL}
-        >
-          <X aria-hidden />
-        </Button>
-      </div>
-    </div>
   );
 }

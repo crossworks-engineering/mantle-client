@@ -281,6 +281,10 @@ export type MockWorkspaceApi = {
    *  stays open, quiet). A stream for a turn id that is not the caller's is
    *  a 404, as on a brain. */
   turnEvents: unknown[];
+  /** Send one more event on every turn stream open now, and to any opened later. */
+  pushTurnEvent: (event: unknown) => void;
+  /** The turns a Stop was asked for. */
+  cancels: string[];
   /** The chats (mock-chats.ts): off unless a spec turns them on. */
   chats: MockChats;
   close: () => Promise<void>;
@@ -345,6 +349,8 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockWorkspaceApi> {
   const now = new Date().toISOString();
+  // The open turn streams: pushTurnEvent writes to them.
+  const turnStreams = new Set<ServerResponse>();
   const state: MockWorkspaceApi = {
     requests: [],
     signIns: [],
@@ -374,6 +380,13 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     uiAnswers: [],
     turns: [],
     turnEvents: [],
+    pushTurnEvent: (event) => {
+      // Kept too, so a stream that opens late hears it, as a brain replays
+      // a turn's buffer to a new reader.
+      state.turnEvents.push(event);
+      for (const s of turnStreams) s.write(`data: ${JSON.stringify(event)}\n\n`);
+    },
+    cancels: [],
     chats: createMockChats(),
     close: async () => undefined,
   };
@@ -1027,7 +1040,10 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       if (turnM) {
         const own = state.turns.some((t) => t.turnId === turnM[1] && t.role === role);
         if (!own) return json(res, 404, { error: 'not found' });
-        if (turnM[2] === 'cancel') return json(res, 200, { ok: true });
+        if (turnM[2] === 'cancel') {
+          state.cancels.push(turnM[1]!);
+          return json(res, 200, { ok: true });
+        }
         res.writeHead(200, {
           ...cors,
           'content-type': 'text/event-stream',
@@ -1035,6 +1051,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         });
         res.write(':\n\n');
         for (const ev of state.turnEvents) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+        turnStreams.add(res);
+        req.on('close', () => turnStreams.delete(res));
         return;
       }
       if (path === '/api/assistant/messages') return json(res, 200, { messages: [] });

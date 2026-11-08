@@ -168,7 +168,7 @@ rectangle. One alpha per role; do not invent new numbers per screen:
 | Field-look controls (`Input`, `Textarea`, `SelectTrigger`, `TagInput`, the outline `Button`, bordered filter chips) | `bg-transparent` — the `border-input` outline IS the affordance | the kit components; never re-add a fill at a call site (`border-input bg-background` is the smell to grep for) |
 | Tabs (`TabsList` track / active tab)                                                                                | `bg-muted/60` track, `bg-background/70` active                  | the kit's `ui/tabs`                                                                                            |
 | Reader / detail panes                                                                                               | no fill at all                                                  | the pane inherits the shell's ground                                                                           |
-| Chat bubble (the card outside the chat windows)                                                                     | `bg-card/70` + `backdrop-blur`, no border, `shadow-lg`          | `components/bubbles/bubble-stack.tsx`; solid under `prefers-reduced-transparency`                              |
+| Chat bubble (the card outside the chat windows)                                                                     | `bg-card/70` + `backdrop-blur`, no border, `shadow-lg`          | `components/bubbles/bubble-card.tsx`; solid under `prefers-reduced-transparency`                               |
 
 - **Floating layers stay opaque**: `popover`, dialogs, dropdown/select menus,
   toasts, tooltips. A menu floating over arbitrary content needs a solid
