@@ -240,6 +240,11 @@ test('a close in one tab clears the other, with one read', async ({ page, contex
   await settled(page);
   const other = await context.newPage();
   await other.goto('/');
+  // Both tabs listen before the line comes: else the second hears it only at
+  // its next list poll.
+  await expect
+    .poll(() => api.asked('admin').filter((r) => r === 'GET /api/messenger/stream').length)
+    .toBeGreaterThanOrEqual(2);
   await settled(other);
 
   api.chats.say(CHAT, 'Hello there');

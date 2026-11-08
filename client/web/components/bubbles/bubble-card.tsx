@@ -95,10 +95,15 @@ export function Bubble({
   card,
   more,
   dragged,
+  replying,
+  setReplying,
 }: {
   card: BubbleCard;
   more: number;
   dragged: RefObject<boolean>;
+  /** The reply field is open. The stack holds it, so the card keeps the front. */
+  replying: boolean;
+  setReplying: (on: boolean) => void;
 }) {
   const router = useRouter();
   const { openAssistant } = useDockActions();
@@ -106,7 +111,6 @@ export function Bubble({
   const pinned = isBubblePinned(card.key);
   const close = useBubbleClose(card);
   const fresh = useFresh(TALK_MS);
-  const [replying, setReplying] = useState(false);
   const person = !card.agentSlug;
 
   const open = (e: ReactMouseEvent) => {
@@ -229,7 +233,7 @@ export function Bubble({
         <Button
           variant="ghost"
           size="icon-2xs"
-          onClick={() => setReplying((r) => !r)}
+          onClick={() => setReplying(!replying)}
           data-bubble-control
           data-testid="bubble-reply"
           aria-expanded={replying}

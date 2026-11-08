@@ -87,6 +87,10 @@ describe('liveHeld', () => {
     expect(liveHeld({ ...base, failed: true, closed: true })).toBe(false);
   });
 
+  it('gives a failure way when the reply card comes after all', () => {
+    expect(liveHeld({ ...base, failed: true, keysNow: ['agent:1', 'agent:2'] })).toBe(false);
+  });
+
   it('is not ended by a card that went', () => {
     expect(liveHeld({ ...base, keysNow: [] })).toBe(true);
   });

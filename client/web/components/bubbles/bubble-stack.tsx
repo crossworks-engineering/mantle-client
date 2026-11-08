@@ -90,7 +90,8 @@ function useLiveCard(cards: readonly BubbleCard[], visible: boolean) {
   // A live card is a turn the brain took (it has an id): a refused send
   // never leaves its card, so the reply field keeps its words.
   const taken = turn?.turnId ? turn : null;
-  if (taken?.pending && run?.id !== taken.id) setRun({ id: taken.id, keys: keysNow });
+  // Once the chat is known: before it, "its cards" would read as none.
+  if (taken?.pending && chat && run?.id !== taken.id) setRun({ id: taken.id, keys: keysNow });
   if (taken && !taken.pending && run?.id === taken.id) {
     setRun(null);
     setEnd({ id: taken.id, keys: run.keys, shown: visible, over: false });
@@ -142,6 +143,9 @@ function Stack() {
   const live = useLiveCard(cards, !hidden);
   const [place, setPlace] = useState<BubblePlace | null>(null);
   const [turned, setTurned] = useState({ front: '', by: 0 });
+  /** The card whose reply field is open: it keeps the front, so a new line
+   *  does not take the field and its words away. */
+  const [replyKey, setReplyKey] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   /** A drag is going on: nothing else moves the node. */
   const moving = useRef(false);
@@ -159,8 +163,9 @@ function Stack() {
   const front = live ? `live:${live.turn.id}` : (cards[0]?.key ?? '');
   const by = turned.front === front ? turned.by : 0;
   const at = deck ? by % deck : 0;
-  const liveShown = !hidden && live && at === 0 ? live : null;
-  const shown = hidden || liveShown ? undefined : cards[live ? at - 1 : at];
+  const replyingTo = replyKey ? cards.find((c) => c.key === replyKey) : undefined;
+  const liveShown = !hidden && !replyingTo && live && at === 0 ? live : null;
+  const shown = hidden || liveShown ? undefined : (replyingTo ?? cards[live ? at - 1 : at]);
   const shownKey = liveShown ? front : shown?.key;
   // A card of another height, or edges that come or go, can push it off screen.
   const shownText = liveShown ? `${liveShown.turn.text.length}` : shown?.text;
@@ -241,7 +246,14 @@ function Stack() {
               onClose={liveShown.close}
             />
           ) : shown ? (
-            <Bubble key={shown.key} card={shown} more={more} dragged={dragged} />
+            <Bubble
+              key={shown.key}
+              card={shown}
+              more={more}
+              dragged={dragged}
+              replying={shown.key === replyKey}
+              setReplying={(on) => setReplyKey(on ? shown.key : null)}
+            />
           ) : null}
           {more > 0 ? (
             <RowButton

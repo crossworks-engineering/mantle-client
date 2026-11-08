@@ -97,6 +97,29 @@ test('a quick reply goes to the chat of the card, and only to it', async ({ page
   expect(api.chats.sent).toHaveLength(1);
 });
 
+test('a new line while the reply field is open keeps the field and its words', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.say(CHAT, 'Lunch at one?');
+  await expect(card(page)).toContainText('Lunch at one?');
+  await page.getByTestId('bubble-reply').click();
+  await page.getByTestId('bubble-reply-input').fill('Yes, and');
+
+  api.chats.say(CHAT, 'Or at two?');
+  api.chats.say(GROUP, 'Who has the keys?', { id: 'bob-id', name: 'Bob' });
+  await expect(card(page)).toContainText('2 more');
+  await expect(card(page)).toContainText('Lunch at one?');
+  await expect(page.getByTestId('bubble-reply-input')).toHaveValue('Yes, and');
+
+  await page.getByTestId('bubble-reply-input').fill('Yes, at one');
+  await page.getByTestId('bubble-reply-input').press('Enter');
+  await expect.poll(() => api.chats.sent).toEqual([{ chat: CHAT, body: 'Yes, at one' }]);
+  // The field closed: the newest card comes to the front again.
+  await expect(card(page)).toContainText('Who has the keys?');
+});
+
 test('a refused reply keeps its words and says why', async ({ page }) => {
   api.chats.readOnly.add(CHAT);
   await bubblesOn(page);
@@ -332,6 +355,20 @@ test('a refused reply to an assistant keeps its words and says why', async ({ pa
   await expect(page.getByTestId('bubble-reply-input')).toHaveValue('Now list the new features');
   await expect(live(page)).toHaveCount(0);
   expect(api.turns).toEqual([]);
+});
+
+test('a pinned card stays after a thumbs up', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.say(CHAT, 'Lunch at one?');
+  await page.getByTestId('bubble-pin').click();
+  await page.getByTestId('bubble-thumbs').click();
+  await expect.poll(() => api.chats.reacted).toEqual([{ chat: CHAT, seq: 1, emoji: '👍' }]);
+  await page.waitForTimeout(300);
+  await expect(card(page)).toContainText('Lunch at one?');
+  await expect(page.getByTestId('bubble-pin')).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('a double click on the thumbs up thanks one card', async ({ page }) => {
