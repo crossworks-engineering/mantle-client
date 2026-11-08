@@ -12,6 +12,14 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.18: the working bubble and the Chats window
+
+- **New:** a bubble card shows what the assistant did in its first paragraph, a line of the tools it used, and buttons for the items it links.
+- **New:** reply from the card: a one-line field. A thumbs up answers a person's line.
+- **New:** a live card while a turn you sent runs: the talking face, the step, the text so far, Stop, then the final reply.
+- **New:** the Assistant window is now the Chats window: the Chats screen's list of people, groups and agents, with search. A click opens the chat in the window, and Back returns to the list. The window stays open when you change screens, and a reload opens it again.
+- It works with a brain from v0.500.37; with v0.500.38 the first sentence says what was done.
+
 ## v0.9.17: chat bubbles
 
 - **New:** chat bubbles. A new assistant reply or a new chat message shows as a see-through card with its sender's face, over any screen. Cards stack newest first, stay until you pop them, and can be pinned. Drag the stack anywhere; the place is kept per login in this browser. A click opens the chat in the Assistant window.
