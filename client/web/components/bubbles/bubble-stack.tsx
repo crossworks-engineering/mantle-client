@@ -26,7 +26,7 @@ import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { useDockLayout, useDockSession } from '@/components/assistant/assistant-dock';
 import { useViewerLogin } from '@/components/workspaces/use-shell-workspaces';
 import { chatWindowOpen, type BubbleCard } from '@/lib/bubbles/cards';
-import { LIVE_HOLD_MS, liveHeld, liveTurnOf } from '@/lib/bubbles/live';
+import { LIVE_HOLD_MS, liveHeld, liveStatus, liveTurnOf } from '@/lib/bubbles/live';
 import {
   DRAG_SLOP,
   clampPlace,
@@ -73,61 +73,58 @@ function useLiveCard(cards: readonly BubbleCard[], visible: boolean) {
   );
   const chat = row?.id ?? null;
   const keysNow = chat ? cards.filter((c) => c.chat === chat).map((c) => c.key) : [];
+  /** The turn seen running, and its chat's cards when it started: a card
+   *  that is not among them is this turn's reply. */
+  const [run, setRun] = useState<{ id: string; keys: readonly string[] } | null>(null);
+  /** The turn that ended: whether it was on screen, and if its hold is over. */
   const [end, setEnd] = useState<{
     id: string;
-    at: number;
     keys: readonly string[];
     shown: boolean;
     over: boolean;
   } | null>(null);
   const [closed, setClosed] = useState<string | null>(null);
-  /** The turn seen running, and its chat's cards when it started: a card
-   *  that is not among them is this turn's reply. */
-  const running = useRef<{ id: string; keys: readonly string[] } | null>(null);
-  const seen = useRef({ visible, keysNow });
-  seen.current = { visible, keysNow };
 
-  const id = turn?.id;
-  const pending = turn?.pending;
-  // Before paint: the frame where the turn ended still shows its card.
-  useLayoutEffect(() => {
-    if (!id) return;
-    if (pending) {
-      if (running.current?.id !== id) running.current = { id, keys: seen.current.keysNow };
-      return;
-    }
-    if (running.current?.id !== id) return;
-    const keys = running.current.keys;
-    running.current = null;
-    const at = Date.now();
-    setEnd({ id, at, keys, shown: seen.current.visible, over: false });
+  // Set during the render that sees the change, as React adjusts state to a
+  // prop, so the turn's end is one commit and the card never leaves.
+  // A live card is a turn the brain took (it has an id): a refused send
+  // never leaves its card, so the reply field keeps its words.
+  const taken = turn?.turnId ? turn : null;
+  if (taken?.pending && run?.id !== taken.id) setRun({ id: taken.id, keys: keysNow });
+  if (taken && !taken.pending && run?.id === taken.id) {
+    setRun(null);
+    setEnd({ id: taken.id, keys: run.keys, shown: visible, over: false });
+  }
+
+  const endId = end?.id;
+  useEffect(() => {
+    if (!endId) return;
     const t = window.setTimeout(
-      () => setEnd((e) => (e?.id === id ? { ...e, over: true } : e)),
+      () => setEnd((e) => (e?.id === endId ? { ...e, over: true } : e)),
       LIVE_HOLD_MS,
     );
     return () => window.clearTimeout(t);
-  }, [id, pending]);
+  }, [endId]);
 
-  if (!turn || closed === turn.id) return null;
+  if (!taken || closed === taken.id) return null;
   const on =
-    turn.pending ||
-    (end?.id === turn.id &&
+    taken.pending ||
+    (end?.id === taken.id &&
       liveHeld({
         shownAtEnd: end.shown,
         closed: false,
-        failed: turn.error,
+        failed: taken.error,
         keysAtStart: end.keys,
         keysNow,
-        endedAt: end.at,
-        now: end.over ? end.at + LIVE_HOLD_MS : end.at,
+        over: end.over,
       }));
   if (!on) return null;
   return {
-    turn,
+    turn: taken,
     agentSlug,
     title: row?.title ?? agentName,
     chat,
-    close: () => setClosed(turn.id),
+    close: () => setClosed(taken.id),
   };
 }
 
@@ -217,7 +214,7 @@ function Stack() {
           the assistant works, not each word it writes. */}
       <span role="status" className="sr-only">
         {liveShown
-          ? `${liveShown.title} is working`
+          ? liveStatus(liveShown.title, liveShown.turn)
           : shown
             ? `${shown.title}: ${shown.text || NO_WORDS}`
             : ''}

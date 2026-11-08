@@ -295,7 +295,10 @@ test('a new card talks for a moment, and a hidden tab stops it', async ({ page }
   });
   api.chats.say(CHAT, 'Are you there?');
   await expect(card(page)).toContainText('Are you there?');
-  await expect(face).not.toHaveAttribute('data-talking', 'true');
+  // At once, while a talking face would still talk (TALK_MS is 3 s).
+  expect(await face.getAttribute('data-talking')).toBeNull();
+  await page.waitForTimeout(500);
+  expect(await face.getAttribute('data-frame')).toBe('0');
 });
 
 test('with reduced motion the face never talks', async ({ page }) => {
@@ -304,7 +307,43 @@ test('with reduced motion the face never talks', async ({ page }) => {
   await signIn(page, 'admin');
   await settled(page);
 
+  // An assistant's face has mouths to swap, so a broken guard would show.
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
+  await expect(card(page)).toContainText('I have finished the report.');
+  const face = page.getByTestId('bubble-face');
+  // At once, while a talking face would still talk (TALK_MS is 3 s).
+  expect(await face.getAttribute('data-talking')).toBeNull();
+  await page.waitForTimeout(500);
+  expect(await face.getAttribute('data-frame')).toBe('0');
+});
+
+test('a refused reply to an assistant keeps its words and says why', async ({ page }) => {
+  api.turnRefusal = 429;
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
+  await expect(card(page)).toContainText('I have finished the report.');
+  await quickReply(page, 'Now list the new features');
+  await expect(card(page).getByRole('alert')).toContainText('Not sent');
+  await expect(page.getByTestId('bubble-reply-input')).toHaveValue('Now list the new features');
+  await expect(live(page)).toHaveCount(0);
+  expect(api.turns).toEqual([]);
+});
+
+test('a double click on the thumbs up thanks one card', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
   api.chats.say(CHAT, 'Lunch at one?');
+  api.chats.say(CHAT, 'Or at two?');
+  await expect(card(page)).toContainText('Or at two?');
+  await page.getByTestId('bubble-thumbs').dblclick();
   await expect(card(page)).toContainText('Lunch at one?');
-  await expect(page.getByTestId('bubble-face')).not.toHaveAttribute('data-talking', 'true');
+  await page.waitForTimeout(500);
+  expect(api.chats.reacted).toEqual([{ chat: CHAT, seq: 2, emoji: '👍' }]);
 });

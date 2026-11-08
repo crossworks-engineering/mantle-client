@@ -289,6 +289,8 @@ export type MockWorkspaceApi = {
    *  stays open, quiet). A stream for a turn id that is not the caller's is
    *  a 404, as on a brain. */
   turnEvents: unknown[];
+  /** Refuse every turn with this status (a limit, 429), as a brain does. */
+  turnRefusal: number | null;
   /** Send one more event on every turn stream open now, and to any opened later. */
   pushTurnEvent: (event: unknown) => void;
   /** The turns a Stop was asked for. */
@@ -388,6 +390,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     uiAnswers: [],
     turns: [],
     turnEvents: [],
+    turnRefusal: null,
     pushTurnEvent: (event) => {
       // Kept too, so a stream that opens late hears it, as a brain replays
       // a turn's buffer to a new reader.
@@ -1033,6 +1036,9 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       // the key itself; the reply comes over the stream.
       if (path === '/api/assistant/turn' && method === 'POST') {
         const raw = await readBody(req);
+        if (state.turnRefusal) {
+          return json(res, state.turnRefusal, { error: 'Too many turns. Wait a moment.' });
+        }
         const key = String(req.headers['idempotency-key'] ?? '');
         let sent: { windowId?: unknown; text?: unknown; agentSlug?: unknown } = {};
         try {

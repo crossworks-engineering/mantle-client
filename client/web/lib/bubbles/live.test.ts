@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LIVE_HOLD_MS, LIVE_TAIL_MAX, liveHeld, liveTail, liveTurnOf } from './live';
+import { LIVE_TAIL_MAX, liveHeld, liveStatus, liveTail, liveTurnOf } from './live';
 
 describe('liveTurnOf', () => {
   it('is null with no assistant line', () => {
@@ -65,8 +65,7 @@ describe('liveHeld', () => {
     failed: false,
     keysAtStart: ['agent:1'],
     keysNow: ['agent:1'],
-    endedAt: 1000,
-    now: 2000,
+    over: false,
   };
 
   it('holds until the reply card comes', () => {
@@ -75,7 +74,7 @@ describe('liveHeld', () => {
   });
 
   it('holds no longer than the hold', () => {
-    expect(liveHeld({ ...base, now: 1000 + LIVE_HOLD_MS })).toBe(false);
+    expect(liveHeld({ ...base, over: true })).toBe(false);
   });
 
   it('does not come back when it was not on screen, or was closed', () => {
@@ -84,11 +83,19 @@ describe('liveHeld', () => {
   });
 
   it('keeps a failed turn until it is closed', () => {
-    expect(liveHeld({ ...base, failed: true, now: 1000 + LIVE_HOLD_MS * 10 })).toBe(true);
+    expect(liveHeld({ ...base, failed: true, over: true })).toBe(true);
     expect(liveHeld({ ...base, failed: true, closed: true })).toBe(false);
   });
 
   it('is not ended by a card that went', () => {
     expect(liveHeld({ ...base, keysNow: [] })).toBe(true);
+  });
+});
+
+describe('liveStatus', () => {
+  it('says what the card is doing', () => {
+    expect(liveStatus('Saskia', { pending: true, error: false })).toBe('Saskia is working');
+    expect(liveStatus('Saskia', { pending: false, error: false })).toBe('Saskia replied');
+    expect(liveStatus('Saskia', { pending: false, error: true })).toBe('Saskia could not finish');
   });
 });

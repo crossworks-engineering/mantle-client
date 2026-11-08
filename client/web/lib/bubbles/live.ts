@@ -88,11 +88,17 @@ export function liveHeld(s: {
   keysAtStart: readonly string[];
   /** The chat's card keys now. */
   keysNow: readonly string[];
-  endedAt: number;
-  now: number;
+  /** LIVE_HOLD_MS has passed since the turn ended. */
+  over: boolean;
 }): boolean {
   if (!s.shownAtEnd || s.closed) return false;
   if (s.failed) return true;
-  if (s.now - s.endedAt >= LIVE_HOLD_MS) return false;
+  if (s.over) return false;
   return !s.keysNow.some((k) => !s.keysAtStart.includes(k));
+}
+
+/** What a live card says to a screen reader, by its state. */
+export function liveStatus(title: string, turn: Pick<LiveTurn, 'pending' | 'error'>): string {
+  if (turn.pending) return `${title} is working`;
+  return turn.error ? `${title} could not finish` : `${title} replied`;
 }

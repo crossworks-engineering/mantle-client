@@ -124,15 +124,18 @@ export function Bubble({
   };
 
   const [thanking, setThanking] = useState(false);
-  const thumbsUp = () => {
-    if (thanking) return;
+  const thumbsUp = (e: ReactMouseEvent) => {
+    // The second click of a double click would thank the card that came
+    // next, unseen.
+    if (thanking || e.detail > 1) return;
     setThanking(true);
     // The route toggles: if a thumbs up was already there, it just went, so
     // put it back. The card closes with the thumbs up given.
     const give = () => messengerApi.react(card.chat, card.order, '👍') as Promise<{ on?: boolean }>;
     give()
       .then((r) => (r?.on === false ? give() : r))
-      .then(close)
+      // A pinned card stays, as after a reply: the person pinned it to keep it.
+      .then(() => (isBubblePinned(card.key) ? setThanking(false) : close()))
       // The card stays, and the person can try again or open the chat.
       .catch(() => setThanking(false));
   };

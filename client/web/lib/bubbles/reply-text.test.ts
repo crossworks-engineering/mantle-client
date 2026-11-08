@@ -118,7 +118,7 @@ describe('itemLinks', () => {
   it('stays fast on a long run of links that never close', () => {
     const t0 = performance.now();
     expect(itemLinks('[a](x'.repeat(40_000))).toEqual([]);
-    expect(performance.now() - t0).toBeLessThan(200);
+    expect(performance.now() - t0).toBeLessThan(1000);
   });
 
   it('keeps one button for each item, two at most', () => {

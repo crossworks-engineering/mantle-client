@@ -18,7 +18,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { useDockActions } from '@/components/assistant/assistant-dock';
 import { useChatFaces } from '@/components/messenger/chat-faces';
-import { liveTail, type LiveTurn } from '@/lib/bubbles/live';
+import { liveStatus, liveTail, type LiveTurn } from '@/lib/bubbles/live';
 import type { BubbleText } from '@/lib/bubbles/person-text';
 import { CARD_SURFACE, REVEAL } from './bubble-card';
 import { TalkingAvatar } from './talking-avatar';
@@ -87,7 +87,7 @@ export function LiveBubble({
       data-testid="bubble-live"
       data-state={live.pending ? 'running' : live.error ? 'failed' : 'done'}
       role="group"
-      aria-label={`${title} is working`}
+      aria-label={liveStatus(title, live)}
       aria-busy={live.pending}
       className={CARD_SURFACE}
     >
