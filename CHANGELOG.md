@@ -12,6 +12,12 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.17: chat bubbles
+
+- **New:** chat bubbles. A new assistant reply or a new chat message shows as a see-through card with its sender's face, over any screen. Cards stack newest first, stay until you pop them, and can be pinned. Drag the stack anywhere; the place is kept per login in this browser. A click opens the chat in the Assistant window.
+- **New:** three pop sounds to choose from, and a silent mode.
+- The brain needs no change: it works with v0.500.36.
+
 ## v0.9.16: person-only controls and clones
 
 - **New:** sidebar Favorites: starred screens and workspace items, in your own order. The tabs are Favorites, Work and Admin.
