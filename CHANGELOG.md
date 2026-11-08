@@ -12,6 +12,16 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.16: person-only controls and clones
+
+- **New:** sidebar Favorites: starred screens and workspace items, in your own order. The tabs are Favorites, Work and Admin.
+- **New:** the in-app agent can look at the window, when the agent's model sees images. Secret fields are painted grey first.
+- **Changed:** an area screenshot on the web redraws the page, so the browser asks for no screen share.
+- **Changed:** the in-app agent cannot press a control only a person may press. This includes Save on a Recall prompt, and the tool forms when approval for agent-built tools is on.
+- **Fixed:** selected cards, tag pills and workspace chips keep readable contrast in every theme.
+- **Fixed:** a clone of an assistant or a responder keeps its role, one priority below its donor, and starts disabled.
+- The contract packages move to 0.500.35. Workspace e2e allows 15 s on both runtimes.
+
 ## v0.9.14: the in-app agent, area screenshots and an update notice
 
 - **New:** an in-app agent can read and use this window, when a person turns it on. The window asks once per turn, and Stop ends it. Lessons can drive the window too.
