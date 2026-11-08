@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Bot, Check, ChevronDown, ListFilter, SquarePen, User, Users, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -72,6 +72,7 @@ export function NewChatPane({
   onOpen,
   onCreated,
   onCancel,
+  windowBack,
 }: {
   /** null while it loads. */
   directory: MessengerDirectoryEntry[] | null;
@@ -87,8 +88,12 @@ export function NewChatPane({
     first: { body: string; mentions: MessengerMention[]; clientMsgId: string } | null,
   ) => void;
   onCancel: () => void;
+  /** In the Chats window: its back button (with the other chats' count)
+   *  first in the header, and no Focus slot (it hides the screen's folders). */
+  windowBack?: ReactNode;
 }) {
   const queryClient = useQueryClient();
+  const uid = useId();
   const toast = useToast();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
@@ -150,7 +155,7 @@ export function NewChatPane({
       const name = title.trim();
       if (!name) {
         setTitleError('Give the group a name.');
-        document.getElementById('new-group-title')?.focus();
+        document.getElementById(`${uid}-group-title`)?.focus();
         return false;
       }
       const text = infoToSend(info);
@@ -212,7 +217,7 @@ export function NewChatPane({
       return;
     }
     setTo((cur) => (cur?.id === e.id ? null : e));
-    requestAnimationFrame(() => document.getElementById('new-chat-text')?.focus());
+    requestAnimationFrame(() => document.getElementById(`${uid}-chat-text`)?.focus());
   };
 
   const entryRow = (e: MessengerDirectoryEntry) => {
@@ -306,7 +311,7 @@ export function NewChatPane({
   const groupForm = (
     <div className="space-y-4 px-2 py-2">
       <Field data-invalid={!!titleError || undefined}>
-        <FieldLabel htmlFor="new-group-title">Group name</FieldLabel>
+        <FieldLabel htmlFor={`${uid}-group-title`}>Group name</FieldLabel>
         <div className="flex items-center gap-2">
           {/* The icon and colour, picked as a new folder's (the tree's own
               look popup). */}
@@ -335,7 +340,7 @@ export function NewChatPane({
             }
           />
           <Input
-            id="new-group-title"
+            id={`${uid}-group-title`}
             value={title}
             maxLength={200}
             onChange={(e) => {
@@ -343,17 +348,17 @@ export function NewChatPane({
               setTitleError(null);
             }}
             aria-invalid={!!titleError || undefined}
-            aria-describedby={titleError ? 'new-group-title-error' : undefined}
+            aria-describedby={titleError ? `${uid}-group-title-error` : undefined}
             placeholder="Design crew"
           />
         </div>
-        <FieldError id="new-group-title-error">{titleError}</FieldError>
+        <FieldError id={`${uid}-group-title-error`}>{titleError}</FieldError>
       </Field>
       {/* What the group is for and its rules: everyone in it reads it in
           Details, an agent in it reads it too. */}
-      <GroupInfoField id="new-group-info" value={info} onChange={setInfo} />
-      <section aria-labelledby="new-group-members" className="space-y-1">
-        <h3 id="new-group-members" className="text-sm font-medium">
+      <GroupInfoField id={`${uid}-group-info`} value={info} onChange={setInfo} />
+      <section aria-labelledby={`${uid}-group-members`} className="space-y-1">
+        <h3 id={`${uid}-group-members`} className="text-sm font-medium">
           Members
           <span className="ml-2 font-normal text-muted-foreground">
             {members.size === 0 ? 'Just you for now' : `${members.size} and you`}
@@ -409,7 +414,9 @@ export function NewChatPane({
     <div className="flex h-full min-h-0 flex-col" data-testid="new-chat">
       <ItemHeader
         sticky
-        section="Chats"
+        section={windowBack ? undefined : 'Chats'}
+        focus={!windowBack}
+        lead={windowBack}
         visual={<SquarePen className="size-4" aria-hidden />}
         title="New message"
         tools={[{ key: 'cancel', label: 'Cancel', icon: <X />, onSelect: onCancel }]}
@@ -500,7 +507,7 @@ export function NewChatPane({
           )}
         </div>
         <ChatComposer
-          id="new-chat-text"
+          id={`${uid}-chat-text`}
           canSend={ready && !busy}
           placeholder={
             grouping

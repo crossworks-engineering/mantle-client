@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { useDockLayout } from '@/components/assistant/assistant-dock';
@@ -37,11 +37,9 @@ import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerListRow } from '@/lib/messenger/dto';
 import {
   liveStreamWanted,
-  messengerAvailability,
   noticeRoute,
   noticeText,
   openChatId,
-  railCount,
   shouldPop,
 } from '@/lib/messenger/notify';
 import { chatLineSound } from '@/lib/sounds/events';
@@ -50,34 +48,14 @@ import { CallRinger } from '@/components/calls/call-ringer';
 import { CallUnloadGuard } from '@/components/calls/call-store';
 import { CallSounds } from '@/components/calls/call-sounds';
 import { MessengerLiveSync, useMessengerBus } from './messenger-live';
+import { useMessengerUnread } from './use-messenger-unread';
 
 /** A slow safety net: the stream refreshes the count on every event. */
-const UNREAD_REFRESH_MS = 60_000;
 /** The list a notice decides on may be this old (an event or a gap marks it
  *  stale at once, so a mute is seen right away). */
 const NOTICE_LIST_FRESH_MS = 30_000;
 /** The notices remembered so the event and the list never pop one twice. */
 const SHOWN_KEEP = 200;
-
-/** The rail's count and whether this brain has the messenger. */
-export function useMessengerUnread(): {
-  available: 'yes' | 'no' | 'unknown';
-  total: number;
-} {
-  const q = useQuery({
-    queryKey: messengerKeys.unread,
-    queryFn: messengerApi.unread,
-    refetchInterval: (query) =>
-      messengerAvailability({ data: query.state.data, error: query.state.error }) === 'no'
-        ? false
-        : UNREAD_REFRESH_MS,
-    retry: (n, err) => (err as { status?: number } | null)?.status !== 404 && n < 2,
-  });
-  return {
-    available: messengerAvailability({ data: q.data, error: q.error }),
-    total: railCount(q.data),
-  };
-}
 
 export function MessengerShell() {
   const { available, total } = useMessengerUnread();
@@ -131,9 +109,10 @@ function MessengerNotices() {
   const me = useShellWorkspaces()?.loginId ?? null;
   const path = useRef(pathname);
   path.current = pathname;
-  const { panel } = useDockLayout();
-  const panelRef = useRef(panel);
-  panelRef.current = panel;
+  // The chat the open Chats window shows is on screen, as `/chats/<id>` is.
+  const { panel, windowView } = useDockLayout();
+  const windowChat = useRef<string | null>(null);
+  windowChat.current = panel === 'open' && windowView.kind === 'chat' ? windowView.id : null;
   const shown = useRef(new Set<string>());
   // The last seq seen of each chat; null until the first list.
   const known = useRef<Map<string, number> | null>(null);
@@ -169,7 +148,8 @@ function MessengerNotices() {
       // A chat the list does not know (yet), or a muted one: no notice.
       if (!row || row.muted) return;
       const hidden = document.visibilityState !== 'visible';
-      if (openChatId(path.current) === c && !hidden) return;
+      const onScreen = openChatId(path.current) === c || windowChat.current === c;
+      if (onScreen && !hidden) return;
       const page = await messengerApi.messages(c, { afterSeq: seq - 1, limit: 1 });
       const message = page.messages.find((m) => m.seq === seq);
       if (!message || !shouldPop({ message, me, muted: row.muted, onScreen: false })) return;
@@ -187,15 +167,7 @@ function MessengerNotices() {
       // A line that names me chimes as a mention instead.
       play(chatLineSound(message, me), { once: `chat-line:${c}:${seq}` });
       // With bubbles on, the card or the row's highlight says it instead.
-      if (
-        !toastWanted({
-          bubbles: getBubbleMode() === 'on',
-          panel: panelRef.current,
-          pathname: path.current,
-        })
-      ) {
-        return;
-      }
+      if (!toastWanted({ bubbles: getBubbleMode() === 'on' })) return;
       toast.push({
         kind: 'info',
         message: text.body ? `${text.title}: ${text.body}` : text.title,

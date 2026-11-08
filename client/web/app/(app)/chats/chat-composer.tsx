@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { AtSign, SendHorizontal, Smile } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
@@ -18,6 +18,7 @@ import {
   type PickedMention,
 } from '@/lib/messenger/mentions';
 import { BODY_MAX, sendableBody } from '@/lib/messenger/transcript';
+import { getDraft, setDraft } from '@/lib/messenger/drafts';
 
 /** The text area's tallest, in lines, before it scrolls. */
 const MAX_ROWS = 8;
@@ -45,6 +46,7 @@ export function ChatComposer({
   placeholder = 'Type a message…',
   id = 'chat-composer-text',
   onTextChange,
+  draftKey,
 }: {
   /** A promise keeps the text until it answers, and keeps it on false
    *  (the New message form: nothing was created). */
@@ -60,12 +62,21 @@ export function ChatComposer({
   /** The text as it changes (the New message form carries it to an
    *  assistant's own composer). */
   onTextChange?: (text: string) => void;
+  /** The chat whose unsent text this is: kept in memory by chat
+   *  (lib/messenger/drafts.ts), so the room can unmount and come back to
+   *  it (the Chats window's back, Open in Chats, another chat). */
+  draftKey?: string;
 }) {
   const faceOf = useChatFaces();
   const [sending, setSending] = useState(false);
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => (draftKey && getDraft(draftKey)?.text) || '');
   const [caret, setCaret] = useState(0);
-  const [picked, setPicked] = useState<PickedMention[]>([]);
+  const [picked, setPicked] = useState<PickedMention[]>(() =>
+    draftKey ? [...(getDraft<PickedMention>(draftKey)?.picked ?? [])] : [],
+  );
+  useEffect(() => {
+    if (draftKey) setDraft(draftKey, { text, picked });
+  }, [draftKey, text, picked]);
   const [active, setActive] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -88,6 +99,13 @@ export function ChatComposer({
     const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
     el.style.height = `${Math.min(el.scrollHeight, line * MAX_ROWS + pad)}px`;
   };
+  // A kept draft opens at its own height.
+  const grewOnce = useRef(false);
+  useEffect(() => {
+    if (grewOnce.current) return;
+    grewOnce.current = true;
+    if (area.current?.value) grow();
+  });
 
   const place = (next: string, at: number) => {
     setText(next);
@@ -169,13 +187,13 @@ export function ChatComposer({
     >
       {pickerOpen ? (
         <ul
-          id="chat-mention-list"
+          id={`${id}-mentions`}
           role="listbox"
           aria-label="Mention someone"
           className="absolute inset-x-2 bottom-full mb-1 space-y-0.5 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
           {candidates.map((p, i) => (
-            <li key={p.id} id={`chat-mention-${p.id}`} role="option" aria-selected={i === active}>
+            <li key={p.id} id={`${id}-mention-${p.id}`} role="option" aria-selected={i === active}>
               <RowButton
                 tabIndex={-1}
                 onMouseDown={(e) => e.preventDefault()}
@@ -232,11 +250,11 @@ export function ChatComposer({
         aria-invalid={tooLong || undefined}
         role="combobox"
         aria-autocomplete="list"
-        aria-controls={pickerOpen ? 'chat-mention-list' : undefined}
+        aria-controls={pickerOpen ? `${id}-mentions` : undefined}
         aria-expanded={pickerOpen}
         aria-activedescendant={
           pickerOpen
-            ? `chat-mention-${candidates[Math.min(active, candidates.length - 1)]!.id}`
+            ? `${id}-mention-${candidates[Math.min(active, candidates.length - 1)]!.id}`
             : undefined
         }
         className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-4 pt-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-0.75rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"

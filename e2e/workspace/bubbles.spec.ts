@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { agentView } from './window-view';
 import {
   MOCK_AGENT,
   signIn,
@@ -202,6 +203,7 @@ test('closing the cards of a long unread chat marks nothing read', async ({ page
 
 test('a reply to a turn from the window still shows if it is minimised first', async ({ page }) => {
   await bubblesOn(page);
+  await agentView(page);
   await signIn(page, 'admin');
   await settled(page);
 
@@ -228,6 +230,7 @@ test('with the window open, a thread is marked read once its turn has ended', as
   // The turn's stream says done at once, so the window's turn is over.
   api.turnEvents = [{ type: 'done' }];
   await bubblesOn(page);
+  await agentView(page);
   await signIn(page, 'admin');
   await settled(page);
 
@@ -322,7 +325,9 @@ test('on the chat screen: no card, the row is highlighted, leaving shows the car
   await expect(card(page)).toContainText('Hello there');
 });
 
-test('with the side window open: no card, and the toast keeps a person line', async ({ page }) => {
+test('with the side window open: no card, no toast, and the row is highlighted in its list', async ({
+  page,
+}) => {
   await bubblesOn(page);
   await signIn(page, 'admin');
   await settled(page);
@@ -332,7 +337,10 @@ test('with the side window open: no card, and the toast keeps a person line', as
   await page.waitForTimeout(300);
 
   api.chats.say(CHAT, 'Hello there');
-  await expect(toastOpen(page)).toBeVisible();
+  const row = page.getByTestId('window-chats').getByTestId('chat-row').filter({ hasText: 'Ann' });
+  await expect(row).toHaveAttribute('data-highlighted', 'true');
+  await page.waitForTimeout(800);
+  await expect(toastOpen(page)).toHaveCount(0);
   await expect(card(page)).toHaveCount(0);
 
   // Minimised is not open: the card waits there.
@@ -340,15 +348,19 @@ test('with the side window open: no card, and the toast keeps a person line', as
   await expect(card(page)).toContainText('Hello there');
 });
 
-test('a click on the text opens the chat', async ({ page }) => {
+test('a click on the text opens the chat in the Chats window', async ({ page }) => {
   await bubblesOn(page);
   await signIn(page, 'admin');
   await settled(page);
 
   api.chats.say(CHAT, 'Hello there');
   await page.getByTestId('bubble-open').click();
-  await expect(page).toHaveURL((u) => u.pathname === `/chats/${CHAT}`);
+  await expect(page.getByTestId('window-chats')).toHaveAttribute('data-view', 'chat');
+  await expect(page.getByTestId('chat-room')).toContainText('Hello there');
+  await expect(page).toHaveURL((u) => u.pathname === '/');
   await expect(card(page)).toHaveCount(0);
+  // On screen in the window, so it is read there.
+  await expect.poll(() => api.chats.reads).toEqual([{ chat: CHAT, seq: 1 }]);
 });
 
 /** Press at the middle of `from`, move by steps, release. */
@@ -443,16 +455,20 @@ test('a drag moves the stack, a reload keeps the place, and a drag from the text
   // The keyboard still opens it after a drag: it has no press to be one.
   await page.getByTestId('bubble-open').focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL((u) => u.pathname === `/chats/${CHAT}`);
-  await page.goto('/');
+  await expect(page.getByTestId('window-chats')).toHaveAttribute('data-view', 'chat');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('window-chats')).toBeHidden();
 
   // Only the drag was held back: a click after it still opens.
+  api.chats.say(CHAT, 'Another line');
   await page.reload();
   await expect(card(page)).toBeVisible();
-  expect(await where(page)).toEqual(moved);
+  // The place, not the size: a second card may wait under it now.
+  const back = await where(page);
+  expect([back.x, back.y]).toEqual([moved.x, moved.y]);
 
   await page.getByTestId('bubble-open').click();
-  await expect(page).toHaveURL((u) => u.pathname === `/chats/${CHAT}`);
+  await expect(page.getByTestId('window-chats')).toHaveAttribute('data-view', 'chat');
 });
 
 test('a place is saved under the login, as a place and nothing else', async ({ page }) => {
@@ -763,18 +779,19 @@ test('a pin in one tab holds the card in the other', async ({ page, context }) =
   await expect(card(other)).toContainText('Keep this line');
 });
 
-test('the Assistant window still moves, by the same drag helper', async ({ page }) => {
+test('the Chats window still moves, by the same drag helper', async ({ page }) => {
   await signIn(page, 'admin');
   await settled(page);
 
   await page.keyboard.press('ControlOrMeta+i');
   await page.getByRole('button', { name: 'Show as a movable window' }).click();
-  const box = page.getByRole('dialog', { name: /assistant/ });
+  const box = page.getByRole('dialog', { name: 'Chats' });
   await expect(box).toBeVisible();
   const before = (await box.boundingBox())!;
 
-  const x = before.x + before.width / 2;
-  const y = before.y + 6;
+  // On the header's title, clear of its buttons.
+  const x = before.x + 120;
+  const y = before.y + 20;
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x - 100, y + 60, { steps: 4 });

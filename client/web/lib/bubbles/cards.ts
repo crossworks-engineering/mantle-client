@@ -272,16 +272,10 @@ export function chatWindowOpen(s: {
 
 /**
  * Whether a person's new line also pops a toast. With bubbles off, always, as
- * it did. With bubbles on, the card or the row's highlight says it instead.
- * One case stays until the window has a chat list (phase 5): with only the
- * window open there is nothing yet to highlight, so the toast keeps the line
- * from being missed.
+ * it did. With bubbles on, never: the card says it, or, while a chat window
+ * is open, the row's highlight and the window's back count (phase 5: the
+ * window has the chat list now).
  */
-export function toastWanted(s: {
-  bubbles: boolean;
-  panel: 'open' | 'min' | 'closed';
-  pathname: string | null | undefined;
-}): boolean {
-  if (!s.bubbles) return true;
-  return s.panel === 'open' && !ON_CHAT_SCREEN.test(s.pathname ?? '');
+export function toastWanted(s: { bubbles: boolean }): boolean {
+  return !s.bubbles;
 }

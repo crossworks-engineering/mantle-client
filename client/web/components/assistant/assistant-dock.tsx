@@ -38,11 +38,26 @@ import {
   withAuth,
 } from '@mantle/web-ui/api-fetch';
 import { usePendingQuestions } from '@/components/pending/use-pending-questions';
-import { useIsAdminUser, useViewerAreas } from '@/components/workspaces/use-shell-workspaces';
+import {
+  useIsAdminUser,
+  useViewerAreas,
+  useViewerLogin,
+} from '@/components/workspaces/use-shell-workspaces';
 import { chatFeatures, turnRefusalText } from '@/lib/assistant-turn-refusal';
 import { useAssistantUnreadCount } from './use-assistant-unread';
 import { ASSISTANT_W_DEFAULT, clampAssistantWidth } from '@/lib/nav-width';
 import { trackPointer } from '@/lib/track-pointer';
+import { useMessengerUnread } from '@/components/messenger/use-messenger-unread';
+import {
+  LIST_VIEW,
+  isWide,
+  readView,
+  readWindowOpen,
+  stepsAsideOnRoute,
+  writeView,
+  writeWindowOpen,
+  type WindowView,
+} from './window-view';
 import type { TurnEvent } from '@mantle/client-types';
 import {
   replyPollDelayMs,
@@ -206,8 +221,15 @@ type AssistantDockApi = {
    *  editor stack never downloaded — on a load where nobody asks for it. Only
    *  ever goes false → true, so the transcript survives minimising. */
   everOpened: boolean;
-  /** Show the full panel. Optionally switch to a specific agent first. */
+  /** Show the panel on an agent's thread. Optionally switch to a specific
+   *  agent first. */
   openAssistant: (slug?: string) => void;
+  /** Show the panel on one person or group chat (a messenger chat id). */
+  openChat: (id: string) => void;
+  /** What the Chats window shows: the list, the agent thread or one chat
+   *  (Bubble Chat phase 5). Kept per login in this browser, ids only. */
+  windowView: WindowView;
+  setWindowView: (v: WindowView) => void;
   /** Hide the panel to the bubble, keeping the transcript mounted. */
   minimize: () => void;
   /** Dismiss the panel (also to the bubble; distinct state for future use). */
@@ -311,6 +333,8 @@ type DockActions = Pick<
   | 'runTurn'
   | 'clear'
   | 'openAssistant'
+  | 'openChat'
+  | 'setWindowView'
   | 'minimize'
   | 'close'
   | 'toggle'
@@ -335,7 +359,14 @@ type DockActions = Pick<
 >;
 type DockLayout = Pick<
   AssistantDockApi,
-  'panel' | 'everOpened' | 'docked' | 'display' | 'popout' | 'dockWidth' | 'dockResizing'
+  | 'panel'
+  | 'everOpened'
+  | 'docked'
+  | 'display'
+  | 'popout'
+  | 'dockWidth'
+  | 'dockResizing'
+  | 'windowView'
 >;
 type DockSession = Pick<
   AssistantDockApi,
@@ -739,13 +770,52 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
     }
   }, []);
 
+  // ── what the Chats window shows (Bubble Chat phase 5) ──
+  // The list on a first open (Jason, 2026-11-08), then the last view, per
+  // login: a second login on this browser starts on its own list.
+  // Read at the first render (the shell knows the login by then), so an
+  // open from a child's first effect (`/assistant?agent=`) is not undone by
+  // a later read of the saved view.
+  const login = useViewerLogin()?.loginId ?? null;
+  const [windowView, setWindowViewState] = useState<WindowView>(() =>
+    login ? readView(login) : LIST_VIEW,
+  );
+  const loginRef = useRef<string | null>(login);
+  useEffect(() => {
+    if (!login || loginRef.current === login) return;
+    loginRef.current = login;
+    setWindowViewState(readView(login));
+  }, [login]);
+  const setWindowView = useCallback((v: WindowView) => {
+    setWindowViewState(v);
+    if (loginRef.current) writeView(loginRef.current, v);
+  }, []);
+
   const openAssistant = useCallback(
     (slug?: string) => {
       if (slug) setActiveAgentSlug(slug);
+      setWindowView({ kind: 'agent' });
       setPanel('open');
     },
-    [setActiveAgentSlug],
+    [setActiveAgentSlug, setWindowView],
   );
+  const openChat = useCallback(
+    (id: string) => {
+      setWindowView({ kind: 'chat', id });
+      setPanel('open');
+    },
+    [setWindowView],
+  );
+
+  // A reload brings the window back open if it was open (Jason, 2026-11-08).
+  // The first write below runs before the restored state lands and writes
+  // the closed state; the next render writes it open again.
+  useEffect(() => {
+    if (login && readWindowOpen(login)) setPanel('open');
+  }, [login]);
+  useEffect(() => {
+    if (loginRef.current) writeWindowOpen(loginRef.current, panel === 'open');
+  }, [panel]);
   const minimize = useCallback(() => setPanel((p) => (p === 'open' ? 'min' : p)), []);
   const close = useCallback(() => setPanel('closed'), []);
   const toggle = useCallback(() => {
@@ -782,9 +852,18 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   // there's nothing to step aside for.)
   const pathname = usePathname();
   const prevPathRef = useRef(pathname);
+  const displayRef = useRef(display);
+  displayRef.current = display;
   useEffect(() => {
     if (prevPathRef.current === pathname) return; // initial mount, or no real change
+    const from = prevPathRef.current;
     prevPathRef.current = pathname;
+    // /assistant opens the window and bounces to / (app/(app)/assistant/
+    // page.tsx): that bounce is the opening, not a move to step aside for.
+    if (from === '/assistant') return;
+    // Only a shape that covers the screen steps aside: the column and the
+    // movable window stay open beside every screen (Bubble Chat phase 5).
+    if (!stepsAsideOnRoute(displayRef.current, isWide())) return;
     setPanel((p) => (p === 'open' ? 'min' : p));
   }, [pathname]);
 
@@ -1155,6 +1234,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       runTurn,
       clear,
       openAssistant,
+      openChat,
+      setWindowView,
       minimize,
       close,
       toggle,
@@ -1181,6 +1262,8 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       runTurn,
       clear,
       openAssistant,
+      openChat,
+      setWindowView,
       minimize,
       close,
       toggle,
@@ -1216,8 +1299,9 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       popout,
       dockWidth,
       dockResizing,
+      windowView,
     }),
-    [panel, everOpened, docked, display, popout, dockWidth, dockResizing],
+    [panel, everOpened, docked, display, popout, dockWidth, dockResizing, windowView],
   );
 
   // The conversation and its context marks. The hot one: `messages` changes
@@ -1308,7 +1392,7 @@ export function useAssistantDock(): AssistantDockApi {
  * open, since it only renders null then).
  */
 export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = {}) {
-  const { panel, busy, toggle, messages } = useAssistantDock();
+  const { panel, busy, toggle, openAssistant, messages, windowView } = useAssistantDock();
   const [seenId, setSeenId] = useState<string | null>(null);
   // Blocked runs waiting on an answer — the panel renders the questionnaire,
   // so the button is what tells you to go there. An Admin user's with the
@@ -1318,6 +1402,9 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
   // Any other login (W7c): the unread replies of its own threads, from the
   // brain (lib/assistant-unread), so a reply that landed elsewhere shows too.
   const threadUnread = useAssistantUnreadCount(!adminUser);
+  // The Chats window holds every chat now: its dot follows the one count
+  // (the same query entry the rail's Chats count reads).
+  const chatsUnread = useMessengerUnread().total;
 
   // Latest settled assistant reply — what an "unread" dot keys off.
   const latestReplyId = useMemo(() => {
@@ -1328,28 +1415,35 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
     return null;
   }, [messages]);
 
-  // Opening the panel marks the latest reply seen.
+  // Showing the agent's thread marks the latest reply seen (not the list or
+  // a person's chat in the window).
+  const agentShown = panel === 'open' && windowView.kind === 'agent';
   useEffect(() => {
-    if (panel === 'open' && latestReplyId) setSeenId(latestReplyId);
-  }, [panel, latestReplyId]);
+    if (agentShown && latestReplyId) setSeenId(latestReplyId);
+  }, [agentShown, latestReplyId]);
 
   // ⌘I lives on the PROVIDER, not here — this button can be mounted more than
   // once (desktop aside + open mobile drawer), and per-instance listeners
   // toggling the same panel cancel each other out.
 
   const open = panel === 'open';
-  const unread = adminUser
-    ? !busy && latestReplyId != null && latestReplyId !== seenId
-    : !busy && !open && threadUnread > 0;
+  const unread =
+    (adminUser
+      ? !busy && latestReplyId != null && latestReplyId !== seenId
+      : !busy && !open && threadUnread > 0) ||
+    (!open && chatsUnread > 0);
   // "Needs you" outranks "unread": a parked run is blocked until answered.
   // It stops the moment the panel is OPEN (the question is then on screen) —
   // not when answered, so glancing at it is what clears the alarm.
-  const needsYou = questionCount > 0 && !open;
+  // The question is on screen only in the agent's thread, not in the list
+  // or a person's chat.
+  const needsYou = questionCount > 0 && !agentShown;
 
   return (
     <Button
       data-tour="assistant"
-      onClick={toggle}
+      // A waiting question is in the agent's thread: open there.
+      onClick={needsYou ? () => openAssistant() : toggle}
       size="sm"
       variant={open ? 'default' : needsYou ? 'default' : 'ghost'}
       className={cn(
@@ -1368,13 +1462,13 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
       aria-pressed={open}
       aria-label={
         needsYou
-          ? `Assistant — ${questionCount} question${questionCount === 1 ? '' : 's'} need${questionCount === 1 ? 's' : ''} your answer (⌘I)`
-          : 'Toggle assistant (⌘I)'
+          ? `Chats: ${questionCount} question${questionCount === 1 ? '' : 's'} need${questionCount === 1 ? 's' : ''} your answer (⌘I)`
+          : 'Toggle chats (⌘I)'
       }
       title={
         needsYou
-          ? `${questionCount} question${questionCount === 1 ? '' : 's'} waiting on you — open the assistant to answer`
-          : 'Assistant (⌘I)'
+          ? `${questionCount} question${questionCount === 1 ? '' : 's'} waiting on you: open the assistant to answer`
+          : 'Chats (⌘I)'
       }
     >
       {busy ? (
@@ -1389,7 +1483,7 @@ export function AssistantButton({ adminUser = true }: { adminUser?: boolean } = 
           rather than as a row of anonymous glyphs. Gone at icon-rail width;
           the mobile drawer portals outside the shell root, so it keeps the
           label there regardless. */}
-      <span className="truncate group-data-[nav-collapsed=true]/shell:hidden">Assistant</span>
+      <span className="truncate group-data-[nav-collapsed=true]/shell:hidden">Chats</span>
       {needsYou ? (
         /* Corner badge, a small count pip,
            absolutely positioned so it adds NO min-content width (see the
