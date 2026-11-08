@@ -62,8 +62,8 @@ async function cardsOf(row: MessengerListRow, me: string): Promise<BubbleCard[]>
     const replies = newestReplies(data.messages ?? [], count);
     if (replies.length === 0) return [];
     // The markdown reader only comes down when a reply does.
-    const { replyText } = await import('@/lib/bubbles/reply-text');
-    return replies.map((r) => cardFromReply(r, row, replyText(r.text)));
+    const { replyWords } = await import('@/lib/bubbles/reply-text');
+    return replies.map((r) => cardFromReply(r, row, replyWords(r)));
   }
   const page = await messengerApi.messages(row.id, { limit: count });
   return page.messages.flatMap((m) => cardFromMessage(m, row, me) ?? []);
@@ -91,8 +91,8 @@ async function pinnedCardOf(
     const at = (data.messages ?? []).filter((r) => Date.parse(r.createdAt) === order);
     const reply = newestReplies(at, 1)[0];
     if (!reply) return null;
-    const { replyText } = await import('@/lib/bubbles/reply-text');
-    return cardFromReply(reply, row, replyText(reply.text));
+    const { replyWords } = await import('@/lib/bubbles/reply-text');
+    return cardFromReply(reply, row, replyWords(reply));
   }
   const page = await messengerApi.messages(row.id, { afterSeq: order - 1, limit: 1 });
   const line = page.messages.find((m) => m.seq === order);

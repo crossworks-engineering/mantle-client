@@ -7,7 +7,7 @@ import {
 } from './mock-workspace-api';
 
 /**
- * Chat bubbles, phases 1 and 2: one source and one seen state for both chat
+ * Chat bubbles, phases 1 and 2 (phase 3 is bubbles-work.spec.ts): one source and one seen state for both chat
  * systems. A card comes from the one chat list. It stays until it is closed or
  * the chat is read anywhere. While a chat window is open no card shows and the
  * chat's row is highlighted instead. It has the look, the edges, the drag and
@@ -37,6 +37,14 @@ const card = (page: Page) => page.getByTestId('bubble-card');
 const closeCard = (page: Page) => page.getByTestId('bubble-pop').click();
 /** A chat toast's one action. */
 const toastOpen = (page: Page) => page.getByRole('button', { name: 'Open', exact: true });
+
+/** Both tabs listen before a line comes: else the second hears it only at
+ *  its next list poll. */
+async function bothListen() {
+  await expect
+    .poll(() => api.asked('admin').filter((r) => r === 'GET /api/messenger/stream').length)
+    .toBeGreaterThanOrEqual(2);
+}
 
 /** The stream is open and the list has been read, so a line now is a new one. */
 async function settled(page: Page) {
@@ -115,7 +123,7 @@ test('a group card names the group, and a long paste shows its size', async ({ p
   await expect(card(page)).not.toContainText('Crewb');
 });
 
-test('an assistant reply shows once, when complete, as its first sentence', async ({ page }) => {
+test('an assistant reply shows once, when complete, as its lead paragraph', async ({ page }) => {
   // A reply read earlier: it never comes back as new.
   api.chats.replyRead(MOCK_AGENT.slug, 'An old reply that was read long ago.');
   await bubblesOn(page);
@@ -128,7 +136,7 @@ test('an assistant reply shows once, when complete, as its first sentence', asyn
   await expect(card(page)).toHaveCount(0);
 
   const rest = 'The details go on for a long time here. '.repeat(20);
-  api.chats.replyEnds(MOCK_AGENT.slug, `I have **finished** the report for you. ${rest}`);
+  api.chats.replyEnds(MOCK_AGENT.slug, `I have **finished** the report for you.\n\n${rest}`);
   await expect(card(page)).toContainText(MOCK_AGENT.name);
   await expect(card(page)).toContainText('I have finished the report for you.');
   await expect(card(page)).not.toContainText('The details');
@@ -210,7 +218,10 @@ test('a reply to a turn from the window still shows if it is minimised first', a
 
   await page.keyboard.press('Escape');
   api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
-  await expect(card(page)).toContainText('I have finished the report.');
+  // The turn's stream ends, as a brain's does: the live card gives way to the
+  // reply's card, well inside the 6 s hold.
+  api.pushTurnEvent({ type: 'done', data: {} });
+  await expect(card(page)).toContainText('I have finished the report.', { timeout: 2000 });
 });
 
 test('with the window open, a thread is marked read once its turn has ended', async ({ page }) => {
@@ -238,6 +249,7 @@ test('a close in one tab clears the other, with one read', async ({ page, contex
   await settled(page);
   const other = await context.newPage();
   await other.goto('/');
+  await bothListen();
   await settled(other);
 
   api.chats.say(CHAT, 'Hello there');
@@ -737,6 +749,7 @@ test('a pin in one tab holds the card in the other', async ({ page, context }) =
   await settled(page);
   const other = await context.newPage();
   await other.goto('/');
+  await bothListen();
   await settled(other);
 
   api.chats.say(CHAT, 'Keep this line');

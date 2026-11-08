@@ -204,7 +204,7 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   know. A notice decides on a list fetched again after the event, so a mute
   set anywhere is seen. While the stream is deaf (the gap, the polling
   fallback) the list itself says which chats moved, and those pop.
-- **Bubbles** (Project Bubble Chat, phases 1 and 2; Settings > Profile, off by
+- **Bubbles** (Project Bubble Chat, phases 1 to 3; Settings > Profile, off by
   default, saved in this browser): the toast gives way to a card
   (`components/bubbles/`, the rules in `lib/bubbles/`). It stays until it is
   closed or the chat is read. Both chat systems take one path: the list
@@ -228,6 +228,27 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   goes with its close, its unpin, its line or its chat. A pinned card's close
   moves no read cursor: it may be a line read long ago, and the lines around it
   were not on screen.
+- **Bubbles as a quick working surface** (phase 3). An assistant's card shows
+  the reply's lead paragraph (the brain's `writing_style` skill asks a long
+  reply to open with one sentence that says what was done and names the
+  thing), the turn's tool tally from the reply row (`toolStats`: "Used 6
+  tools, 1 failed"), and up to two buttons for the items the reply links (a
+  `/n/<id>` link or a `page:<id>` card; nothing outside the app). Reply opens a
+  one line field: a person's chat takes it by `POST /api/messenger/c/:id/messages`
+  (the brain moves the sender's read cursor, so the chat's cards go), an
+  assistant by the dock's own `runTurn`, the window's turn. A person's line has
+  a thumbs up: the reactions route, then the card closes. An assistant card has
+  no one-click answer, so no click costs a turn by accident. A turn this tab
+  sent (from the bubble or the window) shows as a live card while no chat
+  window is open: the face talks, the step line is the turn's latest `status`,
+  the text is the end of what it has written so far, and Stop is the window's
+  cancel route. It reads the dock's transcript (`DockMsg.turnId`, `.step`), so
+  it opens no stream. At the end it shows the finished reply until the reply's
+  own card comes (at most 6 seconds); a failed turn stays until it is closed.
+  A turn from another tab or channel shows when it is done, as before. The
+  face talks for 3 seconds on a new card: the mouth only, from the brain's
+  style (`lib/bubbles/mouths.ts`), and not at all under reduced motion or in a
+  hidden tab.
 - **Desktop**: inside the desktop shell, while the window is hidden, the
   notice goes to the OS instead (`mantleDesktop.notify`, a click opens the
   chat), and the app badge follows the count (`mantleDesktop.setBadge`: the

@@ -95,6 +95,10 @@ type DockMsg = {
   text: string;
   pending?: boolean;
   error?: boolean;
+  /** The brain's turn id, from the 202: the bubble's live card stops it. */
+  turnId?: string;
+  /** The turn's latest step (a `status` label): the live card's line. */
+  step?: string;
 };
 
 /** Panel visibility: `open` = full overlay shown; `min`/`closed` = bubble only
@@ -823,6 +827,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       // give up as if the stream had died (W7c).
       const live = adminUserRef.current || streams;
       let streamDead = !live;
+      setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, turnId } : m)));
       const subscribedAt = Date.now();
 
       /**
@@ -882,6 +887,13 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
                 }
                 setMessages((prev) =>
                   prev.map((m) => (m.id === botId ? { ...m, text: replyBuf } : m)),
+                );
+                return;
+              }
+              if (ev.type === 'status' && typeof ev.data?.label === 'string') {
+                const step = ev.data.label;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === botId && m.step !== step ? { ...m, step } : m)),
                 );
                 return;
               }

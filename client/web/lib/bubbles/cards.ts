@@ -16,6 +16,7 @@ import type { AssistantTimelineRow } from '@mantle/client-types';
 import type { MessengerListRow, MessengerMessage } from '@/lib/messenger/dto';
 import { noticeText, shouldPop } from '@/lib/messenger/notify';
 import { personText, type BubbleText } from './person-text';
+import type { ItemLink } from './reply-text';
 
 export type BubbleCard = {
   /** `<chat>:<order>`. */
@@ -32,6 +33,10 @@ export type BubbleCard = {
   text: string;
   cut: boolean;
   note: string | null;
+  /** An assistant's reply: what the turn did, from the brain's tally. */
+  facts?: string | null;
+  /** An assistant's reply: the items it links to, to open from the card. */
+  links?: readonly ItemLink[];
   /** The agent thread's slug: opens the thread, moves its read cursor. */
   agentSlug: string | null;
   author: {
@@ -137,11 +142,14 @@ export function newestReplies<T extends ReplyRow>(rows: readonly T[], count: num
     .filter((r) => r.status === 'complete' && r.text.trim() && !r.superseded);
 }
 
+/** What an assistant's card says: its words, and what the turn did. */
+export type ReplyWords = BubbleText & { facts?: string | null; links?: readonly ItemLink[] };
+
 /** The card of an assistant's reply. */
 export function cardFromReply(
   reply: Pick<AssistantTimelineRow, 'createdAt'>,
   row: MessengerListRow,
-  words: BubbleText,
+  words: ReplyWords,
 ): BubbleCard {
   const at = Date.parse(reply.createdAt) || 0;
   return {
