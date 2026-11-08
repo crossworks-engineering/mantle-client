@@ -89,7 +89,8 @@ function useLiveCard(cards: readonly BubbleCard[], visible: boolean) {
 
   const id = turn?.id;
   const pending = turn?.pending;
-  useEffect(() => {
+  // Before paint: the frame where the turn ended still shows its card.
+  useLayoutEffect(() => {
     if (!id) return;
     if (pending) {
       if (running.current?.id !== id) running.current = { id, keys: seen.current.keysNow };
@@ -131,12 +132,16 @@ function useLiveCard(cards: readonly BubbleCard[], visible: boolean) {
 }
 
 export function BubbleStack() {
-  const mode = useBubbleMode();
+  // Off: nothing mounts, so nothing here follows the dock's stream.
+  return useBubbleMode() === 'off' ? null : <Stack />;
+}
+
+function Stack() {
   const cards = useSyncExternalStore(subscribeBubbles, getBubbleCards, serverBubbleCards);
   const { panel } = useDockLayout();
   const pathname = usePathname();
   const login = useViewerLogin()?.loginId ?? null;
-  const hidden = mode === 'off' || chatWindowOpen({ panel, pathname });
+  const hidden = chatWindowOpen({ panel, pathname });
   const live = useLiveCard(cards, !hidden);
   const [place, setPlace] = useState<BubblePlace | null>(null);
   const [turned, setTurned] = useState({ front: '', by: 0 });
@@ -176,8 +181,6 @@ export function BubbleStack() {
     window.addEventListener('resize', keep);
     return () => window.removeEventListener('resize', keep);
   }, [shownKey, shownText, hasEdges, place]);
-
-  if (mode === 'off') return null;
 
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     dragged.current = false;

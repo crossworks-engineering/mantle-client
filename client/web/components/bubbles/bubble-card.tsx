@@ -127,8 +127,11 @@ export function Bubble({
   const thumbsUp = () => {
     if (thanking) return;
     setThanking(true);
-    messengerApi
-      .react(card.chat, card.order, '👍')
+    // The route toggles: if a thumbs up was already there, it just went, so
+    // put it back. The card closes with the thumbs up given.
+    const give = () => messengerApi.react(card.chat, card.order, '👍') as Promise<{ on?: boolean }>;
+    give()
+      .then((r) => (r?.on === false ? give() : r))
       .then(close)
       // The card stays, and the person can try again or open the chat.
       .catch(() => setThanking(false));

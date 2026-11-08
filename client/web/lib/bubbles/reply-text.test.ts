@@ -115,6 +115,12 @@ describe('itemLinks', () => {
     expect(itemLinks(reply)).toEqual([]);
   });
 
+  it('stays fast on a long run of links that never close', () => {
+    const t0 = performance.now();
+    expect(itemLinks('[a](x'.repeat(40_000))).toEqual([]);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+
   it('keeps one button for each item, two at most', () => {
     const reply = `[One](/n/${A}) [Again](page:${A}) [Two](/n/${B}) [Three](/n/${C})`;
     expect(itemLinks(reply).map((l) => l.label)).toEqual(['One', 'Two']);

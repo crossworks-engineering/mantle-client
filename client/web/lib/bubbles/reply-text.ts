@@ -92,7 +92,9 @@ export function replyWords(reply: {
 
 /** The most items a card offers to open. */
 export const ITEM_LINKS_MAX = 2;
-const LINK = /(!?)\[([^\]\n]{1,120})\]\(([^)\s]+)\)/g;
+// Bounded: an app path here is at most 41 characters, and an open bound
+// makes a long run of "[a](x" with no ")" slow.
+const LINK = /(!?)\[([^\]\n]{1,120})\]\(([^)\s]{1,64})\)/g;
 const NODE_ID = '[0-9a-fA-F-]{36}';
 const NODE_PATH = new RegExp(`^/n/(${NODE_ID})$`);
 const PAGE_CARD = new RegExp(`^page:(${NODE_ID})$`);

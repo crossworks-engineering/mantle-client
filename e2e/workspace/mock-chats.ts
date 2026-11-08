@@ -103,8 +103,10 @@ export type MockChats = {
   /** The chats this login may not write in: a send there is refused, as a
    *  brain refuses a login that may not write by hand. */
   readOnly: Set<string>;
-  /** The reactions this login gave. */
+  /** Each reaction call this login made. The route toggles, as a brain's does. */
   reacted: { chat: string; seq: number; emoji: string }[];
+  /** The reactions this login has on now, `chat:seq:emoji`. */
+  reactionsOn: Set<string>;
   threadReads: { agentSlug: string; at: string | null }[];
   /** Serve the routes this module owns. False: not one of them. */
   handle(
@@ -157,6 +159,7 @@ export function createMockChats(): MockChats {
     threadReads: [],
     sent: [],
     reacted: [],
+    reactionsOn: new Set(),
     readOnly: new Set(),
     addChat(id, title, kind = 'direct') {
       chats.rows.push({
@@ -374,7 +377,11 @@ export function createMockChats(): MockChats {
         const chat = decodeURIComponent(r[1]!);
         const { emoji } = JSON.parse(await readBody(req)) as { emoji: string };
         chats.reacted.push({ chat, seq: Number(r[2]), emoji });
-        json(res, 200, { ok: true });
+        const key = `${chat}:${r[2]}:${emoji}`;
+        const on = !chats.reactionsOn.has(key);
+        if (on) chats.reactionsOn.add(key);
+        else chats.reactionsOn.delete(key);
+        json(res, 200, { on });
         return true;
       }
       const m = /^\/api\/messenger\/c\/([^/]+)\/(messages|read)$/.exec(path);

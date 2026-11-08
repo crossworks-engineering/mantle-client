@@ -89,6 +89,7 @@ export function TalkingAvatar({
       ref={boxRef}
       data-testid="bubble-face"
       data-talking={moving ? 'true' : undefined}
+      data-frame={frame}
       className={cn('inline-flex', face.className)}
     >
       {mouth && seed ? (

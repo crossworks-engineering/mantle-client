@@ -276,7 +276,15 @@ export type MockWorkspaceApi = {
   uiAnswers: { role: Role; turnId: string; callId: string; windowId: unknown; result: unknown }[];
   /** The turns sent (POST /api/assistant/turn): the Idempotency-Key and
    *  the turn id the 202 gave for it, as a brain mints it from the session. */
-  turns: { role: Role; key: string; turnId: string; windowId: unknown }[];
+  turns: {
+    role: Role;
+    key: string;
+    turnId: string;
+    windowId: unknown;
+    /** What the turn asked, and of which agent (a JSON body). */
+    text?: unknown;
+    agentSlug?: unknown;
+  }[];
   /** What a turn's live stream sends, in order, once it is opened (then it
    *  stays open, quiet). A stream for a turn id that is not the caller's is
    *  a 404, as on a brain. */
@@ -1026,14 +1034,21 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       if (path === '/api/assistant/turn' && method === 'POST') {
         const raw = await readBody(req);
         const key = String(req.headers['idempotency-key'] ?? '');
-        let windowId: unknown;
+        let sent: { windowId?: unknown; text?: unknown; agentSlug?: unknown } = {};
         try {
-          windowId = (JSON.parse(raw) as { windowId?: unknown }).windowId;
+          sent = JSON.parse(raw) as typeof sent;
         } catch {
-          windowId = undefined;
+          sent = {};
         }
         const turnId = `${role === 'admin' ? 'turn' : 'ws'}-${LOGINS[role].loginId}.${key}`;
-        state.turns.push({ role, key, turnId, windowId });
+        state.turns.push({
+          role,
+          key,
+          turnId,
+          windowId: sent.windowId,
+          text: sent.text,
+          agentSlug: sent.agentSlug,
+        });
         return json(res, 202, { turnId, stream: true });
       }
       const turnM = /^\/api\/assistant\/turn\/([^/]+)\/(stream|cancel)$/.exec(path);

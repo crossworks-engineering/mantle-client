@@ -139,6 +139,20 @@ test('a thumbs up reacts to that line and closes the card', async ({ page }) => 
   await expect.poll(() => api.chats.reads).toEqual([{ chat: CHAT, seq: 1 }]);
 });
 
+test('a thumbs up given before stays given: the toggle is put back', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.say(CHAT, 'Lunch at one?');
+  // Given already, in the chat room or another tab.
+  api.chats.reactionsOn.add(`${CHAT}:1:👍`);
+  await page.getByTestId('bubble-thumbs').click();
+  await expect(card(page)).toHaveCount(0);
+  expect(api.chats.reacted).toHaveLength(2);
+  expect([...api.chats.reactionsOn]).toEqual([`${CHAT}:1:👍`]);
+});
+
 test('an assistant card has no thumbs up: a click must not cost a turn', async ({ page }) => {
   await bubblesOn(page);
   await signIn(page, 'admin');
@@ -163,6 +177,11 @@ test('a reply to an assistant runs a turn, and the live card shows it working', 
 
   await quickReply(page, 'Now list the new features');
   await expect.poll(() => api.turns.length).toBe(1);
+  expect(api.turns[0]).toMatchObject({
+    role: 'admin',
+    agentSlug: MOCK_AGENT.slug,
+    text: 'Now list the new features',
+  });
   // The card answered is seen: its read moves the cursor past it.
   await expect.poll(() => api.chats.threadReads.length).toBe(1);
   api.chats.replyStarts(MOCK_AGENT.slug);
@@ -170,6 +189,8 @@ test('a reply to an assistant runs a turn, and the live card shows it working', 
   await expect(live(page)).toBeVisible();
   await expect(live(page)).toHaveAttribute('data-state', 'running');
   await expect(page.getByTestId('bubble-face')).toHaveAttribute('data-talking', 'true');
+  // The mouth really changes: a frame other than the own mouth shows.
+  await expect.poll(() => page.getByTestId('bubble-face').getAttribute('data-frame')).not.toBe('0');
   await expect(page.getByTestId('bubble-step')).toContainText('Working');
 
   api.pushTurnEvent({
@@ -196,6 +217,27 @@ test('a reply to an assistant runs a turn, and the live card shows it working', 
   await expect(live(page)).toHaveCount(0);
   await expect(card(page)).toContainText('I created the list of new features.');
   await expect(page.getByTestId('bubble-next')).toHaveCount(0);
+});
+
+test('a failed turn stays on the live card until it is closed', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
+  await quickReply(page, 'Now list the new features');
+  await expect.poll(() => api.turns.length).toBe(1);
+  await expect(live(page)).toHaveAttribute('data-state', 'running');
+
+  api.pushTurnEvent({ type: 'error', data: { message: 'The model did not answer.' } });
+  await expect(live(page)).toHaveAttribute('data-state', 'failed');
+  await expect(page.getByTestId('bubble-live-text')).toHaveText('The model did not answer.');
+  // Past the hold a finished card would give way: a failure does not.
+  await page.waitForTimeout(6500);
+  await expect(live(page)).toHaveAttribute('data-state', 'failed');
+  await page.getByTestId('bubble-pop').click();
+  await expect(live(page)).toHaveCount(0);
 });
 
 test('Stop on the live card cancels that turn', async ({ page }) => {
@@ -236,7 +278,7 @@ test('no live card while the window is open; it shows when the window is minimis
   await expect(page.getByTestId('bubble-step')).toContainText('Reading the release notes');
 });
 
-test('a new card talks for a moment, and not at all with reduced motion', async ({ page }) => {
+test('a new card talks for a moment, and a hidden tab stops it', async ({ page }) => {
   await bubblesOn(page);
   await signIn(page, 'admin');
   await settled(page);
@@ -245,6 +287,15 @@ test('a new card talks for a moment, and not at all with reduced motion', async 
   const face = page.getByTestId('bubble-face');
   await expect(face).toHaveAttribute('data-talking', 'true');
   await expect(face).not.toHaveAttribute('data-talking', 'true', { timeout: 6000 });
+
+  // A new line while the tab is hidden: no timer runs.
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  api.chats.say(CHAT, 'Are you there?');
+  await expect(card(page)).toContainText('Are you there?');
+  await expect(face).not.toHaveAttribute('data-talking', 'true');
 });
 
 test('with reduced motion the face never talks', async ({ page }) => {

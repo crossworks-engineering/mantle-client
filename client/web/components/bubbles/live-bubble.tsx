@@ -62,6 +62,8 @@ export function LiveBubble({
 
   const open = (e: ReactMouseEvent) => {
     if (dragged.current && e.detail > 0) return;
+    // A finished card is read in the window now: it does not come back.
+    if (!live.pending) onClose();
     openAssistant(agentSlug);
   };
 
