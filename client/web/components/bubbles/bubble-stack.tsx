@@ -119,7 +119,6 @@ function useLiveCard(cards: readonly BubbleCard[], visible: boolean) {
     (end?.id === taken.id &&
       liveHeld({
         shownAtEnd: end.shown,
-        closed: false,
         failed: taken.error,
         keysAtStart: end.keys,
         keysNow,
@@ -260,7 +259,13 @@ function Stack() {
               more={more}
               dragged={dragged}
               draft={shown.key === replyKey ? (reply?.text ?? '') : null}
-              setDraft={(text) => setReply(text === null ? null : { key: shown.key, text })}
+              // A close clears only this card's words: a slow send that ends
+              // later must not close the field of another card.
+              setDraft={(text) =>
+                setReply((r) =>
+                  text !== null ? { key: shown.key, text } : r?.key === shown.key ? null : r,
+                )
+              }
             />
           ) : null}
           {/* While a reply field is open its card keeps the front, so the

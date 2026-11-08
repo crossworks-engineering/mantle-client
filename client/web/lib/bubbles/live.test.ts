@@ -61,7 +61,6 @@ describe('liveTail', () => {
 describe('liveHeld', () => {
   const base = {
     shownAtEnd: true,
-    closed: false,
     failed: false,
     keysAtStart: ['agent:1'],
     keysNow: ['agent:1'],
@@ -77,14 +76,12 @@ describe('liveHeld', () => {
     expect(liveHeld({ ...base, over: true })).toBe(false);
   });
 
-  it('does not come back when it was not on screen, or was closed', () => {
+  it('does not come back when it was not on screen', () => {
     expect(liveHeld({ ...base, shownAtEnd: false })).toBe(false);
-    expect(liveHeld({ ...base, closed: true })).toBe(false);
   });
 
-  it('keeps a failed turn until it is closed', () => {
+  it("keeps a failed turn past the hold (the close is the stack's)", () => {
     expect(liveHeld({ ...base, failed: true, over: true })).toBe(true);
-    expect(liveHeld({ ...base, failed: true, closed: true })).toBe(false);
   });
 
   it('gives a failure way when the reply card comes after all', () => {

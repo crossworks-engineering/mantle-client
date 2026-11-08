@@ -73,14 +73,14 @@ export function liveTail(text: string, max = LIVE_TAIL_MAX): string {
 
 /**
  * Whether a finished live card still shows: it was on screen when the turn
- * ended, the person did not close it, and no card of its chat has come
- * since the turn started, in the hold. A failed turn usually has no reply card
- * to wait for, so it shows the failure until it is closed or one comes. Then the reply's own card takes its place, so the
- * person sees one card that changes, not one that goes and comes back.
+ * ended, and no card of its chat has come since the turn started, in the
+ * hold. A failed turn usually has no reply card to wait for, so it shows the
+ * failure until the person closes it (the stack keeps that close) or one
+ * comes. Then the reply's own card takes its place, so the person sees one
+ * card that changes, not one that goes and comes back.
  */
 export function liveHeld(s: {
   shownAtEnd: boolean;
-  closed: boolean;
   /** The turn failed: no reply card comes, so it stays until it is closed. */
   failed: boolean;
   /** The chat's card keys when the turn started: one not among them is
@@ -91,7 +91,7 @@ export function liveHeld(s: {
   /** LIVE_HOLD_MS has passed since the turn ended. */
   over: boolean;
 }): boolean {
-  if (!s.shownAtEnd || s.closed) return false;
+  if (!s.shownAtEnd) return false;
   // The reply's own card came: it takes the place, also after a failure the
   // dock reported (a lost stream) while the turn went on and finished.
   if (s.keysNow.some((k) => !s.keysAtStart.includes(k))) return false;
