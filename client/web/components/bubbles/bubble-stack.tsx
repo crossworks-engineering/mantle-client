@@ -107,6 +107,12 @@ function useLiveCard(cards: readonly BubbleCard[], visible: boolean) {
     return () => window.clearTimeout(t);
   }, [endId]);
 
+  // A chat window opened after the end shows the turn there: it is seen,
+  // so a failure does not come back when the window closes.
+  if (taken && end?.id === taken.id && end.shown && !visible && closed !== taken.id) {
+    setClosed(taken.id);
+  }
+
   if (!taken || closed === taken.id) return null;
   const on =
     taken.pending ||
@@ -143,9 +149,11 @@ function Stack() {
   const live = useLiveCard(cards, !hidden);
   const [place, setPlace] = useState<BubblePlace | null>(null);
   const [turned, setTurned] = useState({ front: '', by: 0 });
-  /** The card whose reply field is open: it keeps the front, so a new line
-   *  does not take the field and its words away. */
-  const [replyKey, setReplyKey] = useState<string | null>(null);
+  /** The card whose reply field is open, and the words in it: it keeps the
+   *  front, so a new line does not take the field away, and the words stay
+   *  while a chat window hides the stack. In memory only. */
+  const [reply, setReply] = useState<{ key: string; text: string } | null>(null);
+  const replyKey = reply?.key ?? null;
   const rootRef = useRef<HTMLDivElement>(null);
   /** A drag is going on: nothing else moves the node. */
   const moving = useRef(false);
@@ -251,11 +259,13 @@ function Stack() {
               card={shown}
               more={more}
               dragged={dragged}
-              replying={shown.key === replyKey}
-              setReplying={(on) => setReplyKey(on ? shown.key : null)}
+              draft={shown.key === replyKey ? (reply?.text ?? '') : null}
+              setDraft={(text) => setReply(text === null ? null : { key: shown.key, text })}
             />
           ) : null}
-          {more > 0 ? (
+          {/* While a reply field is open its card keeps the front, so the
+              edge would turn a deck nobody sees. */}
+          {more > 0 && !replyingTo ? (
             <RowButton
               data-bubble-control
               data-testid="bubble-next"

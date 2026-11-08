@@ -95,16 +95,18 @@ export function Bubble({
   card,
   more,
   dragged,
-  replying,
-  setReplying,
+  draft,
+  setDraft,
 }: {
   card: BubbleCard;
   more: number;
   dragged: RefObject<boolean>;
-  /** The reply field is open. The stack holds it, so the card keeps the front. */
-  replying: boolean;
-  setReplying: (on: boolean) => void;
+  /** The reply field's words, or null while it is closed. The stack holds
+   *  them, so the card keeps the front and the words outlive a remount. */
+  draft: string | null;
+  setDraft: (text: string | null) => void;
 }) {
+  const replying = draft !== null;
   const router = useRouter();
   const { openAssistant } = useDockActions();
   const faceOf = useChatFaces();
@@ -197,8 +199,8 @@ export function Bubble({
           ))}
         </div>
       ) : null}
-      {replying ? (
-        <BubbleReply card={card} onDone={() => setReplying(false)} close={close} />
+      {draft !== null ? (
+        <BubbleReply card={card} text={draft} setText={setDraft} close={close} />
       ) : null}
       <TalkingAvatar
         talking={fresh}
@@ -233,7 +235,7 @@ export function Bubble({
         <Button
           variant="ghost"
           size="icon-2xs"
-          onClick={() => setReplying(!replying)}
+          onClick={() => setDraft(replying ? null : '')}
           data-bubble-control
           data-testid="bubble-reply"
           aria-expanded={replying}
@@ -282,17 +284,21 @@ export function Bubble({
  */
 function BubbleReply({
   card,
-  onDone,
+  text,
+  setText,
   close,
 }: {
   card: BubbleCard;
-  onDone: () => void;
+  /** The words, held by the stack. */
+  text: string;
+  /** New words; null closes the field. */
+  setText: (text: string | null) => void;
   close: () => void;
 }) {
+  const onDone = () => setText(null);
   const queryClient = useQueryClient();
   const { runTurn } = useDockActions();
   const { busy } = useDockSession();
-  const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -320,7 +326,6 @@ function BubbleReply({
         void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
         void queryClient.invalidateQueries({ queryKey: messengerKeys.unread });
       }
-      setText('');
       onDone();
       // A pinned card stays: the person pinned it to keep it.
       if (!isBubblePinned(card.key)) close();

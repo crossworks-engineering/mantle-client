@@ -112,6 +112,16 @@ test('a new line while the reply field is open keeps the field and its words', a
   await expect(card(page)).toContainText('2 more');
   await expect(card(page)).toContainText('Lunch at one?');
   await expect(page.getByTestId('bubble-reply-input')).toHaveValue('Yes, and');
+  // The edge would turn a deck nobody sees: it waits for the field.
+  await expect(page.getByTestId('bubble-next')).toHaveCount(0);
+
+  // A chat window hides the stack and the words wait. The shortcut does not
+  // fire from inside a field, so focus leaves it first.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('ControlOrMeta+i');
+  await expect(card(page)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('bubble-reply-input')).toHaveValue('Yes, and');
 
   await page.getByTestId('bubble-reply-input').fill('Yes, at one');
   await page.getByTestId('bubble-reply-input').press('Enter');
@@ -236,8 +246,9 @@ test('a reply to an assistant runs a turn, and the live card shows it working', 
   );
 
   // The reply's own card takes its place: one card, not two.
+  // Well inside the 6 s hold: the reply card ends it, not the timer.
   api.chats.replyEnds(MOCK_AGENT.slug, 'I created the list of new features.');
-  await expect(live(page)).toHaveCount(0);
+  await expect(live(page)).toHaveCount(0, { timeout: 2000 });
   await expect(card(page)).toContainText('I created the list of new features.');
   await expect(page.getByTestId('bubble-next')).toHaveCount(0);
 });
@@ -260,6 +271,25 @@ test('a failed turn stays on the live card until it is closed', async ({ page })
   await page.waitForTimeout(6500);
   await expect(live(page)).toHaveAttribute('data-state', 'failed');
   await page.getByTestId('bubble-pop').click();
+  await expect(live(page)).toHaveCount(0);
+});
+
+test('a failure seen in the window does not come back', async ({ page }) => {
+  await bubblesOn(page);
+  await signIn(page, 'admin');
+  await settled(page);
+
+  api.chats.replyStarts(MOCK_AGENT.slug);
+  api.chats.replyEnds(MOCK_AGENT.slug, 'I have finished the report.');
+  await quickReply(page, 'Now list the new features');
+  await expect.poll(() => api.turns.length).toBe(1);
+  api.pushTurnEvent({ type: 'error', data: { message: 'The model did not answer.' } });
+  await expect(live(page)).toHaveAttribute('data-state', 'failed');
+
+  await page.keyboard.press('ControlOrMeta+i');
+  await expect(live(page)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
   await expect(live(page)).toHaveCount(0);
 });
 
