@@ -86,7 +86,7 @@ export function useFileNewItem(
                 action: `Put the new ${noun} in “${folder.name}”.`,
                 title: CREATE_HERE_TITLE,
                 to: { toFolderId: folder.id },
-                ...(kind === 'apps' ? { app: {} } : {}),
+                ...(kind === 'apps' ? { app: true } : {}),
                 onMoved: () => void qc.invalidateQueries({ queryKey: treeKey(kind) }),
               },
             });

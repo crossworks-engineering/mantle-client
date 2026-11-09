@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@mantle/web-ui/api-fetch';
 import {
   alsoVisibleLine,
-  appHolderLines,
   contentsLeftText,
   contentsLines,
   contentsUnfinishedText,
@@ -237,23 +236,6 @@ describe('folder confirm', () => {
     );
   });
 
-  it('an app holder add says both effects (21.8 row 13), with or without counts', () => {
-    expect(appHolderLines('Admin', ['Team'], { rows: 40, exportedTables: 2 })).toEqual([
-      "This app's data (40 rows, 2 exported tables) becomes visible to Admin.",
-      'This app will then read only items that Team and Admin both hold.',
-    ]);
-    expect(appHolderLines('Admin', ['Team'], { rows: null, exportedTables: 0 })[0]).toBe(
-      "This app's data becomes visible to Admin.",
-    );
-    expect(appHolderLines('Ops', ['Team', 'Admin'])[1]).toBe(
-      'This app will then read only items that Team, Admin and Ops all hold.',
-    );
-    expect(appHolderLines('Sales', [])).toEqual([
-      "This app's data becomes visible to Sales.",
-      'This app will then read only items that Sales holds.',
-    ]);
-  });
-
   it('adds confirm=1 to a URL', () => {
     expect(withConfirm('/api/grants/a/b', true)).toBe('/api/grants/a/b?confirm=1');
     expect(withConfirm('/api/grants/a/b', false)).toBe('/api/grants/a/b');
@@ -435,14 +417,11 @@ describe('upload into a folder (S6)', () => {
 });
 
 describe('an app move (S7)', () => {
-  it('says both effects', () => {
-    expect(appMoveLines(['Sales'], ['Team', 'Sales'])).toEqual([
-      "This app's data becomes visible to Sales.",
-      'This app will then read only items that Team and Sales both hold.',
+  it('says its data becomes visible, and nothing about what it reads (2026-11-09)', () => {
+    expect(appMoveLines(['Sales'])).toEqual(["This app's data becomes visible to Sales."]);
+    expect(appMoveLines(['Sales', 'Ops'])).toEqual([
+      "This app's data becomes visible to Sales and Ops.",
     ]);
-    expect(appMoveLines(['Sales'])[1]).toBe(
-      'This app will then read only items that every workspace it is in holds.',
-    );
   });
 });
 

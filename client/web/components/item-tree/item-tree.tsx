@@ -672,7 +672,7 @@ export function ItemTree({
               action,
               to,
               onMoved: after,
-              ...(kind === 'apps' ? { app: {} } : {}),
+              ...(kind === 'apps' ? { app: true } : {}),
             },
             preview,
           });

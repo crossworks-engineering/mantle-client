@@ -20,7 +20,6 @@ import { queryKeysForType } from '@/lib/item-kinds';
 import { openLinkReadsContactWrites } from '@/lib/contact-shares';
 import {
   FOLDER_CONFIRM_NOTE,
-  appHolderLines,
   folderPreviewUrl,
   grantErrorText,
   grantUrl,
@@ -332,8 +331,6 @@ function GrantAccessPanel({
     });
   };
 
-  const holders = (view?.rows ?? []).filter((r) => !r.excluded).map((r) => r.name);
-
   const onAdd = async (ws: { wsId: string; name: string }) => {
     const req = addRequest(nodeId, ws.wsId, type);
     const post = () => apiSend(req.url, req.method, req.body);
@@ -341,31 +338,8 @@ function GrantAccessPanel({
       await askFolder({ add: ws.wsId, name: ws.name }, 'Share', post);
       return;
     }
-    if (type === 'app') {
-      // 21.8 row 13: a new holder sees the app's data AND narrows what the
-      // app reads. Both, always, before the write.
-      let counts: FolderGrantPreview['app'];
-      try {
-        counts = (
-          await apiFetch<FolderGrantPreview>(folderPreviewUrl(nodeId, { add: ws.wsId, name: '' }), {
-            cache: 'no-store',
-          })
-        ).app;
-      } catch {
-        counts = undefined;
-      }
-      asks.confirm({
-        title: `Share this app with ${ws.name}?`,
-        lines: appHolderLines(ws.name, holders, counts),
-        verb: 'Share',
-        run: () =>
-          write(async () => {
-            await beforeEnable?.();
-            return post();
-          }, 'Could not share it'),
-      });
-      return;
-    }
+    // An app shares as a page does: no extra confirm (owner decision
+    // 2026-11-09, apps follow the Pages rights model).
     await write(async () => {
       await beforeEnable?.();
       return post();
@@ -450,19 +424,8 @@ function GrantAccessPanel({
         view?.home.name && view.home.wsId
           ? { wsId: view.home.wsId, name: view.home.name }
           : undefined,
-      // An app: the move's new workspaces see its data (S7); its holders
-      // after the move are these rows less the home, plus the target.
-      app:
-        type === 'app'
-          ? {
-              holders: [
-                ...(view?.rows ?? [])
-                  .filter((r) => !r.excluded && !r.isHome && r.wsId !== ws.wsId)
-                  .map((r) => r.name),
-                ws.name,
-              ],
-            }
-          : undefined,
+      // An app: the move's new workspaces see its data (S7).
+      app: type === 'app',
       onMoved: refresh,
     });
 

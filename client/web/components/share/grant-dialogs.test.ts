@@ -79,10 +79,10 @@ describe('MovePreviewLines, fix round 1', () => {
     expect(on).toContain('It stays readable in Team, read only.');
   });
 
-  it('an app move says both effects of its new workspaces', () => {
-    const html = lines({ preview: p, app: { holders: ['Board', 'Sales'] } });
+  it('an app move says its new workspaces see its data, and nothing about what it reads (2026-11-09)', () => {
+    const html = lines({ preview: p, app: true });
     expect(html).toContain('This app&#x27;s data becomes visible to Sales.');
-    expect(html).toContain('This app will then read only items that Board and Sales both hold.');
+    expect(html).not.toContain('read only items');
     expect(lines({ preview: p })).not.toContain('This app');
   });
 

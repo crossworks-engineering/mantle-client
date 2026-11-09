@@ -340,31 +340,6 @@ export const FOLDER_CONFIRM_NOTE =
   'Items in a folder take its workspaces. Items changed by hand keep their own.';
 export const TOO_BIG_TEXT = 'This folder holds too many items. Share the sub-folders one by one.';
 
-/** The app holder-add confirm (21.8 row 13): both effects, always. */
-export function appHolderLines(
-  name: string,
-  holders: readonly string[],
-  counts?: { rows: number | null; exportedTables: number },
-): string[] {
-  const what = counts
-    ? [
-        counts.rows !== null ? plural(counts.rows, 'row') : null,
-        counts.exportedTables > 0 ? plural(counts.exportedTables, 'exported table') : null,
-      ].filter(Boolean)
-    : [];
-  const data = what.length
-    ? `This app's data (${what.join(', ')}) becomes visible to ${name}.`
-    : `This app's data becomes visible to ${name}.`;
-  const all = [...holders, name];
-  const reads =
-    all.length > 2
-      ? `This app will then read only items that ${joinAnd(all)} all hold.`
-      : all.length === 2
-        ? `This app will then read only items that ${joinAnd(all)} both hold.`
-        : `This app will then read only items that ${name} holds.`;
-  return [data, reads];
-}
-
 function joinAnd(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? '';
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -391,15 +366,12 @@ export function removedLine(
 /** The line once "Keep it readable in H" is ticked. */
 export const keptLine = (name: string) => `It stays readable in ${name}, read only.`;
 
-/** A move of an app that adds workspaces (S7, 21.8 row 13): both effects.
- *  `holders`: the app's workspaces after the move, when known. */
-export function appMoveLines(added: readonly string[], holders?: readonly string[]): string[] {
-  const data = `This app's data becomes visible to ${joinAnd(added)}.`;
-  const reads =
-    holders && holders.length > 1
-      ? `This app will then read only items that ${joinAnd(holders)} ${holders.length === 2 ? 'both' : 'all'} hold.`
-      : 'This app will then read only items that every workspace it is in holds.';
-  return [data, reads];
+/** A move of an app that adds workspaces: its data becomes visible there,
+ *  as a page's content does. What the app reads does not change: a run
+ *  reads with the rights of the user who runs it (owner decision
+ *  2026-11-09, apps follow the Pages rights model). */
+export function appMoveLines(added: readonly string[]): string[] {
+  return [`This app's data becomes visible to ${joinAnd(added)}.`];
 }
 
 /** A move that changes nothing about who sees it needs no confirm. */

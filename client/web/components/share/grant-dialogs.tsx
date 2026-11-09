@@ -33,7 +33,7 @@ import {
 } from '../../lib/grants';
 
 /** A grant write that waits for a yes: a folder change (how many items gain
- *  or lose), or a new holder on an app (both effects, 21.8 row 13). */
+ *  or lose). */
 export type PendingGrantConfirm = {
   title: string;
   lines: string[];
@@ -102,10 +102,8 @@ export type MoveTarget = {
   /** The old home, on a move to another workspace: the dialog offers "Keep
    *  it readable in H" (contract change 12: only the old home). */
   oldHome?: { wsId: string; name: string };
-  /** An app: the confirm also says what its new workspaces see and what it
-   *  will read (S7, 21.8 row 13). `holders`: its workspaces after the move,
-   *  when known. */
-  app?: { holders?: string[] };
+  /** An app: the confirm also says its new workspaces see its data (S7). */
+  app?: boolean;
   /** A folder's home move: the dialog offers "Also move the N items
    *  inside" (ticked), the items below it that share its home. */
   folder?: boolean;
@@ -335,8 +333,8 @@ export const MOVE_TITLE = 'Move and change who can see it?';
 export const CREATE_HERE_TITLE = 'Create here and change who can see it?';
 
 /** The preview's lines and, on a move from the old home, the "Keep it
- *  readable in H" tick (a hand grant there, Write off). An app adds both
- *  effects of its new workspaces. */
+ *  readable in H" tick (a hand grant there, Write off). An app adds that
+ *  its new workspaces see its data. */
 export function MovePreviewLines({
   preview,
   oldHome,
@@ -347,7 +345,7 @@ export function MovePreviewLines({
 }: {
   preview: MovePreview;
   oldHome?: { wsId: string; name: string };
-  app?: { holders?: string[] };
+  app?: boolean;
   keep: boolean;
   onKeep: (next: boolean) => void;
   busy?: boolean;
@@ -358,10 +356,7 @@ export function MovePreviewLines({
   const gone = removedLine(preview, kept);
   const appLines =
     app && preview.alsoVisibleTo.length > 0
-      ? appMoveLines(
-          preview.alsoVisibleTo.map((w) => w.name),
-          app.holders,
-        )
+      ? appMoveLines(preview.alsoVisibleTo.map((w) => w.name))
       : [];
   return (
     <>
