@@ -36,6 +36,7 @@ import {
   type SsoSetupTestOutcome,
 } from '@/lib/sso-setup';
 import { ssoSetupQuery } from '@/lib/use-sso-setup-shown';
+import { fleetQuery } from '@/lib/use-fleet-shown';
 
 function Value({ label, value }: { label: string; value: string }) {
   return (
@@ -376,13 +377,17 @@ function ScimSection({
   );
 }
 
-function EntraSteps() {
+/** The steps in Entra. SCIM runs on a Control Center only (owner,
+ *  2026-11-09), so off one the steps stop at the sign-in app. */
+function EntraSteps({ scim }: { scim: boolean }) {
   return (
     <Section title="Steps in Entra">
-      <p className="mb-2 text-sm text-muted-foreground">
-        Entra needs two apps. An app from App registrations cannot do provisioning, so SCIM uses a
-        second app.
-      </p>
+      {scim && (
+        <p className="mb-2 text-sm text-muted-foreground">
+          Entra needs two apps. An app from App registrations cannot do provisioning, so SCIM uses a
+          second app.
+        </p>
+      )}
       <ol className="list-decimal space-y-1 pl-5 text-sm">
         <li>
           Sign-in app, in App registrations: add the redirect URI above as a Web redirect URI.
@@ -392,16 +397,22 @@ function EntraSteps() {
           Note its expiry date: nothing warns before it ends.
         </li>
         <li>Press Test.</li>
-        <li>Make the SCIM token.</li>
-        <li>
-          Provisioning app, in Enterprise apps: select Create your own application, then the
-          non-gallery option.
-        </li>
-        <li>
-          In the provisioning app, open Provisioning. Paste the SCIM URL and the token, and pass
-          Test Connection.
-        </li>
-        <li>Assign the same people to both apps.</li>
+        {scim ? (
+          <>
+            <li>Make the SCIM token.</li>
+            <li>
+              Provisioning app, in Enterprise apps: select Create your own application, then the
+              non-gallery option.
+            </li>
+            <li>
+              In the provisioning app, open Provisioning. Paste the SCIM URL and the token, and pass
+              Test Connection.
+            </li>
+            <li>Assign the same people to both apps.</li>
+          </>
+        ) : (
+          <li>Assign the people to the sign-in app.</li>
+        )}
         <li>Tell the box operator to lock this screen.</li>
       </ol>
     </Section>
@@ -414,6 +425,10 @@ function EntraSteps() {
  */
 export function CompanySignInClient() {
   const query = useQuery(ssoSetupQuery);
+  // The SCIM-token step is the Control Center's only (owner, 2026-11-09): GET
+  // /api/fleet answers 200 there, 404 elsewhere. Hidden while it loads or fails.
+  const fleet = useQuery(fleetQuery);
+  const scim = fleet.data != null;
   const [token, setToken] = useState<string | null>(null);
   const [madeHere, setMadeHere] = useState(false);
   const panel = token && <TokenPanel token={token} onDone={() => setToken(null)} />;
@@ -470,21 +485,23 @@ export function CompanySignInClient() {
           <Value label="Issuer" value={status.issuer} />
           <Value label="Client id" value={status.clientId} />
           <Value label="Redirect URI" value={status.redirectUri} />
-          <Value label="SCIM URL" value={status.scimUrl} />
+          {scim && <Value label="SCIM URL" value={status.scimUrl} />}
         </div>
       </Section>
       <SecretSection status={status} />
       {panel}
-      <ScimSection
-        status={status}
-        tokenShown={!!token}
-        madeHere={madeHere}
-        onMade={(made) => {
-          setToken(made);
-          setMadeHere(true);
-        }}
-      />
-      {open && <EntraSteps />}
+      {scim && (
+        <ScimSection
+          status={status}
+          tokenShown={!!token}
+          madeHere={madeHere}
+          onMade={(made) => {
+            setToken(made);
+            setMadeHere(true);
+          }}
+        />
+      )}
+      {open && <EntraSteps scim={scim} />}
     </div>
   );
 }

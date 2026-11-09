@@ -64,9 +64,14 @@ else is a plain 404.
   Edit or Delete); a `/n` link to a file opens it in its folder from
   `GET /api/files/files/:id`; a typed admin screen says "You cannot manage
   this part of the brain."; `/review` and `/team-admin` land on the home.
-- `company-sign-in.spec.ts`: Settings > Company sign-in in each mode: the secret
-  and the SCIM token in `setup`, the lock, the `.env` values, the refusals, a
-  brain before the screen, the search palette (`mock-sso-setup.ts`).
+- `company-sign-in.spec.ts`: Admin > Company sign-in in each mode: the secret
+  in `setup`, the SCIM token on a Control Center only, the lock, the `.env`
+  values, the refusals, a brain before the screen, the search palette, the
+  redirect from the old Settings path (`mock-sso-setup.ts`).
+- `fleet.spec.ts`: Admin > Fleet on a Control Center only: the boxes, a ban
+  previewed then made, Lift and Retire, an owner match; and on Users, the
+  Archived list, Enable on an archived login, and Disable again
+  (`mock-fleet.ts`).
 - `admin-shell.spec.ts`: the full nav with Settings > Users, the owner Pages
   screen (every page of the brain) and the Users screen (no sign-in by email
   code and no client login since W8).

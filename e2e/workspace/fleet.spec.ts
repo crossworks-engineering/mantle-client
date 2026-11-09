@@ -1,0 +1,192 @@
+import { expect, test } from '@playwright/test';
+import { LOGINS, signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
+import { FLEET_BOX, newMockFleet } from './mock-fleet';
+import { rowsInAnyScope } from './shell-nav';
+
+/**
+ * Admin > Fleet, the Control Center's boxes and bans, and the Users screen's
+ * Archived list (docs/control-center.md in the mantle repo). A box is a
+ * Control Center when GET /api/fleet answers 200 (`api.fleet` set); off one
+ * it answers 404 and nothing shows. In-memory brain (mock-fleet.ts).
+ */
+
+let api: MockWorkspaceApi;
+test.beforeEach(async ({ baseURL }) => {
+  api = await startMockWorkspaceApi(new URL(baseURL!).origin);
+});
+test.afterEach(async () => {
+  await api.close();
+});
+
+const PATH = '/admin/fleet';
+const MEMBER = LOGINS.member.loginId;
+
+test('not a Control Center: no Fleet in the nav, and the address says so', async ({ page }) => {
+  const answered = page.waitForResponse((r) => r.url().endsWith('/api/fleet'));
+  await signIn(page, 'admin');
+  await answered;
+  expect([...(await rowsInAnyScope(page, ['Users', 'Fleet']))]).toEqual(['Users']);
+  await page.goto(PATH);
+  await expect(page.getByRole('main').getByText('This box is not a Control Center.')).toBeVisible();
+});
+
+test('a member is not offered it, and the brain is not asked', async ({ page }) => {
+  api.fleet = newMockFleet();
+  await signIn(page, 'member');
+  await expect(page.getByRole('navigation').first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Fleet', exact: true })).toHaveCount(0);
+  await page.waitForTimeout(1500);
+  expect(api.asked('member').filter((r) => r.includes('/api/fleet'))).toEqual([]);
+});
+
+test('a Control Center: the key, the two lines, the boxes, add and remove', async ({ page }) => {
+  api.fleet = newMockFleet();
+  await signIn(page, 'admin');
+  await expect.poll(async () => [...(await rowsInAnyScope(page, ['Fleet']))]).toEqual(['Fleet']);
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByText('SHA256:mock-fingerprint')).toBeVisible();
+  await expect(main.getByText('The control service is running.')).toBeVisible();
+  await expect(
+    main.getByText(/MANTLE_CONTROL_CENTER=https:\/\/cc\.example\.invalid/),
+  ).toBeVisible();
+  await expect(main.getByText('Box A', { exact: true })).toBeVisible();
+  // Box B never answered with the right key: its code and its plain words.
+  await expect(main.getByText('sig', { exact: true })).toBeVisible();
+  await expect(main.getByText('The box holds another key. Copy the key line again.')).toBeVisible();
+
+  await main.locator('#fleet-box-url').fill('https://box-c.example.invalid');
+  await main.locator('#fleet-box-label').fill('Box C');
+  await main.getByRole('button', { name: 'Add box' }).click();
+  await expect(main.getByText('Box C', { exact: true })).toBeVisible();
+  await expect(main.locator('#fleet-box-url')).toHaveValue('');
+
+  await main.getByRole('button', { name: 'Remove Box A' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm.getByText('All calls to this box stop.')).toBeVisible();
+  await confirm.getByRole('button', { name: 'Remove box' }).click();
+  await expect(main.getByText('Box A', { exact: true })).toHaveCount(0);
+  expect(api.fleet.boxes.map((b) => b.id)).not.toContain(FLEET_BOX.id);
+});
+
+test('a ban: the preview first, then the ban, then Lift', async ({ page }) => {
+  api.fleet = newMockFleet();
+  api.fleet.matches['leaver@example.invalid'] = { matched: 1, owners: 0 };
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'New ban' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#fleet-ban-emails').fill('Leaver@example.invalid');
+  await dialog.locator('#fleet-ban-reason').fill('Left the company');
+  await dialog.getByRole('button', { name: 'Preview ban' }).click();
+  await expect(dialog.getByText('Box A: 1 login')).toBeVisible();
+  await expect(dialog.getByText('box-b.example.invalid: no login list yet')).toBeVisible();
+  expect(api.fleet.sent).toHaveLength(1);
+  expect(api.fleet.sent[0]!.preview).toBe(true);
+
+  // A change clears the preview: the ban made is the ban previewed.
+  await dialog.locator('#fleet-ban-reason').fill('Left the company.');
+  await expect(dialog.getByRole('button', { name: 'Make ban' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Preview ban' }).click();
+  await dialog.getByRole('button', { name: 'Make ban' }).click();
+  await expect(dialog).toHaveCount(0);
+  const made = api.fleet.sent.at(-1)!;
+  expect(made.preview).toBe(false);
+  expect(made.body).toEqual({
+    kind: 'disable',
+    emails: ['leaver@example.invalid'],
+    issuer: null,
+    oid: null,
+    reason: 'Left the company.',
+  });
+
+  await expect(main.getByText('leaver@example.invalid', { exact: true })).toBeVisible();
+  await main.getByRole('button', { name: 'Lift', exact: true }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(
+    confirm.getByText('A login a box Admin disabled by hand stays disabled.'),
+  ).toBeVisible();
+  await confirm.getByRole('button', { name: 'Lift ban' }).click();
+  await expect(main.getByText('Lifted', { exact: true })).toBeVisible();
+  expect(api.fleet.lifted).toHaveLength(1);
+});
+
+test('an archive ban says Retire, and never enables', async ({ page }) => {
+  api.fleet = newMockFleet();
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'New ban' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#fleet-ban-emails').fill('gone@example.invalid');
+  await dialog.locator('#fleet-ban-kind').click();
+  await page.getByRole('option', { name: /Archive/ }).click();
+  await expect(dialog.getByText('This screen never enables it.')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Preview ban' }).click();
+  await dialog.getByRole('button', { name: 'Make archive ban' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(api.fleet.sent.at(-1)!.body.kind).toBe('archive');
+
+  await expect(main.getByRole('button', { name: 'Lift', exact: true })).toHaveCount(0);
+  await main.getByRole('button', { name: 'Retire' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm.getByText(/It never enables a login/)).toBeVisible();
+  await confirm.getByRole('button', { name: 'Retire ban' }).click();
+  await expect(main.getByText('Retired', { exact: true })).toBeVisible();
+});
+
+test('a ban that matches a box owner says so, in the preview and on the ban', async ({ page }) => {
+  api.fleet = newMockFleet();
+  api.fleet.matches['owner@example.invalid'] = { matched: 1, owners: 1 };
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'New ban' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#fleet-ban-emails').fill('owner@example.invalid');
+  await dialog.getByRole('button', { name: 'Preview ban' }).click();
+  await expect(dialog.getByText('Box A: 1 login, the owner among them')).toBeVisible();
+  await expect(
+    dialog.getByText('The owner of this box matched a ban and stays live.'),
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Make ban' }).click();
+  await expect(main.getByText('The owner of this box matched a ban and stays live.')).toBeVisible();
+});
+
+test('Users: an archived login is listed apart, and Enable asks first', async ({ page }) => {
+  api.loginState[MEMBER] = {
+    disabledAt: '2026-11-09T08:00:00.000Z',
+    archivedAt: '2026-11-09T08:00:00.000Z',
+  };
+  await signIn(page, 'admin');
+  await page.goto('/settings/users');
+  const archived = page.getByRole('region', { name: /Archived/ });
+  await expect(archived.getByText('Mo Member')).toBeVisible();
+  await archived.getByText('Mo Member').click();
+  const main = page.getByRole('main');
+  await expect(main.getByText(/a permanent disable/).first()).toBeVisible();
+  await expect(main.getByRole('button', { name: 'Disable again' })).toHaveCount(0);
+
+  await main.getByRole('switch', { name: 'Disable this login' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm.getByText('Enable an archived login?')).toBeVisible();
+  await expect(confirm.getByText(/mo@example\.invalid is archived/)).toBeVisible();
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  expect(api.loginPatches).toEqual([]);
+
+  await main.getByRole('switch', { name: 'Disable this login' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Enable login' }).click();
+  await expect(page.getByRole('region', { name: /Archived/ })).toHaveCount(0);
+  expect(api.loginPatches).toEqual([{ id: MEMBER, body: { disabled: false } }]);
+});
+
+test('Users: a disabled login can be disabled again', async ({ page }) => {
+  api.loginState[MEMBER] = { disabledAt: '2026-11-09T08:00:00.000Z', archivedAt: null };
+  await signIn(page, 'admin');
+  await page.goto('/settings/users?selected=' + MEMBER);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Disable again' }).click();
+  await expect.poll(() => api.loginPatches).toEqual([{ id: MEMBER, body: { disabled: true } }]);
+  expect(api.loginState[MEMBER]!.disabledAt).not.toBe('2026-11-09T08:00:00.000Z');
+});

@@ -1,5 +1,5 @@
 /**
- * The Control Center's Fleet screen model (Settings > Fleet;
+ * The Control Center's Fleet screen model (Admin > Fleet;
  * docs/control-center.md in the mantle repo). A Control Center (CC) bans a
  * person on every box it manages at once. The types mirror what
  * GET /api/fleet answers; dates arrive as ISO strings. Pure, so it is
@@ -7,7 +7,7 @@
  */
 export const FLEET_PATH = '/api/fleet';
 export const FLEET_KEY = ['fleet'];
-export const FLEET_HREF = '/settings/fleet';
+export const FLEET_HREF = '/admin/fleet';
 
 /** The control service ticks every few seconds. No tick for this long reads
  *  as stopped. */

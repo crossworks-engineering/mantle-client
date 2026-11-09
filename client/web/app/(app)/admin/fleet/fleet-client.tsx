@@ -702,6 +702,8 @@ export function FleetClient() {
       <ServiceSection data={data} />
       <BoxesSection boxes={data.boxes} onChanged={refresh} />
       <BansSection data={data} onChanged={refresh} />
+      {/* Phase 2 adds its first section here, after Bans: a provider API key
+          (for example OpenRouter) set on one or many boxes. Not built yet. */}
     </div>
   );
 }

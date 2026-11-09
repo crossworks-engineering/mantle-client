@@ -5,12 +5,14 @@ import {
   startMockWorkspaceApi,
   type MockWorkspaceApi,
 } from './mock-workspace-api';
+import { newMockFleet } from './mock-fleet';
 import { rowsInAnyScope } from './shell-nav';
 
 /**
- * Settings > Company sign-in: the setup screen a client's Microsoft admin uses
- * while the box's mode is `setup`, and its lock. In-memory brain
- * (mock-sso-setup.ts), no real one.
+ * Admin > Company sign-in: the setup screen a client's Microsoft admin uses
+ * while the box's mode is `setup`, and its lock. The SCIM-token step is a
+ * Control Center's only (owner, 2026-11-09): a spec that makes a token sets
+ * `api.fleet`. In-memory brain (mock-sso-setup.ts, mock-fleet.ts), no real one.
  */
 
 let api: MockWorkspaceApi;
@@ -21,7 +23,7 @@ test.afterEach(async () => {
   await api.close();
 });
 
-const PATH = '/settings/company-sign-in';
+const PATH = '/admin/company-sign-in';
 const SECRET = 'the-client-secret-value';
 const nav = (page: import('@playwright/test').Page) =>
   page.getByRole('link', { name: 'Company sign-in', exact: true });
@@ -61,7 +63,9 @@ test('setup: save the secret with the password, Test it, and it never comes back
   await expect(
     main.getByText('https://brain.example.invalid/api/auth/oidc/callback'),
   ).toBeVisible();
-  await expect(main.getByText('https://brain.example.invalid/scim/v2')).toBeVisible();
+  // Off a Control Center: no SCIM URL, no SCIM token step.
+  await expect(main.getByText('https://brain.example.invalid/scim/v2')).toHaveCount(0);
+  await expect(main.getByRole('button', { name: 'Make SCIM token' })).toHaveCount(0);
 
   // Test before a secret: says so.
   api.ssoSetup.testOutcome = 'no-secret';
@@ -106,6 +110,7 @@ test('setup: save the secret with the password, Test it, and it never comes back
 });
 
 test('setup: the SCIM token shows once, and a new one warns first', async ({ page }) => {
+  api.fleet = newMockFleet();
   api.ssoSetup.mode = 'setup';
   await signIn(page, 'admin');
   await page.goto(PATH);
@@ -131,6 +136,7 @@ test('setup: the SCIM token shows once, and a new one warns first', async ({ pag
 });
 
 test('the .env wins: its values read so, and no write is offered', async ({ page }) => {
+  api.fleet = newMockFleet();
   api.ssoSetup.mode = 'setup';
   api.ssoSetup.envSecret = true;
   api.ssoSetup.envScim = 'off';
@@ -178,6 +184,7 @@ test('a Test on a locked box says locked, and the screen shows the lock', async 
 });
 
 test("the password hold's 403 and the 429 read in the brain's words", async ({ page }) => {
+  api.fleet = newMockFleet();
   api.ssoSetup.mode = 'setup';
   await signIn(page, 'admin');
   await page.goto(PATH);
@@ -206,6 +213,7 @@ test("the password hold's 403 and the 429 read in the brain's words", async ({ p
 });
 
 test('a failed status read does not take away a token shown once', async ({ page }) => {
+  api.fleet = newMockFleet();
   api.ssoSetup.mode = 'setup';
   await signIn(page, 'admin');
   await page.goto(PATH);
@@ -226,6 +234,7 @@ test('a failed status read does not take away a token shown once', async ({ page
 });
 
 test('a status read that hangs does not hold the dialog over the token', async ({ page }) => {
+  api.fleet = newMockFleet();
   api.ssoSetup.mode = 'setup';
   await signIn(page, 'admin');
   await page.goto(PATH);
@@ -360,6 +369,7 @@ test('a brain before the screen may answer 404 too', async ({ page }) => {
 });
 
 test('a status read that answers off does not take away a token shown once', async ({ page }) => {
+  api.fleet = newMockFleet();
   api.ssoSetup.mode = 'setup';
   await signIn(page, 'admin');
   await page.goto(PATH);
@@ -395,3 +405,37 @@ for (const mode of ['optional', 'required'] as const) {
       .toEqual(['Company sign-in']);
   });
 }
+
+test('off a Control Center: no SCIM step, and the Entra steps end at the sign-in app', async ({
+  page,
+}) => {
+  api.ssoSetup.mode = 'setup';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Setup is open, and company sign-in is off')).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'SCIM token' })).toHaveCount(0);
+  await expect(main.getByText('Assign the people to the sign-in app.')).toBeVisible();
+  await expect(main.getByText('Make the SCIM token.')).toHaveCount(0);
+});
+
+test('on a Control Center: the SCIM step, the SCIM URL and the provisioning steps show', async ({
+  page,
+}) => {
+  api.fleet = newMockFleet();
+  api.ssoSetup.mode = 'setup';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'SCIM token' })).toBeVisible();
+  await expect(main.getByText('https://brain.example.invalid/scim/v2')).toBeVisible();
+  await expect(main.getByText('Assign the same people to both apps.')).toBeVisible();
+});
+
+test('the old Settings path goes to Admin', async ({ page }) => {
+  api.ssoSetup.mode = 'setup';
+  await signIn(page, 'admin');
+  await page.goto('/settings/company-sign-in');
+  await expect(page).toHaveURL((u) => u.pathname === PATH);
+  await expect(page.getByRole('main').getByText('Setup is open')).toBeVisible();
+});

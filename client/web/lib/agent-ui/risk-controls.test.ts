@@ -245,7 +245,7 @@ function tagsWith(file: string, needle: string): string[] {
 }
 
 const APP = 'client/web/app/(app)';
-const COMPANY = `${APP}/settings/(hub)/company-sign-in/company-sign-in-client.tsx`;
+const COMPANY = `${APP}/admin/company-sign-in/company-sign-in-client.tsx`;
 const MARK = 'data-agent-risk="person"';
 /** A switch an agent may turn the safe way: marked only on the press that
  *  loosens, as an agent may send only the value that tightens. */

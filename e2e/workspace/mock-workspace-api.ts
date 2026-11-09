@@ -4,6 +4,7 @@ import { GONE_ROUTE, MEMBER_OPEN } from './shell-nav';
 import { createMockChats, type MockChats } from './mock-chats';
 import { newMockStatus, statusAnswer, type MockStatus } from './mock-status';
 import { newMockSsoSetup, ssoSetupAnswer, type MockSsoSetup } from './mock-sso-setup';
+import { fleetAnswer, type MockFleet } from './mock-fleet';
 
 /**
  * An in-memory brain for the workspace specs (phase W5c: one shell for every
@@ -258,6 +259,14 @@ export type MockWorkspaceApi = {
   status: MockStatus;
   /** Company sign-in's setup screen (mock-sso-setup.ts). */
   ssoSetup: MockSsoSetup;
+  /** The Control Center's Fleet (mock-fleet.ts); null: not a Control
+   *  Center, every Fleet route answers 404. */
+  fleet: MockFleet | null;
+  /** A login's disable and archive, by login id, as the Users screen reads
+   *  them (GET /api/users) and PATCH /api/users/:id { disabled } sets them. */
+  loginState: Record<string, { disabledAt: string | null; archivedAt: string | null }>;
+  /** Every PATCH /api/users/:id body, in order. */
+  loginPatches: { id: string; body: Record<string, unknown> }[];
   /** GET /api/update-notice's answer; null answers 404, as a brain before
    *  the route. */
   updateNotice: { on: boolean; version: string } | null;
@@ -385,6 +394,9 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     favorites: {},
     status: newMockStatus(),
     ssoSetup: newMockSsoSetup(),
+    fleet: null,
+    loginState: {},
+    loginPatches: [],
     updateNotice: null,
     down: false,
     screenshots: [],
@@ -963,6 +975,38 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     return (json(res, answer.status, answer.body), true);
   };
 
+  /** The Fleet routes (mock-fleet.ts), and the Users screen's disable and
+   *  enable (PATCH /api/users/:id { disabled }); true when it answered. */
+  const handleFleetAndLogins = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    path: string,
+    method: string,
+  ): Promise<boolean> => {
+    const patch = /^\/api\/users\/([0-9a-f-]{36})$/.exec(path);
+    if (!path.startsWith('/api/fleet') && !(patch && method === 'PATCH')) return false;
+    const body =
+      method === 'GET' || method === 'DELETE'
+        ? {}
+        : (JSON.parse((await readBody(req)) || '{}') as Record<string, unknown>);
+    if (patch) {
+      state.loginPatches.push({ id: patch[1]!, body });
+      if (typeof body.disabled === 'boolean') {
+        // A disable writes a new time; an enable ends an archive too.
+        state.loginState[patch[1]!] = body.disabled
+          ? {
+              disabledAt: new Date().toISOString(),
+              archivedAt: state.loginState[patch[1]!]?.archivedAt ?? null,
+            }
+          : { disabledAt: null, archivedAt: null };
+      }
+      return (json(res, 200, { ok: true }), true);
+    }
+    const answer = fleetAnswer(state.fleet, path, method, body);
+    if (!answer) return false;
+    return (json(res, answer.status, answer.body), true);
+  };
+
   /** The owner routes the admin's Users screen needs; true when it
    *  answered. */
   const handleAdmin = (res: ServerResponse, url: URL, path: string): boolean => {
@@ -978,7 +1022,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         agent: null,
         role: r,
         contactId: null,
-        disabledAt: null,
+        disabledAt: state.loginState[LOGINS[r].loginId]?.disabledAt ?? null,
+        archivedAt: state.loginState[LOGINS[r].loginId]?.archivedAt ?? null,
       }));
       return (json(res, 200, { users, currentActorId: LOGINS.admin.loginId }), true);
     }
@@ -1220,6 +1265,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     } else if (await handleItems(req, res, url, path, role)) {
       return;
     } else if (role === 'admin' && (await handleSsoSetup(req, res, path, method))) {
+      return;
+    } else if (role === 'admin' && (await handleFleetAndLogins(req, res, path, method))) {
       return;
     } else if (role === 'admin' && handleAdmin(res, url, path)) {
       return;
