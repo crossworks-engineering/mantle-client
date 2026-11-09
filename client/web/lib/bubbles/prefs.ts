@@ -1,7 +1,9 @@
 /**
- * The chat bubbles switch, kept in this browser. Off by default until the
- * owner says otherwise. A tiny external store for useSyncExternalStore, synced
- * across tabs by the `storage` event, the shape of lib/sounds/prefs.ts.
+ * The chat bubbles switch, kept in this browser. On by default (owner,
+ * 2026-11-09); a person who turns it off keeps it off. A tiny external store
+ * for useSyncExternalStore, synced across tabs by the `storage` event, the
+ * shape of lib/sounds/prefs.ts. The server snapshot stays 'off': no card
+ * renders before hydration.
  */
 
 export type BubbleMode = 'off' | 'on';
@@ -9,7 +11,7 @@ export type BubbleMode = 'off' | 'on';
 export const BUBBLE_MODE_KEY = 'mantle_bubbles_mode_v1';
 
 export function parseBubbleMode(raw: string | null | undefined): BubbleMode {
-  return raw === 'on' ? 'on' : 'off';
+  return raw === 'off' ? 'off' : 'on';
 }
 
 let current: BubbleMode | null = null;
@@ -21,7 +23,7 @@ export function getBubbleMode(): BubbleMode {
     try {
       current = parseBubbleMode(window.localStorage.getItem(BUBBLE_MODE_KEY));
     } catch {
-      current = 'off';
+      current = 'on';
     }
   }
   return current;

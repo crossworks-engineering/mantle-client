@@ -53,25 +53,26 @@ async function settled(page: Page) {
   await page.waitForTimeout(300);
 }
 
-test('off by default: the toast stays and no card shows', async ({ page }) => {
+test('on by default: a line shows as a card with no toast', async ({ page }) => {
   await signIn(page, 'admin');
   await settled(page);
   api.chats.say(CHAT, 'Hello there');
-  await expect(toastOpen(page)).toBeVisible();
-  await expect(card(page)).toHaveCount(0);
+  await expect(card(page)).toContainText('Ann');
+  await expect(card(page)).toContainText('Hello there');
+  await expect(toastOpen(page)).toHaveCount(0);
 });
 
-test('the setting turns it on, and a line shows as a card with no toast', async ({ page }) => {
+test('the setting turns it off: the toast comes back and no card shows', async ({ page }) => {
   await signIn(page, 'admin');
   await page.goto('/settings/profile');
+  await expect(page.getByRole('switch', { name: 'Chat bubbles' })).toBeChecked();
   await page.getByRole('switch', { name: 'Chat bubbles' }).click();
   await page.goto('/');
   await settled(page);
 
   api.chats.say(CHAT, 'Hello there');
-  await expect(card(page)).toContainText('Ann');
-  await expect(card(page)).toContainText('Hello there');
-  await expect(toastOpen(page)).toHaveCount(0);
+  await expect(toastOpen(page)).toBeVisible();
+  await expect(card(page)).toHaveCount(0);
 });
 
 test('close moves the read cursor, and the card stays until then', async ({ page }) => {
