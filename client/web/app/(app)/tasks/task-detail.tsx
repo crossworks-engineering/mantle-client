@@ -110,6 +110,14 @@ export function TaskDetail({
           target === document.documentElement ||
           root.contains(target));
       if (!aimed) return;
+      // A text box inside the pane (a checklist item) keeps its own paste:
+      // a picture pasted there is not meant for the task.
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, [contenteditable="true"]') !== null
+      ) {
+        return;
+      }
       const d = decideTaskPaste(
         Array.from(e.clipboardData.types),
         Array.from(e.clipboardData.files),
