@@ -12,6 +12,14 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.19: apps work like pages, bubbles on, the Settings tab
+
+- **Changed:** chat bubbles are on by default. A browser that turned them off keeps them off.
+- **Changed:** the third sidebar tab is Settings (was Admin). A browser that chose Admin opens on Settings.
+- **Fixed:** a page link card showed an empty box when a page was read. It shows the linked page's title, and a click opens it.
+- **Changed:** sharing an app with another workspace asks for no extra confirmation: an app works like a page (with mantle v0.500.41).
+- **Changed:** Settings > Company sign-in, "Steps in Entra" names two Microsoft apps: one for sign-in, one for SCIM. It says to note the secret's end date.
+
 ## v0.9.18: the working bubble and the Chats window
 
 - **New:** a bubble card shows what the assistant did in its first paragraph, a line of the tools it used, and buttons for the items it links.
