@@ -1,7 +1,7 @@
 'use client';
 
 import { AccessSlot } from '@/components/share/access-slot';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Archive, ArchiveRestore, Check, Flag } from 'lucide-react';
@@ -27,10 +27,13 @@ import {
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { NO_IMAGES } from '@mantle/web-ui/no-images';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { decideTaskPaste } from '@/lib/task-files';
 import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { TaskForm, taskToForm, type TaskPayload } from './task-form';
 import { PRIORITY_BADGE, STATUSES, STATUS_BADGE, STATUS_LABEL, type Status } from './task-meta';
 import { TaskTodos } from './task-todos';
+import { TaskFilesCard, useTaskFiles } from './task-files';
 import type { TaskRow as WireTaskRow, TaskTodo } from '@mantle/client-types';
 
 // Wire shape is the GET /api/tasks mapper's output — single source of truth.
@@ -84,13 +87,56 @@ export function TaskDetail({
   const done = task.status === 'done';
   const archived = !!task.archivedAt;
   const overdue = !!task.dueAt && new Date(task.dueAt) < new Date() && !done;
+  const toast = useToast();
+  const { files, uploading, upload, remove } = useTaskFiles(task.id);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [dropping, setDropping] = useState(false);
+
+  // Paste a screenshot or a copied file onto the task (lib/task-files has
+  // the decision). The listener is on the document, because a paste with
+  // nothing focused lands on the body, not on this pane. It takes a paste
+  // aimed at this pane or at nothing; a text box elsewhere (the list's
+  // search, a chat) keeps its own. Not while the form is open.
+  useEffect(() => {
+    if (editing) return;
+    const onPaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented || !e.clipboardData) return;
+      const root = rootRef.current;
+      const target = e.target instanceof Node ? e.target : null;
+      const aimed =
+        !!root &&
+        (target === null ||
+          target === document.body ||
+          target === document.documentElement ||
+          root.contains(target));
+      if (!aimed) return;
+      const d = decideTaskPaste(
+        Array.from(e.clipboardData.types),
+        Array.from(e.clipboardData.files),
+      );
+      if (d.kind === 'text') return;
+      // Ours either way: else a Finder paste types the file's name.
+      e.preventDefault();
+      if (d.kind === 'reject') toast.error(d.reason);
+      else upload(d.files);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [editing, upload, toast]);
+
+  /** A drag that carries files (not text, not a card being moved). */
+  const carriesFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
 
   const deleteDialog = (
     <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete “{task.title}”?</AlertDialogTitle>
-          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+          <AlertDialogDescription>
+            {files.length > 0 &&
+              `This also deletes its ${files.length === 1 ? 'file' : `${files.length} files`}. `}
+            This cannot be undone.
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -154,7 +200,33 @@ export function TaskDetail({
     // so reading a task and editing it occupy the same column. No card wrapper
     // here, unlike the composer — the body and checklist below are
     // already cards, and boxing them again just nests borders.
-    <div>
+    // Files dropped anywhere on it go on the task.
+    <div
+      ref={rootRef}
+      className="relative min-h-full"
+      onDragOver={(e) => {
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        // Moving between children fires a leave too; only leaving the pane counts.
+        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+        setDropping(false);
+      }}
+      onDrop={(e) => {
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        setDropping(false);
+        upload(Array.from(e.dataTransfer.files));
+      }}
+    >
+      {dropping && (
+        <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary/50 bg-primary/5 text-sm font-medium text-primary-ink">
+          Drop to add to this task
+        </div>
+      )}
       <div>
         {/* The item header (contract 2026-10-21): one row. The done box leads,
             a sibling of the `h2` (a control nested in a heading would join its
@@ -262,6 +334,14 @@ export function TaskDetail({
               </ReactMarkdown>
             </article>
           )}
+
+          <TaskFilesCard
+            taskId={task.id}
+            files={files}
+            uploading={uploading}
+            onUpload={upload}
+            onRemove={(fileId) => void remove(fileId)}
+          />
 
           <TaskTodos todos={task.todos} onChange={(todos) => void onPatch({ todos })} />
 
