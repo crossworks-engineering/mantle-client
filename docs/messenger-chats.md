@@ -204,8 +204,9 @@ dock, the call lines in the transcript) is its own page: `docs/messenger-calls.m
   know. A notice decides on a list fetched again after the event, so a mute
   set anywhere is seen. While the stream is deaf (the gap, the polling
   fallback) the list itself says which chats moved, and those pop.
-- **Bubbles** (Project Bubble Chat, phases 1 to 3; Settings > Profile, off by
-  default, saved in this browser): the toast gives way to a card
+- **Bubbles** (Project Bubble Chat, phases 1 to 3; Settings > Profile, on by
+  default since 2026-11-09, saved in this browser; a browser that turned them
+  off keeps them off): the toast gives way to a card
   (`components/bubbles/`, the rules in `lib/bubbles/`). It stays until it is
   closed or the chat is read. Both chat systems take one path: the list
   changes, the sync reads that chat's new lines through the chat's own routes,

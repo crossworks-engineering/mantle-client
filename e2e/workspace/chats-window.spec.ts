@@ -328,6 +328,8 @@ test('Escape closes the details overlay and leaves the window open', async ({ pa
 });
 
 test('the chat the window shows pops no toast; a chat left for New chat does', async ({ page }) => {
+  // Toasts are the bubbles-off path (bubbles are on by default).
+  await page.addInitScript(() => localStorage.setItem('mantle_bubbles_mode_v1', 'off'));
   await signIn(page, 'admin');
   await settled(page);
   await openWindow(page);
