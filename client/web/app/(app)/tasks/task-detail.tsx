@@ -114,7 +114,7 @@ export function TaskDetail({
       // a picture pasted there is not meant for the task.
       if (
         target instanceof HTMLElement &&
-        target.closest('input, textarea, [contenteditable="true"]') !== null
+        (target.isContentEditable || target.closest('input, textarea') !== null)
       ) {
         return;
       }
