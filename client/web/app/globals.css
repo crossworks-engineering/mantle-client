@@ -27,6 +27,20 @@
   text-transform: none;
   color: inherit;
 }
+/* Page link card, filled. The same case: share-ui styles the empty
+ * `[data-child-page]` div as the public render's card, and the read view
+ * portals the editor's own card into it (static-doc.tsx). A filled card
+ * drops the host's chrome and keeps its margin. LOCAL OVERRIDE, as above. */
+.ProseMirror [data-child-page]:has(> [data-child-page-card]) {
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+}
 /* Scan the shared component package for utilities. An @import pulls in CSS but
  * does NOT add source files, and Tailwind's auto-detection stops at this app's
  * own root — so any class used ONLY in packages/web-ui generated no CSS at all.

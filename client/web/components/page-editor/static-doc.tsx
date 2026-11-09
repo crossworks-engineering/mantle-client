@@ -10,6 +10,7 @@ import { useStaticCanvasEmbeds } from './canvas-embed';
 import { lowlight, pageExtensions } from './extensions';
 import { ASSET_PATH_ATTR } from './image';
 import { FolderIndexList } from './folder-index-list';
+import { ChildPageCard, childPageSnapshotOf, type ChildPageSnapshot } from './child-page-card';
 import { wireHeadingFolds } from '@mantle/share-ui/heading-fold-dom';
 
 /**
@@ -23,7 +24,7 @@ import { wireHeadingFolds } from '@mantle/share-ui/heading-fold-dom';
  * there is no second renderer to keep in step — the chrome comes from the CSS
  * that `@mantle/share-ui/styles/app.css` already ships for exactly this shape
  * (the public share surface renders the same `[data-callout]` / `[data-aside]`
- * / `.file-embed` / `[data-child-page]` divs), which is why the container
+ * / `.file-embed` divs), which is why the container
  * below must keep the `ProseMirror` class those rules are scoped to.
  *
  * `dangerouslySetInnerHTML` is safe here and only here: the string is not
@@ -248,17 +249,28 @@ export function StaticDoc({
   // The Folder index blocks (folder phase 7): the schema renders each as an
   // empty `div[data-folder-index]` (the editor draws it with a NodeView), so
   // the live list is portaled into each one once the HTML is in the DOM.
+  // The page link cards: the same, each an empty `div[data-child-page]`
+  // holding only its snapshot in data attributes, so the editor's card
+  // (child-page-card.tsx) is portaled into each one.
   const [indexes, setIndexes] = useState<{ el: HTMLElement; folderId: string | null }[]>([]);
+  const [cards, setCards] = useState<{ el: HTMLElement; snap: ChildPageSnapshot }[]>([]);
   useEffect(() => {
     const root = ref.current;
     if (rendered === null || !root) {
       setIndexes([]);
+      setCards([]);
       return;
     }
     setIndexes(
       Array.from(root.querySelectorAll<HTMLElement>('div[data-folder-index]'), (el) => ({
         el,
         folderId: el.getAttribute('data-folder-id') || null,
+      })),
+    );
+    setCards(
+      Array.from(root.querySelectorAll<HTMLElement>('div[data-child-page]'), (el) => ({
+        el,
+        snap: childPageSnapshotOf(el),
       })),
     );
   }, [rendered]);
@@ -281,6 +293,7 @@ export function StaticDoc({
           `folder-index-${i}`,
         ),
       )}
+      {cards.map((c, i) => createPortal(<ChildPageCard {...c.snap} />, c.el, `child-page-${i}`))}
     </>
   );
 }
