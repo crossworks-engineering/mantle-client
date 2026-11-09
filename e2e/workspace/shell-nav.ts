@@ -23,10 +23,10 @@ export const ADMIN_ROWS = [
   'Secrets',
 ] as const;
 
-export const NAV_SCOPES = ['Favorites', 'Work', 'Admin'] as const;
+export const NAV_SCOPES = ['Favorites', 'Work', 'Settings'] as const;
 
 /**
- * An admin's rail, on one tab (lib/nav-scope.ts). Work and Admin are two
+ * An admin's rail, on one tab (lib/nav-scope.ts). Work and Settings are two
  * slices of the menu (Favorites is the login's own short list), so a row is
  * looked for under the tab that holds it.
  */

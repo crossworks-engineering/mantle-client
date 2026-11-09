@@ -43,8 +43,8 @@ test('the full nav, the owner Pages screen and Settings > Users', async ({ page 
   }
   expect(api.asked('admin')).toContain('GET /api/tree/pages');
 
-  // Users is plumbing, so the Admin scope holds it.
-  const admin = await scopedNav(page, 'Admin');
+  // Users is plumbing, so the Settings scope holds it.
+  const admin = await scopedNav(page, 'Settings');
   await admin.getByRole('link', { name: 'Users', exact: true }).click();
   await expect(page).toHaveURL((u) => u.pathname === '/settings/users');
   await expect(main.getByText(LOGINS.member.name).first()).toBeVisible();

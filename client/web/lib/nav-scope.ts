@@ -12,19 +12,19 @@ import type { NavGroup } from '@mantle/web-ui/layout/nav-items';
  *  - `favorites` the login's own short list (nav-favorites.ts): starred
  *                screens and workspace items, in the login's order.
  *  - `work`      the daily surfaces: Workspace and Review, whole.
- *  - `admin`     everything else: every setting and the System group.
+ *  - `settings`  everything else: every setting and the System group.
  *
- * Settings was a tab of its own until 2026-11-07 (Jason: "Settings and Admin
- * are not different from each other"). Work and Admin are two SLICES of the
+ * The third tab was called Admin from 2026-11-07 to 2026-11-09 (Jason:
+ * "lets change Admin to Settings"). Work and Settings are two SLICES of the
  * one list and together they are the whole of it; Favorites is a view over
  * that list, not a third slice.
  */
-export type NavScope = 'favorites' | 'work' | 'admin';
+export type NavScope = 'favorites' | 'work' | 'settings';
 
 export const NAV_SCOPES: Array<{ id: NavScope; label: string }> = [
   { id: 'favorites', label: 'Favorites' },
   { id: 'work', label: 'Work' },
-  { id: 'admin', label: 'Admin' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 const KEY = 'mantle_nav_scope_v1';
@@ -37,8 +37,8 @@ const WORK_GROUPS = new Set(['Workspace', 'Review']);
  * The groups a scope shows. `favorites` shows none of them: the sidebar
  * puts the Favorites group there.
  *
- * `admin` is the complement of `work` rather than a list of its own, so a
- * screen nobody classified (a new settings row, say) lands in `admin` and is
+ * `settings` is the complement of `work` rather than a list of its own, so a
+ * screen nobody classified (a new settings row, say) lands in `settings` and is
  * never out of reach. Empty groups are dropped rather than rendered as a
  * bare heading.
  */
@@ -50,7 +50,7 @@ export function scopeGroups<G extends NavGroup>(groups: G[], scope: NavScope): G
 /**
  * The groups the rail shows (phase W5c: one shell for every login).
  *
- * The Favorites / Work / Admin choice is for a login that manages the brain
+ * The Favorites / Work / Settings choice is for a login that manages the brain
  * (the settings area). A login without it (a member, a client) may open a
  * few screens only, so it gets them all, flat, and no choice to make: a
  * choice between near-empty slices only hides screens it may use.
@@ -65,11 +65,11 @@ export function railGroups<G extends NavGroup>(
   return scoped && scope ? scopeGroups(groups, scope) : groups;
 }
 
-/** A stored choice. `settings` was a tab until 2026-11-07: its rows are
- *  Admin's now, so it reads as `admin`. Anything else is not a choice. */
+/** A stored choice. `admin` was the third tab's id from 2026-11-07 to
+ *  2026-11-09: it reads as `settings`. Anything else is not a choice. */
 export function storedScope(v: unknown): NavScope | null {
-  if (v === 'settings') return 'admin';
-  return v === 'favorites' || v === 'work' || v === 'admin' ? v : null;
+  if (v === 'admin') return 'settings';
+  return v === 'favorites' || v === 'work' || v === 'settings' ? v : null;
 }
 
 /**

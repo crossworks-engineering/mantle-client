@@ -79,8 +79,8 @@ test('Status is in the menu, and opens on its own screen', async ({ page }) => {
   await signIn(page, 'admin');
   const work = await scopedNav(page, 'Work');
   await expect(work.getByRole('link', { name: 'Desk', exact: true })).toBeVisible();
-  // Status is a System row, so the Admin scope holds it.
-  const admin = await scopedNav(page, 'Admin');
+  // Status is a System row, so the Settings scope holds it.
+  const admin = await scopedNav(page, 'Settings');
   await admin.getByRole('link', { name: 'Status', exact: true }).click();
   await expect(page).toHaveURL((u) => u.pathname === '/status');
   await expect(page.getByRole('main').getByRole('link', { name: 'Operator view' })).toBeVisible();
