@@ -379,12 +379,29 @@ function ScimSection({
 function EntraSteps() {
   return (
     <Section title="Steps in Entra">
+      <p className="mb-2 text-sm text-muted-foreground">
+        Entra needs two apps. An app from App registrations cannot do provisioning, so SCIM uses a
+        second app.
+      </p>
       <ol className="list-decimal space-y-1 pl-5 text-sm">
-        <li>Copy the redirect URI above into the app registration, with platform Web.</li>
-        <li>Make a client secret in Certificates &amp; secrets, and save it here.</li>
+        <li>
+          Sign-in app, in App registrations: add the redirect URI above as a Web redirect URI.
+        </li>
+        <li>
+          In the sign-in app, make a client secret in Certificates &amp; secrets, and save it here.
+          Note its expiry date: nothing warns before it ends.
+        </li>
         <li>Press Test.</li>
-        <li>Make the SCIM token. In the enterprise application, open Provisioning.</li>
-        <li>Paste the SCIM URL and the token, and pass Test connection.</li>
+        <li>Make the SCIM token.</li>
+        <li>
+          Provisioning app, in Enterprise apps: select Create your own application, then the
+          non-gallery option.
+        </li>
+        <li>
+          In the provisioning app, open Provisioning. Paste the SCIM URL and the token, and pass
+          Test Connection.
+        </li>
+        <li>Assign the same people to both apps.</li>
         <li>Tell the box operator to lock this screen.</li>
       </ol>
     </Section>
