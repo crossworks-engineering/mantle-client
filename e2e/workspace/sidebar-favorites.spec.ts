@@ -9,8 +9,8 @@ import {
 import { scopedNav, wholeNav } from './shell-nav';
 
 /**
- * The sidebar's tabs and Favorites (2026-11-07): Favorites, Work and Admin,
- * where Admin holds every setting. A favorite is a starred screen or a
+ * The sidebar's tabs and Favorites (2026-11-07): Favorites, Work and Settings
+ * (called Admin until 2026-11-09), where Settings holds every setting. A favorite is a starred screen or a
  * workspace item (`/n/<id>`, from the item's "..." menu), saved on the
  * login (PUT /api/profile/nav-favorites), shown with the item's own look,
  * in the login's order. In-memory brain, no real one.
@@ -34,10 +34,12 @@ async function favoriteAction(page: Page, nav: Locator, name: string, action: st
   await page.getByRole('menuitem', { name: action }).click();
 }
 
-test('the tabs are Favorites, Work and Admin; Admin holds every setting', async ({ page }) => {
+test('the tabs are Favorites, Work and Settings; Settings holds every setting', async ({
+  page,
+}) => {
   await signIn(page, 'admin');
   const nav = page.getByRole('navigation', { name: 'Primary' });
-  await expect(nav.getByRole('radio')).toHaveText(['Favorites', 'Work', 'Admin']);
+  await expect(nav.getByRole('radio')).toHaveText(['Favorites', 'Work', 'Settings']);
   // Work opens first.
   await expect(nav.getByRole('radio', { name: 'Work' })).toHaveAttribute('aria-checked', 'true');
   for (const name of ['Pages', 'Apps', 'Pending', 'Models']) {
@@ -45,34 +47,37 @@ test('the tabs are Favorites, Work and Admin; Admin holds every setting', async 
   }
   await expect(nav.getByRole('link', { name: 'Agents', exact: true })).toHaveCount(0);
 
-  const admin = await scopedNav(page, 'Admin');
-  // What the Settings tab held, and the plumbing.
+  const settings = await scopedNav(page, 'Settings');
+  // Every setting, and the plumbing.
   for (const name of ['Agents', 'AI workers', 'MCP', 'Profile', 'Appearance', 'Workspaces']) {
-    await expect(admin.getByRole('link', { name, exact: true }), name).toBeVisible();
+    await expect(settings.getByRole('link', { name, exact: true }), name).toBeVisible();
   }
   for (const name of ['Backups', 'Users', 'Debug']) {
-    await expect(admin.getByRole('link', { name, exact: true }), name).toBeVisible();
+    await expect(settings.getByRole('link', { name, exact: true }), name).toBeVisible();
   }
-  await expect(admin.getByRole('link', { name: 'Pages', exact: true })).toHaveCount(0);
+  await expect(settings.getByRole('link', { name: 'Pages', exact: true })).toHaveCount(0);
 
   const favorites = await scopedNav(page, 'Favorites');
   await expect(favorites.getByTestId('favorites-empty')).toContainText('Add first favorite');
   await expect(favorites.getByRole('link')).toHaveCount(0);
 });
 
-test('a browser that chose the old Settings tab opens on Admin', async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.setItem('mantle_nav_scope_v1', 'settings'));
+test('a browser that chose the old Admin tab opens on Settings', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('mantle_nav_scope_v1', 'admin'));
   await signIn(page, 'admin');
   const nav = page.getByRole('navigation', { name: 'Primary' });
-  await expect(nav.getByRole('radio', { name: 'Admin' })).toHaveAttribute('aria-checked', 'true');
+  await expect(nav.getByRole('radio', { name: 'Settings' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
   await expect(nav.getByRole('link', { name: 'Agents', exact: true })).toBeVisible();
 });
 
 test('star a screen, favorite a page, reorder, remove', async ({ page }) => {
   await signIn(page, 'admin');
-  const admin = await scopedNav(page, 'Admin');
-  await admin.getByRole('link', { name: 'Agents', exact: true }).hover();
-  await admin.getByRole('button', { name: 'Add Agents to favorites' }).click();
+  const settings = await scopedNav(page, 'Settings');
+  await settings.getByRole('link', { name: 'Agents', exact: true }).hover();
+  await settings.getByRole('button', { name: 'Add Agents to favorites' }).click();
   await expect.poll(() => api.favorites.admin).toEqual(['/settings/agents']);
 
   // A page, from its "..." menu in the tree.

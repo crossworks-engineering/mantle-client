@@ -89,7 +89,7 @@ export function SidebarNav({
   // Screens the login may not manage are not offered (plan 7.1: they hide by
   // the areas /api/shell names; a brain before W5a names none, so all show).
   const areas = useShellWorkspaces()?.areas;
-  // The Favorites / Work / Admin choice is the settings area's (nav-scope.ts,
+  // The Favorites / Work / Settings choice is the settings area's (nav-scope.ts,
   // railGroups): a member or a client sees what it may open, flat, under its
   // Favorites.
   const scoped = hasArea(areas, 'settings');

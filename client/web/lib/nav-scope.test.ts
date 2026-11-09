@@ -17,20 +17,20 @@ const names = (groups: NavGroup[]) => groups.flatMap((g) => g.items).map((i) => 
 const labels = (groups: NavGroup[]) => groups.map((g) => g.label);
 const hrefs = (groups: NavGroup[]) => groups.flatMap((g) => g.items).map((i) => i.href);
 
-describe('admin', () => {
-  const admin = scopeGroups(NAV_GROUPS, 'admin');
-  const shown = names(admin);
+describe('settings', () => {
+  const settings = scopeGroups(NAV_GROUPS, 'settings');
+  const shown = names(settings);
 
   it('carries every setting and the System group, whole', () => {
-    expect(labels(admin)).toEqual(['Settings', 'System']);
+    expect(labels(settings)).toEqual(['Settings', 'System']);
     for (const label of ['Settings', 'System']) {
-      expect(admin.find((g) => g.label === label)).toEqual(
+      expect(settings.find((g) => g.label === label)).toEqual(
         NAV_GROUPS.find((g) => g.label === label),
       );
     }
   });
 
-  it('carries what the Settings tab held until 2026-11-07, and the plumbing', () => {
+  it('carries every settings screen, and the plumbing', () => {
     expect(shown).toEqual(
       expect.arrayContaining([
         'Agents',
@@ -60,11 +60,11 @@ describe('admin', () => {
   });
 });
 
-describe('work and admin, together', () => {
+describe('work and settings, together', () => {
   it('are the whole list, each row once, so no screen is lost', () => {
     const both = [
       ...hrefs(scopeGroups(NAV_GROUPS, 'work')),
-      ...hrefs(scopeGroups(NAV_GROUPS, 'admin')),
+      ...hrefs(scopeGroups(NAV_GROUPS, 'settings')),
     ];
     expect(new Set(both).size).toBe(both.length);
     expect(both.sort()).toEqual(hrefs(NAV_GROUPS).sort());
@@ -103,11 +103,11 @@ describe('favorites', () => {
 
 describe('a stored choice', () => {
   it('reads the three tabs as themselves', () => {
-    for (const s of ['favorites', 'work', 'admin'] as const) expect(storedScope(s)).toBe(s);
+    for (const s of ['favorites', 'work', 'settings'] as const) expect(storedScope(s)).toBe(s);
   });
 
-  it('reads the old Settings tab as Admin, which holds its rows now', () => {
-    expect(storedScope('settings')).toBe('admin');
+  it('reads the old Admin tab (2026-11-07 to 2026-11-09) as Settings', () => {
+    expect(storedScope('admin')).toBe('settings');
   });
 
   it('reads anything else as no choice', () => {
@@ -126,7 +126,7 @@ describe('a group the scope empties', () => {
 });
 
 describe('the rail (W5c: one shell for every login)', () => {
-  const scopes: NavScope[] = ['favorites', 'work', 'admin'];
+  const scopes: NavScope[] = ['favorites', 'work', 'settings'];
 
   it('a login that manages the brain gets the chosen scope', () => {
     for (const scope of scopes) {

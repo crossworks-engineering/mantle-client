@@ -386,7 +386,7 @@ test.describe('settings pane', () => {
     //
     // Each row under the tab that shows it, because the default Work tab
     // hides the Settings group entirely and a row that is not rendered cannot
-    // light: Profile, Agents and Local network are all Admin's.
+    // light: Profile, Agents and Local network are all in Settings.
     // Nothing is starred in this fresh context; a starred screen lights TWICE
     // by design, once pinned and once in its home group, and that is not what
     // this measures.
@@ -397,7 +397,7 @@ test.describe('settings pane', () => {
 
     for (const [scope, rows] of [
       [
-        'Admin',
+        'Settings',
         [
           ['/settings/profile', 'Profile'],
           ['/settings/agents', 'Agents'],
