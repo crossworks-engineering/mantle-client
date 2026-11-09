@@ -138,6 +138,16 @@ describe('Company sign-in in the nav', () => {
   });
 });
 
+describe('Fleet in the nav', () => {
+  it('adds it after Company sign-in in Settings, once', () => {
+    const settings = NAV_GROUPS.find((g) => g.label === 'Settings')!;
+    const list = settings.items.map((i) => i.href);
+    expect(list.filter((h) => h === '/settings/fleet')).toHaveLength(1);
+    expect(list[list.indexOf('/settings/company-sign-in') + 1]).toBe('/settings/fleet');
+    expect(matchNavItem('/settings/fleet')?.name).toBe('Fleet');
+  });
+});
+
 describe('Shared links (W5c) in the nav', () => {
   it('adds Shared links after Workspaces in Settings, once', () => {
     const settings = NAV_GROUPS.find((g) => g.label === 'Settings')!;

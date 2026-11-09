@@ -1,4 +1,13 @@
-import { Activity, Building2, Layers, Link2, MessagesSquare, Power, Send } from 'lucide-react';
+import {
+  Activity,
+  Building2,
+  Layers,
+  Link2,
+  MessagesSquare,
+  Power,
+  Send,
+  ServerCog,
+} from 'lucide-react';
 import {
   NAV_GROUPS as SHARED_NAV_GROUPS,
   navItemMatches,
@@ -66,6 +75,13 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     group: 'Settings',
     after: '/settings/shared-links',
     item: { name: 'Company sign-in', href: '/settings/company-sign-in', icon: Building2 },
+  },
+  {
+    // Fleet: the Control Center's boxes and bans. The sidebar keeps it only
+    // while the brain answers GET /api/fleet (client/web/lib/fleet.ts).
+    group: 'Settings',
+    after: '/settings/company-sign-in',
+    item: { name: 'Fleet', href: '/settings/fleet', icon: ServerCog },
   },
   {
     // Status: the whole box at a glance (vitals, brain, spend, queues,

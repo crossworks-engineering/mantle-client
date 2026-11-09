@@ -105,6 +105,9 @@ type UserRow = {
   role: string;
   contactId: string | null;
   disabledAt: string | null;
+  /** A permanent disable (a Control Center archive ban): listed apart, under
+   *  Archived. Enable restores it. Absent: a brain before archives. */
+  archivedAt?: string | null;
   /** Who the person is to the team, on their card (everyone on the brain
    *  reads it, agents included); null: none set. Absent: a brain before
    *  descriptions, so the field is not shown. */
@@ -188,7 +191,7 @@ function LoginCard({
         </span>
         {user.disabledAt && (
           <Badge variant="outline" className="shrink-0">
-            Disabled
+            {user.archivedAt ? 'Archived' : 'Disabled'}
           </Badge>
         )}
         {user.agent && (
@@ -272,6 +275,9 @@ export function UsersClient() {
   }
 
   const { users, currentActorId } = usersQuery.data;
+  // Archived logins are listed apart, under the live ones.
+  const live = users.filter((u) => !u.archivedAt);
+  const archived = users.filter((u) => u.archivedAt);
   const invites = openInvites(invitesQuery.data?.invites);
 
   // What the detail pane shows: an open invite or a login (by id or email; the first login when nothing, or something gone,
@@ -280,7 +286,10 @@ export function UsersClient() {
   const invite = inviteId ? (invites.find((i) => i.id === inviteId) ?? null) : null;
   const selected = invite
     ? null
-    : (users.find((u) => u.id === selectedId || u.email === selectedId) ?? users[0] ?? null);
+    : (users.find((u) => u.id === selectedId || u.email === selectedId) ??
+      users.find((u) => !u.archivedAt) ??
+      users[0] ??
+      null);
   const selectedKey = invite ? inviteKey(invite.id) : (selected?.id ?? null);
 
   return (
@@ -338,7 +347,7 @@ export function UsersClient() {
                 </section>
               ) : null}
 
-              {users.map((u) => (
+              {live.map((u) => (
                 <LoginCard
                   key={u.id}
                   user={u}
@@ -346,6 +355,24 @@ export function UsersClient() {
                   onSelect={() => select(u.id)}
                 />
               ))}
+
+              {archived.length > 0 ? (
+                <section aria-labelledby="logins-archived" className="space-y-2 pt-2">
+                  <ListSectionHeading
+                    id="logins-archived"
+                    title="Archived"
+                    count={archived.length}
+                  />
+                  {archived.map((u) => (
+                    <LoginCard
+                      key={u.id}
+                      user={u}
+                      selected={selectedKey === u.id}
+                      onSelect={() => select(u.id)}
+                    />
+                  ))}
+                </section>
+              ) : null}
             </div>
           </>
         }
@@ -479,7 +506,9 @@ function UserDetail({
               </Badge>
             )}
             {isSelf && <Badge variant="outline">You</Badge>}
-            {user.disabledAt && <Badge variant="outline">Disabled</Badge>}
+            {user.disabledAt && (
+              <Badge variant="outline">{user.archivedAt ? 'Archived' : 'Disabled'}</Badge>
+            )}
           </>
         }
         iconActions={
@@ -594,17 +623,27 @@ function UserDetail({
  * here: what a login may do comes from its workspaces (workspaces W5a, plan
  * 21.9: logins carry no permission). Never shown for the anchor or your own
  * login.
+ *
+ * Two Control Center cases (docs/control-center.md in the mantle repo):
+ * - An archived login (a permanent disable): Enable asks a confirm that names
+ *   it archived, then restores it (the brain clears both).
+ * - Disable again on a disabled login writes a new disabled time. A Control
+ *   Center enables a login only while the time it set is still there, so a
+ *   lift of its ban then leaves this login disabled.
  */
 function AccessCard({ user, onChanged }: { user: UserRow; onChanged: () => void }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
+  const [confirmArchived, setConfirmArchived] = useState(false);
+  const archived = !!user.archivedAt;
 
-  const setDisabled = async (disabled: boolean) => {
+  const setDisabled = async (disabled: boolean, again = false) => {
     setSaving(true);
     try {
       await apiSend(`/api/users/${user.id}`, 'PATCH', { disabled });
       onChanged();
-      toast.success(disabled ? 'Login disabled' : 'Login enabled');
+      toast.success(again ? 'Login disabled again' : disabled ? 'Login disabled' : 'Login enabled');
+      setConfirmArchived(false);
     } catch (err) {
       // Enabling a former client login is refused (409 former-client, W8).
       toast.error(loginRefusalText(err, 'Could not change the login'));
@@ -619,16 +658,65 @@ function AccessCard({ user, onChanged }: { user: UserRow; onChanged: () => void 
         <div className="min-w-0">
           <div className="text-sm font-medium">Disabled</div>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Stops this login at once: it cannot sign in, and every session it holds ends.
+            {archived
+              ? `Archived ${formatDateTime(user.archivedAt!)}: a permanent disable. It stays off until you enable it here.`
+              : 'Stops this login at once: it cannot sign in, and every session it holds ends.'}
           </p>
         </div>
         <Switch
           checked={!!user.disabledAt}
           disabled={saving}
-          onCheckedChange={(v) => void setDisabled(v)}
+          onCheckedChange={(v) => {
+            if (!v && archived) setConfirmArchived(true);
+            else void setDisabled(v);
+          }}
           aria-label="Disable this login"
         />
       </div>
+      {user.disabledAt && !archived && (
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+          <p className="min-w-0 text-xs text-muted-foreground">
+            Disabled by a Control Center? Disable it again here, and a lift of that ban does not
+            enable it.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={saving}
+            onClick={() => void setDisabled(true, true)}
+          >
+            Disable again
+          </Button>
+        </div>
+      )}
+      <AlertDialog
+        open={confirmArchived}
+        onOpenChange={(o) => !o && !saving && setConfirmArchived(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Enable an archived login?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {user.email} is archived: a permanent disable. Enable restores it, and it can sign in
+              again. While a Control Center holds an archive ban for this person, it is archived
+              again at the next run.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              onClick={(e) => {
+                e.preventDefault();
+                void setDisabled(false);
+              }}
+            >
+              Enable login
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

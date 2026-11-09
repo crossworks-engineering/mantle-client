@@ -16,6 +16,8 @@ import {
 } from '@mantle/web-ui/ui/command';
 import { ALL_NAV_ITEMS } from '@mantle/web-ui/layout/nav-items';
 import { companySignInOffered } from '@/lib/sso-setup';
+import { fleetOffered } from '@/lib/fleet';
+import { useFleetShown } from '@/lib/use-fleet-shown';
 import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import { nodeTypeIcon } from '@/components/search/node-type-icons';
@@ -131,9 +133,13 @@ export function SearchPalette({
   const tagText = 'group-data-[selected=true]/command-item:text-accent-foreground';
 
   // Offered as the sidebar offers it: the mode on, and the users area.
-  const ssoSetupShown = useSsoSetupShown(useShellWorkspaces()?.areas);
+  const shellAreas = useShellWorkspaces()?.areas;
+  const ssoSetupShown = useSsoSetupShown(shellAreas);
+  const fleetShown = useFleetShown(shellAreas);
   const navMatches = filterNavItems(
-    ALL_NAV_ITEMS.filter((i) => companySignInOffered(i.href, ssoSetupShown)),
+    ALL_NAV_ITEMS.filter(
+      (i) => companySignInOffered(i.href, ssoSetupShown) && fleetOffered(i.href, fleetShown),
+    ),
     query,
   );
   const results = mode === 'chunks' ? chunkResults : nodeResults;

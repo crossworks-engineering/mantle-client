@@ -38,6 +38,8 @@ import { useMessengerUnread } from '@/components/messenger/use-messenger-unread'
 import { withChats } from '@/lib/messenger/nav';
 import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
 import { withCompanySignIn } from '@/lib/sso-setup';
+import { useFleetShown } from '@/lib/use-fleet-shown';
+import { withFleet } from '@/lib/fleet';
 import {
   NAV_GROUPS,
   type NavGroup as BaseNavGroup,
@@ -99,14 +101,19 @@ export function SidebarNav({
   const messenger = useMessengerUnread();
   // Company sign-in: only while the brain says the mode is on.
   const ssoSetupShown = useSsoSetupShown(areas);
-  const groups: NavGroup[] = withCompanySignIn(
-    withChats(
-      navWithAreas(NAV_GROUPS, areas),
-      // Hidden only on a 404: a count still loading (or failing) leaves the
-      // entry where it is, so the rows below it do not jump.
-      messenger.available !== 'no',
+  // Fleet: only on a Control Center (GET /api/fleet answers 200).
+  const fleetShown = useFleetShown(areas);
+  const groups: NavGroup[] = withFleet(
+    withCompanySignIn(
+      withChats(
+        navWithAreas(NAV_GROUPS, areas),
+        // Hidden only on a 404: a count still loading (or failing) leaves the
+        // entry where it is, so the rows below it do not jump.
+        messenger.available !== 'no',
+      ),
+      ssoSetupShown,
     ),
-    ssoSetupShown,
+    fleetShown,
   ).map((g) => ({
     ...g,
     items: g.items.map((item) =>
