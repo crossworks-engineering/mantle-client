@@ -74,25 +74,26 @@ export type MockFleet = {
   /** Every ban body the brain was sent, previews included. */
   sent: { preview: boolean; body: Record<string, unknown> }[];
   lifted: string[];
-  /** Phase 2 (ASSUMED shape, docs in client/web/lib/fleet.ts): null is a
-   *  brain before the key update, which sends no keyUpdates. */
-  keyUpdates: KeyUpdate[] | null;
+  /** Phase 2: false is a brain before the key update, whose box rows have
+   *  no keyPending or keyResult. */
+  keysOn: boolean;
+  /** Each box's key job and last answer, by box id (never the key). */
+  keyState: Record<
+    string,
+    {
+      keyPending: { service: string; by: string; at: string } | null;
+      keyResult: KeyResult | null;
+      reads: number;
+    }
+  >;
   /** What each box answers a key call, by box id; absent: ok. A read after
-   *  the one that showed `pending` gives the answer, as a run would. */
-  keyAnswers: Record<string, { state: 'ok' | 'failed'; reason: string | null }>;
+   *  the one that showed it waiting gives the answer, as a run would. */
+  keyAnswers: Record<string, { ok: boolean; reason: string | null }>;
   /** Every key call body the brain was sent. */
   keySent: Record<string, unknown>[];
 };
 
-type KeyUpdate = {
-  id: string;
-  service: string;
-  madeBy: string | null;
-  madeAt: string;
-  boxes: { boxId: string; state: string; reason: string | null; doneAt: string | null }[];
-  /** Reads since it was made (not sent). */
-  reads?: number;
-};
+type KeyResult = { service: string; ok: boolean; reason: string | null; by: string; at: string };
 
 export const newMockFleet = (): MockFleet => ({
   boxes: [{ ...FLEET_BOX }, { ...FLEET_BOX_B }],
@@ -101,23 +102,27 @@ export const newMockFleet = (): MockFleet => ({
   matches: {},
   sent: [],
   lifted: [],
-  keyUpdates: null,
+  keysOn: false,
+  keyState: {},
   keyAnswers: {},
   keySent: [],
 });
 
-/** The control service's run: a box that showed `pending` once answers. */
-function runKeyUpdates(f: MockFleet) {
-  for (const u of f.keyUpdates ?? []) {
-    u.reads = (u.reads ?? 0) + 1;
-    if (u.reads < 2) continue;
-    for (const b of u.boxes) {
-      if (b.state !== 'pending') continue;
-      const a = f.keyAnswers[b.boxId] ?? { state: 'ok', reason: null };
-      b.state = a.state;
-      b.reason = a.reason;
-      b.doneAt = new Date().toISOString();
-    }
+/** The control service's run: a box that showed its key job once answers. */
+function runKeyJobs(f: MockFleet) {
+  for (const [boxId, k] of Object.entries(f.keyState)) {
+    if (!k.keyPending) continue;
+    k.reads += 1;
+    if (k.reads < 2) continue;
+    const a = f.keyAnswers[boxId] ?? { ok: true, reason: null };
+    k.keyResult = {
+      service: k.keyPending.service,
+      ok: a.ok,
+      reason: a.reason,
+      by: k.keyPending.by,
+      at: new Date().toISOString(),
+    };
+    k.keyPending = null;
   }
 }
 
@@ -132,12 +137,15 @@ function overview(f: MockFleet) {
       'MANTLE_CONTROL_CENTER=https://cc.example.invalid',
       'MANTLE_CONTROL_CENTER_KEY=ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
     ],
-    boxes: f.boxes,
+    boxes: f.keysOn
+      ? f.boxes.map((b) => ({
+          ...b,
+          keyPending: f.keyState[b.id]?.keyPending ?? null,
+          keyResult: f.keyState[b.id]?.keyResult ?? null,
+        }))
+      : f.boxes,
     bans: f.bans,
     results: f.results,
-    ...(f.keyUpdates
-      ? { keyUpdates: f.keyUpdates.map(({ reads: _reads, ...u }) => u).reverse() }
-      : {}),
   };
 }
 
@@ -156,26 +164,30 @@ export function fleetAnswer(
   if (!path.startsWith('/api/fleet')) return null;
   if (!f) return { status: 404, body: { error: 'not found' } };
   if (path === '/api/fleet' && method === 'GET') {
-    runKeyUpdates(f);
+    runKeyJobs(f);
     return { status: 200, body: overview(f) };
   }
   if (path === '/api/fleet/keys' && method === 'POST') {
-    if (!f.keyUpdates) return { status: 404, body: { error: 'not found' } };
+    if (!f.keysOn) return { status: 404, body: { error: 'not found' } };
     f.keySent.push(body);
-    const boxIds = (body.boxIds as string[] | undefined) ?? [];
-    if (!body.service || !body.value || boxIds.length === 0) {
-      return { status: 400, body: { error: 'Pick a provider, a key and at least one box.' } };
+    if (!body.service || !body.value) {
+      return { status: 400, body: { error: 'value must be the key, 1 to 8192 characters.' } };
     }
-    const update: KeyUpdate = {
-      id: uuid(),
-      service: String(body.service),
-      madeBy: ADMIN,
-      madeAt: new Date().toISOString(),
-      boxes: boxIds.map((boxId) => ({ boxId, state: 'pending', reason: null, doneAt: null })),
-      reads: 0,
+    // No boxIds: every linked box, as the brain's route does.
+    const wanted = (body.boxIds as string[] | undefined) ?? f.boxes.map((b) => b.id);
+    const queued = f.boxes.filter((b) => wanted.includes(b.id)).map((b) => b.id);
+    const at = new Date().toISOString();
+    for (const id of queued) {
+      f.keyState[id] = {
+        keyPending: { service: String(body.service), by: ADMIN, at },
+        keyResult: f.keyState[id]?.keyResult ?? null,
+        reads: 0,
+      };
+    }
+    return {
+      status: 200,
+      body: { service: body.service, queued: queued.length, boxIds: queued },
     };
-    f.keyUpdates.push(update);
-    return { status: 201, body: { update: { id: update.id } } };
   }
   if (path === '/api/fleet/boxes' && method === 'POST') {
     const url = String(body.url ?? '');

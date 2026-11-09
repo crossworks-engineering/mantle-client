@@ -205,8 +205,8 @@ test('phase 2: set a provider key on many boxes, see each answer, never the key'
 }) => {
   const KEY = 'sk-or-the-new-fleet-key';
   api.fleet = newMockFleet();
-  api.fleet.keyUpdates = [];
-  api.fleet.keyAnswers[FLEET_BOX_B.id] = { state: 'failed', reason: 'failed' };
+  api.fleet.keysOn = true;
+  api.fleet.keyAnswers[FLEET_BOX_B.id] = { ok: false, reason: 'failed' };
   await signIn(page, 'admin');
   await page.goto(PATH);
   const main = page.getByRole('main');
@@ -233,15 +233,20 @@ test('phase 2: set a provider key on many boxes, see each answer, never the key'
   // The field empties when the key is sent.
   await expect(main.locator('#fleet-key-value')).toHaveValue('');
 
-  // Each box answers at its run: ok, or failed with the old key kept.
-  await expect(main.getByText('Box A: Set and tested.')).toBeVisible({ timeout: 15_000 });
-  await expect(main.getByText(/box-b\.example\.invalid: .*keeps the key it had/)).toBeVisible();
+  // Each box waits, then answers at its run: ok, or failed with the old key kept.
+  await expect(main.getByText('Waiting for the next run.').first()).toBeVisible();
+  const boxA = main.getByRole('listitem').filter({ hasText: 'Box A: OpenRouter key' });
+  await expect(boxA.getByText('Set and tested.')).toBeVisible({ timeout: 15_000 });
+  const boxB = main
+    .getByRole('listitem')
+    .filter({ hasText: 'box-b.example.invalid: OpenRouter key' });
+  await expect(boxB.getByText(/keeps the key it had/)).toBeVisible();
   await expect(main).not.toContainText(KEY);
 });
 
 test('phase 2: one box picked sends that box only', async ({ page }) => {
   api.fleet = newMockFleet();
-  api.fleet.keyUpdates = [];
+  api.fleet.keysOn = true;
   await signIn(page, 'admin');
   await page.goto(PATH);
   const main = page.getByRole('main');

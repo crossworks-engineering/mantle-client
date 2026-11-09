@@ -6,6 +6,7 @@ import {
   boxName,
   FLEET_HREF,
   fleetKeyProviders,
+  fleetKeysOffered,
   fleetOffered,
   keyBoxText,
   keyUpdatePending,
@@ -120,6 +121,11 @@ describe('withFleet', () => {
 });
 
 describe('the fleet key update (phase 2)', () => {
+  const at = '2026-11-10T00:00:00Z';
+  const result = (ok: boolean, reason: string | null) => ({
+    keyPending: null,
+    keyResult: { service: 'openrouter', ok, reason, by: 'a@x', at },
+  });
   it('offers the providers that need only a key', () => {
     const ids = fleetKeyProviders([{ id: 'openrouter' }, { id: 'custom' }, { id: 'local' }]).map(
       (p) => p.id,
@@ -127,32 +133,30 @@ describe('the fleet key update (phase 2)', () => {
     expect(ids).toEqual(['openrouter']);
   });
   it('says what each box answered, never more', () => {
-    expect(keyBoxText({ state: 'pending', reason: null }).tone).toBe('wait');
-    expect(keyBoxText({ state: 'ok', reason: null })).toEqual({
-      tone: 'ok',
-      text: 'Set and tested.',
-    });
-    expect(keyBoxText({ state: 'failed', reason: 'untested' }).tone).toBe('warn');
-    expect(keyBoxText({ state: 'failed', reason: 'failed' }).text).toContain(
-      'keeps the key it had',
-    );
-    expect(keyBoxText({ state: 'failed', reason: 'service' }).text).toContain('Nothing was set');
-    expect(keyBoxText({ state: 'failed', reason: 'refused' }).text).toContain('Nothing was set');
-    expect(keyBoxText({ state: 'failed', reason: 'sig' }).text).toBe(
-      'The box holds another key. Copy the key line again.',
+    expect(keyBoxText({ keyPending: null, keyResult: null })).toBeNull();
+    expect(keyBoxText({ keyPending: { service: 'openrouter', by: 'a@x', at } })?.tone).toBe('wait');
+    expect(keyBoxText(result(true, null))).toEqual({ tone: 'ok', text: 'Set and tested.' });
+    expect(keyBoxText(result(false, 'untested'))?.tone).toBe('warn');
+    expect(keyBoxText(result(false, 'failed'))?.text).toContain('keeps the key it had');
+    expect(keyBoxText(result(false, 'expired'))?.text).toContain('deleted unsent');
+    expect(keyBoxText(result(false, 'service'))?.text).toContain('Nothing was set');
+    expect(keyBoxText(result(false, 'refused'))?.text).toContain('Nothing was set');
+    expect(keyBoxText(result(false, 'unreachable'))?.text).toBe(
+      'This box cannot reach the box over HTTPS. The box keeps the key it had.',
     );
   });
+  it('is offered by a brain whose box rows carry the phase 2 fields', () => {
+    const box = { url: 'https://b', label: null } as never as import('./fleet').FleetBox;
+    expect(fleetKeysOffered([box])).toBe(false);
+    expect(fleetKeysOffered([{ ...box, keyPending: null }])).toBe(true);
+    expect(fleetKeysOffered([])).toBe(false);
+  });
   it('reads again while a box waits', () => {
-    const at = '2026-11-10T00:00:00Z';
-    const update = (state: 'pending' | 'ok') => ({
-      id: '1',
-      service: 'openrouter',
-      madeBy: null,
-      madeAt: at,
-      boxes: [{ boxId: 'b', state, reason: null, doneAt: null }],
-    });
+    const box = { url: 'https://b', label: null } as never as import('./fleet').FleetBox;
     expect(keyUpdatePending(undefined)).toBe(false);
-    expect(keyUpdatePending([update('ok')])).toBe(false);
-    expect(keyUpdatePending([update('ok'), update('pending')])).toBe(true);
+    expect(keyUpdatePending([{ ...box, keyPending: null }])).toBe(false);
+    expect(
+      keyUpdatePending([{ ...box, keyPending: { service: 'openrouter', by: 'a@x', at } }]),
+    ).toBe(true);
   });
 });

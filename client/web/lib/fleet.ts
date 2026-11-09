@@ -27,6 +27,23 @@ export type FleetBox = {
   lastReason: string | null;
   /** Logins in the box's last login list; null: no list yet. */
   loginCount: number | null;
+  /** Phase 2: a provider key waiting for the control service (never the
+   *  key). Absent: a brain before phase 2. */
+  keyPending?: { service: string; by: string; at: string } | null;
+  /** Phase 2: the box's answer to the last key sent. */
+  keyResult?: FleetKeyResult | null;
+};
+
+/** A box's answer to a provider key (docs/control-center.md in the mantle
+ *  repo, "Set a provider key on the fleet"). ok, or one reason: the box's
+ *  own (service, refused, untested, failed), `expired` (deleted unsent
+ *  after an hour), or the call's reason code (unreachable, off, ...). */
+export type FleetKeyResult = {
+  service: string;
+  ok: boolean;
+  reason: string | null;
+  by: string;
+  at: string;
 };
 
 export type FleetBanKind = 'disable' | 'archive';
@@ -63,39 +80,11 @@ export type FleetOverview = {
   boxes: FleetBox[];
   bans: FleetBan[];
   results: FleetResult[];
-  /** Phase 2, the fleet provider-key update. Absent: a brain before it,
-   *  so the screen does not offer it. ASSUMED shape: the brain's Fleet route
-   *  for it is not built yet (see FleetKeyUpdate). */
-  keyUpdates?: FleetKeyUpdate[];
 };
 
-/**
- * Phase 2: one provider key set on one or many boxes (docs/control-center.md
- * in the mantle repo, the box's `key` case). The Control Center keeps no
- * key: a row says which boxes got it, never the value.
- *
- * ASSUMED (the box side is built, the Control Center's route is not yet):
- * POST /api/fleet/keys { service, value, boxIds } makes one; GET /api/fleet
- * lists them in `keyUpdates`, newest first, each box `pending` until the
- * control service has made its call.
- */
-export type FleetKeyUpdate = {
-  id: string;
-  service: string;
-  madeBy: string | null;
-  madeAt: string;
-  boxes: FleetKeyBox[];
-};
-
-export type FleetKeyBox = {
-  boxId: string;
-  state: 'pending' | 'ok' | 'failed';
-  /** The box's own reason (service, refused, untested, failed), or the call's
-   *  reason code (off, time, sig, unreachable, http-NNN, bad-reply). */
-  reason: string | null;
-  doneAt: string | null;
-};
-
+/** POST { service, value, boxIds? } (no boxIds: every linked box). The
+ *  Control Center seals the key for each box until it is sent, and the
+ *  answer names the boxes queued, never the key. */
 export const FLEET_KEYS_PATH = `${FLEET_PATH}/keys`;
 
 /** The providers the fleet key update offers: the AI providers each box knows
@@ -104,15 +93,16 @@ export function fleetKeyProviders<P extends { id: string }>(providers: readonly 
   return providers.filter((p) => p.id !== 'custom' && p.id !== 'local');
 }
 
-/** Plain words for one box's answer. Never the key, never the provider's
- *  text: the box answers neither. */
-export function keyBoxText(box: Pick<FleetKeyBox, 'state' | 'reason'>): {
-  tone: 'ok' | 'wait' | 'warn' | 'bad';
-  text: string;
-} {
-  if (box.state === 'pending') return { tone: 'wait', text: 'Waiting for the next run.' };
-  if (box.state === 'ok') return { tone: 'ok', text: 'Set and tested.' };
-  switch (box.reason) {
+/** Plain words for a box's provider-key state, or null when it has none.
+ *  Never the key, never the provider's text: the box answers neither. */
+export function keyBoxText(
+  box: Pick<FleetBox, 'keyPending' | 'keyResult'>,
+): { tone: 'ok' | 'wait' | 'warn' | 'bad'; text: string } | null {
+  if (box.keyPending) return { tone: 'wait', text: 'Waiting for the next run.' };
+  const r = box.keyResult;
+  if (!r) return null;
+  if (r.ok) return { tone: 'ok', text: 'Set and tested.' };
+  switch (r.reason) {
     case 'untested':
       return { tone: 'warn', text: 'Set. This provider has no test.' };
     case 'service':
@@ -124,14 +114,28 @@ export function keyBoxText(box: Pick<FleetKeyBox, 'state' | 'reason'>): {
         tone: 'bad',
         text: 'The provider refused the key, or the box could not reach it. The box keeps the key it had.',
       };
+    case 'expired':
+      return {
+        tone: 'bad',
+        text: 'Not sent within an hour, so it was deleted unsent. The box keeps the key it had.',
+      };
     default:
-      return { tone: 'bad', text: reasonText(box.reason) ?? 'The call failed.' };
+      return {
+        tone: 'bad',
+        text: `${reasonText(r.reason) ?? 'The call failed.'} The box keeps the key it had.`,
+      };
   }
 }
 
-/** Whether any box of any update still waits: the screen reads again soon. */
-export function keyUpdatePending(updates: readonly FleetKeyUpdate[] | undefined): boolean {
-  return (updates ?? []).some((u) => u.boxes.some((b) => b.state === 'pending'));
+/** Whether a brain offers the key update: its box rows carry the phase 2
+ *  fields. A brain before phase 2 does not. */
+export function fleetKeysOffered(boxes: readonly FleetBox[]): boolean {
+  return boxes.some((b) => b.keyPending !== undefined);
+}
+
+/** Whether any box still waits on a key: the screen reads again soon. */
+export function keyUpdatePending(boxes: readonly FleetBox[] | undefined): boolean {
+  return (boxes ?? []).some((b) => !!b.keyPending);
 }
 
 export type FleetPreviewBox = {

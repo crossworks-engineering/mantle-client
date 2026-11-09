@@ -49,6 +49,7 @@ import {
   FLEET_KEYS_PATH,
   FLEET_PATH,
   fleetKeyProviders,
+  fleetKeysOffered,
   keyBoxText,
   keyUpdatePending,
   liftLabel,
@@ -60,7 +61,6 @@ import {
   type FleetBan,
   type FleetBanKind,
   type FleetBox,
-  type FleetKeyUpdate,
   type FleetOverview,
   type FleetPreview,
   type FleetResult,
@@ -691,31 +691,29 @@ const TONE: Record<'ok' | 'wait' | 'warn' | 'bad', string> = {
   bad: 'text-destructive-ink',
 };
 
-function KeyUpdateCard({
-  update,
-  boxes,
-}: {
-  update: FleetKeyUpdate;
-  boxes: Map<string, FleetBox>;
-}) {
+/** Each box's last provider key: waiting, or its answer. Never the key. */
+function KeyStates({ boxes }: { boxes: FleetBox[] }) {
+  const rows = boxes.flatMap((b) => {
+    const answer = keyBoxText(b);
+    if (!answer) return [];
+    const of = b.keyPending ?? b.keyResult!;
+    return [{ box: b, answer, of }];
+  });
+  if (rows.length === 0) return null;
   return (
-    <li className="space-y-2 rounded-md border border-border p-3">
-      <p className="text-sm font-medium">{providerLabel(update.service)}</p>
-      <p className="text-xs text-muted-foreground">
-        Set by {update.madeBy ?? 'a login that is gone'}, {formatDateTime(update.madeAt)}.
-      </p>
-      <ul className="space-y-0.5 text-xs">
-        {update.boxes.map((b) => {
-          const box = boxes.get(b.boxId);
-          const answer = keyBoxText(b);
-          return (
-            <li key={b.boxId} className={TONE[answer.tone]}>
-              {box ? boxName(box) : 'A removed box'}: {answer.text}
-            </li>
-          );
-        })}
-      </ul>
-    </li>
+    <ul className="divide-y divide-border rounded-md border border-border">
+      {rows.map(({ box, answer, of }) => (
+        <li key={box.id} className="space-y-0.5 p-3">
+          <p className="text-sm">
+            <span className="font-medium">{boxName(box)}</span>: {providerLabel(of.service)} key
+          </p>
+          <p className={`text-xs ${TONE[answer.tone]}`}>{answer.text}</p>
+          <p className="text-xs text-muted-foreground">
+            By {of.by}, {formatDateTime(of.at)}.
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -734,11 +732,9 @@ function KeysSection({ data, onChanged }: { data: FleetOverview; onChanged: () =
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
-  const boxes = new Map(data.boxes.map((b) => [b.id, b]));
   // A box removed since it was picked is not sent.
   const chosen = data.boxes.filter((b) => picked.has(b.id));
   const all = data.boxes.length > 0 && chosen.length === data.boxes.length;
-  const updates = (data.keyUpdates ?? []).slice(0, 10);
   const count = chosen.length === 1 ? '1 box' : `${chosen.length} boxes`;
 
   const toggle = (id: string, on: boolean) =>
@@ -855,13 +851,7 @@ function KeysSection({ data, onChanged }: { data: FleetOverview; onChanged: () =
           </FieldGroup>
         </form>
       )}
-      {updates.length > 0 && (
-        <ul className="space-y-2">
-          {updates.map((u) => (
-            <KeyUpdateCard key={u.id} update={u} boxes={boxes} />
-          ))}
-        </ul>
-      )}
+      <KeyStates boxes={data.boxes} />
       <AlertDialog open={confirming} onOpenChange={(o) => !o && !pending && setConfirming(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -899,7 +889,7 @@ export function FleetClient() {
     ...fleetQuery,
     // While a box still waits on a key update, read again soon.
     refetchInterval: (q: { state: { data?: FleetOverview | null } }) =>
-      keyUpdatePending(q.state.data?.keyUpdates) ? 3000 : false,
+      keyUpdatePending(q.state.data?.boxes) ? 3000 : false,
   });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: FLEET_KEY });
 
@@ -928,8 +918,8 @@ export function FleetClient() {
       <ServiceSection data={data} />
       <BoxesSection boxes={data.boxes} onChanged={refresh} />
       <BansSection data={data} onChanged={refresh} />
-      {/* Phase 2: a brain before it sends no keyUpdates, and offers no key call. */}
-      {data.keyUpdates && <KeysSection data={data} onChanged={refresh} />}
+      {/* Phase 2: a brain before it has no key fields on its boxes, and no key call. */}
+      {fleetKeysOffered(data.boxes) && <KeysSection data={data} onChanged={refresh} />}
     </div>
   );
 }
