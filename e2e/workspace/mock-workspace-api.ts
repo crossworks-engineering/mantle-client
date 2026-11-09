@@ -269,6 +269,9 @@ export type MockWorkspaceApi = {
   screenshots: MockScreenshot[];
   /** The pages tree holds a top-level Lessons folder (components/lessons). */
   lessons: boolean;
+  /** A page's stored document by page id (GET /api/pages/:id `doc`). A
+   *  page with none answers no `doc`, as before. */
+  pageDocs: Record<string, unknown>;
   /** Each login's "Let agents use this window" (GET/PUT /api/profile/agent-ui). */
   agentUi: Partial<Record<Role, boolean>>;
   /** The answers windows sent to in-app agent calls
@@ -386,6 +389,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     down: false,
     screenshots: [],
     lessons: false,
+    pageDocs: {},
     agentUi: {},
     uiAnswers: [],
     turns: [],
@@ -939,6 +943,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     updatedAt: now,
     workspaces: [{ id: WORKSPACES[p.ws].id, name: WORKSPACES[p.ws].name }],
     hasLink: false,
+    ...(state.pageDocs[p.id] ? { doc: state.pageDocs[p.id], draft: null } : {}),
     ...capsOf(role, p),
   });
 
