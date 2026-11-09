@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { LOGINS, signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
-import { FLEET_BOX, newMockFleet } from './mock-fleet';
+import { FLEET_BOX, FLEET_BOX_B, newMockFleet } from './mock-fleet';
 import { rowsInAnyScope } from './shell-nav';
 
 /**
@@ -189,4 +189,66 @@ test('Users: a disabled login can be disabled again', async ({ page }) => {
   await main.getByRole('button', { name: 'Disable again' }).click();
   await expect.poll(() => api.loginPatches).toEqual([{ id: MEMBER, body: { disabled: true } }]);
   expect(api.loginState[MEMBER]!.disabledAt).not.toBe('2026-11-09T08:00:00.000Z');
+});
+
+test('phase 2: a brain before the key update offers no key section', async ({ page }) => {
+  api.fleet = newMockFleet();
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: /Bans/ })).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Provider keys' })).toHaveCount(0);
+});
+
+test('phase 2: set a provider key on many boxes, see each answer, never the key', async ({
+  page,
+}) => {
+  const KEY = 'sk-or-the-new-fleet-key';
+  api.fleet = newMockFleet();
+  api.fleet.keyUpdates = [];
+  api.fleet.keyAnswers[FLEET_BOX_B.id] = { state: 'failed', reason: 'failed' };
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'Provider keys' })).toBeVisible();
+  const field = main.locator('#fleet-key-value');
+  await expect(field).toHaveAttribute('type', 'password');
+  await expect(field).toHaveAttribute('autocomplete', 'new-password');
+  await expect(main.getByRole('button', { name: 'Set key' })).toBeDisabled();
+
+  await field.fill(KEY);
+  await main.getByRole('button', { name: 'All boxes' }).click();
+  await main.getByRole('button', { name: 'Set key on 2 boxes' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm.getByText('Set the OpenRouter key on 2 boxes?')).toBeVisible();
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  expect(api.fleet.keySent).toEqual([]);
+
+  await main.getByRole('button', { name: 'Set key on 2 boxes' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Set key' }).click();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  expect(api.fleet.keySent).toEqual([
+    { service: 'openrouter', value: KEY, boxIds: [FLEET_BOX.id, FLEET_BOX_B.id] },
+  ]);
+  // The field empties when the key is sent.
+  await expect(main.locator('#fleet-key-value')).toHaveValue('');
+
+  // Each box answers at its run: ok, or failed with the old key kept.
+  await expect(main.getByText('Box A: Set and tested.')).toBeVisible({ timeout: 15_000 });
+  await expect(main.getByText(/box-b\.example\.invalid: .*keeps the key it had/)).toBeVisible();
+  await expect(main).not.toContainText(KEY);
+});
+
+test('phase 2: one box picked sends that box only', async ({ page }) => {
+  api.fleet = newMockFleet();
+  api.fleet.keyUpdates = [];
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.locator('#fleet-key-value').fill('another-key');
+  await main.getByRole('checkbox', { name: 'Box A' }).click();
+  await main.getByRole('button', { name: 'Set key on 1 box' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Set key' }).click();
+  await expect.poll(() => api.fleet!.keySent.length).toBe(1);
+  expect(api.fleet.keySent[0]!.boxIds).toEqual([FLEET_BOX.id]);
 });

@@ -69,8 +69,9 @@ else is a plain 404.
   values, the refusals, a brain before the screen, the search palette, the
   redirect from the old Settings path (`mock-sso-setup.ts`).
 - `fleet.spec.ts`: Admin > Fleet on a Control Center only: the boxes, a ban
-  previewed then made, Lift and Retire, an owner match; and on Users, the
-  Archived list, Enable on an archived login, and Disable again
+  previewed then made, Lift and Retire, an owner match; phase 2's provider
+  key on one or many boxes (each box's answer, never the key); and on Users,
+  the Archived list, Enable on an archived login, and Disable again
   (`mock-fleet.ts`).
 - `admin-shell.spec.ts`: the full nav with Settings > Users, the owner Pages
   screen (every page of the brain) and the Users screen (no sign-in by email

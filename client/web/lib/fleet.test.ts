@@ -5,7 +5,10 @@ import {
   banState,
   boxName,
   FLEET_HREF,
+  fleetKeyProviders,
   fleetOffered,
+  keyBoxText,
+  keyUpdatePending,
   liftLabel,
   liftText,
   parseEmails,
@@ -113,5 +116,43 @@ describe('withFleet', () => {
     ]);
     expect(fleetOffered(FLEET_HREF, false)).toBe(false);
     expect(fleetOffered('/settings/users', false)).toBe(true);
+  });
+});
+
+describe('the fleet key update (phase 2)', () => {
+  it('offers the providers that need only a key', () => {
+    const ids = fleetKeyProviders([{ id: 'openrouter' }, { id: 'custom' }, { id: 'local' }]).map(
+      (p) => p.id,
+    );
+    expect(ids).toEqual(['openrouter']);
+  });
+  it('says what each box answered, never more', () => {
+    expect(keyBoxText({ state: 'pending', reason: null }).tone).toBe('wait');
+    expect(keyBoxText({ state: 'ok', reason: null })).toEqual({
+      tone: 'ok',
+      text: 'Set and tested.',
+    });
+    expect(keyBoxText({ state: 'failed', reason: 'untested' }).tone).toBe('warn');
+    expect(keyBoxText({ state: 'failed', reason: 'failed' }).text).toContain(
+      'keeps the key it had',
+    );
+    expect(keyBoxText({ state: 'failed', reason: 'service' }).text).toContain('Nothing was set');
+    expect(keyBoxText({ state: 'failed', reason: 'refused' }).text).toContain('Nothing was set');
+    expect(keyBoxText({ state: 'failed', reason: 'sig' }).text).toBe(
+      'The box holds another key. Copy the key line again.',
+    );
+  });
+  it('reads again while a box waits', () => {
+    const at = '2026-11-10T00:00:00Z';
+    const update = (state: 'pending' | 'ok') => ({
+      id: '1',
+      service: 'openrouter',
+      madeBy: null,
+      madeAt: at,
+      boxes: [{ boxId: 'b', state, reason: null, doneAt: null }],
+    });
+    expect(keyUpdatePending(undefined)).toBe(false);
+    expect(keyUpdatePending([update('ok')])).toBe(false);
+    expect(keyUpdatePending([update('ok'), update('pending')])).toBe(true);
   });
 });

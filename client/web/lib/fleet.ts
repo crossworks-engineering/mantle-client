@@ -63,7 +63,76 @@ export type FleetOverview = {
   boxes: FleetBox[];
   bans: FleetBan[];
   results: FleetResult[];
+  /** Phase 2, the fleet provider-key update. Absent: a brain before it,
+   *  so the screen does not offer it. ASSUMED shape: the brain's Fleet route
+   *  for it is not built yet (see FleetKeyUpdate). */
+  keyUpdates?: FleetKeyUpdate[];
 };
+
+/**
+ * Phase 2: one provider key set on one or many boxes (docs/control-center.md
+ * in the mantle repo, the box's `key` case). The Control Center keeps no
+ * key: a row says which boxes got it, never the value.
+ *
+ * ASSUMED (the box side is built, the Control Center's route is not yet):
+ * POST /api/fleet/keys { service, value, boxIds } makes one; GET /api/fleet
+ * lists them in `keyUpdates`, newest first, each box `pending` until the
+ * control service has made its call.
+ */
+export type FleetKeyUpdate = {
+  id: string;
+  service: string;
+  madeBy: string | null;
+  madeAt: string;
+  boxes: FleetKeyBox[];
+};
+
+export type FleetKeyBox = {
+  boxId: string;
+  state: 'pending' | 'ok' | 'failed';
+  /** The box's own reason (service, refused, untested, failed), or the call's
+   *  reason code (off, time, sig, unreachable, http-NNN, bad-reply). */
+  reason: string | null;
+  doneAt: string | null;
+};
+
+export const FLEET_KEYS_PATH = `${FLEET_PATH}/keys`;
+
+/** The providers the fleet key update offers: the AI providers each box knows
+ *  (its fixed list), less the two that need more than a key (a base URL). */
+export function fleetKeyProviders<P extends { id: string }>(providers: readonly P[]): P[] {
+  return providers.filter((p) => p.id !== 'custom' && p.id !== 'local');
+}
+
+/** Plain words for one box's answer. Never the key, never the provider's
+ *  text: the box answers neither. */
+export function keyBoxText(box: Pick<FleetKeyBox, 'state' | 'reason'>): {
+  tone: 'ok' | 'wait' | 'warn' | 'bad';
+  text: string;
+} {
+  if (box.state === 'pending') return { tone: 'wait', text: 'Waiting for the next run.' };
+  if (box.state === 'ok') return { tone: 'ok', text: 'Set and tested.' };
+  switch (box.reason) {
+    case 'untested':
+      return { tone: 'warn', text: 'Set. This provider has no test.' };
+    case 'service':
+      return { tone: 'bad', text: 'This box does not know this provider. Nothing was set.' };
+    case 'refused':
+      return { tone: 'bad', text: 'The box refused the key. Nothing was set.' };
+    case 'failed':
+      return {
+        tone: 'bad',
+        text: 'The provider refused the key, or the box could not reach it. The box keeps the key it had.',
+      };
+    default:
+      return { tone: 'bad', text: reasonText(box.reason) ?? 'The call failed.' };
+  }
+}
+
+/** Whether any box of any update still waits: the screen reads again soon. */
+export function keyUpdatePending(updates: readonly FleetKeyUpdate[] | undefined): boolean {
+  return (updates ?? []).some((u) => u.boxes.some((b) => b.state === 'pending'));
+}
 
 export type FleetPreviewBox = {
   boxId: string;

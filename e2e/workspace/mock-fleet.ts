@@ -74,6 +74,24 @@ export type MockFleet = {
   /** Every ban body the brain was sent, previews included. */
   sent: { preview: boolean; body: Record<string, unknown> }[];
   lifted: string[];
+  /** Phase 2 (ASSUMED shape, docs in client/web/lib/fleet.ts): null is a
+   *  brain before the key update, which sends no keyUpdates. */
+  keyUpdates: KeyUpdate[] | null;
+  /** What each box answers a key call, by box id; absent: ok. A read after
+   *  the one that showed `pending` gives the answer, as a run would. */
+  keyAnswers: Record<string, { state: 'ok' | 'failed'; reason: string | null }>;
+  /** Every key call body the brain was sent. */
+  keySent: Record<string, unknown>[];
+};
+
+type KeyUpdate = {
+  id: string;
+  service: string;
+  madeBy: string | null;
+  madeAt: string;
+  boxes: { boxId: string; state: string; reason: string | null; doneAt: string | null }[];
+  /** Reads since it was made (not sent). */
+  reads?: number;
 };
 
 export const newMockFleet = (): MockFleet => ({
@@ -83,7 +101,25 @@ export const newMockFleet = (): MockFleet => ({
   matches: {},
   sent: [],
   lifted: [],
+  keyUpdates: null,
+  keyAnswers: {},
+  keySent: [],
 });
+
+/** The control service's run: a box that showed `pending` once answers. */
+function runKeyUpdates(f: MockFleet) {
+  for (const u of f.keyUpdates ?? []) {
+    u.reads = (u.reads ?? 0) + 1;
+    if (u.reads < 2) continue;
+    for (const b of u.boxes) {
+      if (b.state !== 'pending') continue;
+      const a = f.keyAnswers[b.boxId] ?? { state: 'ok', reason: null };
+      b.state = a.state;
+      b.reason = a.reason;
+      b.doneAt = new Date().toISOString();
+    }
+  }
+}
 
 function overview(f: MockFleet) {
   return {
@@ -99,6 +135,9 @@ function overview(f: MockFleet) {
     boxes: f.boxes,
     bans: f.bans,
     results: f.results,
+    ...(f.keyUpdates
+      ? { keyUpdates: f.keyUpdates.map(({ reads: _reads, ...u }) => u).reverse() }
+      : {}),
   };
 }
 
@@ -116,7 +155,28 @@ export function fleetAnswer(
 ): { status: number; body: unknown } | null {
   if (!path.startsWith('/api/fleet')) return null;
   if (!f) return { status: 404, body: { error: 'not found' } };
-  if (path === '/api/fleet' && method === 'GET') return { status: 200, body: overview(f) };
+  if (path === '/api/fleet' && method === 'GET') {
+    runKeyUpdates(f);
+    return { status: 200, body: overview(f) };
+  }
+  if (path === '/api/fleet/keys' && method === 'POST') {
+    if (!f.keyUpdates) return { status: 404, body: { error: 'not found' } };
+    f.keySent.push(body);
+    const boxIds = (body.boxIds as string[] | undefined) ?? [];
+    if (!body.service || !body.value || boxIds.length === 0) {
+      return { status: 400, body: { error: 'Pick a provider, a key and at least one box.' } };
+    }
+    const update: KeyUpdate = {
+      id: uuid(),
+      service: String(body.service),
+      madeBy: ADMIN,
+      madeAt: new Date().toISOString(),
+      boxes: boxIds.map((boxId) => ({ boxId, state: 'pending', reason: null, doneAt: null })),
+      reads: 0,
+    };
+    f.keyUpdates.push(update);
+    return { status: 201, body: { update: { id: update.id } } };
+  }
   if (path === '/api/fleet/boxes' && method === 'POST') {
     const url = String(body.url ?? '');
     if (!url.startsWith('https://')) {

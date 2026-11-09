@@ -27,6 +27,9 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
+import { SecretInput } from '@mantle/web-ui/ui/secret-input';
+import { SUPPORTED_PROVIDERS } from '@mantle/voice-client';
 import {
   Select,
   SelectContent,
@@ -43,7 +46,11 @@ import {
   banState,
   boxName,
   FLEET_KEY,
+  FLEET_KEYS_PATH,
   FLEET_PATH,
+  fleetKeyProviders,
+  keyBoxText,
+  keyUpdatePending,
   liftLabel,
   liftText,
   OWNER_MATCH_TEXT,
@@ -53,6 +60,7 @@ import {
   type FleetBan,
   type FleetBanKind,
   type FleetBox,
+  type FleetKeyUpdate,
   type FleetOverview,
   type FleetPreview,
   type FleetResult,
@@ -670,11 +678,229 @@ function BansSection({ data, onChanged }: { data: FleetOverview; onChanged: () =
   );
 }
 
+// --- provider keys (phase 2) ------------------------------------------------------
+
+const KEY_PROVIDERS = fleetKeyProviders(SUPPORTED_PROVIDERS);
+const providerLabel = (service: string) =>
+  KEY_PROVIDERS.find((p) => p.id === service)?.label ?? service;
+
+const TONE: Record<'ok' | 'wait' | 'warn' | 'bad', string> = {
+  ok: 'text-muted-foreground',
+  wait: 'text-muted-foreground',
+  warn: 'text-warning-ink',
+  bad: 'text-destructive-ink',
+};
+
+function KeyUpdateCard({
+  update,
+  boxes,
+}: {
+  update: FleetKeyUpdate;
+  boxes: Map<string, FleetBox>;
+}) {
+  return (
+    <li className="space-y-2 rounded-md border border-border p-3">
+      <p className="text-sm font-medium">{providerLabel(update.service)}</p>
+      <p className="text-xs text-muted-foreground">
+        Set by {update.madeBy ?? 'a login that is gone'}, {formatDateTime(update.madeAt)}.
+      </p>
+      <ul className="space-y-0.5 text-xs">
+        {update.boxes.map((b) => {
+          const box = boxes.get(b.boxId);
+          const answer = keyBoxText(b);
+          return (
+            <li key={b.boxId} className={TONE[answer.tone]}>
+              {box ? boxName(box) : 'A removed box'}: {answer.text}
+            </li>
+          );
+        })}
+      </ul>
+    </li>
+  );
+}
+
+/**
+ * Set one provider key on one or many boxes. The key is typed once, sent once
+ * and never shown: the field empties when it is sent, and the Control Center
+ * keeps no key. Each box seals it in its own vault and tests it. A box whose
+ * test fails keeps the key it had.
+ */
+function KeysSection({ data, onChanged }: { data: FleetOverview; onChanged: () => void }) {
+  const toast = useToast();
+  const [service, setService] = useState(KEY_PROVIDERS[0]?.id ?? '');
+  const [value, setValue] = useState('');
+  // Bumped by a send: the next key starts hidden again.
+  const [fieldKey, setFieldKey] = useState(0);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const boxes = new Map(data.boxes.map((b) => [b.id, b]));
+  // A box removed since it was picked is not sent.
+  const chosen = data.boxes.filter((b) => picked.has(b.id));
+  const all = data.boxes.length > 0 && chosen.length === data.boxes.length;
+  const updates = (data.keyUpdates ?? []).slice(0, 10);
+  const count = chosen.length === 1 ? '1 box' : `${chosen.length} boxes`;
+
+  const toggle = (id: string, on: boolean) =>
+    setPicked((p) => {
+      const next = new Set(p);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const send = async () => {
+    setPending(true);
+    try {
+      await apiSend(FLEET_KEYS_PATH, 'POST', {
+        service,
+        value,
+        boxIds: chosen.map((b) => b.id),
+      });
+      setValue('');
+      setFieldKey((k) => k + 1);
+      setConfirming(false);
+      toast.success(`Key sent to ${count}. Each box tests it now.`);
+      onChanged();
+    } catch (err) {
+      toast.error(refusalText(err, 'Could not send the key.'));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Section title="Provider keys">
+      <p className="text-sm text-muted-foreground">
+        Set one provider key on the boxes you pick. Each box seals it in its own vault and tests it.
+        A box whose test fails keeps the key it had. This box keeps no key.
+      </p>
+      {data.boxes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No box is linked.</p>
+      ) : (
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (value.trim() && chosen.length > 0) setConfirming(true);
+          }}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="fleet-key-provider">Provider</FieldLabel>
+              <Select value={service} onValueChange={setService}>
+                <SelectTrigger id="fleet-key-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {KEY_PROVIDERS.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="fleet-key-value">Key</FieldLabel>
+              <SecretInput
+                id="fleet-key-value"
+                noun="key"
+                // Not `off`: a browser may fill the Admin's own password here.
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore
+                key={fieldKey}
+                value={value}
+                maxLength={8192}
+                onChange={(e) => setValue(e.target.value)}
+              />
+              <FieldDescription>
+                Typed once. It is never shown again, here or on a box.
+              </FieldDescription>
+            </Field>
+            <fieldset className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <legend className="text-sm font-medium">Boxes</legend>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setPicked(all ? new Set() : new Set(data.boxes.map((b) => b.id)))}
+                >
+                  {all ? 'Clear' : 'All boxes'}
+                </Button>
+              </div>
+              <ul className="space-y-1.5">
+                {data.boxes.map((b) => (
+                  <li key={b.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`fleet-key-box-${b.id}`}
+                      checked={picked.has(b.id)}
+                      onCheckedChange={(v) => toggle(b.id, v === true)}
+                    />
+                    <label htmlFor={`fleet-key-box-${b.id}`} className="text-sm">
+                      {boxName(b)}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </fieldset>
+            <div className="flex justify-end">
+              <SubmitButton pending={false} disabled={!value.trim() || chosen.length === 0}>
+                {chosen.length > 0 ? `Set key on ${count}` : 'Set key'}
+              </SubmitButton>
+            </div>
+          </FieldGroup>
+        </form>
+      )}
+      {updates.length > 0 && (
+        <ul className="space-y-2">
+          {updates.map((u) => (
+            <KeyUpdateCard key={u.id} update={u} boxes={boxes} />
+          ))}
+        </ul>
+      )}
+      <AlertDialog open={confirming} onOpenChange={(o) => !o && !pending && setConfirming(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Set the {providerLabel(service)} key on {count}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Each box replaces its {providerLabel(service)} key with this one and tests it. A box
+              whose test fails keeps the key it had.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={(e) => {
+                e.preventDefault();
+                void send();
+              }}
+            >
+              Set key
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Section>
+  );
+}
+
 /** The screen. Off a Control Center the brain answers 404 and the sidebar
  *  hides the entry; a deep link lands on the plain line below. */
 export function FleetClient() {
   const queryClient = useQueryClient();
-  const query = useQuery(fleetQuery);
+  const query = useQuery({
+    ...fleetQuery,
+    // While a box still waits on a key update, read again soon.
+    refetchInterval: (q: { state: { data?: FleetOverview | null } }) =>
+      keyUpdatePending(q.state.data?.keyUpdates) ? 3000 : false,
+  });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: FLEET_KEY });
 
   if (query.isLoading) {
@@ -702,8 +928,8 @@ export function FleetClient() {
       <ServiceSection data={data} />
       <BoxesSection boxes={data.boxes} onChanged={refresh} />
       <BansSection data={data} onChanged={refresh} />
-      {/* Phase 2 adds its first section here, after Bans: a provider API key
-          (for example OpenRouter) set on one or many boxes. Not built yet. */}
+      {/* Phase 2: a brain before it sends no keyUpdates, and offers no key call. */}
+      {data.keyUpdates && <KeysSection data={data} onChanged={refresh} />}
     </div>
   );
 }
