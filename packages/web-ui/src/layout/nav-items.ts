@@ -1,4 +1,13 @@
-import { Activity, Building2, Layers, Link2, MessagesSquare, Power, Send } from 'lucide-react';
+import {
+  Activity,
+  Building2,
+  Layers,
+  Link2,
+  MessagesSquare,
+  Power,
+  Send,
+  ServerCog,
+} from 'lucide-react';
 import {
   NAV_GROUPS as SHARED_NAV_GROUPS,
   navItemMatches,
@@ -61,13 +70,6 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     item: { name: 'Shared links', href: '/settings/shared-links', icon: Link2 },
   },
   {
-    // Company sign-in's setup screen: the sidebar keeps it only while the
-    // brain says the mode is on (client/web/lib/sso-setup.ts).
-    group: 'Settings',
-    after: '/settings/shared-links',
-    item: { name: 'Company sign-in', href: '/settings/company-sign-in', icon: Building2 },
-  },
-  {
     // Status: the whole box at a glance (vitals, brain, spend, queues,
     // sidecars, providers, version), first in System. It replaced the
     // Dashboard, which `/dashboard` now redirects to.
@@ -88,6 +90,41 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     item: { name: 'Telegram', href: '/settings/telegram', icon: Send },
   },
 ];
+
+/**
+ * Groups this client has that the pinned shared list does not name, each
+ * placed after a named group. Admin (owner, 2026-11-09) holds the box-level
+ * admin screens: Company sign-in, shown only while the brain says the mode is
+ * on (client/web/lib/sso-setup.ts), and on a Control Center its Fleet
+ * (client/web/lib/fleet.ts). A group the shared list already has is skipped.
+ */
+export const ADDED_NAV_GROUPS: ReadonlyArray<{ after: string; group: NavGroup }> = [
+  {
+    after: 'Settings',
+    group: {
+      label: 'Admin',
+      items: [
+        { name: 'Company sign-in', href: '/admin/company-sign-in', icon: Building2 },
+        { name: 'Fleet', href: '/admin/fleet', icon: ServerCog },
+      ],
+    },
+  },
+];
+
+/** Pure, so the placement is unit-tested against any list. A group placed
+ *  after one the list lacks goes last. */
+export function withAddedGroups(
+  groups: readonly NavGroup[],
+  added: typeof ADDED_NAV_GROUPS = ADDED_NAV_GROUPS,
+): NavGroup[] {
+  const out = [...groups];
+  for (const a of added) {
+    if (out.some((g) => g.label === a.group.label)) continue;
+    const at = out.findIndex((g) => g.label === a.after);
+    out.splice(at === -1 ? out.length : at + 1, 0, a.group);
+  }
+  return out;
+}
 
 /**
  * Rows this client names differently from the pinned shared list. Logins is
@@ -134,7 +171,9 @@ export function withAdded(
 
 // These three shadow the shared module's own exports of the same names (a
 // local export wins over `export *`), so every consumer gets the filtered list.
-export const NAV_GROUPS: NavGroup[] = withRenamed(withAdded(withoutRetired(SHARED_NAV_GROUPS)));
+export const NAV_GROUPS: NavGroup[] = withAddedGroups(
+  withRenamed(withAdded(withoutRetired(SHARED_NAV_GROUPS))),
+);
 
 /** Flat list of every nav item, in sidebar order. */
 export const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);

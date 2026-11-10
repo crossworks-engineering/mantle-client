@@ -106,6 +106,8 @@ describe('areas', () => {
   it('maps settings paths to their area, and the Workspaces list to none', () => {
     expect(areaForPath('/settings/users')).toBe('users');
     expect(areaForPath('/settings/company-sign-in')).toBe('users');
+    expect(areaForPath('/admin/company-sign-in')).toBe('users');
+    expect(areaForPath('/admin/fleet')).toBe('settings');
     expect(areaForPath('/settings/agents')).toBe('assistants');
     expect(areaForPath('/settings/connectors')).toBe('connectors');
     expect(areaForPath('/settings/keys')).toBe('keys');

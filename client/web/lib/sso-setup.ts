@@ -1,12 +1,12 @@
 /**
- * The company sign-in and SCIM setup screen's model (Settings > Company
+ * The company sign-in and SCIM setup screen's model (Admin > Company
  * sign-in; docs/oidc-sign-in.md in the mantle repo). The types mirror the
  * brain's DTOs in @mantle/client-types, which reach this repo with the next
  * published contract. Pure, so it is unit-tested.
  */
 export const SSO_SETUP_PATH = '/api/users/sso-setup';
 export const SSO_SETUP_KEY = ['sso-setup'];
-export const COMPANY_SIGN_IN_HREF = '/settings/company-sign-in';
+export const COMPANY_SIGN_IN_HREF = '/admin/company-sign-in';
 
 export type SsoSetupSetter = { by: string | null; at: string };
 

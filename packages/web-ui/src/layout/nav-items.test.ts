@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { Bot, type LucideIcon } from 'lucide-react';
 import { NAV_GROUPS as SHARED_NAV_GROUPS } from '@mantle/share-ui/nav-items';
 import {
+  ADDED_NAV_GROUPS,
   ADDED_NAV_ITEMS,
   ALL_NAV_ITEMS,
   NAV_GROUPS,
   matchNavItem,
   withAdded,
+  withAddedGroups,
   withRenamed,
   withoutRetired,
   type NavGroup,
@@ -18,7 +20,10 @@ import {
 const icon = Bot as LucideIcon;
 const hrefs = (groups: NavGroup[]) => groups.flatMap((g) => g.items).map((i) => i.href);
 /** The hrefs this client adds itself (ADDED_NAV_ITEMS). */
-const ADDED = new Set(ADDED_NAV_ITEMS.map((a) => a.item.href));
+const ADDED = new Set([
+  ...ADDED_NAV_ITEMS.map((a) => a.item.href),
+  ...ADDED_NAV_GROUPS.flatMap((a) => a.group.items.map((i) => i.href)),
+]);
 /** Only the Services entry, for the placement tests below. */
 const SERVICES_ONLY = ADDED_NAV_ITEMS.filter((a) => a.item.href === '/settings/services');
 
@@ -128,13 +133,30 @@ describe('nav items this client adds before the shared list names them', () => {
   });
 });
 
-describe('Company sign-in in the nav', () => {
-  it('adds it after Shared links in Settings, once', () => {
+describe('the Admin group (owner, 2026-11-09)', () => {
+  it('comes after Settings and holds Company sign-in, then Fleet', () => {
+    const labels = NAV_GROUPS.map((g) => g.label);
+    expect(labels.filter((l) => l === 'Admin')).toHaveLength(1);
+    expect(labels[labels.indexOf('Settings') + 1]).toBe('Admin');
+    const admin = NAV_GROUPS.find((g) => g.label === 'Admin')!;
+    expect(admin.items.map((i) => i.href)).toEqual(['/admin/company-sign-in', '/admin/fleet']);
+    expect(matchNavItem('/admin/company-sign-in')?.name).toBe('Company sign-in');
+    expect(matchNavItem('/admin/fleet')?.name).toBe('Fleet');
+  });
+
+  it('Settings no longer holds Company sign-in', () => {
     const settings = NAV_GROUPS.find((g) => g.label === 'Settings')!;
-    const list = settings.items.map((i) => i.href);
-    expect(list.filter((h) => h === '/settings/company-sign-in')).toHaveLength(1);
-    expect(list[list.indexOf('/settings/shared-links') + 1]).toBe('/settings/company-sign-in');
-    expect(matchNavItem('/settings/company-sign-in')?.name).toBe('Company sign-in');
+    expect(settings.items.map((i) => i.href)).not.toContain('/settings/company-sign-in');
+  });
+
+  it('a group goes last when its anchor is missing, and once', () => {
+    const icon = (() => null) as never;
+    const only = [{ label: 'Work', items: [{ name: 'Pages', href: '/pages', icon }] }];
+    const added = [
+      { after: 'Nowhere', group: { label: 'Extra', items: [{ name: 'X', href: '/x', icon }] } },
+    ];
+    expect(withAddedGroups(only, added).map((g) => g.label)).toEqual(['Work', 'Extra']);
+    expect(withAddedGroups(withAddedGroups(only, added), added)).toHaveLength(2);
   });
 });
 

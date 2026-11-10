@@ -146,6 +146,7 @@ export function safeAgentRoute(path: unknown): string | null {
  *  `client/web/app/(app)` (a test holds the two in step). The root `/` is
  *  the Desk. */
 export const APP_SHELL_ROUTES: ReadonlySet<string> = new Set([
+  'admin',
   'apps',
   'assistant',
   'changelog',

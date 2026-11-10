@@ -21,9 +21,9 @@ describe('settings', () => {
   const settings = scopeGroups(NAV_GROUPS, 'settings');
   const shown = names(settings);
 
-  it('carries every setting and the System group, whole', () => {
-    expect(labels(settings)).toEqual(['Settings', 'System']);
-    for (const label of ['Settings', 'System']) {
+  it('carries every setting, the Admin group and the System group, whole', () => {
+    expect(labels(settings)).toEqual(['Settings', 'Admin', 'System']);
+    for (const label of ['Settings', 'Admin', 'System']) {
       expect(settings.find((g) => g.label === label)).toEqual(
         NAV_GROUPS.find((g) => g.label === label),
       );

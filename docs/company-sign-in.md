@@ -6,15 +6,15 @@ before it, nothing here shows, and the sign-in screen stays as it was.
 
 ## Where each thing is
 
-| What the person sees                                        | Code                                                                       |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
-| "Sign in with {label}" beside the password form             | `client/web/app/login/login-client.tsx`, `components/oidc/`                |
-| The one dismissible offer card                              | `components/oidc/offer-card.tsx`, in the shell's bottom-right stack        |
-| Settings > Profile; the account menu with no Profile screen | `components/oidc/company-sign-in-section.tsx`                              |
-| Required mode: the one link step                            | `components/oidc/link-step.tsx`: at sign-in, invite, and `link-gate.tsx`   |
-| A fresh sign-in in place of the password for a key          | `components/api-access/api-access-client.tsx`                              |
-| The page every flow ends on                                 | `client/web/app/auth/oidc/`                                                |
-| The setup screen, Settings > Company sign-in                | `client/web/app/(app)/settings/(hub)/company-sign-in/`, `lib/sso-setup.ts` |
+| What the person sees                                        | Code                                                                     |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| "Sign in with {label}" beside the password form             | `client/web/app/login/login-client.tsx`, `components/oidc/`              |
+| The one dismissible offer card                              | `components/oidc/offer-card.tsx`, in the shell's bottom-right stack      |
+| Settings > Profile; the account menu with no Profile screen | `components/oidc/company-sign-in-section.tsx`                            |
+| Required mode: the one link step                            | `components/oidc/link-step.tsx`: at sign-in, invite, and `link-gate.tsx` |
+| A fresh sign-in in place of the password for a key          | `components/api-access/api-access-client.tsx`                            |
+| The page every flow ends on                                 | `client/web/app/auth/oidc/`                                              |
+| The setup screen, Admin > Company sign-in                   | `client/web/app/(app)/admin/company-sign-in/`, `lib/sso-setup.ts`        |
 
 The MCP consent page is the brain's own page: its Confirm button runs the fresh
 sign-in itself. The client only brings the person back to it after a sign-in
@@ -22,10 +22,21 @@ sign-in itself. The client only brings the person back to it after a sign-in
 
 ## The setup screen
 
-A client's Microsoft admin enters the client secret and makes the SCIM token on
-this screen while the box's `MANTLE_OIDC_MODE` is `setup`. The contract and every
-stated cost are the brain's: "The setup screen" in `docs/oidc-sign-in.md` in the
-mantle repo.
+A client's Microsoft admin enters the client secret on this screen while the
+box's `MANTLE_OIDC_MODE` is `setup`. On a Control Center the screen also makes
+the SCIM token: SCIM runs on a Control Center only (owner, 2026-11-09), and the
+screen knows one by `GET /api/fleet` (200 on a Control Center, 404 elsewhere).
+Off one, the SCIM URL, the SCIM token and the provisioning steps do not show.
+The contract and every stated cost are the brain's: "The setup screen" in
+`docs/oidc-sign-in.md` in the mantle repo.
+
+The screen is at Admin > Company sign-in (`/admin/company-sign-in`) since
+2026-11-09. The old path, `/settings/company-sign-in`, redirects there. On a
+Control Center the Admin group also holds Fleet (`/admin/fleet`,
+`lib/fleet.ts`): the boxes, the fleet bans, the provider keys, the fleet
+matrix (`lib/fleet-matrix.ts`), the agent models (`lib/fleet-models.ts`), and
+the pool entry, update notice and worker group writes with each box's answers
+(`lib/fleet-writes.ts`; `docs/control-center.md` in the mantle repo).
 
 - The sidebar offers the entry only to a login with the users area, while
   `GET /api/users/sso-setup` answers a mode other than `off`. The search palette
