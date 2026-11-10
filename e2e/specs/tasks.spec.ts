@@ -302,6 +302,91 @@ test.describe('tasks', () => {
     }
   });
 
+  test('files: the card lists the task files, Attach sends one, Delete names them', async ({
+    ownerApi,
+    ownerPage,
+  }) => {
+    // The screen, not the brain: the file routes are answered here, so the
+    // spec runs against a brain with or without files on tasks. The one-task
+    // read is the real one with `files` added.
+    const marker = `E2E files ${Date.now()}`;
+    const title = `${marker} crash`;
+    const task = await createTask(ownerApi, { title });
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      'base64',
+    );
+    const files = [
+      {
+        id: '00000000-0000-4000-8000-0000000000f1',
+        filename: 'server.log',
+        mimeType: 'text/plain',
+        sizeBytes: 2048,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    const posted: string[] = [];
+    await ownerPage.route(
+      (url) => url.pathname === `/api/tasks/${task.id}`,
+      async (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        const res = await route.fetch();
+        const body = (await res.json()) as { task: Record<string, unknown> };
+        return route.fulfill({ response: res, json: { task: { ...body.task, files } } });
+      },
+    );
+    await ownerPage.route(
+      (url) => url.pathname === `/api/tasks/${task.id}/files`,
+      async (route) => {
+        const sent = route.request().postDataBuffer()?.toString('latin1') ?? '';
+        const filename = /filename="([^"]+)"/.exec(sent)?.[1] ?? 'unnamed';
+        posted.push(filename);
+        const file = {
+          id: '00000000-0000-4000-8000-0000000000f2',
+          filename,
+          mimeType: 'image/png',
+          sizeBytes: png.byteLength,
+          createdAt: new Date().toISOString(),
+        };
+        files.push(file);
+        return route.fulfill({ status: 201, json: { file } });
+      },
+    );
+    await ownerPage.route(
+      (url) => url.pathname.startsWith(`/api/tasks/${task.id}/files/`),
+      (route) => route.fulfill({ status: 200, contentType: 'image/png', body: png }),
+    );
+
+    try {
+      await ownerPage.goto('/tasks');
+      const detail = ownerPage.locator('[data-testid="detail"]');
+      await openFromTree(ownerPage, marker, detail.getByRole('heading', { name: title }));
+
+      const items = detail.locator('[data-testid="task-file"]');
+      await expect(items).toHaveCount(1);
+      await expect(items.first()).toContainText('server.log');
+      await expect(detail.getByText('1 of 5')).toBeVisible();
+
+      await detail
+        .locator('input[type="file"]')
+        .setInputFiles({ name: 'shot.png', mimeType: 'image/png', buffer: png });
+      await expect.poll(() => posted).toEqual(['shot.png']);
+      await expect(items).toHaveCount(2);
+      await expect(detail.getByRole('img', { name: 'shot.png' })).toBeVisible();
+      await expect(detail.getByText('2 of 5')).toBeVisible();
+      await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}tasks-files.png` });
+
+      // The delete dialog says the files go too.
+      await detail.getByRole('button', { name: 'Delete task', exact: true }).click();
+      await expect(ownerPage.getByRole('alertdialog')).toContainText(
+        'This also deletes its 2 files.',
+      );
+      await ownerPage.getByRole('button', { name: 'Cancel' }).click();
+    } finally {
+      await ownerApi.delete(`/api/tasks/${task.id}`);
+    }
+  });
+
   test('ticking a blocked task and unticking it returns it to Blocked', async ({
     ownerApi,
     ownerPage,
