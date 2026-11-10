@@ -65,11 +65,13 @@ import {
   type FleetResult,
 } from '@/lib/fleet';
 import { fleetMatrixOffered } from '@/lib/fleet-matrix';
-import { fleetModelsOffered, modelUpdatePending } from '@/lib/fleet-models';
+import { fleetWritesOffered, writeUpdatePending } from '@/lib/fleet-writes';
 import { fleetQuery } from '@/lib/use-fleet-shown';
 import { MatrixSection } from './fleet-matrix';
 import { BoxPicker, useBoxPick } from './fleet-box-picker';
 import { ModelsSection } from './fleet-models';
+import { SettingsSections } from './fleet-settings';
+import { WritesSection } from './fleet-writes';
 import { refusalText, Section } from './fleet-section';
 
 function OwnerWarning() {
@@ -832,9 +834,9 @@ export function FleetClient() {
   const queryClient = useQueryClient();
   const query = useQuery({
     ...fleetQuery,
-    // While a box still waits on a key update, read again soon.
+    // While a box still waits on a key update or a fleet write, read again soon.
     refetchInterval: (q: { state: { data?: FleetOverview | null } }) =>
-      keyUpdatePending(q.state.data?.boxes) || modelUpdatePending(q.state.data?.boxes)
+      keyUpdatePending(q.state.data?.boxes) || writeUpdatePending(q.state.data?.boxes)
         ? 3000
         : false,
   });
@@ -869,8 +871,14 @@ export function FleetClient() {
       <BansSection data={data} onChanged={refresh} />
       {/* Phase 2: a brain before it has no key fields on its boxes, and no key call. */}
       {fleetKeysOffered(data.boxes) && <KeysSection data={data} onChanged={refresh} />}
-      {/* Phase 4: a brain before it has no model fields on its boxes, and no model call. */}
-      {fleetModelsOffered(data.boxes) && <ModelsSection data={data} onChanged={refresh} />}
+      {/* Phase 4: a brain before it has no writeJob on its boxes, and no write call. */}
+      {fleetWritesOffered(data.boxes) && (
+        <>
+          <ModelsSection data={data} onChanged={refresh} />
+          <SettingsSections boxes={data.boxes} onChanged={refresh} />
+          <WritesSection boxes={data.boxes} />
+        </>
+      )}
     </div>
   );
 }

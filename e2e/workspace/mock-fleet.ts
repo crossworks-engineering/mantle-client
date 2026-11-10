@@ -98,32 +98,25 @@ export type MockFleet = {
   facts: Record<string, { facts: Facts | null; factsReason: string | null }>;
   /** The `box` query of every matrix read ('' for the whole fleet). */
   matrixReads: string[];
-  /** Phase 4: false is a brain before the model update, whose box rows have
-   *  no modelJob or modelResult. */
-  modelsOn: boolean;
-  /** Each box's model job and last answer, by box id. */
-  modelState: Record<
+  /** Phase 4: false is a brain before the fleet writes, whose box rows
+   *  have no writeJob or writeResult, and which has no write routes. */
+  writesOn: boolean;
+  /** Each box's write job and last answers, by box id. */
+  writeState: Record<
     string,
-    { modelJob: ModelJob | null; modelResult: ModelResult | null; reads: number }
+    { writeJob: { changes: Write[] } | null; writeResult: { results: WriteAnswer[] } | null }
   >;
-  /** What each box answers per slug, by box id; absent: ok. */
-  modelAnswers: Record<string, Record<string, { ok: boolean; reason: string | null }>>;
-  /** Every model call body the brain was sent. */
-  modelSent: Record<string, unknown>[];
+  /** What each box answers, by box id, then by the change's key (an agent's
+   *  slug, or the kind); absent: ok. */
+  writeAnswers: Record<string, Record<string, { ok: boolean; reason: string | null }>>;
+  /** Every write body the brain was sent, with its route. */
+  writeSent: { path: string; body: Record<string, unknown> }[];
+  /** The pools GET /api/model-pools lists. */
+  pools: { id: string; label: string; description: string; group: string }[];
 };
 
-type ModelJob = { changes: { slug: string; model: string }[]; by: string; at: string };
-type ModelResult = {
-  results: {
-    slug: string;
-    model: string;
-    ok: boolean;
-    was: string | null;
-    reason: string | null;
-  }[];
-  by: string;
-  at: string;
-};
+type Write = Record<string, unknown> & { kind: string; by: string; at: string; reads?: number };
+type WriteAnswer = Write & { ok: boolean; was: string | null; reason: string | null; done: string };
 
 type Facts = Record<string, unknown> & { at: string };
 
@@ -240,34 +233,67 @@ export const newMockFleet = (): MockFleet => ({
   matrixOn: false,
   facts: {},
   matrixReads: [],
-  modelsOn: false,
-  modelState: {},
-  modelAnswers: {},
-  modelSent: [],
+  writesOn: false,
+  writeState: {},
+  writeAnswers: {},
+  writeSent: [],
+  pools: [
+    { id: 'agents', label: 'Agents', description: 'Every agent.', group: 'agents' },
+    { id: 'vision', label: 'Read images', description: 'The vision worker.', group: 'workers' },
+  ],
 });
 
 type Agent = { slug: string | null; model: string };
 
-/** The control service's run: a box that showed its model job once
- *  answers, and its facts then show the new model. */
-function runModelJobs(f: MockFleet) {
-  for (const [boxId, m] of Object.entries(f.modelState)) {
-    if (!m.modelJob) continue;
-    m.reads += 1;
-    if (m.reads < 2) continue;
+/** The control service's run: a change a box showed waiting once is
+ *  answered at the next read, in order, and an agent model then shows in
+ *  the facts. */
+function runWriteJobs(f: MockFleet) {
+  for (const [boxId, w] of Object.entries(f.writeState)) {
+    const changes = w.writeJob?.changes ?? [];
+    if (changes.length === 0) continue;
+    const due = changes.filter((c) => (c.reads = (c.reads ?? 0) + 1) >= 2);
+    if (due.length === 0) continue;
     const agents = (f.facts[boxId]?.facts?.agents ?? []) as Agent[];
-    const results = m.modelJob.changes.map((c) => {
-      const row = agents.find((a) => a.slug === c.slug);
+    const answers = due.map((c): WriteAnswer => {
+      const { reads, ...change } = c;
+      void reads;
+      const key = c.kind === 'agentModel' ? String(c.slug) : c.kind;
+      const row = c.kind === 'agentModel' ? agents.find((a) => a.slug === c.slug) : undefined;
       const a =
-        f.modelAnswers[boxId]?.[c.slug] ??
-        (row ? { ok: true, reason: null } : { ok: false, reason: 'agent' });
-      const was = row ? row.model : null;
-      if (a.ok && row) row.model = c.model;
-      return { slug: c.slug, model: c.model, ok: a.ok, was, reason: a.reason };
+        f.writeAnswers[boxId]?.[key] ??
+        (c.kind !== 'agentModel' || row
+          ? { ok: true, reason: null }
+          : { ok: false, reason: 'agent' });
+      let was: string | null = null;
+      if (c.kind === 'agentModel') {
+        was = row ? row.model : null;
+        if (a.ok && row) row.model = String(c.model);
+      } else if (c.kind === 'updateNotice') was = 'off';
+      else if (a.ok) was = 'added';
+      return { ...change, ok: a.ok, was, reason: a.reason, done: new Date().toISOString() };
     });
-    m.modelResult = { results, by: m.modelJob.by, at: new Date().toISOString() };
-    m.modelJob = null;
+    const rest = changes.slice(due.length);
+    w.writeJob = rest.length ? { changes: rest } : null;
+    w.writeResult = { results: [...(w.writeResult?.results ?? []), ...answers].slice(-40) };
   }
+}
+
+/** Queues the changes for the boxes asked (all when none), as
+ *  queueControlWrites does: a box that would hold more than 40 is left out. */
+function queueWrites(f: MockFleet, path: string, body: Record<string, unknown>, changes: Write[]) {
+  f.writeSent.push({ path, body });
+  const wanted = (body.boxIds as string[] | undefined) ?? f.boxes.map((b) => b.id);
+  const queued: string[] = [];
+  for (const b of f.boxes) {
+    if (!wanted.includes(b.id)) continue;
+    const w = (f.writeState[b.id] ??= { writeJob: null, writeResult: null });
+    const waiting = w.writeJob?.changes ?? [];
+    if (waiting.length + changes.length > 40) continue;
+    w.writeJob = { changes: [...waiting, ...changes.map((c) => ({ ...c }))] };
+    queued.push(b.id);
+  }
+  return { status: 200, body: { changes, queued: queued.length, boxIds: queued } };
 }
 
 /** The control service's run: a box that showed its key job once answers. */
@@ -308,10 +334,17 @@ function overview(f: MockFleet) {
           }
         : {}),
       ...(f.matrixOn ? { factsAt: f.facts[b.id]?.facts?.at ?? null } : {}),
-      ...(f.modelsOn
+      ...(f.writesOn
         ? {
-            modelJob: f.modelState[b.id]?.modelJob ?? null,
-            modelResult: f.modelState[b.id]?.modelResult ?? null,
+            writeJob: f.writeState[b.id]?.writeJob
+              ? {
+                  changes: f.writeState[b.id]!.writeJob!.changes.map(({ reads, ...c }) => {
+                    void reads;
+                    return c;
+                  }),
+                }
+              : null,
+            writeResult: f.writeState[b.id]?.writeResult ?? null,
           }
         : {}),
     })),
@@ -333,6 +366,10 @@ export function fleetAnswer(
   body: Record<string, unknown>,
   query: URLSearchParams = new URLSearchParams(),
 ): { status: number; body: unknown } | null {
+  // The pools the pool entry form offers (the brain's own list).
+  if (path === '/api/model-pools' && method === 'GET' && f?.writesOn) {
+    return { status: 200, body: { pools: f.pools, entries: [] } };
+  }
   if (!path.startsWith('/api/fleet')) return null;
   if (!f) return { status: 404, body: { error: 'not found' } };
   if (path === '/api/fleet/matrix' && method === 'GET') {
@@ -354,27 +391,30 @@ export function fleetAnswer(
   }
   if (path === '/api/fleet' && method === 'GET') {
     runKeyJobs(f);
-    runModelJobs(f);
+    runWriteJobs(f);
     return { status: 200, body: overview(f) };
   }
   if (path === '/api/fleet/models' && method === 'POST') {
-    if (!f.modelsOn) return { status: 404, body: { error: 'not found' } };
-    f.modelSent.push(body);
+    if (!f.writesOn) return { status: 404, body: { error: 'not found' } };
     const changes = (body.changes as { slug: string; model: string }[] | undefined) ?? [];
     if (changes.length === 0) {
+      f.writeSent.push({ path, body });
       return { status: 400, body: { error: 'Give 1 to 20 changes.' } };
     }
-    const wanted = (body.boxIds as string[] | undefined) ?? f.boxes.map((b) => b.id);
-    const queued = f.boxes.filter((b) => wanted.includes(b.id)).map((b) => b.id);
     const at = new Date().toISOString();
-    for (const id of queued) {
-      f.modelState[id] = {
-        modelJob: { changes, by: ADMIN, at },
-        modelResult: f.modelState[id]?.modelResult ?? null,
-        reads: 0,
-      };
+    const stamped = changes.map((c) => ({ kind: 'agentModel', ...c, by: ADMIN, at }));
+    return queueWrites(f, path, body, stamped);
+  }
+  if (path === '/api/fleet/settings' && method === 'POST') {
+    if (!f.writesOn) return { status: 404, body: { error: 'not found' } };
+    const changes = (body.changes as Record<string, unknown>[] | undefined) ?? [];
+    if (changes.length === 0 || changes.some((c) => typeof c.kind !== 'string')) {
+      f.writeSent.push({ path, body });
+      return { status: 400, body: { error: 'Give 1 to 20 changes.' } };
     }
-    return { status: 200, body: { changes, queued: queued.length, boxIds: queued } };
+    const at = new Date().toISOString();
+    const stamped = changes.map((c) => ({ ...c, kind: String(c.kind), by: ADMIN, at }));
+    return queueWrites(f, path, body, stamped);
   }
   if (path === '/api/fleet/keys' && method === 'POST') {
     if (!f.keysOn) return { status: 404, body: { error: 'not found' } };

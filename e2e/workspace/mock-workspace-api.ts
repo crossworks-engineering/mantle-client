@@ -984,7 +984,9 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     method: string,
   ): Promise<boolean> => {
     const patch = /^\/api\/users\/([0-9a-f-]{36})$/.exec(path);
-    if (!path.startsWith('/api/fleet') && !(patch && method === 'PATCH')) return false;
+    // The pool list too: the Fleet's pool entry form reads it.
+    const fleetPath = path.startsWith('/api/fleet') || path === '/api/model-pools';
+    if (!fleetPath && !(patch && method === 'PATCH')) return false;
     const body =
       method === 'GET' || method === 'DELETE'
         ? {}

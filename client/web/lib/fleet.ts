@@ -5,7 +5,7 @@
  * GET /api/fleet answers; dates arrive as ISO strings. Pure, so it is
  * unit-tested.
  */
-import type { FleetModelJob, FleetModelResult } from './fleet-models';
+import type { FleetWriteJob, FleetWriteResult } from './fleet-writes';
 
 export const FLEET_PATH = '/api/fleet';
 export const FLEET_KEY = ['fleet'];
@@ -37,11 +37,11 @@ export type FleetBox = {
   /** Phase 3: the box's time of its last good facts (the matrix holds
    *  them). Absent: a brain before phase 3. */
   factsAt?: string | null;
-  /** Phase 4: agent models waiting for the control service (no secret).
-   *  Absent: a brain before phase 4. */
-  modelJob?: FleetModelJob | null;
-  /** Phase 4: the box's answer to the last model job, per change. */
-  modelResult?: FleetModelResult | null;
+  /** Phase 4: the fleet writes waiting for the control service, in the
+   *  order asked (no secret). Null: none. Absent: a brain before them. */
+  writeJob?: FleetWriteJob | null;
+  /** Phase 4: the box's last 40 answers to fleet writes, newest last. */
+  writeResult?: FleetWriteResult | null;
 };
 
 /** A box's answer to a provider key (docs/control-center.md in the mantle

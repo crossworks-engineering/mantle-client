@@ -1,18 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiSend } from '@mantle/web-ui/api-fetch';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@mantle/web-ui/ui/alert-dialog';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import { Input } from '@mantle/web-ui/ui/input';
 import {
@@ -23,71 +12,12 @@ import {
   SelectValue,
 } from '@mantle/web-ui/ui/select';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
-import { useToast } from '@mantle/web-ui/ui/toast';
-import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
-import { boxName, type FleetBox, type FleetOverview } from '@/lib/fleet';
-import { FLEET_MATRIX_KEY } from '@/lib/fleet-matrix';
-import {
-  currentModel,
-  FLEET_MODELS_PATH,
-  MODEL_ID,
-  modelChangeText,
-  modelUpdatePending,
-  shippedSlugs,
-} from '@/lib/fleet-models';
+import { boxName, type FleetOverview } from '@/lib/fleet';
+import { currentModel, FLEET_MODELS_PATH, MODEL_ID, shippedSlugs } from '@/lib/fleet-models';
 import { BoxPicker, useBoxPick } from './fleet-box-picker';
 import { matrixQuery } from './fleet-matrix';
-import { refusalText, Section } from './fleet-section';
-
-const TONE = { ok: 'text-muted-foreground', bad: 'text-destructive-ink' } as const;
-
-/** Each box's last model job: waiting, or each change's answer. */
-function ModelStates({ boxes }: { boxes: FleetBox[] }) {
-  const rows = boxes.filter((b) => b.modelJob || b.modelResult);
-  if (rows.length === 0) return null;
-  return (
-    <ul
-      className="divide-y divide-border rounded-md border border-border"
-      aria-label="Model updates"
-    >
-      {rows.map((b) => (
-        <li key={b.id} className="space-y-1 p-3">
-          <p className="text-sm font-medium">{boxName(b)}</p>
-          {b.modelJob ? (
-            <>
-              {b.modelJob.changes.map((c) => (
-                <p key={c.slug} className="text-xs">
-                  <span className="font-mono">{c.slug}</span> to{' '}
-                  <span className="font-mono">{c.model}</span>:{' '}
-                  <span className="text-muted-foreground">Waiting for the next run.</span>
-                </p>
-              ))}
-              <p className="text-xs text-muted-foreground">
-                By {b.modelJob.by}, {formatDateTime(b.modelJob.at)}.
-              </p>
-            </>
-          ) : (
-            <>
-              {b.modelResult!.results.map((r) => {
-                const answer = modelChangeText(r);
-                return (
-                  <p key={r.slug} className="text-xs">
-                    <span className="font-mono">{r.slug}</span> to{' '}
-                    <span className="font-mono">{r.model}</span>:{' '}
-                    <span className={TONE[answer.tone]}>{answer.text}</span>
-                  </p>
-                );
-              })}
-              <p className="text-xs text-muted-foreground">
-                By {b.modelResult!.by}, {formatDateTime(b.modelResult!.at)}.
-              </p>
-            </>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
+import { ConfirmSend, useFleetSend } from './fleet-writes';
+import { Section } from './fleet-section';
 
 /**
  * Set the model of one agent the system ships on one or many boxes. Each box
@@ -95,8 +25,6 @@ function ModelStates({ boxes }: { boxes: FleetBox[] }) {
  * the model, then sets the model field only: the provider and its key stay.
  */
 export function ModelsSection({ data, onChanged }: { data: FleetOverview; onChanged: () => void }) {
-  const toast = useToast();
-  const queryClient = useQueryClient();
   // The current models: the matrix (the same read as its section).
   const matrix = useQuery(matrixQuery);
   const rows = matrix.data?.boxes ?? [];
@@ -108,33 +36,13 @@ export function ModelsSection({ data, onChanged }: { data: FleetOverview; onChan
   const valid = MODEL_ID.test(typed);
   const { picked, setPicked, chosen, count } = useBoxPick(data.boxes);
   const [confirming, setConfirming] = useState(false);
-  const [pending, setPending] = useState(false);
+  const { pending, send } = useFleetSend(FLEET_MODELS_PATH, onChanged);
 
-  // When the last job is answered, read the matrix again: it shows the new models.
-  const waiting = modelUpdatePending(data.boxes);
-  const wasWaiting = useRef(waiting);
-  useEffect(() => {
-    if (wasWaiting.current && !waiting) {
-      void queryClient.invalidateQueries({ queryKey: FLEET_MATRIX_KEY });
-    }
-    wasWaiting.current = waiting;
-  }, [waiting, queryClient]);
-
-  const send = async () => {
-    setPending(true);
-    try {
-      await apiSend(FLEET_MODELS_PATH, 'POST', {
-        changes: [{ slug: agent, model: typed }],
-        boxIds: chosen.map((b) => b.id),
-      });
+  const confirm = async () => {
+    const ids = chosen.map((b) => b.id);
+    if (await send([{ slug: agent, model: typed }], ids, 'Could not send the model.')) {
       setModel('');
       setConfirming(false);
-      toast.success(`Sent to ${count}. Each box sets it at its next run.`);
-      onChanged();
-    } catch (err) {
-      toast.error(refusalText(err, 'Could not send the model.'));
-    } finally {
-      setPending(false);
     }
   };
 
@@ -227,32 +135,17 @@ export function ModelsSection({ data, onChanged }: { data: FleetOverview; onChan
           </FieldGroup>
         </form>
       )}
-      <ModelStates boxes={data.boxes} />
-      <AlertDialog open={confirming} onOpenChange={(o) => !o && !pending && setConfirming(false)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Set {agent} to {typed} on {count}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Each box sets the model if its model policy allows it. A box that refuses keeps the
-              model it had.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={(e) => {
-                e.preventDefault();
-                void send();
-              }}
-            >
-              Set model
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmSend
+        open={confirming}
+        pending={pending}
+        title={`Set ${agent} to ${typed} on ${count}?`}
+        action="Set model"
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void confirm()}
+      >
+        Each box sets the model if its model policy allows it. A box that refuses keeps the model it
+        had. See each answer under Fleet changes.
+      </ConfirmSend>
     </Section>
   );
 }

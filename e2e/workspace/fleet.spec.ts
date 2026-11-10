@@ -319,19 +319,22 @@ test('phase 3: Details reads one box and lists each agent and worker', async ({ 
   expect(api.fleet.matrixReads).not.toContain(FLEET_BOX_B.id);
 });
 
-test('phase 4: a brain before the model update offers no model section', async ({ page }) => {
+test('phase 4: a brain before the fleet writes offers none of them', async ({ page }) => {
   api.fleet = withMatrix(newMockFleet());
   await signIn(page, 'admin');
   await page.goto(PATH);
   const main = page.getByRole('main');
   await expect(main.getByRole('heading', { name: 'Fleet matrix' })).toBeVisible();
-  await expect(main.getByRole('heading', { name: 'Agent models' })).toHaveCount(0);
+  for (const name of ['Agent models', 'Pool entry', 'Update notice', 'Worker group']) {
+    await expect(main.getByRole('heading', { name })).toHaveCount(0);
+  }
+  await expect(main.getByRole('heading', { name: 'Fleet changes' })).toHaveCount(0);
 });
 
 test('phase 4: set a shipped agent model on every box, see each answer', async ({ page }) => {
   const fleet = withMatrix(newMockFleet());
-  fleet.modelsOn = true;
-  fleet.modelAnswers[FLEET_BOX_B.id] = { coder: { ok: false, reason: 'policy' } };
+  fleet.writesOn = true;
+  fleet.writeAnswers[FLEET_BOX_B.id] = { coder: { ok: false, reason: 'policy' } };
   api.fleet = fleet;
   await signIn(page, 'admin');
   await page.goto(PATH);
@@ -352,17 +355,20 @@ test('phase 4: set a shipped agent model on every box, see each answer', async (
   const dialog = page.getByRole('alertdialog');
   await expect(dialog.getByText('Set coder to vendor/new-model on 2 boxes?')).toBeVisible();
   await dialog.getByRole('button', { name: 'Set model' }).click();
-  expect(fleet.modelSent).toEqual([
+  expect(fleet.writeSent).toEqual([
     {
-      changes: [{ slug: 'coder', model: 'vendor/new-model' }],
-      boxIds: [FLEET_BOX.id, FLEET_BOX_B.id],
+      path: '/api/fleet/models',
+      body: {
+        changes: [{ slug: 'coder', model: 'vendor/new-model' }],
+        boxIds: [FLEET_BOX.id, FLEET_BOX_B.id],
+      },
     },
   ]);
   await expect(field).toHaveValue('');
 
-  const updates = main.getByRole('list', { name: 'Model updates' });
-  const a = updates.getByRole('listitem').filter({ hasText: 'Box A' });
-  const b = updates.getByRole('listitem').filter({ hasText: 'box-b.example.invalid' });
+  const changes = main.getByRole('list', { name: 'Fleet changes' });
+  const a = changes.getByRole('listitem').filter({ hasText: 'Box A' });
+  const b = changes.getByRole('listitem').filter({ hasText: 'box-b.example.invalid' });
   await expect(a.getByText('Set. It was model-a.')).toBeVisible({ timeout: 15_000 });
   await expect(
     b.getByText('The model policy of this box does not allow it. It keeps model-a.'),
@@ -374,7 +380,7 @@ test('phase 4: set a shipped agent model on every box, see each answer', async (
 
 test('phase 4: one box picked sends that box only', async ({ page }) => {
   const fleet = withMatrix(newMockFleet());
-  fleet.modelsOn = true;
+  fleet.writesOn = true;
   api.fleet = fleet;
   await signIn(page, 'admin');
   await page.goto(PATH);
@@ -383,12 +389,131 @@ test('phase 4: one box picked sends that box only', async ({ page }) => {
   await main.locator('#fleet-model-box-' + FLEET_BOX_B.id).click();
   await main.getByRole('button', { name: 'Set model on 1 box' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Set model' }).click();
-  await expect.poll(() => fleet.modelSent.length).toBe(1);
-  expect(fleet.modelSent[0]).toEqual({
+  await expect.poll(() => fleet.writeSent.length).toBe(1);
+  expect(fleet.writeSent[0]!.body).toEqual({
     changes: [{ slug: 'coder', model: 'vendor/other' }],
     boxIds: [FLEET_BOX_B.id],
   });
-  const updates = main.getByRole('list', { name: 'Model updates' });
-  await expect(updates.getByRole('listitem')).toHaveCount(1);
-  await expect(updates.getByText('Set. It was model-a.')).toBeVisible({ timeout: 15_000 });
+  const changes = main.getByRole('list', { name: 'Fleet changes' });
+  await expect(changes.getByRole('listitem')).toHaveCount(1);
+  await expect(changes.getByText('Set. It was model-a.')).toBeVisible({ timeout: 15_000 });
+});
+
+test('phase 4: a pool entry and the update notice, each with its own box pick', async ({
+  page,
+}) => {
+  const fleet = withMatrix(newMockFleet());
+  fleet.writesOn = true;
+  fleet.writeAnswers[FLEET_BOX_B.id] = { poolEntry: { ok: false, reason: 'fit' } };
+  api.fleet = fleet;
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'Pool entry' })).toBeVisible();
+
+  // A pool entry: the pool from the brain's list, two routes, every box.
+  await main.locator('#fleet-pool-pool').click();
+  await page.getByRole('option', { name: 'Read images' }).click();
+  await main.locator('#fleet-pool-name').fill('Model A');
+  await main.locator('#fleet-pool-vendor').fill('Vendor');
+  await main.locator('#fleet-pool-provider-0').fill('OpenRouter');
+  await main.locator('#fleet-pool-model-0').fill('has space');
+  await expect(main.getByText('Each route needs a provider id and a model id')).toBeVisible();
+  await main.locator('#fleet-pool-model-0').fill('vendor/a');
+  await main.getByRole('button', { name: 'Add route' }).click();
+  await main.locator('#fleet-pool-provider-1').fill('direct');
+  await main.locator('#fleet-pool-model-1').fill('a-1');
+  await main.locator('#fleet-pool-box-' + FLEET_BOX.id).click();
+  await main.locator('#fleet-pool-box-' + FLEET_BOX_B.id).click();
+  await main.getByRole('button', { name: 'Send pool entry to 2 boxes' }).click();
+  let dialog = page.getByRole('alertdialog');
+  await expect(dialog.getByText('Set Model A in Read images on 2 boxes?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Send pool entry' }).click();
+  await expect.poll(() => fleet.writeSent.length).toBe(1);
+  expect(fleet.writeSent[0]).toEqual({
+    path: '/api/fleet/settings',
+    body: {
+      changes: [
+        {
+          kind: 'poolEntry',
+          pool: 'vision',
+          name: 'Model A',
+          vendor: 'Vendor',
+          routes: [
+            { provider: 'openrouter', model: 'vendor/a' },
+            { provider: 'direct', model: 'a-1' },
+          ],
+        },
+      ],
+      boxIds: [FLEET_BOX.id, FLEET_BOX_B.id],
+    },
+  });
+  await expect(main.locator('#fleet-pool-name')).toHaveValue('');
+
+  // The update notice: on blocks every login, and the screen says so twice.
+  await expect(
+    main.getByText('On blocks every login on that box for up to an hour.'),
+  ).toBeVisible();
+  await main.locator('#fleet-notice-on').click();
+  await page.getByRole('option', { name: 'On: block every login' }).click();
+  await main.locator('#fleet-notice-box-' + FLEET_BOX.id).click();
+  await main.getByRole('button', { name: 'Turn it on for 1 box' }).click();
+  dialog = page.getByRole('alertdialog');
+  await expect(dialog.getByText('Turn the update notice on for 1 box?')).toBeVisible();
+  await expect(dialog.getByText(/Every login on each box is blocked/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Turn it on' }).click();
+  await expect.poll(() => fleet.writeSent.length).toBe(2);
+  expect(fleet.writeSent[1]!.body).toEqual({
+    changes: [{ kind: 'updateNotice', on: true }],
+    boxIds: [FLEET_BOX.id],
+  });
+
+  const changes = main.getByRole('list', { name: 'Fleet changes' });
+  const a = changes.getByRole('listitem').filter({ hasText: 'Box A' });
+  const b = changes.getByRole('listitem').filter({ hasText: 'box-b.example.invalid' });
+  await expect(a.getByText('Added at the end of the pool.')).toBeVisible({ timeout: 15_000 });
+  await expect(a.getByText('On. Logins wait on this box.')).toBeVisible({ timeout: 15_000 });
+  await expect(b.getByText(/does not fit the pool\. Nothing was set\./)).toBeVisible();
+  await expect(b.getByText('Update notice on')).toHaveCount(0);
+});
+
+test('phase 4: a worker group, and each reason in plain words', async ({ page }) => {
+  const fleet = withMatrix(newMockFleet());
+  fleet.writesOn = true;
+  fleet.writeAnswers[FLEET_BOX_B.id] = { workerGroup: { ok: false, reason: 'members' } };
+  api.fleet = fleet;
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.locator('#fleet-group-slug').fill('Review Panel');
+  await expect(main.getByText('A slug has small letters, digits, - and _ only.')).toBeVisible();
+  await main.locator('#fleet-group-slug').fill('Review-Panel');
+  await main.locator('#fleet-group-name').fill('Review panel');
+  await main.locator('#fleet-group-members').fill('Extractor, summarizer extractor');
+  await main.locator('#fleet-group-enabled').click();
+  await main.getByRole('button', { name: 'All boxes' }).last().click();
+  await main.getByRole('button', { name: 'Send worker group to 2 boxes' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog.getByText('Set worker group review-panel on 2 boxes?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Send worker group' }).click();
+  await expect.poll(() => fleet.writeSent.length).toBe(1);
+  expect(fleet.writeSent[0]!.body).toEqual({
+    changes: [
+      {
+        kind: 'workerGroup',
+        slug: 'review-panel',
+        name: 'Review panel',
+        members: ['extractor', 'summarizer'],
+        enabled: false,
+      },
+    ],
+    boxIds: [FLEET_BOX.id, FLEET_BOX_B.id],
+  });
+  const changes = main.getByRole('list', { name: 'Fleet changes' });
+  const a = changes.getByRole('listitem').filter({ hasText: 'Box A' });
+  const b = changes.getByRole('listitem').filter({ hasText: 'box-b.example.invalid' });
+  await expect(a.getByText('Made.')).toBeVisible({ timeout: 15_000 });
+  await expect(
+    b.getByText('A member is not an enabled worker on this box. Nothing was set.'),
+  ).toBeVisible();
 });

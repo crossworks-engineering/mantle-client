@@ -34,8 +34,9 @@ The screen is at Admin > Company sign-in (`/admin/company-sign-in`) since
 2026-11-09. The old path, `/settings/company-sign-in`, redirects there. On a
 Control Center the Admin group also holds Fleet (`/admin/fleet`,
 `lib/fleet.ts`): the boxes, the fleet bans, the provider keys, the fleet
-matrix (`lib/fleet-matrix.ts`) and the agent models (`lib/fleet-models.ts`;
-`docs/control-center.md` in the mantle repo).
+matrix (`lib/fleet-matrix.ts`), the agent models (`lib/fleet-models.ts`), and
+the pool entry, update notice and worker group writes with each box's answers
+(`lib/fleet-writes.ts`; `docs/control-center.md` in the mantle repo).
 
 - The sidebar offers the entry only to a login with the users area, while
   `GET /api/users/sso-setup` answers a mode other than `off`. The search palette
