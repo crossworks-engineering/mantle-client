@@ -34,14 +34,20 @@ import { TaskForm, taskToForm, type TaskPayload } from './task-form';
 import { PRIORITY_BADGE, STATUSES, STATUS_BADGE, STATUS_LABEL, type Status } from './task-meta';
 import { TaskTodos } from './task-todos';
 import { TaskFilesCard, useTaskFiles } from './task-files';
+import { TaskSendCard, TaskSubmissionCard, useSubmitTargets } from './task-submit';
+import type { SubmissionKind, TaskSubmission } from '@/lib/task-submit';
 import type { TaskRow as WireTaskRow, TaskTodo } from '@mantle/client-types';
 
 // Wire shape is the GET /api/tasks mapper's output — single source of truth.
 // Re-exported so the list client keeps importing it from here; a drift between
 // the @mantle/content row and what this screen renders is now a compile error.
-// `statusBeforeDone` (the status a reopen restores) is optional in the brain's
+// `statusBeforeDone` (the status a reopen restores) and `submission` (a task
+// sent to Admin, or the copy Admin received) are optional in the brain's
 // contract but newer than the pinned one: drop the widening at the pin bump.
-export type TaskRow = WireTaskRow & { statusBeforeDone?: Status | null };
+export type TaskRow = WireTaskRow & {
+  statusBeforeDone?: Status | null;
+  submission?: TaskSubmission;
+};
 export type { Status };
 
 /** A partial task write (status move, todos edit) — subset of the form payload. */
@@ -65,10 +71,16 @@ export function TaskDetail({
   onSave,
   onPatch,
   onDelete,
+  onReplace,
+  sendKind,
   editing: editingProp,
   onEditingChange,
 }: {
   task: TaskRow;
+  /** The brain's row after a send or a reply, to put in place of this one. */
+  onReplace: (task: TaskRow) => void;
+  /** The kind the Send card starts on (a task made from "Report"). */
+  sendKind?: SubmissionKind;
   /** Edit mode from the task's address (`?edit=1`); internal when absent. */
   editing?: boolean;
   onEditingChange?: (editing: boolean) => void;
@@ -89,6 +101,7 @@ export function TaskDetail({
   const overdue = !!task.dueAt && new Date(task.dueAt) < new Date() && !done;
   const toast = useToast();
   const { files, uploading, upload, remove } = useTaskFiles(task.id);
+  const submitTargets = useSubmitTargets();
   const rootRef = useRef<HTMLDivElement>(null);
   const [dropping, setDropping] = useState(false);
 
@@ -333,6 +346,18 @@ export function TaskDetail({
           infoLabel="About this task"
         />
         <div className="space-y-4 p-6">
+          {task.submission && (
+            <TaskSubmissionCard
+              taskId={task.id}
+              submission={task.submission}
+              targets={submitTargets}
+              onReplied={(t) => {
+                toast.success('Reply sent');
+                onReplace(t);
+              }}
+            />
+          )}
+
           {/* No picture loads from a body: a request's task holds a client's
             or a member's words (client tier audit U5). */}
           {task.body && (
@@ -350,6 +375,18 @@ export function TaskDetail({
             onUpload={upload}
             onRemove={(fileId) => void remove(fileId)}
           />
+
+          {!task.submission && submitTargets.length > 0 && (
+            <TaskSendCard
+              taskId={task.id}
+              targets={submitTargets}
+              initialKind={sendKind}
+              onSent={(t) => {
+                toast.success('Task sent');
+                onReplace(t);
+              }}
+            />
+          )}
 
           <TaskTodos todos={task.todos} onChange={(todos) => void onPatch({ todos })} />
 

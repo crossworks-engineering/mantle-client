@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
+  Bug,
   Check,
   CircleCheck,
   ListTodo,
@@ -61,9 +62,13 @@ import {
   type Status,
 } from './task-meta';
 import { play } from '@/lib/sounds/play';
+import { SubmissionKindPicker, useSubmitTargets } from './task-submit';
+import type { SubmissionKind } from '@/lib/task-submit';
 
-/** `in`: "New task inside" a tree folder, where it goes once saved. */
-type Selection = { mode: 'create'; in?: TreeFolder } | { mode: 'view'; id: string } | null;
+/** `in`: "New task inside" a tree folder, where it goes once saved.
+ *  `kind`: a report (Report a bug or request), the kind its Send starts on. */
+type Selection =
+  { mode: 'create'; in?: TreeFolder; kind?: SubmissionKind } | { mode: 'view'; id: string } | null;
 
 type TasksListResponse = { tasks: TaskRow[]; total: number; page: number; pageSize: number };
 
@@ -154,6 +159,10 @@ export function TasksClient() {
   // form beside a board you had only just switched to.
   const [sel, setSel] = useState<Selection>(urlSelected ? { mode: 'view', id: urlSelected } : null);
   const { fileNew, confirm: fileConfirm } = useFileNewItem('tasks', 'task');
+  // Report a bug or request: only where the box can send a task.
+  const submitTargets = useSubmitTargets();
+  // The kind a report was made with, by task, for its Send card.
+  const [sendKinds, setSendKinds] = useState<Record<string, SubmissionKind>>({});
 
   // The tree's rows are not tasks, so the open one is fetched on its own.
   const openTaskId = showTree && sel?.mode === 'view' ? sel.id : null;
@@ -251,6 +260,7 @@ export function TasksClient() {
 
   const createTask = async (payload: TaskPayload) => {
     const fileIn = sel?.mode === 'create' ? sel.in : undefined;
+    const reportKind = sel?.mode === 'create' ? sel.kind : undefined;
     let task: TaskRow;
     try {
       ({ task } = await apiSend<{ task: TaskRow }>('/api/tasks', 'POST', payload));
@@ -261,6 +271,7 @@ export function TasksClient() {
       return;
     }
     setTasks((prev) => [task, ...prev]);
+    if (reportKind) setSendKinds((prev) => ({ ...prev, [task.id]: reportKind }));
     // Seed the by-id fetch so the tree's detail opens without a round trip.
     queryClient.setQueryData(['tasks', task.id], task);
     setSel({ mode: 'view', id: task.id });
@@ -332,6 +343,14 @@ export function TasksClient() {
     if (t.status === 'done') return void reopenTask(t.id, t.statusBeforeDone);
     statusBeforeDone.current.set(t.id, t.status);
     void patchTask(t.id, { status: 'done' });
+  };
+
+  /** A send or a reply answers with the brain's row: show it now, then read
+   *  again, so the one-task read (with its files) and the lists catch up. */
+  const replaceTask = (task: TaskRow) => {
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+    void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    void queryClient.invalidateQueries({ queryKey: treeKey('tasks') });
   };
 
   const moveTask = (m: BoardMove) => void patchTask(m.taskId, { status: m.status, rank: m.rank });
@@ -411,6 +430,23 @@ export function TasksClient() {
     </ToggleGroup>
   );
 
+  // Report a bug or request: the normal new task, with a kind, so a person
+  // can write it, add files and send it. Text, so it sits left of the
+  // icon-only view toggle.
+  const reportButton =
+    submitTargets.length > 0 ? (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        aria-label="Report a bug or request"
+        title="Report a bug or request"
+        onClick={() => setSel({ mode: 'create', kind: 'bug' })}
+      >
+        <Bug /> Report
+      </Button>
+    ) : null;
+
   // ONE detail pane, shared by the list and the board. The board used to get a
   // right-hand Sheet instead, which meant two implementations of the same three
   // states and a create form that looked different depending on the view you
@@ -422,9 +458,24 @@ export function TasksClient() {
           <div className="flex items-center gap-2">
             <ListTodo className="size-5 text-primary-ink" aria-hidden />
             <h2 className="text-lg font-semibold">
-              {sel.in ? `New task in “${sel.in.name}”` : 'New task'}
+              {sel.kind
+                ? 'Report a bug or request'
+                : sel.in
+                  ? `New task in “${sel.in.name}”`
+                  : 'New task'}
             </h2>
           </div>
+          {sel.kind && (
+            <div className="space-y-2">
+              <SubmissionKindPicker
+                value={sel.kind}
+                onChange={(kind) => setSel({ ...sel, kind })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Save the task, add screenshots or logs, then send it.
+              </p>
+            </div>
+          )}
           <TaskForm
             initial={emptyTaskForm()}
             submitLabel="Save task"
@@ -446,6 +497,8 @@ export function TasksClient() {
         }}
         onPatch={(patch) => patchTask(selected.id, patch)}
         onDelete={() => removeTask(selected.id)}
+        onReplace={replaceTask}
+        sendKind={sendKinds[selected.id]}
         editing={address.id === selected.id && address.editing}
         onEditingChange={(on) => address.open(selected.id, on)}
       />
@@ -492,6 +545,7 @@ export function TasksClient() {
             </SelectContent>
           </Select>
           <div className="ml-auto flex items-center gap-2">
+            {reportButton}
             {viewToggle}
             <Button type="button" size="sm" onClick={() => setSel({ mode: 'create' })}>
               <Plus /> New
@@ -562,6 +616,7 @@ export function TasksClient() {
                 >
                   <Archive /> Archived
                 </Button>
+                {reportButton}
                 {viewToggle}
               </div>
             </div>
@@ -608,6 +663,7 @@ export function TasksClient() {
                 Tasks
               </h2>
               <div className="flex items-center gap-2">
+                {reportButton}
                 {viewToggle}
                 <Button type="button" size="sm" onClick={() => setSel({ mode: 'create' })}>
                   <Plus /> New
