@@ -6,15 +6,15 @@ before it, nothing here shows, and the sign-in screen stays as it was.
 
 ## Where each thing is
 
-| What the person sees                                        | Code                                                                       |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
-| "Sign in with {label}" beside the password form             | `client/web/app/login/login-client.tsx`, `components/oidc/`                |
-| The one dismissible offer card                              | `components/oidc/offer-card.tsx`, in the shell's bottom-right stack        |
-| Settings > Profile; the account menu with no Profile screen | `components/oidc/company-sign-in-section.tsx`                              |
-| Required mode: the one link step                            | `components/oidc/link-step.tsx`: at sign-in, invite, and `link-gate.tsx`   |
-| A fresh sign-in in place of the password for a key          | `components/api-access/api-access-client.tsx`                              |
-| The page every flow ends on                                 | `client/web/app/auth/oidc/`                                                |
-| The setup screen, Admin > Company sign-in                   | `client/web/app/(app)/admin/company-sign-in/`, `lib/sso-setup.ts`          |
+| What the person sees                                        | Code                                                                     |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| "Sign in with {label}" beside the password form             | `client/web/app/login/login-client.tsx`, `components/oidc/`              |
+| The one dismissible offer card                              | `components/oidc/offer-card.tsx`, in the shell's bottom-right stack      |
+| Settings > Profile; the account menu with no Profile screen | `components/oidc/company-sign-in-section.tsx`                            |
+| Required mode: the one link step                            | `components/oidc/link-step.tsx`: at sign-in, invite, and `link-gate.tsx` |
+| A fresh sign-in in place of the password for a key          | `components/api-access/api-access-client.tsx`                            |
+| The page every flow ends on                                 | `client/web/app/auth/oidc/`                                              |
+| The setup screen, Admin > Company sign-in                   | `client/web/app/(app)/admin/company-sign-in/`, `lib/sso-setup.ts`        |
 
 The MCP consent page is the brain's own page: its Confirm button runs the fresh
 sign-in itself. The client only brings the person back to it after a sign-in
