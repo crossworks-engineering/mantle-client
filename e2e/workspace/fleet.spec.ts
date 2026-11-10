@@ -309,9 +309,9 @@ test('phase 3: Details reads one box and lists each agent and worker', async ({ 
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Box A' })).toBeVisible();
   await expect(dialog.getByText('Agents (3)')).toBeVisible();
-  await expect(dialog.getByText('coder', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('Own assistant', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('Custom agent', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('coder · agent', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Own assistant · assistant', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Custom agent · agent', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Off', { exact: true })).toBeVisible();
   await expect(dialog.getByText('AI workers (1)')).toBeVisible();
   await expect(dialog.getByText('extraction', { exact: true })).toBeVisible();
