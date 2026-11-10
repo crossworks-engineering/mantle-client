@@ -32,6 +32,9 @@ export type FleetBox = {
   keyPending?: { service: string; by: string; at: string } | null;
   /** Phase 2: the box's answer to the last key sent. */
   keyResult?: FleetKeyResult | null;
+  /** Phase 3: the box's time of its last good facts (the matrix holds
+   *  them). Absent: a brain before phase 3. */
+  factsAt?: string | null;
 };
 
 /** A box's answer to a provider key (docs/control-center.md in the mantle

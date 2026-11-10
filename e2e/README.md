@@ -70,7 +70,9 @@ else is a plain 404.
   redirect from the old Settings path (`mock-sso-setup.ts`).
 - `fleet.spec.ts`: Admin > Fleet on a Control Center only: the boxes, a ban
   previewed then made, Lift and Retire, an owner match; phase 2's provider
-  key on one or many boxes (each box's answer, never the key); and on Users,
+  key on one or many boxes (each box's answer, never the key); phase 3's
+  fleet matrix (each box's facts, old facts marked, one box's Details read
+  with `?box=`); and on Users,
   the Archived list, Enable on an archived login, and Disable again
   (`mock-fleet.ts`).
 - `admin-shell.spec.ts`: the full nav with Settings > Users, the owner Pages

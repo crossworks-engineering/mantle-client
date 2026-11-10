@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { LOGINS, signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
-import { FLEET_BOX, FLEET_BOX_B, newMockFleet } from './mock-fleet';
+import { FLEET_BOX, FLEET_BOX_B, newMockFleet, withMatrix } from './mock-fleet';
 import { rowsInAnyScope } from './shell-nav';
 
 /**
@@ -256,4 +256,65 @@ test('phase 2: one box picked sends that box only', async ({ page }) => {
   await page.getByRole('alertdialog').getByRole('button', { name: 'Set key' }).click();
   await expect.poll(() => api.fleet!.keySent.length).toBe(1);
   expect(api.fleet.keySent[0]!.boxIds).toEqual([FLEET_BOX.id]);
+});
+
+test('phase 3: a brain before the matrix offers no matrix, and is not asked', async ({ page }) => {
+  api.fleet = newMockFleet();
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Box A', { exact: true })).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Fleet matrix' })).toHaveCount(0);
+  await page.waitForTimeout(1000);
+  expect(api.fleet.matrixReads).toEqual([]);
+});
+
+test('phase 3: the matrix shows each box, and old facts say so', async ({ page }) => {
+  api.fleet = withMatrix(newMockFleet());
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const matrix = page.getByRole('list', { name: 'Fleet matrix' });
+  await expect(matrix).toBeVisible();
+  const a = matrix.getByRole('listitem').filter({ hasText: 'Box A' }).first();
+  await expect(a.getByText('Healthy', { exact: true })).toBeVisible();
+  await expect(a.getByText('v0.500.42')).toBeVisible();
+  await expect(a.getByText(/^Read /)).toBeVisible();
+  await expect(a.getByText(/today · .* in 30 days/)).toBeVisible();
+  await expect(a.getByText('Required', { exact: true })).toBeVisible();
+  await expect(a.getByText('3 agents (1 off), 1 worker')).toBeVisible();
+  await expect(a.getByText('3 workspaces, 2 apps, 4 logins')).toBeVisible();
+  const models = a.getByRole('list', { name: 'Models in use' });
+  await expect(models.getByText('openrouter · model-a ×2')).toBeVisible();
+  await expect(models.getByText('openrouter · model-c')).toBeVisible();
+  // An agent that is off runs no model.
+  await expect(models.getByText(/model-b/)).toHaveCount(0);
+
+  // Box B: its last read failed; the old facts stay and say they may be old.
+  const b = matrix.getByRole('listitem').filter({ hasText: 'box-b.example.invalid' }).first();
+  await expect(b.getByText('Down', { exact: true })).toBeVisible();
+  await expect(
+    b.getByText(/The box holds another key\. Copy the key line again\. This may be out of date\./),
+  ).toBeVisible();
+  await expect(b.getByText(/^Failed .*No good backup yet\.$/)).toBeVisible();
+  expect(api.fleet.matrixReads).toContain('');
+});
+
+test('phase 3: Details reads one box and lists each agent and worker', async ({ page }) => {
+  api.fleet = withMatrix(newMockFleet());
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const matrix = page.getByRole('list', { name: 'Fleet matrix' });
+  const a = matrix.getByRole('listitem').filter({ hasText: 'Box A' }).first();
+  await a.getByRole('button', { name: 'Details' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Box A' })).toBeVisible();
+  await expect(dialog.getByText('Agents (3)')).toBeVisible();
+  await expect(dialog.getByText('coder', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Own assistant', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Custom agent', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Off', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('AI workers (1)')).toBeVisible();
+  await expect(dialog.getByText('extraction', { exact: true })).toBeVisible();
+  await expect.poll(() => api.fleet!.matrixReads).toContain(FLEET_BOX.id);
+  expect(api.fleet.matrixReads).not.toContain(FLEET_BOX_B.id);
 });

@@ -91,7 +91,113 @@ export type MockFleet = {
   keyAnswers: Record<string, { ok: boolean; reason: string | null }>;
   /** Every key call body the brain was sent. */
   keySent: Record<string, unknown>[];
+  /** Phase 3: false is a brain before the fleet matrix, whose box rows have
+   *  no factsAt and which has no matrix route. */
+  matrixOn: boolean;
+  /** Each box's last good facts and the last read's reason, by box id. */
+  facts: Record<string, { facts: Facts | null; factsReason: string | null }>;
+  /** The `box` query of every matrix read ('' for the whole fleet). */
+  matrixReads: string[];
 };
+
+type Facts = Record<string, unknown> & { at: string };
+
+/** Box A's facts: a healthy box, read just now. */
+export function boxAFacts(at: string): Facts {
+  return {
+    schema: 1,
+    at,
+    status: {
+      schema: 1,
+      ts: at,
+      build: { version: '0.500.42', gitSha: null, buildTime: null },
+      process: { uptimeSec: 100, heapUsedBytes: 1, rssBytes: 1 },
+      host: {
+        scope: 'host',
+        cpuLoadPct: 12,
+        loadAvg: [0.1, 0.1, 0.1],
+        cores: 4,
+        mem: { usedBytes: 4, totalBytes: 10, usedPct: 40 },
+        disk: { usedBytes: 3, totalBytes: 10, freeBytes: 7, usedPct: 30 },
+      },
+      postgres: { up: true, dbSizeBytes: 1, connections: 5, cacheHitPct: 99 },
+      services: {
+        objectStore: true,
+        parser: { up: true, running: 0, queued: 0 },
+        browser: null,
+        documents: true,
+        embedder: null,
+        sandboxes: true,
+        network: true,
+      },
+      spend: {
+        last24hMicroUsd: 1_250_000,
+        last7dMicroUsd: 8_000_000,
+        last30dMicroUsd: 31_500_000,
+        traces24h: 40,
+        turns24h: 12,
+        errors24h: 0,
+      },
+      capacity: null,
+      extraction: null,
+      logins: { admin: 1, member: 3, disabled: 0, total: 4 },
+      degraded: [],
+    },
+    signIn: 'required',
+    agents: [
+      {
+        slug: 'coder',
+        role: 'agent',
+        provider: 'openrouter',
+        model: 'model-a',
+        enabled: true,
+        assigned: false,
+      },
+      {
+        slug: null,
+        role: 'assistant',
+        provider: 'openrouter',
+        model: 'model-a',
+        enabled: true,
+        assigned: true,
+      },
+      {
+        slug: null,
+        role: 'agent',
+        provider: 'openai',
+        model: 'model-b',
+        enabled: false,
+        assigned: false,
+      },
+    ],
+    workers: [{ kind: 'extraction', provider: 'openrouter', model: 'model-c', enabled: true }],
+    counts: { workspaces: 3, apps: 2 },
+    backup: { lastRunAt: at, ok: true, lastSuccessAt: at },
+  };
+}
+
+/** Turns the matrix on: Box A read just now, Box B's last read failed
+ *  (`sig`) and its old facts stay, with a failed backup. */
+export function withMatrix(f: MockFleet): MockFleet {
+  const old = boxAFacts(AT);
+  f.matrixOn = true;
+  f.facts = {
+    [FLEET_BOX.id]: { facts: boxAFacts(new Date().toISOString()), factsReason: null },
+    [FLEET_BOX_B.id]: {
+      facts: {
+        ...old,
+        signIn: 'off',
+        backup: { lastRunAt: AT, ok: false, lastSuccessAt: null },
+        status: {
+          ...(old.status as object),
+          postgres: { up: false, dbSizeBytes: null, connections: null, cacheHitPct: null },
+        },
+      },
+      factsReason: 'sig',
+    },
+  };
+  return f;
+}
 
 type KeyResult = { service: string; ok: boolean; reason: string | null; by: string; at: string };
 
@@ -106,6 +212,9 @@ export const newMockFleet = (): MockFleet => ({
   keyState: {},
   keyAnswers: {},
   keySent: [],
+  matrixOn: false,
+  facts: {},
+  matrixReads: [],
 });
 
 /** The control service's run: a box that showed its key job once answers. */
@@ -137,13 +246,16 @@ function overview(f: MockFleet) {
       'MANTLE_CONTROL_CENTER=https://cc.example.invalid',
       'MANTLE_CONTROL_CENTER_KEY=ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
     ],
-    boxes: f.keysOn
-      ? f.boxes.map((b) => ({
-          ...b,
-          keyPending: f.keyState[b.id]?.keyPending ?? null,
-          keyResult: f.keyState[b.id]?.keyResult ?? null,
-        }))
-      : f.boxes,
+    boxes: f.boxes.map((b) => ({
+      ...b,
+      ...(f.keysOn
+        ? {
+            keyPending: f.keyState[b.id]?.keyPending ?? null,
+            keyResult: f.keyState[b.id]?.keyResult ?? null,
+          }
+        : {}),
+      ...(f.matrixOn ? { factsAt: f.facts[b.id]?.facts?.at ?? null } : {}),
+    })),
     bans: f.bans,
     results: f.results,
   };
@@ -160,9 +272,27 @@ export function fleetAnswer(
   path: string,
   method: string,
   body: Record<string, unknown>,
+  query: URLSearchParams = new URLSearchParams(),
 ): { status: number; body: unknown } | null {
   if (!path.startsWith('/api/fleet')) return null;
   if (!f) return { status: 404, body: { error: 'not found' } };
+  if (path === '/api/fleet/matrix' && method === 'GET') {
+    if (!f.matrixOn) return { status: 404, body: { error: 'not found' } };
+    const one = query.get('box');
+    f.matrixReads.push(one ?? '');
+    const boxes = f.boxes
+      .filter((b) => one === null || b.id === one)
+      .map((b) => ({
+        id: b.id,
+        url: b.url,
+        label: b.label,
+        lastOkAt: b.lastOkAt,
+        lastReason: b.lastReason,
+        facts: f.facts[b.id]?.facts ?? null,
+        factsReason: f.facts[b.id]?.factsReason ?? null,
+      }));
+    return { status: 200, body: { boxes } };
+  }
   if (path === '/api/fleet' && method === 'GET') {
     runKeyJobs(f);
     return { status: 200, body: overview(f) };

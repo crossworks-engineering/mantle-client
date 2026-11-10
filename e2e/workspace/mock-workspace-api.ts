@@ -1002,7 +1002,8 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       }
       return (json(res, 200, { ok: true }), true);
     }
-    const answer = fleetAnswer(state.fleet, path, method, body);
+    const query = new URL(req.url ?? '/', MOCK_API_ORIGIN).searchParams;
+    const answer = fleetAnswer(state.fleet, path, method, body, query);
     if (!answer) return false;
     return (json(res, answer.status, answer.body), true);
   };

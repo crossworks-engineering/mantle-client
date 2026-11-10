@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { ApiError, apiSend } from '@mantle/web-ui/api-fetch';
@@ -65,27 +65,10 @@ import {
   type FleetPreview,
   type FleetResult,
 } from '@/lib/fleet';
+import { fleetMatrixOffered } from '@/lib/fleet-matrix';
 import { fleetQuery } from '@/lib/use-fleet-shown';
-
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3 border-b border-border p-4 md:p-5">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
+import { MatrixSection } from './fleet-matrix';
+import { Section } from './fleet-section';
 
 /** The brain's own words for a refusal. */
 function refusalText(err: unknown, fallback: string): string {
@@ -917,6 +900,8 @@ export function FleetClient() {
       )}
       <ServiceSection data={data} />
       <BoxesSection boxes={data.boxes} onChanged={refresh} />
+      {/* Phase 3: a brain before it has no factsAt on its boxes, and no matrix route. */}
+      {fleetMatrixOffered(data.boxes) && <MatrixSection />}
       <BansSection data={data} onChanged={refresh} />
       {/* Phase 2: a brain before it has no key fields on its boxes, and no key call. */}
       {fleetKeysOffered(data.boxes) && <KeysSection data={data} onChanged={refresh} />}
