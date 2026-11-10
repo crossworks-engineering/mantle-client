@@ -387,6 +387,126 @@ test.describe('tasks', () => {
     }
   });
 
+  test('submit: Send to each target, the sent line and reply, a Reply on a received copy', async ({
+    ownerApi,
+    ownerPage,
+  }) => {
+    // The screen, not the brain, as the files spec: the submit routes are
+    // answered here, and the one-task read is the real one with
+    // `submission` added once the spec has one for it.
+    const marker = `E2E submit ${Date.now()}`;
+    const mine = await createTask(ownerApi, { title: `${marker} mine` });
+    const copy = await createTask(ownerApi, { title: `${marker} copy` });
+    const at = '2026-11-10T09:00:00.000Z';
+    const submissions: Record<string, Record<string, unknown>> = {
+      [copy.id]: {
+        side: 'received',
+        kind: 'feature',
+        from: {
+          box: { id: 'b1', name: 'Plant box' },
+          taskId: 't1',
+          by: { name: 'Ann', email: 'ann@example.com' },
+        },
+        receivedAt: at,
+      },
+    };
+    const sent: unknown[] = [];
+    const replies: unknown[] = [];
+
+    await ownerPage.route(
+      (url) => url.pathname === '/api/tasks/submit',
+      (route) =>
+        route.fulfill({
+          json: {
+            buttons: [
+              { to: 'admin', label: 'Admin' },
+              { to: 'it', label: 'Helpdesk' },
+            ],
+          },
+        }),
+    );
+    for (const t of [mine, copy]) {
+      await ownerPage.route(
+        (url) => url.pathname === `/api/tasks/${t.id}`,
+        async (route) => {
+          if (route.request().method() !== 'GET') return route.fallback();
+          const res = await route.fetch();
+          const body = (await res.json()) as { task: Record<string, unknown> };
+          const submission = submissions[t.id];
+          return route.fulfill({
+            response: res,
+            json: { task: submission ? { ...body.task, submission } : body.task },
+          });
+        },
+      );
+    }
+    await ownerPage.route(
+      (url) => url.pathname === `/api/tasks/${mine.id}/submit`,
+      async (route) => {
+        const body = route.request().postDataJSON() as { kind: string; to: string };
+        sent.push(body);
+        submissions[mine.id] = { side: 'sent', kind: body.kind, to: body.to, sentAt: at };
+        const task = await readTask(ownerApi, mine.id);
+        return route.fulfill({ json: { task: { ...task, submission: submissions[mine.id] } } });
+      },
+    );
+    await ownerPage.route(
+      (url) => url.pathname === `/api/tasks/${copy.id}/reply`,
+      async (route) => {
+        const body = route.request().postDataJSON() as { note: string; version?: string };
+        replies.push(body);
+        submissions[copy.id] = {
+          ...submissions[copy.id],
+          reply: { status: 'done', note: body.note, version: '9.9.9', by: 'Owner', at },
+        };
+        const task = await readTask(ownerApi, copy.id);
+        return route.fulfill({ json: { task: { ...task, submission: submissions[copy.id] } } });
+      },
+    );
+
+    try {
+      await ownerPage.goto('/tasks');
+      const detail = ownerPage.locator('[data-testid="detail"]');
+
+      // Report opens the new-task form with a kind.
+      await ownerPage.getByRole('button', { name: 'Report a bug or request' }).first().click();
+      await expect(detail.getByRole('heading', { name: 'Report a bug or request' })).toBeVisible();
+
+      // One button per entry; the kind picked goes with the send.
+      await openFromTree(
+        ownerPage,
+        `${marker} mine`,
+        detail.getByRole('heading', { name: `${marker} mine` }),
+      );
+      await expect(detail.getByRole('button', { name: 'Send to Admin' })).toBeVisible();
+      await expect(detail.getByRole('button', { name: 'Send to Helpdesk' })).toBeVisible();
+      await detail.getByRole('radio', { name: 'Request' }).click();
+      await detail.getByRole('button', { name: 'Send to Helpdesk' }).click();
+      await expect.poll(() => sent).toEqual([{ kind: 'request', to: 'it' }]);
+      const card = detail.locator('[data-testid="task-submission"]');
+      await expect(card).toContainText('Sent to Helpdesk');
+      await expect(detail.getByRole('button', { name: 'Send to Admin' })).toHaveCount(0);
+
+      // A received copy: who sent it, then the Reply form, then the reply.
+      await openFromTree(
+        ownerPage,
+        `${marker} copy`,
+        detail.getByRole('heading', { name: `${marker} copy` }),
+      );
+      await expect(card).toContainText('From Ann (ann@example.com) on Plant box');
+      await detail.getByRole('textbox', { name: 'Reply' }).fill('Fixed in the next build.');
+      await detail.getByRole('button', { name: 'Reply', exact: true }).click();
+      await expect.poll(() => replies).toEqual([{ note: 'Fixed in the next build.' }]);
+      const reply = card.locator('[data-testid="reply"]');
+      await expect(reply).toContainText('Fixed in the next build.');
+      await expect(reply).toContainText('Version 9.9.9');
+      await expect(reply).toContainText('by Owner');
+      await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}tasks-submit.png` });
+    } finally {
+      for (const t of [mine, copy]) await ownerApi.delete(`/api/tasks/${t.id}`);
+    }
+  });
+
   test('ticking a blocked task and unticking it returns it to Blocked', async ({
     ownerApi,
     ownerPage,
