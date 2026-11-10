@@ -12,6 +12,16 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.20: the Control Center, files on tasks, submit to IT or Admin
+
+- **Added:** an Admin group in the sidebar with Company sign-in (moved from Settings; the old address redirects) and Fleet (on a Control Center only).
+- **Added:** Fleet: linked boxes, fleet bans (preview, make, lift, archive), provider keys, the fleet matrix, agent models, pool entries, the update notice and worker groups, each with its answer per box.
+- **Added:** Users: an Archived list. Enabling an archived login asks first. "Disable again" keeps a login off after a Control Center lift.
+- **Added:** files on tasks: drop or paste up to 5 files (10 MB each) on a task.
+- **Added:** Submit a bug, feature or request: Send to Admin, and Send to IT on a box linked to a Control Center. The sender sees the reply when it is done.
+- **Changed:** the SCIM step on Company sign-in shows only on a Control Center.
+- **CI:** the Bun e2e job may take 25 minutes.
+
 ## v0.9.19: apps work like pages, bubbles on, the Settings tab
 
 - **Changed:** chat bubbles are on by default. A browser that turned them off keeps them off.
