@@ -98,6 +98,31 @@ export type MockFleet = {
   facts: Record<string, { facts: Facts | null; factsReason: string | null }>;
   /** The `box` query of every matrix read ('' for the whole fleet). */
   matrixReads: string[];
+  /** Phase 4: false is a brain before the model update, whose box rows have
+   *  no modelJob or modelResult. */
+  modelsOn: boolean;
+  /** Each box's model job and last answer, by box id. */
+  modelState: Record<
+    string,
+    { modelJob: ModelJob | null; modelResult: ModelResult | null; reads: number }
+  >;
+  /** What each box answers per slug, by box id; absent: ok. */
+  modelAnswers: Record<string, Record<string, { ok: boolean; reason: string | null }>>;
+  /** Every model call body the brain was sent. */
+  modelSent: Record<string, unknown>[];
+};
+
+type ModelJob = { changes: { slug: string; model: string }[]; by: string; at: string };
+type ModelResult = {
+  results: {
+    slug: string;
+    model: string;
+    ok: boolean;
+    was: string | null;
+    reason: string | null;
+  }[];
+  by: string;
+  at: string;
 };
 
 type Facts = Record<string, unknown> & { at: string };
@@ -215,7 +240,35 @@ export const newMockFleet = (): MockFleet => ({
   matrixOn: false,
   facts: {},
   matrixReads: [],
+  modelsOn: false,
+  modelState: {},
+  modelAnswers: {},
+  modelSent: [],
 });
+
+type Agent = { slug: string | null; model: string };
+
+/** The control service's run: a box that showed its model job once
+ *  answers, and its facts then show the new model. */
+function runModelJobs(f: MockFleet) {
+  for (const [boxId, m] of Object.entries(f.modelState)) {
+    if (!m.modelJob) continue;
+    m.reads += 1;
+    if (m.reads < 2) continue;
+    const agents = (f.facts[boxId]?.facts?.agents ?? []) as Agent[];
+    const results = m.modelJob.changes.map((c) => {
+      const row = agents.find((a) => a.slug === c.slug);
+      const a =
+        f.modelAnswers[boxId]?.[c.slug] ??
+        (row ? { ok: true, reason: null } : { ok: false, reason: 'agent' });
+      const was = row ? row.model : null;
+      if (a.ok && row) row.model = c.model;
+      return { slug: c.slug, model: c.model, ok: a.ok, was, reason: a.reason };
+    });
+    m.modelResult = { results, by: m.modelJob.by, at: new Date().toISOString() };
+    m.modelJob = null;
+  }
+}
 
 /** The control service's run: a box that showed its key job once answers. */
 function runKeyJobs(f: MockFleet) {
@@ -255,6 +308,12 @@ function overview(f: MockFleet) {
           }
         : {}),
       ...(f.matrixOn ? { factsAt: f.facts[b.id]?.facts?.at ?? null } : {}),
+      ...(f.modelsOn
+        ? {
+            modelJob: f.modelState[b.id]?.modelJob ?? null,
+            modelResult: f.modelState[b.id]?.modelResult ?? null,
+          }
+        : {}),
     })),
     bans: f.bans,
     results: f.results,
@@ -295,7 +354,27 @@ export function fleetAnswer(
   }
   if (path === '/api/fleet' && method === 'GET') {
     runKeyJobs(f);
+    runModelJobs(f);
     return { status: 200, body: overview(f) };
+  }
+  if (path === '/api/fleet/models' && method === 'POST') {
+    if (!f.modelsOn) return { status: 404, body: { error: 'not found' } };
+    f.modelSent.push(body);
+    const changes = (body.changes as { slug: string; model: string }[] | undefined) ?? [];
+    if (changes.length === 0) {
+      return { status: 400, body: { error: 'Give 1 to 20 changes.' } };
+    }
+    const wanted = (body.boxIds as string[] | undefined) ?? f.boxes.map((b) => b.id);
+    const queued = f.boxes.filter((b) => wanted.includes(b.id)).map((b) => b.id);
+    const at = new Date().toISOString();
+    for (const id of queued) {
+      f.modelState[id] = {
+        modelJob: { changes, by: ADMIN, at },
+        modelResult: f.modelState[id]?.modelResult ?? null,
+        reads: 0,
+      };
+    }
+    return { status: 200, body: { changes, queued: queued.length, boxIds: queued } };
   }
   if (path === '/api/fleet/keys' && method === 'POST') {
     if (!f.keysOn) return { status: 404, body: { error: 'not found' } };

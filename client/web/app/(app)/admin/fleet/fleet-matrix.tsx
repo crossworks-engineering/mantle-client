@@ -35,6 +35,13 @@ import { Section } from './fleet-section';
 
 type MatrixAnswer = { boxes: FleetMatrixRow[] };
 
+/** The one read of the whole matrix: its section and the model update share it. */
+export const matrixQuery = {
+  queryKey: FLEET_MATRIX_KEY,
+  queryFn: () => apiFetch<MatrixAnswer>(FLEET_MATRIX_PATH),
+  staleTime: 30_000,
+};
+
 const HEALTH_TONE: Record<Level, string> = {
   ok: 'text-success-ink',
   warn: 'text-warning-ink',
@@ -266,11 +273,7 @@ function MatrixRow({ row, onOpen }: { row: FleetMatrixRow; onOpen: () => void })
  */
 export function MatrixSection() {
   const [open, setOpen] = useState<FleetMatrixRow | null>(null);
-  const query = useQuery({
-    queryKey: FLEET_MATRIX_KEY,
-    queryFn: () => apiFetch<MatrixAnswer>(FLEET_MATRIX_PATH),
-    staleTime: 30_000,
-  });
+  const query = useQuery(matrixQuery);
   const rows = query.data?.boxes ?? [];
   return (
     <Section title="Fleet matrix">

@@ -318,3 +318,77 @@ test('phase 3: Details reads one box and lists each agent and worker', async ({ 
   await expect.poll(() => api.fleet!.matrixReads).toContain(FLEET_BOX.id);
   expect(api.fleet.matrixReads).not.toContain(FLEET_BOX_B.id);
 });
+
+test('phase 4: a brain before the model update offers no model section', async ({ page }) => {
+  api.fleet = withMatrix(newMockFleet());
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'Fleet matrix' })).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Agent models' })).toHaveCount(0);
+});
+
+test('phase 4: set a shipped agent model on every box, see each answer', async ({ page }) => {
+  const fleet = withMatrix(newMockFleet());
+  fleet.modelsOn = true;
+  fleet.modelAnswers[FLEET_BOX_B.id] = { coder: { ok: false, reason: 'policy' } };
+  api.fleet = fleet;
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'Agent models' })).toBeVisible();
+  // The agent list is the matrix's shipped slugs: coder only.
+  await expect(main.locator('#fleet-model-agent')).toHaveText('coder');
+  const current = main.getByRole('list', { name: 'Current models' });
+  await expect(current.getByText('Box A: model-a')).toBeVisible();
+
+  const field = main.locator('#fleet-model-value');
+  await field.fill('has space');
+  await expect(main.getByText(/A model id has letters, digits/)).toBeVisible();
+  await field.fill('vendor/new-model');
+  await main.locator('#fleet-model-box-' + FLEET_BOX.id).click();
+  await main.locator('#fleet-model-box-' + FLEET_BOX_B.id).click();
+  await main.getByRole('button', { name: 'Set model on 2 boxes' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog.getByText('Set coder to vendor/new-model on 2 boxes?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Set model' }).click();
+  expect(fleet.modelSent).toEqual([
+    {
+      changes: [{ slug: 'coder', model: 'vendor/new-model' }],
+      boxIds: [FLEET_BOX.id, FLEET_BOX_B.id],
+    },
+  ]);
+  await expect(field).toHaveValue('');
+
+  const updates = main.getByRole('list', { name: 'Model updates' });
+  const a = updates.getByRole('listitem').filter({ hasText: 'Box A' });
+  const b = updates.getByRole('listitem').filter({ hasText: 'box-b.example.invalid' });
+  await expect(a.getByText('Set. It was model-a.')).toBeVisible({ timeout: 15_000 });
+  await expect(
+    b.getByText('The model policy of this box does not allow it. It keeps model-a.'),
+  ).toBeVisible();
+  // The matrix is read again and shows the new model.
+  await expect(current.getByText('Box A: vendor/new-model')).toBeVisible();
+  await expect(current.getByText('box-b.example.invalid: model-a')).toBeVisible();
+});
+
+test('phase 4: one box picked sends that box only', async ({ page }) => {
+  const fleet = withMatrix(newMockFleet());
+  fleet.modelsOn = true;
+  api.fleet = fleet;
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await main.locator('#fleet-model-value').fill('vendor/other');
+  await main.locator('#fleet-model-box-' + FLEET_BOX_B.id).click();
+  await main.getByRole('button', { name: 'Set model on 1 box' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Set model' }).click();
+  await expect.poll(() => fleet.modelSent.length).toBe(1);
+  expect(fleet.modelSent[0]).toEqual({
+    changes: [{ slug: 'coder', model: 'vendor/other' }],
+    boxIds: [FLEET_BOX_B.id],
+  });
+  const updates = main.getByRole('list', { name: 'Model updates' });
+  await expect(updates.getByRole('listitem')).toHaveCount(1);
+  await expect(updates.getByText('Set. It was model-a.')).toBeVisible({ timeout: 15_000 });
+});

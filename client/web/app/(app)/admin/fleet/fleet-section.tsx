@@ -1,3 +1,4 @@
+import { ApiError } from '@mantle/web-ui/api-fetch';
 import type { ReactNode } from 'react';
 
 /** One section of the Fleet screen: a title, an optional action, a body. */
@@ -19,4 +20,11 @@ export function Section({
       {children}
     </section>
   );
+}
+
+/** The brain's own words for a refusal. */
+export function refusalText(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) return fallback;
+  const message = err.body?.message;
+  return typeof message === 'string' && message ? message : err.message || fallback;
 }

@@ -33,8 +33,9 @@ The contract and every stated cost are the brain's: "The setup screen" in
 The screen is at Admin > Company sign-in (`/admin/company-sign-in`) since
 2026-11-09. The old path, `/settings/company-sign-in`, redirects there. On a
 Control Center the Admin group also holds Fleet (`/admin/fleet`,
-`lib/fleet.ts`): the boxes, the fleet bans, the provider keys and the fleet
-matrix (`lib/fleet-matrix.ts`; `docs/control-center.md` in the mantle repo).
+`lib/fleet.ts`): the boxes, the fleet bans, the provider keys, the fleet
+matrix (`lib/fleet-matrix.ts`) and the agent models (`lib/fleet-models.ts`;
+`docs/control-center.md` in the mantle repo).
 
 - The sidebar offers the entry only to a login with the users area, while
   `GET /api/users/sso-setup` answers a mode other than `off`. The search palette

@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
-import { ApiError, apiSend } from '@mantle/web-ui/api-fetch';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Button } from '@mantle/web-ui/ui/button';
 import { CopyBlock, CopyButton } from '@mantle/web-ui/ui/copy-button';
@@ -27,7 +27,6 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
-import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
 import { SUPPORTED_PROVIDERS } from '@mantle/voice-client';
 import {
@@ -66,16 +65,12 @@ import {
   type FleetResult,
 } from '@/lib/fleet';
 import { fleetMatrixOffered } from '@/lib/fleet-matrix';
+import { fleetModelsOffered, modelUpdatePending } from '@/lib/fleet-models';
 import { fleetQuery } from '@/lib/use-fleet-shown';
 import { MatrixSection } from './fleet-matrix';
-import { Section } from './fleet-section';
-
-/** The brain's own words for a refusal. */
-function refusalText(err: unknown, fallback: string): string {
-  if (!(err instanceof ApiError)) return fallback;
-  const message = err.body?.message;
-  return typeof message === 'string' && message ? message : err.message || fallback;
-}
+import { BoxPicker, useBoxPick } from './fleet-box-picker';
+import { ModelsSection } from './fleet-models';
+import { refusalText, Section } from './fleet-section';
 
 function OwnerWarning() {
   return (
@@ -712,21 +707,9 @@ function KeysSection({ data, onChanged }: { data: FleetOverview; onChanged: () =
   const [value, setValue] = useState('');
   // Bumped by a send: the next key starts hidden again.
   const [fieldKey, setFieldKey] = useState(0);
-  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const { picked, setPicked, chosen, count } = useBoxPick(data.boxes);
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
-  // A box removed since it was picked is not sent.
-  const chosen = data.boxes.filter((b) => picked.has(b.id));
-  const all = data.boxes.length > 0 && chosen.length === data.boxes.length;
-  const count = chosen.length === 1 ? '1 box' : `${chosen.length} boxes`;
-
-  const toggle = (id: string, on: boolean) =>
-    setPicked((p) => {
-      const next = new Set(p);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
 
   const send = async () => {
     setPending(true);
@@ -799,33 +782,12 @@ function KeysSection({ data, onChanged }: { data: FleetOverview; onChanged: () =
                 Typed once. It is never shown again, here or on a box.
               </FieldDescription>
             </Field>
-            <fieldset className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <legend className="text-sm font-medium">Boxes</legend>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setPicked(all ? new Set() : new Set(data.boxes.map((b) => b.id)))}
-                >
-                  {all ? 'Clear' : 'All boxes'}
-                </Button>
-              </div>
-              <ul className="space-y-1.5">
-                {data.boxes.map((b) => (
-                  <li key={b.id} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`fleet-key-box-${b.id}`}
-                      checked={picked.has(b.id)}
-                      onCheckedChange={(v) => toggle(b.id, v === true)}
-                    />
-                    <label htmlFor={`fleet-key-box-${b.id}`} className="text-sm">
-                      {boxName(b)}
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </fieldset>
+            <BoxPicker
+              boxes={data.boxes}
+              picked={picked}
+              setPicked={setPicked}
+              idPrefix="fleet-key-box"
+            />
             <div className="flex justify-end">
               <SubmitButton pending={false} disabled={!value.trim() || chosen.length === 0}>
                 {chosen.length > 0 ? `Set key on ${count}` : 'Set key'}
@@ -872,7 +834,9 @@ export function FleetClient() {
     ...fleetQuery,
     // While a box still waits on a key update, read again soon.
     refetchInterval: (q: { state: { data?: FleetOverview | null } }) =>
-      keyUpdatePending(q.state.data?.boxes) ? 3000 : false,
+      keyUpdatePending(q.state.data?.boxes) || modelUpdatePending(q.state.data?.boxes)
+        ? 3000
+        : false,
   });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: FLEET_KEY });
 
@@ -905,6 +869,8 @@ export function FleetClient() {
       <BansSection data={data} onChanged={refresh} />
       {/* Phase 2: a brain before it has no key fields on its boxes, and no key call. */}
       {fleetKeysOffered(data.boxes) && <KeysSection data={data} onChanged={refresh} />}
+      {/* Phase 4: a brain before it has no model fields on its boxes, and no model call. */}
+      {fleetModelsOffered(data.boxes) && <ModelsSection data={data} onChanged={refresh} />}
     </div>
   );
 }

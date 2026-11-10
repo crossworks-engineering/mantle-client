@@ -5,6 +5,8 @@
  * GET /api/fleet answers; dates arrive as ISO strings. Pure, so it is
  * unit-tested.
  */
+import type { FleetModelJob, FleetModelResult } from './fleet-models';
+
 export const FLEET_PATH = '/api/fleet';
 export const FLEET_KEY = ['fleet'];
 export const FLEET_HREF = '/admin/fleet';
@@ -35,6 +37,11 @@ export type FleetBox = {
   /** Phase 3: the box's time of its last good facts (the matrix holds
    *  them). Absent: a brain before phase 3. */
   factsAt?: string | null;
+  /** Phase 4: agent models waiting for the control service (no secret).
+   *  Absent: a brain before phase 4. */
+  modelJob?: FleetModelJob | null;
+  /** Phase 4: the box's answer to the last model job, per change. */
+  modelResult?: FleetModelResult | null;
 };
 
 /** A box's answer to a provider key (docs/control-center.md in the mantle
