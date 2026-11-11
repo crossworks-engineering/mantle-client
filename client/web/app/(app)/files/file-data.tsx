@@ -170,7 +170,7 @@ function TabPreview({ fileId, tab }: { fileId: string; tab: Tab }) {
       // The tab's own columns, not the view's row keys (_rid, _pos).
       const cols = tab.columns.length ? tab.columns.map((c) => quoted(c.name)).join(', ') : '*';
       const got = await ask(fileId, {
-        sql: `SELECT ${cols} FROM ${quoted(tab.view)} LIMIT ${PAGE} OFFSET ${offset}`,
+        sql: `SELECT ${cols} FROM ${quoted(tab.view)} ORDER BY "_pos" LIMIT ${PAGE} OFFSET ${offset}`,
         max_rows: PAGE,
       });
       if (got.kind !== 'rows') throw new Error(got.kind === 'none' ? got.reason : 'No rows.');
@@ -355,6 +355,8 @@ function DatabaseBody({ fileId }: { fileId: string }) {
   const described = useQuery({
     queryKey: ['files', 'database', fileId],
     queryFn: () => ask(fileId, {}),
+    // New bytes give a new database: read it again each time the view opens.
+    gcTime: 0,
   });
   const [tabName, setTabName] = useState<string | null>(null);
   const [querying, setQuerying] = useState(false);

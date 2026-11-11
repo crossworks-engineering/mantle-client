@@ -701,6 +701,7 @@ function FilesView({
                   onRecent={() => setCrossView('recent')}
                   dataActive={crossView === 'data'}
                   onData={() => {
+                    if (openFileId) openFile(null);
                     setDataUnder(null);
                     setCrossView('data');
                   }}
