@@ -167,8 +167,10 @@ function TabPreview({ fileId, tab }: { fileId: string; tab: Tab }) {
   const load = async (offset: number) => {
     setLoading(true);
     try {
+      // The tab's own columns, not the view's row keys (_rid, _pos).
+      const cols = tab.columns.length ? tab.columns.map((c) => quoted(c.name)).join(', ') : '*';
       const got = await ask(fileId, {
-        sql: `SELECT * FROM ${quoted(tab.view)} LIMIT ${PAGE} OFFSET ${offset}`,
+        sql: `SELECT ${cols} FROM ${quoted(tab.view)} LIMIT ${PAGE} OFFSET ${offset}`,
         max_rows: PAGE,
       });
       if (got.kind !== 'rows') throw new Error(got.kind === 'none' ? got.reason : 'No rows.');
@@ -451,20 +453,36 @@ function DatabaseBody({ fileId }: { fileId: string }) {
   );
 }
 
-/** Every file with a database the login may read, in every folder. */
-export function DataFilesView({ onOpen }: { onOpen: (file: DataFileRow) => void }) {
+/** Every file with a database the login may read: in every folder, or in
+ *  `under` and its sub-folders. Each row names the file and its folder. */
+export function DataFilesView({
+  under,
+  onOpen,
+}: {
+  under: string | null;
+  onOpen: (file: DataFileRow) => void;
+}) {
   const list = useQuery({
-    queryKey: ['files', 'data-files'],
+    queryKey: ['files', 'data-files', under ?? ''],
     queryFn: () =>
-      apiFetch<{ files: DataFileRow[]; truncated: boolean }>('/api/files/files?data=1'),
+      apiFetch<{ files: DataFileRow[]; truncated: boolean }>(
+        `/api/files/files?data=1${under ? `&under=${encodeURIComponent(under)}` : ''}`,
+      ),
   });
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <header className="border-b border-border px-6 py-3">
         <h2 className="text-sm font-medium">Data files</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Spreadsheets, CSVs, plans and drawings that have a read-only database, in every folder you
-          can read. Open one to see its tabs and rows.
+          Spreadsheets, CSVs, plans and drawings that have a read-only database,{' '}
+          {under ? (
+            <>
+              in <span className="font-mono">{under}</span> and its sub-folders
+            </>
+          ) : (
+            'in every folder you can read'
+          )}
+          . Open one to see its tabs and rows.
         </p>
       </header>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -511,8 +529,8 @@ export function DataFilesView({ onOpen }: { onOpen: (file: DataFileRow) => void 
             )}
             {list.data.truncated && (
               <p className="px-6 py-3 text-xs text-muted-foreground">
-                Only the first {list.data.files.length.toLocaleString()} are listed. Open a folder
-                to see the rest.
+                The list stopped at its limit. Open a folder, then Data files, to see the files in
+                that folder.
               </p>
             )}
           </>

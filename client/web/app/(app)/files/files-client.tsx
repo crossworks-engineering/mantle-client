@@ -241,6 +241,8 @@ function FilesView({
   // A view across every folder: Recent, or Data files (file-data.tsx).
   const [crossView, setCrossView] = useState<null | 'recent' | 'data'>(null);
   const recentView = crossView === 'recent';
+  // Data files from a folder's header: that folder and below; from the rail: all.
+  const [dataUnder, setDataUnder] = useState<string | null>(null);
   const recentQuery = useQuery({
     queryKey: ['files', 'recent'],
     queryFn: () =>
@@ -698,7 +700,10 @@ function FilesView({
                   recentActive={recentView}
                   onRecent={() => setCrossView('recent')}
                   dataActive={crossView === 'data'}
-                  onData={() => setCrossView('data')}
+                  onData={() => {
+                    setDataUnder(null);
+                    setCrossView('data');
+                  }}
                   onNewFolder={(parentPath) => setDialog({ kind: 'createFolder', parentPath })}
                   onNewFile={(parentPath) => {
                     setCrossView(null);
@@ -832,6 +837,7 @@ function FilesView({
               <>
                 <SetPageTitle title="Data files" />
                 <DataFilesView
+                  under={dataUnder}
                   onOpen={(f) => {
                     setCrossView(null);
                     const sp = new URLSearchParams();
@@ -976,9 +982,12 @@ function FilesView({
                   tools={[
                     {
                       key: 'data-files',
-                      label: 'Data files: every file with a database you can read',
+                      label: 'Data files: the files with a database in this folder and below',
                       icon: <Database />,
-                      onSelect: () => setCrossView('data'),
+                      onSelect: () => {
+                        setDataUnder(currentPath === FILES_ROOT ? null : currentPath);
+                        setCrossView('data');
+                      },
                     },
                     {
                       key: 'upload-folder',
