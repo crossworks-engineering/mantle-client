@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ChevronsRight,
   Columns2,
+  Database,
   Eye,
   EyeOff,
   FileJson,
@@ -40,6 +41,7 @@ import {
 import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { FileEditor } from './file-editor';
+import { DataFilesView } from './file-data';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
 import { useFileSearch } from './use-file-search';
 import { useWorkspaceJump, WorkspaceHitTag } from '@/components/workspaces/workspace-hit-tag';
@@ -236,7 +238,11 @@ function FilesView({
   };
 
   // ── Recent — the cross-tree "where did that upload land" view ──
-  const [recentView, setRecentView] = useState(false);
+  // A view across every folder: Recent, or Data files (file-data.tsx).
+  const [crossView, setCrossView] = useState<null | 'recent' | 'data'>(null);
+  const recentView = crossView === 'recent';
+  // Data files from a folder's header: that folder and below; from the rail: all.
+  const [dataUnder, setDataUnder] = useState<string | null>(null);
   const recentQuery = useQuery({
     queryKey: ['files', 'recent'],
     queryFn: () =>
@@ -333,6 +339,8 @@ function FilesView({
     const sp = new URLSearchParams(searchParams.toString());
     if (fileId) sp.set('file', fileId);
     else sp.delete('file');
+    // `view=data` is for the one file a Data files row opens.
+    sp.delete('view');
     router.push(`/files?${sp.toString()}`);
   };
 
@@ -595,13 +603,13 @@ function FilesView({
                   label: 'file',
                   icon: FileText,
                   onCreate: (f) => {
-                    setRecentView(false);
+                    setCrossView(null);
                     navigateFolder(f.path);
                     setDialog({ kind: 'createFile', ext: 'md', parentPath: f.path });
                   },
                 }}
                 onOpenFolder={(f) => {
-                  setRecentView(false);
+                  setCrossView(null);
                   navigateFolder(f?.path ?? FILES_ROOT);
                 }}
                 onOpenItem={(item, where) => {
@@ -682,18 +690,24 @@ function FilesView({
               <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-2">
                 <FolderTreeRail
                   tree={tree}
-                  currentPath={recentView ? '' : currentPath}
+                  currentPath={crossView ? '' : currentPath}
                   onNavigate={(p) => {
-                    setRecentView(false);
+                    setCrossView(null);
                     setQuery('');
                     navigateFolder(p);
                   }}
                   filter={query.trim()}
                   recentActive={recentView}
-                  onRecent={() => setRecentView(true)}
+                  onRecent={() => setCrossView('recent')}
+                  dataActive={crossView === 'data'}
+                  onData={() => {
+                    if (openFileId) openFile(null);
+                    setDataUnder(null);
+                    setCrossView('data');
+                  }}
                   onNewFolder={(parentPath) => setDialog({ kind: 'createFolder', parentPath })}
                   onNewFile={(parentPath) => {
-                    setRecentView(false);
+                    setCrossView(null);
                     navigateFolder(parentPath);
                     setDialog({ kind: 'createFile', ext: 'md', parentPath });
                   }}
@@ -733,6 +747,7 @@ function FilesView({
               <FileEditor
                 key={openFileId}
                 fileId={openFileId}
+                startWithData={searchParams.get('view') === 'data'}
                 onClose={() => openFile(null)}
                 onSaved={refresh}
                 onLoaded={(file) => {
@@ -818,6 +833,22 @@ function FilesView({
                   )}
                 </div>
               </div>
+            ) : crossView === 'data' ? (
+              /* ── Data files, whole tree ────────────────────────── */
+              <>
+                <SetPageTitle title="Data files" />
+                <DataFilesView
+                  under={dataUnder}
+                  onOpen={(f) => {
+                    setCrossView(null);
+                    const sp = new URLSearchParams();
+                    sp.set('path', f.parentPath);
+                    sp.set('file', f.id);
+                    sp.set('view', 'data');
+                    router.push(`/files?${sp.toString()}`);
+                  }}
+                />
+              </>
             ) : recentView ? (
               /* ── Recent files, whole tree ──────────────────────── */
               <div className="flex h-full flex-col overflow-hidden">
@@ -837,7 +868,7 @@ function FilesView({
                         <li key={f.id}>
                           <RowButton
                             onClick={() => {
-                              setRecentView(false);
+                              setCrossView(null);
                               const sp = new URLSearchParams();
                               sp.set('path', f.parentPath);
                               sp.set('file', f.id);
@@ -950,6 +981,15 @@ function FilesView({
                     ) : undefined
                   }
                   tools={[
+                    {
+                      key: 'data-files',
+                      label: 'Data files: the files with a database in this folder and below',
+                      icon: <Database />,
+                      onSelect: () => {
+                        setDataUnder(currentPath === FILES_ROOT ? null : currentPath);
+                        setCrossView('data');
+                      },
+                    },
                     {
                       key: 'upload-folder',
                       label: 'Upload a folder with its sub-folders',
