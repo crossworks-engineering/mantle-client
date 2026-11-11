@@ -25,12 +25,15 @@ export const ADMIN_ROWS = [
 
 export const NAV_SCOPES = ['Favorites', 'Work', 'Settings'] as const;
 
+/** The fourth tab, on a Control Center only: its group, alone. */
+export const CC_SCOPE = 'CC' as const;
+
 /**
  * An admin's rail, on one tab (lib/nav-scope.ts). Work and Settings are two
  * slices of the menu (Favorites is the login's own short list), so a row is
  * looked for under the tab that holds it.
  */
-export async function scopedNav(page: Page, scope: (typeof NAV_SCOPES)[number]) {
+export async function scopedNav(page: Page, scope: (typeof NAV_SCOPES)[number] | typeof CC_SCOPE) {
   const nav = page.getByRole('navigation', { name: 'Primary' });
   const radio = nav.getByRole('radio', { name: scope, exact: true });
   await radio.click();
@@ -38,10 +41,16 @@ export async function scopedNav(page: Page, scope: (typeof NAV_SCOPES)[number]) 
   return nav;
 }
 
-/** Which of `names` an admin's rail shows under any of the tabs. */
+/** Which of `names` an admin's rail shows under any of the tabs (the CC tab
+ *  too, where the box has one). */
 export async function rowsInAnyScope(page: Page, names: readonly string[]): Promise<Set<string>> {
   const seen = new Set<string>();
-  for (const scope of NAV_SCOPES) {
+  const cc = page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('radio', { name: CC_SCOPE, exact: true });
+  const scopes: readonly ((typeof NAV_SCOPES)[number] | typeof CC_SCOPE)[] =
+    (await cc.count()) > 0 ? [...NAV_SCOPES, CC_SCOPE] : NAV_SCOPES;
+  for (const scope of scopes) {
     const nav = await scopedNav(page, scope);
     for (const name of names) {
       if ((await nav.getByRole('link', { name, exact: true }).count()) > 0) seen.add(name);

@@ -134,14 +134,36 @@ describe('nav items this client adds before the shared list names them', () => {
 });
 
 describe('the Admin group (owner, 2026-11-09)', () => {
-  it('comes after Settings and holds Company sign-in, then Fleet', () => {
+  it('comes after Settings and holds Company sign-in', () => {
     const labels = NAV_GROUPS.map((g) => g.label);
     expect(labels.filter((l) => l === 'Admin')).toHaveLength(1);
     expect(labels[labels.indexOf('Settings') + 1]).toBe('Admin');
     const admin = NAV_GROUPS.find((g) => g.label === 'Admin')!;
-    expect(admin.items.map((i) => i.href)).toEqual(['/admin/company-sign-in', '/admin/fleet']);
+    expect(admin.items.map((i) => i.href)).toEqual(['/admin/company-sign-in']);
     expect(matchNavItem('/admin/company-sign-in')?.name).toBe('Company sign-in');
-    expect(matchNavItem('/admin/fleet')?.name).toBe('Fleet');
+  });
+
+  it('the Control Center group (owner, 2026-11-11) comes after it, one row per screen', () => {
+    const labels = NAV_GROUPS.map((g) => g.label);
+    expect(labels[labels.indexOf('Admin') + 1]).toBe('Control Center');
+    const cc = NAV_GROUPS.find((g) => g.label === 'Control Center')!;
+    expect(cc.items.map((i) => i.name)).toEqual([
+      'Overview',
+      'Linked boxes',
+      'Fleet matrix',
+      'Bans',
+      'Provider keys',
+      'Agent models',
+      'Pool entry',
+      'Worker groups',
+      'Update notice',
+      'Fleet changes',
+    ]);
+    // Every screen sits under the Overview's address, and each lights its own row.
+    for (const i of cc.items)
+      expect(i.href === '/admin/fleet' || i.href.startsWith('/admin/fleet/')).toBe(true);
+    expect(matchNavItem('/admin/fleet')?.name).toBe('Overview');
+    expect(matchNavItem('/admin/fleet/matrix')?.name).toBe('Fleet matrix');
   });
 
   it('Settings no longer holds Company sign-in', () => {

@@ -24,7 +24,7 @@ import {
   useNavFavorites,
   type NavFavoriteItem,
 } from '@/lib/nav-favorites';
-import { NAV_SCOPES, railGroups, useNavScope, type NavScope } from '@/lib/nav-scope';
+import { navScopes, railGroups, scopeInPlay, useNavScope, type NavScope } from '@/lib/nav-scope';
 import { KIND_ICONS } from '@/lib/kind-look';
 import {
   FavoriteGlyph,
@@ -79,7 +79,7 @@ export function SidebarNav({
   });
 
   const { favorites, items, isFavorite, toggleFavorite, moveFavorite } = useNavFavorites();
-  const { scope, setScope } = useNavScope();
+  const { scope: storedScope, setScope } = useNavScope();
 
   // The shared nav list, with the live pending-approvals badge injected onto
   // the Pending item at render time.
@@ -101,8 +101,11 @@ export function SidebarNav({
   const messenger = useMessengerUnread();
   // Company sign-in: only while the brain says the mode is on.
   const ssoSetupShown = useSsoSetupShown(areas);
-  // Fleet: only on a Control Center (GET /api/fleet answers 200).
+  // The Control Center group and its CC tab: only on a Control Center
+  // (GET /api/fleet answers 200).
   const fleetShown = useFleetShown(areas);
+  const scope = scopeInPlay(storedScope, fleetShown);
+  const scopes = navScopes(fleetShown);
   const groups: NavGroup[] = withFleet(
     withCompanySignIn(
       withChats(
@@ -366,10 +369,14 @@ export function SidebarNav({
                 value={scope ?? ''}
                 onValueChange={(v) => v && setScope(v as NavScope)}
                 aria-label="How much of the menu to show"
-                className="mt-2 grid w-full grid-cols-3"
+                className={cn(
+                  'mt-2 grid w-full',
+                  // Four tabs share the width by their words: CC is two letters.
+                  scopes.length === 4 ? 'grid-cols-[1.25fr_1fr_1.15fr_0.7fr]' : 'grid-cols-3',
+                )}
               >
-                {NAV_SCOPES.map((s) => (
-                  <ToggleGroupItem key={s.id} value={s.id} className="text-xs">
+                {scopes.map((s) => (
+                  <ToggleGroupItem key={s.id} value={s.id} className="px-1 text-xs">
                     {s.label}
                   </ToggleGroupItem>
                 ))}

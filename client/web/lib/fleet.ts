@@ -1,5 +1,5 @@
 /**
- * The Control Center's Fleet screen model (Admin > Fleet;
+ * The Control Center screens' model (the CC tab;
  * docs/control-center.md in the mantle repo). A Control Center (CC) bans a
  * person on every box it manages at once. The types mirror what
  * GET /api/fleet answers; dates arrive as ISO strings. Pure, so it is
@@ -266,10 +266,11 @@ export function banKeysText(ban: Pick<FleetBan, 'emails' | 'issuer' | 'oid'>): s
   return keys.join(', ');
 }
 
-/** Fleet stays in the nav only while the brain answers GET /api/fleet. The
- *  sidebar and the search palette both ask this. */
+/** The Control Center screens stay in the nav only while the brain answers
+ *  GET /api/fleet: its Overview and every screen under it. The sidebar and
+ *  the search palette both ask this. */
 export function fleetOffered(href: string, show: boolean): boolean {
-  return show || href !== FLEET_HREF;
+  return show || !(href === FLEET_HREF || href.startsWith(`${FLEET_HREF}/`));
 }
 
 export function withFleet<G extends { items: { href: string }[] }>(

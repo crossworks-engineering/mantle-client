@@ -25,7 +25,7 @@ export const fleetQuery = {
   refetchOnWindowFocus: true,
 };
 
-/** Whether the sidebar offers Fleet: a login with the settings area, on a
+/** Whether the sidebar offers the CC tab and its Control Center group: a login with the settings area, on a
  *  Control Center. Hidden while it loads or fails. */
 export function useFleetShown(areas: readonly string[] | null | undefined): boolean {
   // Asked only once the shell has said what this login holds.

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { Bot, type LucideIcon } from 'lucide-react';
 import { NAV_GROUPS, type NavGroup } from '@mantle/web-ui/layout/nav-items';
-import { railGroups, scopeGroups, storedScope, type NavScope } from './nav-scope';
+import {
+  navScopes,
+  railGroups,
+  scopeGroups,
+  scopeInPlay,
+  storedScope,
+  type NavScope,
+} from './nav-scope';
 import { navWithAreas } from './workspaces';
 
 /**
@@ -60,11 +67,37 @@ describe('settings', () => {
   });
 });
 
-describe('work and settings, together', () => {
+describe('cc (owner, 2026-11-11)', () => {
+  it('shows the Control Center group, whole, and nothing else', () => {
+    const cc = scopeGroups(NAV_GROUPS, 'cc');
+    expect(labels(cc)).toEqual(['Control Center']);
+    expect(cc[0]).toEqual(NAV_GROUPS.find((g) => g.label === 'Control Center'));
+    expect(names(cc)).toEqual(expect.arrayContaining(['Linked boxes', 'Fleet matrix', 'Bans']));
+  });
+
+  it('is a tab on a Control Center only, last', () => {
+    expect(navScopes(false).map((s) => s.label)).toEqual(['Favorites', 'Work', 'Settings']);
+    expect(navScopes(true).map((s) => s.label)).toEqual(['Favorites', 'Work', 'Settings', 'CC']);
+  });
+
+  it('a stored cc on a box that is not a Control Center reads as work', () => {
+    expect(scopeInPlay('cc', false)).toBe('work');
+    expect(scopeInPlay('cc', true)).toBe('cc');
+    expect(scopeInPlay('settings', false)).toBe('settings');
+    expect(scopeInPlay(null, true)).toBe(null);
+  });
+
+  it('Settings does not repeat its screens', () => {
+    expect(names(scopeGroups(NAV_GROUPS, 'settings'))).not.toContain('Fleet matrix');
+  });
+});
+
+describe('work, settings and cc, together', () => {
   it('are the whole list, each row once, so no screen is lost', () => {
     const both = [
       ...hrefs(scopeGroups(NAV_GROUPS, 'work')),
       ...hrefs(scopeGroups(NAV_GROUPS, 'settings')),
+      ...hrefs(scopeGroups(NAV_GROUPS, 'cc')),
     ];
     expect(new Set(both).size).toBe(both.length);
     expect(both.sort()).toEqual(hrefs(NAV_GROUPS).sort());
@@ -102,8 +135,9 @@ describe('favorites', () => {
 });
 
 describe('a stored choice', () => {
-  it('reads the three tabs as themselves', () => {
-    for (const s of ['favorites', 'work', 'settings'] as const) expect(storedScope(s)).toBe(s);
+  it('reads the tabs as themselves', () => {
+    for (const s of ['favorites', 'work', 'settings', 'cc'] as const)
+      expect(storedScope(s)).toBe(s);
   });
 
   it('reads the old Admin tab (2026-11-07 to 2026-11-09) as Settings', () => {
@@ -126,7 +160,7 @@ describe('a group the scope empties', () => {
 });
 
 describe('the rail (W5c: one shell for every login)', () => {
-  const scopes: NavScope[] = ['favorites', 'work', 'settings'];
+  const scopes: NavScope[] = ['favorites', 'work', 'settings', 'cc'];
 
   it('a login that manages the brain gets the chosen scope', () => {
     for (const scope of scopes) {
