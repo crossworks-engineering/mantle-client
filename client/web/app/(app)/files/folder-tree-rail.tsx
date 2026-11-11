@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   ChevronRight,
   Clock,
+  Database,
   FileText,
   FolderPlus,
   MoreHorizontal,
@@ -84,6 +85,8 @@ export function FolderTreeRail({
   filter,
   recentActive,
   onRecent,
+  dataActive = false,
+  onData,
   onNewFolder,
   onNewFile,
   onRename,
@@ -96,6 +99,9 @@ export function FolderTreeRail({
   filter?: string;
   recentActive: boolean;
   onRecent: () => void;
+  /** Data files: every file with a database, in every folder. */
+  dataActive?: boolean;
+  onData?: () => void;
   onNewFolder: (parentPath: string) => void;
   /** "New file inside": the screen's own create, in that folder. */
   onNewFile?: (parentPath: string) => void;
@@ -311,6 +317,22 @@ export function FolderTreeRail({
             ),
             onClick: onRecent,
           })}
+          {onData &&
+            row({
+              folder: null,
+              key: 'data',
+              depth: 0,
+              isLast: false,
+              guides: [],
+              selected: dataActive,
+              label: 'Data files',
+              tile: (
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-muted text-muted-foreground">
+                  <Database className="size-3" aria-hidden />
+                </span>
+              ),
+              onClick: onData,
+            })}
           {row({
             folder: root,
             key: 'root',

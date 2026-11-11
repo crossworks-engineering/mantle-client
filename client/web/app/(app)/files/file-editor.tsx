@@ -5,6 +5,7 @@ import { AccessSlot } from '@/components/share/access-slot';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
 import { useEffect, useState } from 'react';
 import {
+  Database,
   Download,
   Eye,
   EyeOff,
@@ -28,6 +29,7 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { play } from '@/lib/sounds/play';
+import { FileDataView, hasDataView } from './file-data';
 
 type FileRow = {
   id: string;
@@ -51,6 +53,7 @@ export function FileEditor({
   onClose,
   onSaved,
   onLoaded,
+  startWithData = false,
 }: {
   fileId: string;
   onClose: () => void;
@@ -58,6 +61,8 @@ export function FileEditor({
   /** The file's detail, once loaded: the files screen opens its folder when
    *  the link named only the file (a /n link). */
   onLoaded?: (file: { parentPath: string }) => void;
+  /** Open on the file's database (a link from Data files). */
+  startWithData?: boolean;
 }) {
   const toAsset = useAssetUrl();
   const toast = useToast();
@@ -74,6 +79,8 @@ export function FileEditor({
   const [mode, setMode] = useState<Mode>('split');
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
+  // The file's read-only database instead of its preview (file-data.tsx).
+  const [showData, setShowData] = useState(startWithData);
   // Files opens on this file next time (lib/last-opened.ts).
   useRememberLastOpened('files', state.kind === 'loaded' ? fileId : null);
 
@@ -190,6 +197,27 @@ export function FileEditor({
   const note = readOnlyNote(access);
   // Without text editing the view is the preview only.
   const view: Mode = canEdit ? mode : 'preview';
+  // A spreadsheet, CSV, plan or drawing has a database to look at.
+  const dataView = hasDataView(file.extension);
+  const saveButton =
+    file.isText && canEdit && !(dataView && showData) ? (
+      <Button size="sm" onClick={save} disabled={!dirty || saving}>
+        {saving ? <Loader2 className="animate-spin" /> : <Save />}
+        Save
+      </Button>
+    ) : null;
+  const dataButton = dataView ? (
+    <Button
+      size="sm"
+      variant="outline"
+      aria-pressed={showData}
+      onClick={() => setShowData((on) => !on)}
+      title={showData ? 'Back to the file' : "See this file's database: its tabs and rows"}
+    >
+      <Database />
+      {showData ? 'File' : 'Data'}
+    </Button>
+  ) : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -228,11 +256,11 @@ export function FileEditor({
         }
         badges={dirty ? <HeaderPill title="Save keeps your changes">unsaved</HeaderPill> : null}
         textActions={
-          file.isText && canEdit ? (
-            <Button size="sm" onClick={save} disabled={!dirty || saving}>
-              {saving ? <Loader2 className="animate-spin" /> : <Save />}
-              Save
-            </Button>
+          saveButton || dataButton ? (
+            <>
+              {saveButton}
+              {dataButton}
+            </>
           ) : null
         }
         access={<AccessSlot type="file" nodeId={file.id} canShare={access.share} shares={file} />}
@@ -332,7 +360,14 @@ export function FileEditor({
       />
 
       {/* Body */}
-      {file.isText && !canEdit && !isMarkdown ? (
+      {dataView && showData ? (
+        <FileDataView
+          fileId={file.id}
+          filename={file.filename}
+          folder={file.parentPath}
+          onOpenFile={() => setShowData(false)}
+        />
+      ) : file.isText && !canEdit && !isMarkdown ? (
         <pre className="flex-1 overflow-auto scrollbar-thin whitespace-pre-wrap p-4 font-mono text-sm">
           {draft}
         </pre>
