@@ -12,6 +12,12 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.21: see your file databases, new Control Center screens
+
+- **Added:** a Data button on table-type files (xlsx, xls, csv, xml, dwg, dxf, dgn, dwf): tabs with row counts, columns, the first 100 rows, Load more, and a read-only Query box. A file with no database says why.
+- **Added:** Data files: under Recent in the folder rail and as a tool on a folder. It lists every file database you can read, with its source file's name and folder; a click opens the file on its data.
+- **Changed:** on a Control Center, the Fleet page becomes a CC tab with 10 screens (Overview, Linked boxes, Fleet matrix, Bans, Provider keys, Agent models, Pool entry, Worker groups, Update notice, Fleet changes). Same routes as before.
+
 ## v0.9.20: the Control Center, files on tasks, submit to IT or Admin
 
 - **Added:** an Admin group in the sidebar with Company sign-in (moved from Settings; the old address redirects) and Fleet (on a Control Center only).
