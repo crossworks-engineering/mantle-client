@@ -13,13 +13,15 @@ import type { NavGroup } from '@mantle/web-ui/layout/nav-items';
  *                screens and workspace items, in the login's order.
  *  - `work`      the daily surfaces: Workspace and Review, whole.
  *  - `settings`  everything else: every setting and the System group.
+ *  - `cc`        the Control Center group, alone. Offered only on a box that
+ *                is a Control Center (owner, 2026-11-11).
  *
  * The third tab was called Admin from 2026-11-07 to 2026-11-09 (Jason:
  * "lets change Admin to Settings"). Work and Settings are two SLICES of the
  * one list and together they are the whole of it; Favorites is a view over
  * that list, not a third slice.
  */
-export type NavScope = 'favorites' | 'work' | 'settings';
+export type NavScope = 'favorites' | 'work' | 'settings' | 'cc';
 
 export const NAV_SCOPES: Array<{ id: NavScope; label: string }> = [
   { id: 'favorites', label: 'Favorites' },
@@ -27,24 +29,45 @@ export const NAV_SCOPES: Array<{ id: NavScope; label: string }> = [
   { id: 'settings', label: 'Settings' },
 ];
 
+/** The fourth tab, on a Control Center only. */
+export const CC_SCOPE: { id: NavScope; label: string } = { id: 'cc', label: 'CC' };
+
+/** The tabs a box offers: CC last, on a Control Center. */
+export function navScopes(controlCenter: boolean): Array<{ id: NavScope; label: string }> {
+  return controlCenter ? [...NAV_SCOPES, CC_SCOPE] : NAV_SCOPES;
+}
+
+/** The scope in play: a stored `cc` on a box that is not a Control Center
+ *  (or whose answer is not here yet) reads as `work`. */
+export function scopeInPlay(scope: NavScope | null, controlCenter: boolean): NavScope | null {
+  return scope === 'cc' && !controlCenter ? 'work' : scope;
+}
+
 const KEY = 'mantle_nav_scope_v1';
 
 /** Groups shown whole under `work`, matched by LABEL, which is what the
  *  shared nav list gives us to key on. */
 const WORK_GROUPS = new Set(['Workspace', 'Review']);
 
+/** The one group `cc` shows (CONTROL_CENTER_GROUP in the nav list). */
+const CC_GROUP = 'Control Center';
+
 /**
  * The groups a scope shows. `favorites` shows none of them: the sidebar
  * puts the Favorites group there.
  *
- * `settings` is the complement of `work` rather than a list of its own, so a
- * screen nobody classified (a new settings row, say) lands in `settings` and is
- * never out of reach. Empty groups are dropped rather than rendered as a
+ * `settings` is the complement of `work` (less the Control Center group, which
+ * has its own tab) rather than a list of its own, so a screen nobody
+ * classified (a new settings row, say) lands in `settings` and is never out of
+ * reach. Empty groups are dropped rather than rendered as a
  * bare heading.
  */
 export function scopeGroups<G extends NavGroup>(groups: G[], scope: NavScope): G[] {
   if (scope === 'favorites') return [];
-  return groups.filter((group) => WORK_GROUPS.has(group.label) === (scope === 'work'));
+  if (scope === 'cc') return groups.filter((group) => group.label === CC_GROUP);
+  return groups.filter(
+    (group) => group.label !== CC_GROUP && WORK_GROUPS.has(group.label) === (scope === 'work'),
+  );
 }
 
 /**
@@ -69,7 +92,7 @@ export function railGroups<G extends NavGroup>(
  *  2026-11-09: it reads as `settings`. Anything else is not a choice. */
 export function storedScope(v: unknown): NavScope | null {
   if (v === 'admin') return 'settings';
-  return v === 'favorites' || v === 'work' || v === 'settings' ? v : null;
+  return v === 'favorites' || v === 'work' || v === 'settings' || v === 'cc' ? v : null;
 }
 
 /**

@@ -1,12 +1,21 @@
 import {
   Activity,
+  Bot,
   Building2,
+  Grid3x3,
+  History,
+  KeyRound,
   Layers,
   Link2,
+  Megaphone,
   MessagesSquare,
   Power,
+  Radar,
   Send,
-  ServerCog,
+  Server,
+  ShieldBan,
+  SquareStack,
+  UsersRound,
 } from 'lucide-react';
 import {
   NAV_GROUPS as SHARED_NAV_GROUPS,
@@ -91,21 +100,42 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
   },
 ];
 
+/** The Control Center's group and its address (client/web/lib/fleet.ts). */
+export const CONTROL_CENTER_GROUP = 'Control Center';
+const CC = '/admin/fleet';
+
 /**
  * Groups this client has that the pinned shared list does not name, each
- * placed after a named group. Admin (owner, 2026-11-09) holds the box-level
- * admin screens: Company sign-in, shown only while the brain says the mode is
- * on (client/web/lib/sso-setup.ts), and on a Control Center its Fleet
- * (client/web/lib/fleet.ts). A group the shared list already has is skipped.
+ * placed after a named group. Admin (owner, 2026-11-09) holds Company
+ * sign-in, shown only while the brain says the mode is on
+ * (client/web/lib/sso-setup.ts). Control Center (owner, 2026-11-11) holds one
+ * row per Control Center screen, shown only on a Control Center
+ * (client/web/lib/fleet.ts), under its own CC tab (client/web/lib/nav-scope.ts).
+ * A group the shared list already has is skipped.
  */
 export const ADDED_NAV_GROUPS: ReadonlyArray<{ after: string; group: NavGroup }> = [
   {
     after: 'Settings',
     group: {
       label: 'Admin',
+      items: [{ name: 'Company sign-in', href: '/admin/company-sign-in', icon: Building2 }],
+    },
+  },
+  {
+    after: 'Admin',
+    group: {
+      label: CONTROL_CENTER_GROUP,
       items: [
-        { name: 'Company sign-in', href: '/admin/company-sign-in', icon: Building2 },
-        { name: 'Fleet', href: '/admin/fleet', icon: ServerCog },
+        { name: 'Overview', href: CC, icon: Radar },
+        { name: 'Linked boxes', href: `${CC}/boxes`, icon: Server },
+        { name: 'Fleet matrix', href: `${CC}/matrix`, icon: Grid3x3 },
+        { name: 'Bans', href: `${CC}/bans`, icon: ShieldBan },
+        { name: 'Provider keys', href: `${CC}/keys`, icon: KeyRound },
+        { name: 'Agent models', href: `${CC}/models`, icon: Bot },
+        { name: 'Pool entry', href: `${CC}/pools`, icon: SquareStack },
+        { name: 'Worker groups', href: `${CC}/groups`, icon: UsersRound },
+        { name: 'Update notice', href: `${CC}/notice`, icon: Megaphone },
+        { name: 'Fleet changes', href: `${CC}/changes`, icon: History },
       ],
     },
   },

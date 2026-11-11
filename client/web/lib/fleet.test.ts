@@ -105,7 +105,13 @@ describe('withFleet', () => {
         { name: 'Fleet', href: FLEET_HREF, icon },
       ],
     },
-    { label: 'Other', items: [{ name: 'Fleet', href: FLEET_HREF, icon }] },
+    {
+      label: 'Control Center',
+      items: [
+        { name: 'Overview', href: FLEET_HREF, icon },
+        { name: 'Bans', href: `${FLEET_HREF}/bans`, icon },
+      ],
+    },
   ];
   it('keeps Fleet on a Control Center', () => {
     expect(withFleet(groups, true)).toEqual(groups);
@@ -116,6 +122,9 @@ describe('withFleet', () => {
       { label: 'Settings', items: [{ name: 'Users', href: '/settings/users', icon }] },
     ]);
     expect(fleetOffered(FLEET_HREF, false)).toBe(false);
+    // Every Control Center screen goes with it, and nothing that only starts alike.
+    expect(fleetOffered(`${FLEET_HREF}/matrix`, false)).toBe(false);
+    expect(fleetOffered(`${FLEET_HREF}-other`, false)).toBe(true);
     expect(fleetOffered('/settings/users', false)).toBe(true);
   });
 });
