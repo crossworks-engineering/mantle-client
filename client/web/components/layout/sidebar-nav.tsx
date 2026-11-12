@@ -371,15 +371,31 @@ export function SidebarNav({
                 aria-label="How much of the menu to show"
                 className={cn(
                   'mt-2 grid w-full',
-                  // Four tabs share the width by their words: CC is two letters.
+                  // Four tabs share the width by their words: CC is one icon.
                   scopes.length === 4 ? 'grid-cols-[1.25fr_1fr_1.15fr_0.7fr]' : 'grid-cols-3',
                 )}
               >
-                {scopes.map((s) => (
-                  <ToggleGroupItem key={s.id} value={s.id} className="px-1 text-xs">
-                    {s.label}
-                  </ToggleGroupItem>
-                ))}
+                {scopes.map((s) => {
+                  if (!s.icon) {
+                    return (
+                      <ToggleGroupItem key={s.id} value={s.id} className="px-1 text-xs">
+                        {s.label}
+                      </ToggleGroupItem>
+                    );
+                  }
+                  // An icon tab: the label is its accessible name and tooltip.
+                  const Icon = s.icon;
+                  return (
+                    <Tooltip key={s.id}>
+                      <TooltipTrigger asChild>
+                        <ToggleGroupItem value={s.id} aria-label={s.label} className="px-1 text-xs">
+                          <Icon className="size-3.5" aria-hidden />
+                        </ToggleGroupItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">{s.label}</TooltipContent>
+                    </Tooltip>
+                  );
+                })}
               </ToggleGroup>
             ) : null}
           </div>

@@ -25,8 +25,9 @@ export const ADMIN_ROWS = [
 
 export const NAV_SCOPES = ['Favorites', 'Work', 'Settings'] as const;
 
-/** The fourth tab, on a Control Center only: its group, alone. */
-export const CC_SCOPE = 'CC' as const;
+/** The fourth tab, on a Control Center only: its group, alone. An icon tab
+ *  since 2026-11-12, found by its accessible name. */
+export const CC_SCOPE = 'Control Center' as const;
 
 /**
  * An admin's rail, on one tab (lib/nav-scope.ts). Work and Settings are two
