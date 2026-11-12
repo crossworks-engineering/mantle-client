@@ -12,6 +12,10 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.24: Fleet sign-in on the Control Center
+
+- **Added:** on a Control Center, a Fleet sign-in page: per linked box, its company sign-in mode, tenant ID, client ID, whether a secret is set (never the value), the last Test and the link counts. A Control Center Admin enters the tenant ID, client ID and client secret, presses Test, and raises the mode one step at a time (setup, optional, required); the step to required shows a warning first. Each save asks for the person's own password. The mode never goes down from here: only the box `.env` can.
+
 ## v0.9.23: Control Center screens, uploads into shared folders
 
 - **Added:** on a Control Center, the Fleet matrix compares two boxes and copies agent models from one to the other; a Default Model card with model pickers; a Fleet users screen. The CC scope tab shows an admin icon.
