@@ -405,8 +405,8 @@ test('phase 3: the matrix sets every box side by side, and old facts say so', as
   await expect(b.getByText('Down', { exact: true })).toBeVisible();
   await expect(b.getByText('Failed', { exact: true })).toBeVisible();
   await expect(b.getByText(/, old$/)).toBeVisible();
-  // Each shipped agent's model, box by box.
-  const models = main.getByRole('table', { name: 'Agent models by box' });
+  // Each shipped agent's model, on two boxes side by side.
+  const models = main.getByRole('table', { name: 'Agents on two boxes' });
   await expect(models.getByRole('row').filter({ hasText: 'coder' })).toContainText('model-a');
   expect(api.fleet.matrixReads).toContain('');
 });
