@@ -12,6 +12,10 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.22: the decider form shows the pdf_kind use
+
+- **Added:** the decider form lists the `pdf_kind` use (the kind of a PDF that the rules could not name). It starts in shadow, as on the brain.
+
 ## v0.9.21: see your file databases, new Control Center screens
 
 - **Added:** a Data button on table-type files (xlsx, xls, csv, xml, dwg, dxf, dgn, dwf): tabs with row counts, columns, the first 100 rows, Load more, and a read-only Query box. A file with no database says why.
