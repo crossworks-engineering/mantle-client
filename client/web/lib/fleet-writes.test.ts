@@ -33,6 +33,13 @@ const pool: FleetWriteChange = {
 const on: FleetWriteChange = { kind: 'updateNotice', on: true };
 const off: FleetWriteChange = { kind: 'updateNotice', on: false };
 const group: FleetWriteChange = { kind: 'workerGroup', slug: 'review', members: ['a', 'b'] };
+const workerModel: FleetWriteChange = {
+  kind: 'workerModel',
+  worker: 'vision',
+  provider: 'openrouter',
+  endpoint: '',
+  model: 'new',
+};
 
 describe('fleet writes (phase 4)', () => {
   it('posts the settings to their route', () => {
@@ -60,6 +67,7 @@ describe('fleet writes (phase 4)', () => {
     expect(changeLabel(on)).toBe('Update notice on');
     expect(changeLabel(off)).toBe('Update notice off');
     expect(changeLabel(group)).toBe('Worker group review');
+    expect(changeLabel(workerModel)).toBe('vision worker to new');
   });
 
   it('says what an agent model answered', () => {
@@ -74,6 +82,25 @@ describe('fleet writes (phase 4)', () => {
     expect(answerText(answer(model, false, null, 'agent')).text).toContain('no shipped agent');
     expect(answerText(answer(model, false, 'old', 'policy')).text).toBe(
       'The model policy of this box does not allow it. It keeps old.',
+    );
+  });
+
+  it("says what a worker's model answered", () => {
+    expect(answerText(answer(workerModel, true, 'old', null)).text).toBe('Set. It was old.');
+    expect(answerText(answer(workerModel, true, 'new', null)).text).toBe(
+      'No change: it was set already.',
+    );
+    expect(answerText(answer(workerModel, false, null, 'worker')).text).toContain(
+      'no default worker of this kind',
+    );
+    expect(answerText(answer(workerModel, false, 'old', 'policy')).text).toBe(
+      'The model policy of this box does not allow it. It keeps old.',
+    );
+    expect(answerText(answer(workerModel, false, 'old', 'route')).text).toBe(
+      'This box runs it on another provider or endpoint. It keeps old.',
+    );
+    expect(answerText(answer(workerModel, false, 'old', 'model')).text).toBe(
+      'The provider does not list this model for this kind of worker. It keeps old.',
     );
   });
 

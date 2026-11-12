@@ -1,10 +1,11 @@
 /**
  * The fleet writes of Control Center phase 4 (docs/control-center.md in the
  * mantle repo, "Fleet writes"): an agent's model, a model pool entry, the
- * update notice and a worker group. One job per box holds them all: the box
+ * update notice, a worker group and a worker's model. One job per box holds them all: the box
  * rows of GET /api/fleet carry `writeJob` (the changes that wait, in the
  * order asked) and `writeResult` (the last 40 answers, newest last). Agent
- * models go to POST /api/fleet/models, the rest to POST /api/fleet/settings.
+ * models go to POST /api/fleet/models, the rest (worker models too) to POST
+ * /api/fleet/settings.
  * Pure, so it is unit-tested.
  */
 import { FLEET_PATH, reasonText, type FleetBox } from './fleet';
@@ -22,7 +23,7 @@ export const MAX_ROUTES = 8;
 export const MAX_MEMBERS = 10;
 
 export type FleetWriteChange =
-  | { kind: 'agentModel'; slug: string; model: string }
+  | { kind: 'agentModel'; slug: string; model: string; provider?: string; endpoint?: string }
   | {
       kind: 'poolEntry';
       pool: string;
@@ -31,7 +32,9 @@ export type FleetWriteChange =
       routes: { provider: string; model: string }[];
     }
   | { kind: 'updateNotice'; on: boolean }
-  | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean };
+  | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean }
+  /** The model of the default AI worker of a shipped kind (`worker`). */
+  | { kind: 'workerModel'; worker: string; provider: string; endpoint: string; model: string };
 
 /** Who asked a change, and when (its hour runs from here). */
 export type FleetWriteStamp = { by: string; at: string };
@@ -41,7 +44,14 @@ export type FleetWriteJob = { changes: (FleetWriteChange & FleetWriteStamp)[] };
 /** A box's answer to one change: ok and what it had (`was`), or a reason.
  *  `done` is when. */
 export type FleetWriteAnswer = FleetWriteChange &
-  FleetWriteStamp & { ok: boolean; was: string | null; reason: string | null; done: string };
+  FleetWriteStamp & {
+    ok: boolean;
+    was: string | null;
+    reason: string | null;
+    done: string;
+    /** workerModel: the id of the worker the box set (the one it runs). */
+    workerId?: string;
+  };
 
 export type FleetWriteResult = { results: FleetWriteAnswer[] };
 
@@ -67,6 +77,8 @@ export function changeLabel(c: FleetWriteChange): string {
       return `Update notice ${c.on ? 'on' : 'off'}`;
     case 'workerGroup':
       return `Worker group ${c.slug}`;
+    case 'workerModel':
+      return `${c.worker} worker to ${c.model}`;
   }
 }
 
@@ -90,6 +102,14 @@ export function answerText(a: FleetWriteAnswer): { tone: 'ok' | 'bad'; text: str
       );
     case 'members':
       return bad(`A member is not an enabled worker on this box.${NOTHING}`);
+    case 'worker':
+      return bad(
+        `This box has no default worker of this kind, or it cannot be set here.${NOTHING}`,
+      );
+    case 'model':
+      return bad(`The provider does not list this model for this kind of worker.${keeps}`);
+    case 'route':
+      return bad(`This box runs it on another provider or endpoint.${keeps}`);
     case 'expired':
       return bad(`Not sent within an hour, so it was dropped.${NOTHING}`);
     case 'unreachable':
@@ -110,6 +130,7 @@ export function answerText(a: FleetWriteAnswer): { tone: 'ok' | 'bad'; text: str
 function okText(a: FleetWriteAnswer): string {
   switch (a.kind) {
     case 'agentModel':
+    case 'workerModel':
       if (a.was === a.model) return 'No change: it was set already.';
       return a.was ? `Set. It was ${a.was}.` : 'Set.';
     case 'poolEntry':

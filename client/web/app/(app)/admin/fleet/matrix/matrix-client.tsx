@@ -20,7 +20,7 @@ import {
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime, timeAgo } from '@mantle/web-ui/lib/format-datetime';
 import { formatMicroUsd } from '@mantle/web-ui/traces-format';
-import { boxName, type FleetOverview } from '@/lib/fleet';
+import { boxName, type FleetBox, type FleetOverview } from '@/lib/fleet';
 import {
   agentName,
   backupTone,
@@ -36,8 +36,9 @@ import {
   type FleetFacts,
   type FleetMatrixRow,
 } from '@/lib/fleet-matrix';
-import { currentModel, shippedSlugs } from '@/lib/fleet-models';
+import { shippedSlugs, workerKinds } from '@/lib/fleet-models';
 import { ccHref } from '@/lib/fleet-view';
+
 import { pctLevel, type BoxStatus } from '@/lib/status';
 import {
   Callout,
@@ -56,6 +57,7 @@ import {
   useParam,
   type MatrixAnswer,
 } from '../cc-kit';
+import { ModelCompare } from './model-compare';
 
 const ALL = 'all';
 
@@ -105,14 +107,23 @@ function sum(rows: readonly FleetMatrixRow[], pick: (s: BoxStatus) => number | u
   return known ? formatMicroUsd(total) : '–';
 }
 
-function AllBoxes({ rows, onOpen }: { rows: FleetMatrixRow[]; onOpen: (id: string) => void }) {
+function AllBoxes({
+  rows,
+  boxes,
+  refresh,
+  onOpen,
+}: {
+  rows: FleetMatrixRow[];
+  boxes: readonly FleetBox[];
+  refresh: () => void;
+  onOpen: (id: string) => void;
+}) {
   const withFacts = rows.filter((r) => r.facts);
   const healthy = withFacts.filter((r) => healthLevel(r.facts!.status) === 'ok').length;
   const versions = new Set(
     withFacts.flatMap((r) => (r.facts!.status ? [r.facts!.status.build.version] : [])),
   );
   const backupsFailed = withFacts.filter((r) => backupTone(r.facts!.backup) === 'bad').length;
-  const slugs = shippedSlugs(rows);
   return (
     <DetailPane
       icon={<Grid3x3 />}
@@ -209,48 +220,8 @@ function AllBoxes({ rows, onOpen }: { rows: FleetMatrixRow[]; onOpen: (id: strin
         </div>
       </Part>
 
-      {slugs.length > 0 && (
-        <Part
-          title="Agent models, box by box"
-          action={<ScreenLink href={ccHref('models')}>Set a model</ScreenLink>}
-        >
-          <div className="rounded-lg border border-border">
-            <Table aria-label="Agent models by box">
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-3">Agent</TableHead>
-                  {rows.map((r) => (
-                    <TableHead key={r.id}>{boxName(r)}</TableHead>
-                  ))}
-                  <TableHead className="pr-3" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {slugs.map((slug) => {
-                  const models = rows.map((r) => currentModel(r, slug));
-                  const differ = new Set(models.filter((m): m is string => m !== null)).size > 1;
-                  return (
-                    <TableRow key={slug}>
-                      <TableCell className="pl-3 font-medium">{slug}</TableCell>
-                      {rows.map((r, i) => (
-                        <TableCell key={r.id} className="font-mono text-[13px]">
-                          {models[i] === null ? (
-                            <span className="text-muted-foreground">–</span>
-                          ) : (
-                            models[i] || <span className="text-muted-foreground">no model</span>
-                          )}
-                        </TableCell>
-                      ))}
-                      <TableCell className="pr-3 text-right">
-                        {differ && <Pill tone="warn">differs</Pill>}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </Part>
+      {(shippedSlugs(rows).length > 0 || workerKinds(rows).length > 0) && (
+        <ModelCompare rows={rows} boxes={boxes} refresh={refresh} />
       )}
     </DetailPane>
   );
@@ -532,7 +503,7 @@ function BoxCard({
   );
 }
 
-function Matrix({ data }: { data: FleetOverview }) {
+function Matrix({ data, refresh }: { data: FleetOverview; refresh: () => void }) {
   const [param, setParam] = useParam('box');
   const query = useQuery(matrixQuery);
   const rows = query.data?.boxes ?? [];
@@ -578,7 +549,7 @@ function Matrix({ data }: { data: FleetOverview }) {
         selected ? (
           <OneBox key={selected.id} row={selected} />
         ) : rows.length > 0 ? (
-          <AllBoxes rows={rows} onOpen={setParam} />
+          <AllBoxes rows={rows} boxes={data.boxes} refresh={refresh} onOpen={setParam} />
         ) : null
       }
     />
@@ -586,5 +557,9 @@ function Matrix({ data }: { data: FleetOverview }) {
 }
 
 export function MatrixClient() {
-  return <FleetScreen needs="matrix">{(data) => <Matrix data={data} />}</FleetScreen>;
+  return (
+    <FleetScreen needs="matrix">
+      {(data, refresh) => <Matrix data={data} refresh={refresh} />}
+    </FleetScreen>
+  );
 }

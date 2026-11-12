@@ -31,8 +31,20 @@ export type FleetFacts = {
     enabled: boolean;
     /** A person's own assistant. */
     assigned: boolean;
+    /** Its endpoint print: 12 hex of its base URL's hash, '' for the
+     *  provider's own (a box before it sends none). */
+    endpoint?: string;
   }[];
-  workers: { kind: string; provider: string; model: string; enabled: boolean }[];
+  /** `default`: the worker that runs its kind (the runtime's own pick);
+   *  `endpoint`: its endpoint print. A box before them sends neither. */
+  workers: {
+    kind: string;
+    provider: string;
+    model: string;
+    enabled: boolean;
+    default?: boolean;
+    endpoint?: string;
+  }[];
   counts: { workspaces: number; apps: number };
   backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
 };
