@@ -18,6 +18,8 @@ import {
   bulkSkipText,
   describeChange,
   MAX_MEMBER_CHANGES,
+  peopleReasonText,
+  staleNotes,
   stateWord,
   type FleetPeopleBox,
   type MemberChange,
@@ -162,6 +164,11 @@ export function BulkPane({
             call. Send again.
           </Callout>
         )}
+        {box && peopleReasonText(box) && (
+          <Callout tone="warn" title="This box's list is old">
+            {peopleReasonText(box)}
+          </Callout>
+        )}
         {plan && (
           <div className="space-y-2 rounded-lg border border-border bg-primary/5 p-3 text-sm">
             {plan.changes.length === 0 ? (
@@ -205,9 +212,15 @@ export function BulkPane({
         onConfirm={() => void go()}
       >
         <span className="block">
-          {box ? boxName(box) : 'The box'} runs the changes now with its own checks, and answers
-          within 25 seconds.
+          {box ? boxName(box) : 'The box'} runs the changes now with its own checks. An answer can
+          take a minute or two.
         </span>
+        {frozen &&
+          staleNotes(frozen.changes, peopleBoxes).map((t) => (
+            <span key={t} className="mt-2 block text-warning-ink">
+              Planned from an old list. {t}
+            </span>
+          ))}
         <span className="mt-2 block max-h-64 overflow-y-auto scrollbar-thin">
           {frozen?.changes.map((c) => (
             <span key={`${c.boxId}:${c.loginId}`} className="block text-foreground">

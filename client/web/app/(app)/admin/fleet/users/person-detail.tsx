@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Copy, Lock, ShieldBan, ShieldCheck, UserRound } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
@@ -31,6 +31,7 @@ import {
   memberHistory,
   membershipGrid,
   peopleReasonText,
+  staleNotes,
   roleWord,
   skipText,
   stateWord,
@@ -179,12 +180,39 @@ export function PersonDetail({
     const sent = await onSend(confirm.changes);
     if (!sent) return;
     setConfirm(null);
-    // A box that was not queued keeps its changes here, to send again.
-    setStaged(new Map(sent.left.map((c) => [cellKey(c), c])));
+    // The changes sent leave the staged ones; a change its box never ran
+    // joins them again, to send again. Never a replace: a copy keeps what
+    // the grid had staged.
+    const sentKeys = new Set(confirm.changes.map(cellKey));
+    setStaged((m) => {
+      const next = new Map([...m].filter(([k]) => !sentKeys.has(k)));
+      for (const c of sent.left) next.set(cellKey(c), c);
+      return next;
+    });
     setLeft(sent.left.length);
   };
 
+  // A staged change whose cell became locked, gone or already so (the
+  // boxes were read again) no longer applies: it is dropped, and said.
+  const [dropped, setDropped] = useState(0);
+  useEffect(() => {
+    const cells = new Map<string, Extract<GridCell, { kind: 'cell' }>>();
+    for (const r of grid.rows) {
+      for (const c of Object.values(r.cells)) if (c.kind === 'cell') cells.set(cellKey(c), c);
+    }
+    const bad = [...staged.entries()].filter(([k, c]) => {
+      const cell = cells.get(k);
+      return (
+        !cell || cell.lock !== null || !cellChoices(cell).includes(c.role) || cell.state === c.role
+      );
+    });
+    if (bad.length === 0) return;
+    setStaged((m) => new Map([...m].filter(([k]) => !bad.some(([b]) => b === k))));
+    setDropped((n) => n + bad.length);
+  }, [grid, staged]);
+
   const stagedList = [...staged.values()];
+  const stale = confirm ? staleNotes(confirm.changes, peopleBoxes) : [];
   const reasons = person.logins
     .map((l) => ({ l, why: peopleReasonText(peopleById.get(l.boxId)!) }))
     .filter((x) => x.why !== null);
@@ -310,6 +338,12 @@ export function PersonDetail({
           ) : undefined
         }
       >
+        {dropped > 0 && (
+          <Callout tone="warn" title="Some staged changes no longer apply">
+            {dropped === 1 ? '1 staged change was' : `${dropped} staged changes were`} dropped: the
+            box now shows that cell locked, gone or already so.
+          </Callout>
+        )}
         {left > 0 && stagedList.length > 0 && (
           <Callout tone="warn" title="Not sent yet">
             {left === 1 ? '1 change was' : `${left} changes were`} not run: the box did not take the
@@ -491,8 +525,13 @@ export function PersonDetail({
         onConfirm={() => void go()}
       >
         <span className="block">
-          Each box runs it now with its own checks, and answers within 25 seconds.
+          Each box runs it now with its own checks. An answer can take a minute or two.
         </span>
+        {stale.map((t) => (
+          <span key={t} className="mt-2 block text-warning-ink">
+            Planned from an old list. {t}
+          </span>
+        ))}
         <span className="mt-2 block space-y-1">
           {confirm?.changes.map((c) => (
             <span key={cellKey(c)} className="block text-foreground">

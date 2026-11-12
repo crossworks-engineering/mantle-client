@@ -24,6 +24,7 @@ import {
   peopleReasonText,
   sentSummary,
   skipText,
+  staleNotes,
   toolCalls,
   type MemberAnswer,
   type FleetPeopleBox,
@@ -274,7 +275,7 @@ describe('fleet people', () => {
         loginId: 'b1',
         workspaceId: 'b-ops',
         role: 'none',
-        ok: false,
+        outcome: 'refused',
         was: 'moderator',
         reason: 'last-moderator',
         done: '2026-11-12T11:30:00.000Z',
@@ -290,7 +291,7 @@ describe('fleet people', () => {
   it('words the workspace answers and the send', () => {
     const a = (
       role: 'user' | 'moderator' | 'none',
-      ok: boolean,
+      outcome: MemberAnswer['outcome'],
       was: 'user' | 'moderator' | 'none' | null,
       reason: string | null,
     ): MemberAnswer => ({
@@ -298,94 +299,155 @@ describe('fleet people', () => {
       loginId: 'b1',
       workspaceId: 'b-ops',
       role,
-      ok,
+      outcome,
       was,
       reason,
       done: recent,
     });
-    expect(memberAnswerText(a('user', true, 'none', null)).text).toBe('Added as a user.');
-    expect(memberAnswerText(a('moderator', true, 'user', null)).text).toBe('Now a Moderator.');
-    expect(memberAnswerText(a('none', true, 'user', null)).text).toBe('Removed.');
-    expect(memberAnswerText(a('user', true, 'user', null)).text).toBe(
+    expect(memberAnswerText(a('user', 'ok', 'none', null)).text).toBe('Added as a user.');
+    expect(memberAnswerText(a('moderator', 'ok', 'user', null)).text).toBe('Now a Moderator.');
+    expect(memberAnswerText(a('none', 'ok', 'user', null)).text).toBe('Removed.');
+    expect(memberAnswerText(a('user', 'ok', 'user', null)).text).toBe(
       'No change: it was so already.',
     );
-    for (const r of ['login', 'owner', 'workspace', 'admin', 'last-moderator', 'disabled']) {
-      const said = memberAnswerText(a('user', false, null, r));
+    for (const r of ['login', 'owner', 'workspace', 'admin', 'last-moderator', 'disabled', 'odd']) {
+      const said = memberAnswerText(a('user', 'refused', null, r));
       expect(said.tone).toBe('bad');
-      expect(boxLevel(a('user', false, null, r))).toBe(false);
+      expect(said.text).toMatch(/Nothing was set\.$/);
+      expect(boxLevel(a('user', 'refused', null, r))).toBe(false);
     }
-    expect(memberAnswerText(a('user', false, null, 'scope')).text).toContain(
+    expect(memberAnswerText(a('user', 'not-run', null, 'scope')).text).toContain(
       'MANTLE_CONTROL_CENTER_SCOPE',
     );
-    expect(boxLevel(a('user', false, null, 'scope'))).toBe(true);
+    expect(memberAnswerText(a('user', 'not-run', null, 'tool')).text).toBe(
+      'This box does not offer workspace_user_set to the Control Center yet (a box release, and the admin scope must include it). Nothing was set.',
+    );
+    expect(boxLevel(a('user', 'not-run', null, 'scope'))).toBe(true);
+    // Unknown is never "Nothing was set".
+    const unknown = memberAnswerText(a('user', 'unknown', null, 'pending'));
+    expect(unknown.tone).toBe('warn');
+    expect(unknown.text).toContain('Not confirmed: the box may still make this change.');
+    expect(unknown.text).not.toContain('Nothing was set');
+    expect(boxLevel(a('user', 'unknown', null, 'pending'))).toBe(false);
     expect(
       describeChange(
         { boxId: 'a', loginId: 'a2', workspaceId: 'a-proj', role: 'moderator' },
         boxes,
       ),
     ).toBe('bob@example.com in Projects as Moderator on Alpha');
-    expect(sentSummary([a('user', true, 'none', null), a('user', true, 'none', null)])).toEqual({
+    expect(sentSummary([a('user', 'ok', 'none', null), a('user', 'ok', 'none', null)])).toEqual({
       tone: 'ok',
       text: '2 changes made.',
     });
     expect(
       sentSummary([
-        a('user', true, 'none', null),
-        a('user', false, null, 'last-moderator'),
-        a('user', false, null, 'unreachable'),
+        a('user', 'ok', 'none', null),
+        a('user', 'refused', null, 'last-moderator'),
+        a('user', 'not-run', null, 'busy'),
+        a('user', 'unknown', null, 'timeout'),
       ]).text,
-    ).toBe('1 change made. 1 change refused by the box. 1 change not run: kept, to send again.');
+    ).toBe(
+      '1 change made. 1 change refused by the box. 1 change not run: kept, to send again. 1 change not confirmed: the box may still make them.',
+    );
     expect(peopleReasonText(boxOld)).toContain('release before Fleet users');
     expect(peopleReasonText(boxA)).toBeNull();
   });
 
-  it('reads users_list and workspace_user_set answers', () => {
+  it('reads users_list answers, held to their shape (audit L5)', () => {
+    const W = '11111111-1111-4111-8111-111111111111';
+    const L1 = '22222222-2222-4222-8222-222222222222';
+    const L2 = '33333333-3333-4333-8333-333333333333';
     const out = parsePeople({
       schema: 1,
       at: recent,
-      workspaces: [{ id: 'w', name: 'Ops', admin: false }, { name: 'no id' }],
+      workspaces: [
+        { id: W, name: 'Ops', admin: false },
+        { id: W, name: 'Ops again', admin: false },
+        { id: 'not-a-uuid', name: 'x', admin: false },
+        { id: '44444444-4444-4444-8444-444444444444', name: 'no flag' },
+      ],
       logins: [
-        { id: 'l1', email: 'Pat@Example.com', role: 'member', workspaces: [{ id: 'w' }] },
-        { id: 'l2' },
+        {
+          id: L1.toUpperCase(),
+          email: 'Pat@Example.com',
+          name: 'x'.repeat(500),
+          role: 'member',
+          owner: false,
+          workspaces: [{ id: W }, { id: W, moderator: true }, { id: 'junk' }],
+        },
+        { id: L1, email: 'dup@example.com', owner: false },
+        { id: L2, email: 'no-owner-flag@example.com' },
+        { id: 'short', email: 'bad-id@example.com', owner: false },
       ],
     })!;
-    expect(out.workspaces).toEqual([{ id: 'w', name: 'Ops', admin: false }]);
+    expect(out.workspaces).toEqual([{ id: W, name: 'Ops', admin: false }]);
     expect(out.logins).toHaveLength(1);
     expect(out.logins[0]).toMatchObject({
+      id: L1,
       email: 'pat@example.com',
       owner: false,
-      workspaces: [{ id: 'w', moderator: false }],
+      workspaces: [{ id: W, moderator: false }],
     });
+    expect(out.logins[0]!.name).toHaveLength(200);
     expect(parsePeople({ logins: [] })).toBeNull();
     expect(parsePeople('text')).toBeNull();
+  });
 
-    const rows = [boxA, boxB].map(({ id, url, label, lastOkAt, lastReason }) => ({
+  it("keeps a box's last good list when it did not answer (audit M2)", () => {
+    const W = '11111111-1111-4111-8111-111111111111';
+    const L1 = '22222222-2222-4222-8222-222222222222';
+    const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const list = {
+      schema: 1 as const,
+      at: '2026-11-12T11:00:00.000Z',
+      workspaces: [{ id: W, name: 'Ops', admin: false }],
+      logins: [
+        {
+          id: L1,
+          email: 'pat@example.com',
+          name: null,
+          role: 'member',
+          owner: false,
+          disabled: false,
+          archived: false,
+          lastSignInAt: null,
+          createdAt: null,
+          workspaces: [],
+        },
+      ],
+    };
+    const rows = [A, B].map((id) => ({
       id,
-      url,
-      label,
-      lastOkAt,
-      lastReason,
+      url: `https://${id.slice(0, 4)}.example.invalid`,
+      label: null,
+      lastOkAt: null,
+      lastReason: null,
     }));
     const read = peopleBoxes(
       rows,
       [
-        { boxId: 'a', ok: true, output: boxA.people, reason: null },
-        { boxId: 'b', ok: false, output: undefined, reason: 'scope' },
+        { boxId: A, outcome: 'ok', output: list, reason: null },
+        { boxId: B, outcome: 'not-run', output: undefined, reason: 'scope' },
       ],
-      new Map([['b', boxB.people!]]),
+      new Map([[B, list]]),
     );
-    expect(read[0]).toMatchObject({ id: 'a', peopleReason: null });
-    expect(read[0]!.people!.logins).toHaveLength(3);
-    // B did not answer: its last good list stays, with the reason.
-    expect(read[1]).toMatchObject({ id: 'b', peopleReason: 'scope' });
-    expect(read[1]!.people).toBe(boxB.people);
-    expect(peopleReasonText(read[1]!, NOW)).toMatch(
-      /^The last read failed \(This box has not opened/,
+    expect(read[0]).toMatchObject({ id: A, peopleReason: null });
+    expect(read[0]!.people!.logins).toHaveLength(1);
+    expect(read[1]).toMatchObject({ id: B, peopleReason: 'scope' });
+    expect(read[1]!.people).toBe(list);
+    expect(peopleReasonText(read[1]!, NOW)).toBe(
+      'The last read failed (This box has not opened its admin tools to the Control Center (MANTLE_CONTROL_CENTER_SCOPE)). This list is from 1 hour ago.',
     );
+    expect(staleNotes([{ boxId: B }, { boxId: A }], read, NOW)).toEqual([
+      `bbbb.example.invalid: ${peopleReasonText(read[1]!, NOW)}`,
+    ]);
     expect(
-      peopleBoxes(rows, [{ boxId: 'a', ok: true, output: 'junk', reason: null }])[0],
+      peopleBoxes(rows, [{ boxId: A, outcome: 'ok', output: 'junk', reason: null }])[0],
     ).toMatchObject({ people: null, peopleReason: 'bad-reply' });
+  });
 
+  it('answers each change from its call (audit M1, L6)', () => {
     const changes = [
       { boxId: 'b', loginId: 'b1', workspaceId: 'b-proj', role: 'user' as const },
       { boxId: 'b', loginId: 'b1', workspaceId: 'b-ops', role: 'none' as const },
@@ -395,28 +457,41 @@ describe('fleet people', () => {
       changes,
       {
         boxId: 'b',
-        ok: true,
+        outcome: 'ok',
         reason: null,
         output: {
           results: [
             { loginId: 'b1', workspaceId: 'b-proj', ok: true, was: 'none' },
-            { loginId: 'b1', workspaceId: 'b-ops', ok: false, reason: 'last-moderator' },
+            // Any code: the call ran, so this is a refusal.
+            { loginId: 'b1', workspaceId: 'b-ops', ok: false, reason: 'scope' },
           ],
         },
       },
       recent,
     );
-    expect(answered.map((x) => [x.ok, x.was, x.reason])).toEqual([
-      [true, 'none', null],
-      [false, null, 'last-moderator'],
-      [false, null, 'bad-reply'],
+    expect(answered.map((x) => [x.outcome, x.was, x.reason])).toEqual([
+      ['ok', 'none', null],
+      ['refused', null, 'scope'],
+      ['unknown', null, 'bad-reply'],
     ]);
-    expect(
-      memberAnswers(changes, { boxId: 'b', ok: false, output: undefined, reason: 'scope' }).every(
-        (x) => x.reason === 'scope' && boxLevel(x),
-      ),
-    ).toBe(true);
-    expect(memberAnswers(changes.slice(0, 1), undefined)[0]!.reason).toBe('missing');
+    const notRun = memberAnswers(changes, {
+      boxId: 'b',
+      outcome: 'not-run',
+      output: undefined,
+      reason: 'busy',
+    });
+    expect(notRun.every((x) => x.outcome === 'not-run' && boxLevel(x))).toBe(true);
+    const pending = memberAnswers(changes, {
+      boxId: 'b',
+      outcome: 'unknown',
+      output: undefined,
+      reason: 'pending',
+    });
+    expect(pending.every((x) => x.outcome === 'unknown' && !boxLevel(x))).toBe(true);
+    expect(memberAnswers(changes.slice(0, 1), undefined)[0]).toMatchObject({
+      outcome: 'unknown',
+      reason: 'pending',
+    });
   });
 
   it('splits changes into calls: per box, at most 20 each', () => {
@@ -538,7 +613,7 @@ describe('fleet people', () => {
       loginId: 'b1',
       workspaceId: 'b-proj',
       role: 'user',
-      ok: false,
+      outcome: 'refused',
       was: 'none',
       reason: 'disabled',
       done: recent,

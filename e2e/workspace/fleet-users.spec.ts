@@ -50,15 +50,16 @@ const card = (page: Page, text: string) =>
 const grid = (page: Page) =>
   page.getByRole('main').getByRole('table', { name: 'Workspaces, box by box' });
 
-/** A person's first login (by box name): the address names it, never the email. */
+/** A person's first login (by box name), as box:login: the address names
+ *  it, never the email. */
 const FIRST_LOGIN: Record<string, string> = {
-  'ann@example.com': PEOPLE.a.ann,
-  'owner@example.com': PEOPLE.a.owner,
-  'dan@example.com': PEOPLE.a.dan,
+  'ann@example.com': `${FLEET_BOX.id}:${PEOPLE.a.ann}`,
+  'owner@example.com': `${FLEET_BOX.id}:${PEOPLE.a.owner}`,
+  'dan@example.com': `${FLEET_BOX.id}:${PEOPLE.a.dan}`,
 };
 
 async function open(page: Page, email: string) {
-  await page.goto(`${USERS}?person=${FIRST_LOGIN[email]}`);
+  await page.goto(`${USERS}?person=${encodeURIComponent(FIRST_LOGIN[email]!)}`);
   await expect(grid(page)).toBeVisible();
   await expect(page.getByRole('main').getByText(email).first()).toBeVisible();
 }
@@ -83,7 +84,9 @@ test('the nav shows Fleet users, and the list groups one person across boxes', a
   await shot(page, 'fleet-users-list');
   // A card opens its person; the address names a login id, never the email.
   await card(page, 'dan@example.com').getByRole('button').click();
-  await expect(page).toHaveURL(new RegExp(`\\?person=${PEOPLE.a.dan}$`));
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('person'))
+    .toBe(`${FLEET_BOX.id}:${PEOPLE.a.dan}`);
   expect(page.url()).not.toContain('example.com');
 });
 
@@ -272,6 +275,44 @@ test('a Control Center before the admin channel: counts, bans and one calm callo
   await expect(dialog.getByText('carol@example.com')).toBeVisible();
   await dialog.getByRole('button', { name: 'Lift ban' }).click();
   await expect.poll(() => api.fleet!.lifted.length).toBe(1);
+});
+
+test('a box whose answer is too large shows nothing, and says so', async ({ page }) => {
+  api.fleet!.toolTruncated[FLEET_BOX_B.id] = true;
+  await signIn(page, 'admin');
+  await page.goto(USERS);
+  await expect(
+    page
+      .getByRole('main')
+      .getByRole('list', { name: 'Boxes not shown in full' })
+      .getByText("The box's answer was too large; showing nothing for this box."),
+  ).toBeVisible();
+  await expect(card(page, 'erin@example.com')).toHaveCount(0);
+});
+
+test('a write still pending after 25 s is asked for again, then answered', async ({ page }) => {
+  test.setTimeout(150_000);
+  await signIn(page, 'admin');
+  await open(page, 'ann@example.com');
+  // From now on Box B answers one ask late.
+  api.fleet!.toolDelay[FLEET_BOX_B.id] = 1;
+  const main = page.getByRole('main');
+  await pick(
+    page,
+    grid(page).getByRole('combobox', { name: /^Role in projects on box-b/i }),
+    'User',
+  );
+  await main.getByRole('button', { name: 'Send 1 change' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(main.getByText('Sending…')).toBeVisible();
+  const changes = main
+    .getByRole('heading', { name: 'Workspace changes' })
+    .locator('..')
+    .locator('..');
+  await expect(changes.getByText('Added as a user.')).toBeVisible({ timeout: 60_000 });
+  const followUp = api.fleet!.toolSent.find((b) => Array.isArray(b.callIds));
+  expect(followUp).toBeDefined();
+  expect(Object.keys(followUp!)).toEqual(['callIds']);
 });
 
 test('dark: the list and a person', async ({ page }) => {

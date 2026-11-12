@@ -11,7 +11,7 @@
  */
 import { boxName, FLEET_KEY, type FleetBan } from './fleet';
 import type { Tone } from './fleet-view';
-import { toolReasonText, type ToolBoxAnswer } from './fleet-tool';
+import { toolReasonText, UUID, type BoxOutcome } from './fleet-tool';
 
 /** Under FLEET_KEY: the Fleet's refresh reads the people again too. */
 export const FLEET_PEOPLE_KEY = [...FLEET_KEY, 'users'];
@@ -337,9 +337,12 @@ export function wsLabel(
 /** A login's column when the person has two logins on one box (emails
  *  arrive lowercase, so the email cannot tell them apart): the box, the
  *  day it was made and a short login id. */
-export function loginLabel(l: Pick<PersonLogin, 'box' | 'loginId' | 'createdAt'>): string {
+export function loginLabel(
+  l: Pick<PersonLogin, 'box' | 'loginId' | 'createdAt'>,
+  siblings: readonly string[] = [],
+): string {
   const made = l.createdAt ? `, made ${l.createdAt.slice(0, 10)}` : '';
-  return `${l.box} (login ${l.loginId.slice(0, 8)}${made})`;
+  return `${l.box} (login ${shortId(l.loginId, siblings)}${made})`;
 }
 
 /** How long ago `iso` was, in plain words. */
@@ -440,7 +443,13 @@ export function membershipGrid(
     key: colKey(l.boxId, l.loginId),
     boxId: l.boxId,
     box: l.box,
-    label: person.logins.filter((x) => x.boxId === l.boxId).length > 1 ? loginLabel(l) : l.box,
+    label:
+      person.logins.filter((x) => x.boxId === l.boxId).length > 1
+        ? loginLabel(
+            l,
+            person.logins.filter((x) => x.boxId === l.boxId).map((x) => x.loginId),
+          )
+        : l.box,
     loginId: l.loginId,
     full: l.full,
     owner: l.owner,
@@ -695,44 +704,71 @@ export function assignableWorkspaces(
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
 const str = (v: unknown) => (typeof v === 'string' ? v : null);
 
-/** A box's `users_list` output as a people list, or null when it is not one. */
+/** What one users_list answer may hold; more is cut. */
+export const PEOPLE_CAPS = { logins: 10_000, workspaces: 2_000, memberships: 2_000, text: 200 };
+
+const cap = (v: string | null, n = PEOPLE_CAPS.text) => (v === null ? null : v.slice(0, n));
+const uuid = (v: unknown) => (typeof v === 'string' && UUID.test(v) ? v.toLowerCase() : null);
+
+/**
+ * A box's `users_list` output as a people list, or null when it is not one.
+ * Held to its shape: ids are uuids, `owner` and `admin` are booleans (a row
+ * without is dropped as bad), an id seen twice is dropped, counts and
+ * strings are capped.
+ */
 export function parsePeople(output: unknown): FleetPeople | null {
   if (!isObj(output) || !Array.isArray(output.workspaces) || !Array.isArray(output.logins)) {
     return null;
   }
-  const workspaces = output.workspaces.filter(isObj).flatMap((w) => {
-    const id = str(w.id);
-    return id ? [{ id, name: str(w.name) ?? '', admin: w.admin === true }] : [];
-  });
-  const logins = output.logins.filter(isObj).flatMap((l): FleetPeopleLogin[] => {
-    const id = str(l.id);
+  const wsSeen = new Set<string>();
+  const workspaces: FleetPeopleWorkspace[] = [];
+  for (const w of output.workspaces.slice(0, PEOPLE_CAPS.workspaces)) {
+    if (!isObj(w) || typeof w.admin !== 'boolean') continue;
+    const id = uuid(w.id);
+    if (!id || wsSeen.has(id)) continue;
+    wsSeen.add(id);
+    workspaces.push({ id, name: cap(str(w.name)) ?? '', admin: w.admin });
+  }
+  const loginSeen = new Set<string>();
+  const logins: FleetPeopleLogin[] = [];
+  for (const l of output.logins.slice(0, PEOPLE_CAPS.logins)) {
+    if (!isObj(l) || typeof l.owner !== 'boolean') continue;
+    const id = uuid(l.id);
     const email = str(l.email);
-    if (!id || !email) return [];
-    return [
-      {
-        id,
-        email: email.toLowerCase(),
-        name: str(l.name),
-        role: str(l.role) ?? 'member',
-        owner: l.owner === true,
-        disabled: l.disabled === true,
-        archived: l.archived === true,
-        lastSignInAt: str(l.lastSignInAt),
-        createdAt: str(l.createdAt),
-        workspaces: (Array.isArray(l.workspaces) ? l.workspaces : []).filter(isObj).flatMap((m) => {
-          const wid = str(m.id);
-          return wid ? [{ id: wid, moderator: m.moderator === true }] : [];
-        }),
-      },
-    ];
-  });
-  return { schema: 1, at: str(output.at) ?? new Date().toISOString(), workspaces, logins };
+    if (!id || !email || loginSeen.has(id)) continue;
+    loginSeen.add(id);
+    const mine = new Set<string>();
+    const ws: { id: string; moderator: boolean }[] = [];
+    for (const m of (Array.isArray(l.workspaces) ? l.workspaces : []).slice(
+      0,
+      PEOPLE_CAPS.memberships,
+    )) {
+      const wid = isObj(m) ? uuid(m.id) : null;
+      if (!wid || mine.has(wid)) continue;
+      mine.add(wid);
+      ws.push({ id: wid, moderator: (m as Record<string, unknown>).moderator === true });
+    }
+    logins.push({
+      id,
+      email: email.toLowerCase().slice(0, 320),
+      name: cap(str(l.name)),
+      role: cap(str(l.role), 20) ?? 'member',
+      owner: l.owner,
+      disabled: l.disabled === true,
+      archived: l.archived === true,
+      lastSignInAt: cap(str(l.lastSignInAt), 40),
+      createdAt: cap(str(l.createdAt), 40),
+      workspaces: ws,
+    });
+  }
+  return { schema: 1, at: cap(str(output.at), 40) ?? new Date().toISOString(), workspaces, logins };
 }
 
 /**
- * The linked boxes with their people, from one `users_list` call. A box
- * that did not answer keeps the list it had (`kept`, by box id), with its
- * reason: the screen says how old it is.
+ * The linked boxes with their people, from one `users_list` run. A box
+ * that did not answer, or answered something this box cannot read, keeps
+ * the list it had (`kept`, by box id), with its reason: the screen says how
+ * old it is.
  */
 export function peopleBoxes(
   boxes: readonly {
@@ -742,13 +778,13 @@ export function peopleBoxes(
     lastOkAt: string | null;
     lastReason: string | null;
   }[],
-  answers: readonly ToolBoxAnswer[],
+  outcomes: readonly BoxOutcome[],
   kept: ReadonlyMap<string, FleetPeople> = new Map(),
 ): FleetPeopleBox[] {
   return boxes.map((b) => {
-    const a = answers.find((x) => x.boxId === b.id);
-    const people = a?.ok ? parsePeople(a.output) : null;
-    const reason = !a ? null : a.ok ? (people ? null : 'bad-reply') : a.reason;
+    const a = outcomes.find((x) => x.boxId === b.id.toLowerCase());
+    const people = a?.outcome === 'ok' ? parsePeople(a.output) : null;
+    const reason = !a ? null : a.outcome === 'ok' ? (people ? null : 'bad-reply') : a.reason;
     return {
       id: b.id,
       url: b.url,
@@ -762,9 +798,13 @@ export function peopleBoxes(
   });
 }
 
+/** How one change ended: made, refused by the box, never run, or unknown
+ *  (sent, no answer read: the box may still make it). */
+export type MemberOutcome = 'ok' | 'refused' | 'not-run' | 'unknown';
+
 /** One change's answer: the box's word for it, or the call's reason. */
 export type MemberAnswer = MemberChange & {
-  ok: boolean;
+  outcome: MemberOutcome;
   was: MemberState | null;
   reason: string | null;
   done: string;
@@ -774,28 +814,38 @@ const asState = (v: unknown): MemberState | null =>
   v === 'none' || v === 'user' || v === 'moderator' ? v : null;
 
 /** Every change of one call, answered: from the box's results when it ran
- *  the tool, else each with the box's reason. */
+ *  the tool (then any per-change ok: false is a refusal, whatever its code),
+ *  else each with the call's outcome and reason. */
 export function memberAnswers(
   changes: readonly MemberChange[],
-  answer: ToolBoxAnswer | undefined,
+  box: BoxOutcome | undefined,
   done: string = new Date().toISOString(),
 ): MemberAnswer[] {
+  const each = (c: MemberChange, outcome: MemberOutcome, reason: string | null, was = null) => ({
+    ...c,
+    outcome,
+    was: was as MemberState | null,
+    reason,
+    done,
+  });
+  if (!box) return changes.map((c) => each(c, 'unknown', 'pending'));
+  if (box.outcome !== 'ok') return changes.map((c) => each(c, box.outcome, box.reason));
   const results =
-    answer?.ok && isObj(answer.output) && Array.isArray(answer.output.results)
-      ? answer.output.results.filter(isObj)
+    isObj(box.output) && Array.isArray(box.output.results)
+      ? box.output.results.filter(isObj)
       : null;
   return changes.map((c) => {
-    if (!answer) return { ...c, ok: false, was: null, reason: 'missing', done };
-    if (!answer.ok) return { ...c, ok: false, was: null, reason: answer.reason ?? 'error', done };
+    // The box ran it: a change it does not name is unknown, never not made.
     const r = results?.find((x) => x.loginId === c.loginId && x.workspaceId === c.workspaceId);
-    if (!r) return { ...c, ok: false, was: null, reason: 'bad-reply', done };
-    const ok = r.ok === true;
-    const reason = ok ? null : (str(r.reason) ?? 'refused');
-    return { ...c, ok, was: asState(r.was), reason, done };
+    if (!r) return each(c, 'unknown', 'bad-reply');
+    if (r.ok === true) return { ...each(c, 'ok', null), was: asState(r.was) };
+    const code = str(r.reason);
+    return each(c, 'refused', code && /^[a-z][a-z-]{0,39}$/.test(code) ? code : 'refused');
   });
 }
 
-/** Changes split into calls: per box, at most MAX_TOOL_CHANGES each. */
+/** Changes split into calls: per box, at most MAX_TOOL_CHANGES each, in
+ *  the order given. */
 export function toolCalls(
   changes: readonly MemberChange[],
   max = 20,
@@ -808,33 +858,30 @@ export function toolCalls(
   return out;
 }
 
-/** The reasons a box gives that end with the box itself (it did not run
- *  the tool): their changes stay staged, to send again. */
+/** Whether a change was never run by its box: it stays staged, to send again. */
 export function boxLevel(a: MemberAnswer): boolean {
-  return !a.ok && !MEMBER_REASONS.has(a.reason ?? '');
+  return a.outcome === 'not-run';
 }
 
-const MEMBER_REASONS = new Set([
-  'login',
-  'owner',
-  'disabled',
-  'workspace',
-  'admin',
-  'last-moderator',
-  'refused',
-]);
+const UNKNOWN = ' Not confirmed: the box may still make this change.';
 
 /** Plain words for one change's answer. */
-export function memberAnswerText(a: MemberAnswer): { tone: 'ok' | 'bad'; text: string } {
-  if (a.ok) {
+export function memberAnswerText(a: MemberAnswer): { tone: 'ok' | 'warn' | 'bad'; text: string } {
+  if (a.outcome === 'ok') {
     if (a.was === a.role) return { tone: 'ok', text: 'No change: it was so already.' };
     if (a.role === 'none') return { tone: 'ok', text: 'Removed.' };
     const role = a.role === 'moderator' ? 'a Moderator' : 'a user';
     if (a.was === 'none' || !a.was) return { tone: 'ok', text: `Added as ${role}.` };
     return { tone: 'ok', text: `Now ${role}.` };
   }
+  if (a.outcome === 'unknown') {
+    return { tone: 'warn', text: `${toolReasonText(a.reason)}${UNKNOWN}` };
+  }
   const nothing = ' Nothing was set.';
   const bad = (text: string) => ({ tone: 'bad' as const, text });
+  if (a.outcome === 'not-run') {
+    return bad(`${toolReasonText(a.reason, 'workspace_user_set')}${nothing}`);
+  }
   switch (a.reason) {
     case 'login':
       return bad(`This login is no longer on this box.${nothing}`);
@@ -852,10 +899,8 @@ export function memberAnswerText(a: MemberAnswer): { tone: 'ok' | 'bad'; text: s
       return bad(
         `This is the last Moderator of the workspace. Make another user a Moderator first.${nothing}`,
       );
-    case 'refused':
-      return bad(`The box refused it.${nothing}`);
     default:
-      return bad(`${toolReasonText(a.reason)}${nothing}`);
+      return bad(`The box refused it.${nothing}`);
   }
 }
 
@@ -938,11 +983,26 @@ export function sentSummary(answers: readonly MemberAnswer[]): {
   text: string;
 } {
   const n = (k: number) => (k === 1 ? '1 change' : `${k} changes`);
-  const ok = answers.filter((a) => a.ok).length;
+  const ok = answers.filter((a) => a.outcome === 'ok').length;
   const left = answers.filter(boxLevel).length;
-  const refused = answers.length - ok - left;
+  const refused = answers.filter((a) => a.outcome === 'refused').length;
+  const unknown = answers.filter((a) => a.outcome === 'unknown').length;
   const parts = [`${n(ok)} made.`];
   if (refused > 0) parts.push(`${n(refused)} refused by the box.`);
   if (left > 0) parts.push(`${n(left)} not run: kept, to send again.`);
-  return { tone: refused + left > 0 ? 'bad' : 'ok', text: parts.join(' ') };
+  if (unknown > 0) parts.push(`${n(unknown)} not confirmed: the box may still make them.`);
+  return { tone: refused + left + unknown > 0 ? 'bad' : 'ok', text: parts.join(' ') };
+}
+
+/** For a confirm: each box whose list is old (its last read failed), so
+ *  the admin knows the changes were planned from it. */
+export function staleNotes(
+  changes: readonly Pick<MemberChange, 'boxId'>[],
+  boxes: readonly FleetPeopleBox[],
+  now: number = Date.now(),
+): string[] {
+  const ids = new Set(changes.map((c) => c.boxId));
+  return boxes
+    .filter((b) => ids.has(b.id) && b.people && b.peopleReason)
+    .map((b) => `${boxName(b)}: ${peopleReasonText(b, now)}`);
 }

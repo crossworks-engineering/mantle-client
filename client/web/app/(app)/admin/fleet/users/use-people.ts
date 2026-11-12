@@ -17,30 +17,45 @@ import {
   type MemberChange,
 } from '@/lib/fleet-people';
 import {
-  callFleetTool,
+  MAX_TOOL_BOXES,
   MAX_TOOL_CHANGES,
+  runFleetTool,
+  TOOL_FOLLOW_UPS,
   USERS_LIST_TOOL,
   WORKSPACE_USER_SET_TOOL,
-  type ToolBoxAnswer,
+  type BoxOutcome,
 } from '@/lib/fleet-tool';
 import { refusalText } from '../fleet-section';
 
-/** The users_list read: each box's answer, or `channel: false` while the
- *  Control Center has no admin channel (the route answers 404). */
-type PeopleRead = { channel: false } | { channel: true; answers: ToolBoxAnswer[] };
+/** The users_list read: each box's outcome, or `channel: false` while the
+ *  Control Center has no admin channel. */
+type PeopleRead = { channel: false } | { channel: true; outcomes: BoxOutcome[] };
 
-/** The people of every linked box: one users_list call over the admin
- *  channel. A box that did not answer keeps its last good list, with its
- *  reason. `reread` asks the boxes named again (after a write). */
+/** users_list on many boxes, at most 50 per call (the route's cap). */
+async function readUsers(boxIds: readonly string[], followUps: number) {
+  const out: BoxOutcome[] = [];
+  for (let i = 0; i < boxIds.length; i += MAX_TOOL_BOXES) {
+    const part = boxIds.slice(i, i + MAX_TOOL_BOXES);
+    const r = await runFleetTool(part, USERS_LIST_TOOL, {}, { followUps });
+    if (r === null) return null;
+    out.push(...r);
+  }
+  return out;
+}
+
+/** The people of every linked box: users_list over the admin channel. A
+ *  box that did not answer keeps its last good list, with its reason.
+ *  `reread` asks the boxes named again (after a write); when that fails,
+ *  their lists are marked old, never shown as current. */
 export function usePeople(fleet: FleetOverview) {
   const queryClient = useQueryClient();
-  const ids = useMemo(() => fleet.boxes.map((b) => b.id), [fleet.boxes]);
+  const ids = useMemo(() => fleet.boxes.map((b) => b.id.toLowerCase()), [fleet.boxes]);
   const key = useMemo(() => [...FLEET_PEOPLE_KEY, ids.join(',')], [ids]);
   const query = useQuery({
     queryKey: key,
     queryFn: async (): Promise<PeopleRead> => {
-      const answers = await callFleetTool(ids, USERS_LIST_TOOL, {});
-      return answers === null ? { channel: false } : { channel: true, answers };
+      const outcomes = await readUsers(ids, 0);
+      return outcomes === null ? { channel: false } : { channel: true, outcomes };
     },
     enabled: ids.length > 0,
     staleTime: 60_000,
@@ -51,7 +66,7 @@ export function usePeople(fleet: FleetOverview) {
   const read = query.data;
   const boxes = useMemo(() => {
     if (!read || !read.channel) return [];
-    const out = peopleBoxes(fleet.boxes, read.answers, kept.current);
+    const out = peopleBoxes(fleet.boxes, read.outcomes, kept.current);
     for (const b of out) if (b.people && !b.peopleReason) kept.current.set(b.id, b.people);
     return out;
   }, [read, fleet.boxes]);
@@ -59,12 +74,28 @@ export function usePeople(fleet: FleetOverview) {
   const reread = useCallback(
     async (boxIds: string[]) => {
       if (boxIds.length === 0) return;
-      const fresh = await callFleetTool(boxIds, USERS_LIST_TOOL, {}).catch(() => null);
-      if (!fresh) return;
+      let fresh: BoxOutcome[];
+      try {
+        fresh =
+          (await readUsers(boxIds, 1)) ??
+          boxIds.map((boxId) => ({
+            boxId,
+            outcome: 'not-run' as const,
+            reason: 'no-channel',
+            output: undefined,
+          }));
+      } catch {
+        fresh = boxIds.map((boxId) => ({
+          boxId,
+          outcome: 'unknown' as const,
+          reason: 'network',
+          output: undefined,
+        }));
+      }
       queryClient.setQueryData<PeopleRead>(key, (old) => {
         if (!old || !old.channel) return old;
-        const answers = old.answers.filter((a) => !boxIds.includes(a.boxId));
-        return { channel: true, answers: [...answers, ...fresh] };
+        const others = old.outcomes.filter((a) => !boxIds.includes(a.boxId));
+        return { channel: true, outcomes: [...others, ...fresh] };
       });
     },
     [queryClient, key],
@@ -83,9 +114,10 @@ export function usePeople(fleet: FleetOverview) {
  *  the changes the boxes never ran, which the caller keeps staged. */
 export type MembersSent = false | { answers: MemberAnswer[]; left: MemberChange[] };
 
-/** Workspace changes over the admin channel: one workspace_user_set call
- *  per box (at most 20 changes each), the answers from the calls' own
- *  replies, then the boxes read again. */
+/** Workspace changes over the admin channel: per box, one workspace_user_set
+ *  call after another (at most 20 changes each, so their order holds),
+ *  boxes side by side; pending calls asked for again; the answers from the
+ *  calls themselves; then the boxes read again. One toast per send. */
 export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
   const toast = useToast();
   const [sending, setSending] = useState<MemberChange[]>([]);
@@ -95,26 +127,42 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
     setSending(changes);
     try {
       const calls = toolCalls(changes, MAX_TOOL_CHANGES);
+      const perBox = [...new Set(calls.map((c) => c.boxId))].map((boxId) =>
+        calls.filter((c) => c.boxId === boxId),
+      );
       const done = await Promise.all(
-        calls.map(async (call) => {
-          let answer: ToolBoxAnswer | undefined;
-          try {
-            const r = await callFleetTool([call.boxId], WORKSPACE_USER_SET_TOOL, {
-              changes: call.changes.map(({ loginId, workspaceId, role }) => ({
-                loginId,
-                workspaceId,
-                role,
-              })),
-            });
-            answer =
-              r === null
-                ? { boxId: call.boxId, ok: false, output: undefined, reason: 'no-channel' }
-                : r.find((a) => a.boxId === call.boxId);
-          } catch (err) {
-            toast.error(refusalText(err, 'Could not send the workspace changes.'));
-            answer = { boxId: call.boxId, ok: false, output: undefined, reason: 'error' };
+        perBox.map(async (list) => {
+          const out: MemberAnswer[] = [];
+          for (const call of list) {
+            let box: BoxOutcome | undefined;
+            try {
+              const r = await runFleetTool(
+                [call.boxId],
+                WORKSPACE_USER_SET_TOOL,
+                {
+                  changes: call.changes.map(({ loginId, workspaceId, role }) => ({
+                    loginId,
+                    workspaceId,
+                    role,
+                  })),
+                },
+                { followUps: TOOL_FOLLOW_UPS },
+              );
+              box =
+                r === null
+                  ? {
+                      boxId: call.boxId,
+                      outcome: 'not-run',
+                      reason: 'no-channel',
+                      output: undefined,
+                    }
+                  : r.find((a) => a.boxId === call.boxId.toLowerCase());
+            } catch {
+              box = { boxId: call.boxId, outcome: 'unknown', reason: 'network', output: undefined };
+            }
+            out.push(...memberAnswers(call.changes, box));
           }
-          return memberAnswers(call.changes, answer);
+          return out;
         }),
       );
       const all = done.flat();
@@ -122,6 +170,7 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
       const said = sentSummary(all);
       if (said.tone === 'ok') toast.success(said.text);
       else toast.error(said.text);
+      // Every box that may have changed is read again: made, refused, unknown.
       await reread([...new Set(all.filter((a) => !boxLevel(a)).map((a) => a.boxId))]);
       return {
         answers: all,

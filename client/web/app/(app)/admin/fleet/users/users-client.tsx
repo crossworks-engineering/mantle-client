@@ -34,6 +34,7 @@ import {
 import {
   filterCounts,
   filterPeople,
+  agoText,
   groupPeople,
   PEOPLE_FILTERS,
   peopleReasonText,
@@ -214,16 +215,19 @@ function BanDialog({
 
 function LiftDialog({
   ban,
-  email,
+  emails,
   onClose,
   write,
 }: {
   ban: FleetBan | null;
-  email: string;
+  /** The person's emails (the person pane), or the ban's own (a lift from
+   *  the list of bans): any other key the ban holds is said. */
+  emails: readonly string[];
   onClose: () => void;
   write: ReturnType<typeof useBanWrite>;
 }) {
-  const others = ban ? ban.emails.filter((e) => e.toLowerCase() !== email) : [];
+  const mine = new Set(emails.map((e) => e.toLowerCase()));
+  const others = ban ? ban.emails.filter((e) => !mine.has(e.toLowerCase())) : [];
   const keys = ban ? banKeysText(ban) : '';
   return (
     <AlertDialog open={ban !== null} onOpenChange={(o) => !o && !write.pending && onClose()}>
@@ -282,11 +286,13 @@ function Fallback({ data, onLift }: { data: FleetOverview; onLift: (ban: FleetBa
                   <TableHead className="text-right">Members</TableHead>
                   <TableHead className="text-right">Disabled</TableHead>
                   <TableHead className="text-right">All</TableHead>
+                  <TableHead className="text-right">As of</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.boxes.map((b) => {
-                  const l = byId.get(b.id)?.facts?.status?.logins ?? null;
+                  const facts = byId.get(b.id)?.facts ?? null;
+                  const l = facts?.status?.logins ?? null;
                   return (
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{boxName(b)}</TableCell>
@@ -296,9 +302,12 @@ function Fallback({ data, onLift }: { data: FleetOverview; onLift: (ban: FleetBa
                           <TableCell className="text-right tabular-nums">{l.member}</TableCell>
                           <TableCell className="text-right tabular-nums">{l.disabled}</TableCell>
                           <TableCell className="text-right tabular-nums">{l.total}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {agoText(facts!.at)}
+                          </TableCell>
                         </>
                       ) : (
-                        <TableCell colSpan={4} className="text-right text-muted-foreground">
+                        <TableCell colSpan={5} className="text-right text-muted-foreground">
                           {b.loginCount === null ? 'No facts yet' : `${b.loginCount} logins`}
                         </TableCell>
                       )}
@@ -347,7 +356,7 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [banning, setBanning] = useState<Person | null>(null);
-  const [lifting, setLifting] = useState<{ ban: FleetBan; email: string } | null>(null);
+  const [lifting, setLifting] = useState<{ ban: FleetBan; emails: string[] } | null>(null);
   const members = useMembersWrite(read.reread);
   const banWrite = useBanWrite(refresh);
   const filter: PeopleFilter = isFilter(filterParam) ? filterParam : 'all';
@@ -361,7 +370,7 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
   const liftDialog = (
     <LiftDialog
       ban={lifting?.ban ?? null}
-      email={lifting?.email ?? ''}
+      emails={lifting?.emails ?? []}
       onClose={() => setLifting(null)}
       write={banWrite}
     />
@@ -379,7 +388,7 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
   if (read.channel === false) {
     return (
       <>
-        <Fallback data={data} onLift={(ban) => setLifting({ ban, email: '' })} />
+        <Fallback data={data} onLift={(ban) => setLifting({ ban, emails: ban.emails })} />
         {liftDialog}
       </>
     );
@@ -391,7 +400,9 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
   const selected =
     pickedPeople.length > 0
       ? null
-      : (shown.find((p) => p.logins.some((l) => l.loginId === param)) ?? shown[0] ?? null);
+      : (shown.find((p) => p.logins.some((l) => `${l.boxId}:${l.loginId}` === param)) ??
+        shown[0] ??
+        null);
   const pick = (email: string, on: boolean) =>
     setPicked((s) => {
       const next = new Set(s);
@@ -488,7 +499,9 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
                       onOpen={() => {
                         setPicked(new Set());
                         // An opaque key in the address: the first login's id, never the email.
-                        setParam(p.logins[0]?.loginId ?? null);
+                        setParam(
+                          p.logins[0] ? `${p.logins[0].boxId}:${p.logins[0].loginId}` : null,
+                        );
                       }}
                       onPick={(on) => pick(p.email, on)}
                     />
@@ -516,7 +529,7 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
               sending={members.sending}
               onSend={members.send}
               onBan={() => setBanning(selected)}
-              onLift={(ban) => setLifting({ ban, email: selected.email })}
+              onLift={(ban) => setLifting({ ban, emails: [selected.email] })}
             />
           ) : (
             <div className="p-6 text-sm text-muted-foreground">Pick a person on the left.</div>

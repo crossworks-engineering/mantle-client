@@ -123,6 +123,13 @@ export type MockFleet = {
   memberRefusals: Record<string, Record<string, string>>;
   /** Every POST /api/fleet/tool body. */
   toolSent: Record<string, unknown>[];
+  /** A box whose answers come late, by box id: how many asks a call stays
+   *  pending first (each ask after the one that made it counts one). */
+  toolDelay: Record<string, number>;
+  /** A box whose answer is too large (truncated), by box id. */
+  toolTruncated: Record<string, boolean>;
+  /** The calls made and not handed out yet, by call id. */
+  toolCalls: Record<string, ToolCall>;
   /** Each box's people list, its last read's reason and its ban-list
    *  logins (only while the people list is null), by box id. */
   people: Record<
@@ -156,6 +163,14 @@ type BanLogin = {
   disabled: boolean;
   archived: boolean;
   marked: boolean;
+};
+
+type ToolCall = {
+  id: string;
+  boxId: string;
+  name: string;
+  wait: number;
+  answer: { ok: boolean; reason: string | null; output?: unknown; truncated?: true };
 };
 
 type Write = Record<string, unknown> & { kind: string; by: string; at: string; reads?: number };
@@ -288,6 +303,9 @@ export const newMockFleet = (): MockFleet => ({
   toolRefused: {},
   memberRefusals: {},
   toolSent: [],
+  toolDelay: {},
+  toolTruncated: {},
+  toolCalls: {},
   people: {},
 });
 
@@ -610,37 +628,64 @@ export function fleetAnswer(
   if (path === '/api/fleet/tool' && method === 'POST') {
     if (!f.toolOn) return { status: 404, body: { error: 'not found' } };
     f.toolSent.push(body);
-    const ids = (body.boxIds as string[] | undefined) ?? [];
+    // The route's reply: the answers that came (each handed out once), the
+    // calls still on their way, and ids no box holds.
+    const reply = (ids: string[]) => {
+      const answers: unknown[] = [];
+      const pending: string[] = [];
+      const gone: string[] = [];
+      for (const id of ids) {
+        const c = f.toolCalls[id];
+        if (!c) {
+          gone.push(id);
+          continue;
+        }
+        if (c.wait > 0) {
+          pending.push(id);
+          continue;
+        }
+        delete f.toolCalls[id];
+        answers.push({
+          id,
+          boxId: c.boxId,
+          kind: 'tool',
+          name: c.name,
+          by: ADMIN,
+          at: AT,
+          sentAt: AT,
+          done: new Date().toISOString(),
+          ...c.answer,
+        });
+      }
+      return { status: 200, body: { answers, pending, gone } };
+    };
+    if (Array.isArray(body.callIds)) {
+      const ids = body.callIds as string[];
+      for (const id of ids) {
+        const c = f.toolCalls[id];
+        if (c && c.wait > 0) c.wait -= 1;
+      }
+      return reply(ids);
+    }
+    const boxIds = (body.boxIds as string[] | undefined) ?? [];
     const name = String(body.name ?? '');
     const args = (body.args as Record<string, unknown> | undefined) ?? {};
-    const boxes = ids.map((boxId) => {
-      const refused = f.toolRefused[boxId];
-      if (refused) return { boxId, ok: false, reason: refused };
-      if (name === 'users_list') {
-        const people = f.people[boxId]?.people;
-        return people
-          ? { boxId, ok: true, output: { ...people, at: new Date().toISOString() } }
-          : { boxId, ok: false, reason: 'unreachable' };
-      }
-      if (name === 'workspace_user_set') {
-        const changes = (args.changes as Record<string, unknown>[] | undefined) ?? [];
-        if (changes.length < 1 || changes.length > 20)
-          return { boxId, ok: false, reason: 'bad-call' };
-        const results = changes.map((c) => {
-          const loginId = String(c.loginId);
-          const workspaceId = String(c.workspaceId);
-          const { login: l, was } = memberWas(f, boxId, loginId, workspaceId);
-          const reason =
-            f.memberRefusals[boxId]?.[`${loginId}:${workspaceId}`] ?? (l ? null : 'login');
-          if (reason) return { loginId, workspaceId, ok: false, reason };
-          applyMember(f, boxId, c as { loginId: unknown; workspaceId: unknown; role: unknown });
-          return { loginId, workspaceId, ok: true, was };
-        });
-        return { boxId, ok: true, output: { results } };
-      }
-      return { boxId, ok: false, reason: 'unknown-tool' };
+    const linked = boxIds.filter((id) => f.boxes.some((b) => b.id === id));
+    if (linked.length === 0) {
+      return { status: 400, body: { error: 'No call was queued.' } };
+    }
+    const made = linked.map((boxId) => {
+      const id = uuid();
+      f.toolCalls[id] = {
+        id,
+        boxId,
+        name,
+        wait: f.toolDelay[boxId] ?? 0,
+        answer: runTool(f, boxId, name, args),
+      };
+      return id;
     });
-    return { status: 200, body: { boxes } };
+    return reply(made);
   }
   if (path === '/api/fleet' && method === 'GET') {
     runKeyJobs(f);
@@ -782,4 +827,38 @@ export function fleetAnswer(
     return { status: 200, body: { ban } };
   }
   return null;
+}
+
+/** What a box's own tool answers (users_list, workspace_user_set). */
+function runTool(
+  f: MockFleet,
+  boxId: string,
+  name: string,
+  args: Record<string, unknown>,
+): ToolCall['answer'] {
+  const refused = f.toolRefused[boxId];
+  if (refused) return { ok: false, reason: refused };
+  if (f.toolTruncated[boxId])
+    return { ok: true, reason: null, output: '{"logins":[', truncated: true };
+  if (name === 'users_list') {
+    const people = f.people[boxId]?.people;
+    return people
+      ? { ok: true, reason: null, output: { ...people, at: new Date().toISOString() } }
+      : { ok: false, reason: 'error' };
+  }
+  if (name === 'workspace_user_set') {
+    const changes = (args.changes as Record<string, unknown>[] | undefined) ?? [];
+    if (changes.length < 1 || changes.length > 20) return { ok: false, reason: 'refused' };
+    const results = changes.map((c) => {
+      const loginId = String(c.loginId);
+      const workspaceId = String(c.workspaceId);
+      const { login: l, was } = memberWas(f, boxId, loginId, workspaceId);
+      const reason = f.memberRefusals[boxId]?.[`${loginId}:${workspaceId}`] ?? (l ? null : 'login');
+      if (reason) return { loginId, workspaceId, ok: false, reason };
+      applyMember(f, boxId, c as { loginId: unknown; workspaceId: unknown; role: unknown });
+      return { loginId, workspaceId, ok: true, was };
+    });
+    return { ok: true, reason: null, output: { results } };
+  }
+  return { ok: false, reason: 'tool' };
 }
