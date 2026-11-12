@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, CircleCheck, Radar, TriangleAlert } from 'lucide-react';
+import { ArrowRight, CircleCheck, Cpu, Radar, TriangleAlert } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { CopyBlock, CopyButton } from '@mantle/web-ui/ui/copy-button';
 import { ListCard, ListCardSnippet, ListCardTitle } from '@mantle/web-ui/ui/list-card';
@@ -32,6 +32,12 @@ import {
   useMatrixRows,
   useParam,
 } from './cc-kit';
+import {
+  DEFAULT_MODEL_CARD,
+  DefaultModelPane,
+  defaultModelLine,
+  useDefaultModel,
+} from './default-model';
 
 const SUMMARY = 'summary';
 
@@ -52,7 +58,7 @@ function Summary({ data, issues }: { data: FleetOverview; issues: FleetIssue[] }
   return (
     <DetailPane
       icon={<Radar />}
-      title="Fleet summary"
+      title="Fleet setup"
       pill={
         issues.length === 0 ? (
           <Pill tone="ok">All good</Pill>
@@ -163,26 +169,39 @@ function Issue({ issue }: { issue: FleetIssue }) {
   );
 }
 
-/** Overview: the fleet summary first, then one card per thing that needs an
- *  admin now, worst first. */
+/** Overview: the fleet setup first, then the Default Model, then one card
+ *  per thing that needs an admin now, worst first. */
 function Overview({ data }: { data: FleetOverview }) {
   const [param, setParam] = useParam('open');
   const { rows } = useMatrixRows(data.boxes);
   const issues = fleetIssues(data, rows);
   const open = issues.find((i) => i.id === param) ?? null;
+  const modelOpen = param === DEFAULT_MODEL_CARD;
+  const { state: model } = useDefaultModel();
   return (
     <MasterDetail
       id="cc-overview"
       list={
         <ListPane title="Control Center">
-          <ListCard selected={!open} onClick={() => setParam(SUMMARY)}>
+          <ListCard selected={!open && !modelOpen} onClick={() => setParam(SUMMARY)}>
             <div className="flex items-center gap-2">
               <Radar className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <ListCardTitle>Fleet summary</ListCardTitle>
+              <ListCardTitle>Fleet setup</ListCardTitle>
             </div>
             <ListCardSnippet>
               {boxesText(data.boxes.length)}, and this Control Center&apos;s own service
             </ListCardSnippet>
+          </ListCard>
+          <ListCard
+            selected={modelOpen}
+            accent={model.kind === 'key-missing' || model.kind === 'unset' ? 'info' : undefined}
+            onClick={() => setParam(DEFAULT_MODEL_CARD)}
+          >
+            <div className="flex items-center gap-2">
+              <Cpu className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <ListCardTitle>Default Model</ListCardTitle>
+            </div>
+            <ListCardSnippet>{defaultModelLine(model)}</ListCardSnippet>
           </ListCard>
           <p className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Needs you ({issues.length})
@@ -215,7 +234,15 @@ function Overview({ data }: { data: FleetOverview }) {
           )}
         </ListPane>
       }
-      detail={open ? <Issue issue={open} /> : <Summary data={data} issues={issues} />}
+      detail={
+        open ? (
+          <Issue issue={open} />
+        ) : modelOpen ? (
+          <DefaultModelPane />
+        ) : (
+          <Summary data={data} issues={issues} />
+        )
+      }
     />
   );
 }

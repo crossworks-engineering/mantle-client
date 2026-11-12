@@ -21,6 +21,7 @@ import type { FleetOverview } from '@/lib/fleet';
 import { MODEL_ID } from '@/lib/fleet-models';
 import { LABEL, MAX_ROUTES, PROVIDER } from '@/lib/fleet-writes';
 import { Callout, DetailPane, FleetScreen, SendBar, TargetList } from '../cc-kit';
+import { FleetModelPicker, PickerHint, useDefaultModel } from '../default-model';
 import { ConfirmSend } from '../fleet-writes';
 import { kindLine, useSettingsSend } from '../settings-send';
 
@@ -43,6 +44,10 @@ function Pools({ data, refresh }: { data: FleetOverview; refresh: () => void }) 
   const [vendor, setVendor] = useState('');
   const [routes, setRoutes] = useState<Route[]>([{ provider: '', model: '' }]);
   const s = useSettingsSend(data.boxes, refresh);
+  // A new route starts on the Default Model's provider.
+  const { state: model } = useDefaultModel();
+  const defaultProvider = model.kind === 'set' ? model.provider : '';
+  const newRoute = (): Route => ({ provider: defaultProvider, model: '' });
 
   const entryName = name.trim();
   const entryVendor = vendor.trim();
@@ -72,7 +77,7 @@ function Pools({ data, refresh }: { data: FleetOverview; refresh: () => void }) 
     if (ok) {
       setName('');
       setVendor('');
-      setRoutes([{ provider: '', model: '' }]);
+      setRoutes([newRoute()]);
     }
   };
 
@@ -163,24 +168,30 @@ function Pools({ data, refresh }: { data: FleetOverview; refresh: () => void }) 
                           id={`fleet-pool-provider-${i}`}
                           aria-label={`Route ${i + 1} provider`}
                           className="w-40 font-mono"
-                          placeholder="provider"
+                          placeholder={defaultProvider || 'provider'}
                           autoComplete="off"
                           spellCheck={false}
                           maxLength={64}
                           value={r.provider}
                           onChange={(e) => setRoute(i, { provider: e.target.value })}
                         />
-                        <Input
-                          id={`fleet-pool-model-${i}`}
-                          aria-label={`Route ${i + 1} model`}
-                          className="font-mono"
-                          placeholder="vendor/model-name"
-                          autoComplete="off"
-                          spellCheck={false}
-                          maxLength={200}
-                          value={r.model}
-                          onChange={(e) => setRoute(i, { model: e.target.value })}
-                        />
+                        <div className="min-w-0 flex-1">
+                          <FleetModelPicker
+                            id={`fleet-pool-model-${i}`}
+                            value={r.model}
+                            routeProvider={r.provider.trim().toLowerCase() || undefined}
+                            onValueChange={(m) =>
+                              setRoute(i, {
+                                model: m,
+                                // A model from the list: its route is the
+                                // Default Model's provider unless one is typed.
+                                ...(r.provider.trim() === '' && defaultProvider
+                                  ? { provider: defaultProvider }
+                                  : {}),
+                              })
+                            }
+                          />
+                        </div>
                         <Button
                           type="button"
                           size="icon"
@@ -205,11 +216,12 @@ function Pools({ data, refresh }: { data: FleetOverview; refresh: () => void }) 
                         size="sm"
                         variant="ghost"
                         disabled={routes.length >= MAX_ROUTES}
-                        onClick={() => setRoutes([...routes, { provider: '', model: '' }])}
+                        onClick={() => setRoutes([...routes, newRoute()])}
                       >
                         <Plus /> Add route
                       </Button>
                     </div>
+                    <PickerHint />
                   </fieldset>
                   <SendBar count={s.chosen.length}>
                     <SubmitButton pending={false} disabled={!valid}>
