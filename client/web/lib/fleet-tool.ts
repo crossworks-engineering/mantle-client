@@ -13,10 +13,13 @@
  * Every call ends in one of three outcomes:
  *  - ok: the box ran the tool and answered;
  *  - not run: refused before running, known (scope, tool, size, busy,
- *    replay, refused, error, expired, bad-call, no channel, off, time, sig);
- *  - unknown: sent, but no answer read (pending, a timeout or a network
- *    error, gone, unreachable, a reply this box cannot read, an answer
- *    too large). A write with an unknown outcome may still be made.
+ *    replay, expired, bad-call, not-queued, no channel, and the route's own
+ *    refusals before queueing);
+ *  - unknown: sent, but not known to be done (pending, a timeout or a
+ *    network error, gone, unreachable, error or refused from a tool that
+ *    ran, a reply this box cannot read, an answer too large, a list that
+ *    changed while it was read). A write with an unknown outcome may still
+ *    be made.
  *
  * Pure but for the default `send`, which loads the fetch helper when it runs.
  */
@@ -170,7 +173,9 @@ export function toolReasonText(code: string | null, tool?: string): string {
     case 'not-queued':
       return 'The Control Center could not queue the call: each box holds at most 10 calls.';
     case 'truncated':
-      return "The box's answer was too large; showing nothing for this box.";
+      return "The box's list was too large or too slow to read in full; it shows no new list.";
+    case 'changed':
+      return 'Logins on this box changed while the list was read; it shows no new list. Read it again.';
     case 'pending':
       return 'The box did not answer in time.';
     case 'gone':

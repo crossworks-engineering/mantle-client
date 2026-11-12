@@ -78,7 +78,8 @@ export function usePeople(fleet: FleetOverview) {
   }, [read, fleet.boxes]);
 
   const reread = useCallback(
-    async (boxIds: string[]) => {
+    async (asked: string[]) => {
+      const boxIds = [...new Set(asked.map((id) => id.toLowerCase()))];
       if (boxIds.length === 0) return;
       let fresh: BoxOutcome[];
       try {
@@ -131,6 +132,7 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
   const send = async (changes: MemberChange[]): Promise<MembersSent> => {
     if (changes.length === 0) return false;
     setSending((now) => withSending(now, changes));
+    let cleared = false;
     try {
       const calls = toolCalls(changes, MAX_TOOL_CHANGES);
       const perBox = [...new Set(calls.map((c) => c.boxId))].map((boxId) =>
@@ -176,6 +178,10 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
       const said = sentSummary(all);
       if (said.tone === 'ok') toast.success(said.text);
       else toast.error(said.text);
+      // The send is over: its cells leave the in-flight set before the
+      // re-read, so a slow box's read never holds Send back.
+      cleared = true;
+      setSending((now) => withoutSent(now, changes));
       // Every box a call was sent to is read again, not-run boxes too.
       await reread([...new Set(all.map((a) => a.boxId))]);
       return {
@@ -185,7 +191,8 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
           .map(({ boxId, loginId, workspaceId, role }) => ({ boxId, loginId, workspaceId, role })),
       };
     } finally {
-      setSending((now) => withoutSent(now, changes));
+      // Once only: a newer send of the same cells may already be in flight.
+      if (!cleared) setSending((now) => withoutSent(now, changes));
     }
   };
   return { pending: sending.length > 0, sending, answers, send };

@@ -112,8 +112,9 @@ describe('fleet tool (the admin channel)', () => {
       'This box does not offer users_list to the Control Center yet (a box release, and the admin scope must include it).',
     );
     expect(toolReasonText('truncated')).toBe(
-      "The box's answer was too large; showing nothing for this box.",
+      "The box's list was too large or too slow to read in full; it shows no new list.",
     );
+    expect(toolReasonText('changed')).toMatch(/changed while the list was read/);
     expect(toolReasonText('error')).toBe('The box hit an error while running it.');
     expect(toolReasonText('unreachable')).toBe('This box cannot reach the box over HTTPS.');
     expect(toolReasonText('sig')).toBe('The box holds another key. Copy the key line again.');

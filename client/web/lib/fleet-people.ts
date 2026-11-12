@@ -1033,7 +1033,10 @@ export function withoutSent(list: readonly MemberChange[], done: readonly Member
 /** users_list pages: at most this many logins each (the tool's own cap),
  *  and at most this many pages per box (more: the box is marked truncated). */
 export const USERS_PAGE = 150;
-export const MAX_USER_PAGES = 400;
+export const MAX_USER_PAGES = 200;
+/** How long one box's pages may take in all; longer: the box is marked
+ *  truncated (box output decides `next`, so it must not hold the screen). */
+export const USERS_READ_DEADLINE_MS = 180_000;
 
 /** One users_list run on some boxes with these args (runFleetTool). */
 export type RunUsersList = (
@@ -1047,13 +1050,19 @@ export type RunUsersList = (
  * again at its `next` until it is null. The logins are merged; the
  * workspaces and time are the first page's. A later page that fails makes
  * the box's outcome that failure (its kept list then shows, marked old);
- * a box past MAX_USER_PAGES is marked truncated. Null: no admin channel.
+ * a box past MAX_USER_PAGES, past USERS_READ_DEADLINE_MS, or past the
+ * login cap is marked truncated; a box whose logins changed while they were
+ * read (the ids read differ from its `total`) is marked `changed`. Neither
+ * shows as a complete list. Null: no admin channel.
  */
 export async function readAllUsers(
   boxIds: readonly string[],
   run: RunUsersList,
   pages = MAX_USER_PAGES,
+  deadlineMs = USERS_READ_DEADLINE_MS,
+  now: () => number = Date.now,
 ): Promise<BoxOutcome[] | null> {
+  const until = now() + deadlineMs;
   const first = await run([...boxIds], { offset: 0, limit: USERS_PAGE });
   if (first === null) return null;
   return Promise.all(
@@ -1063,12 +1072,18 @@ export async function readAllUsers(
       }
       const head = box.output;
       const logins: unknown[] = [...(head.logins as unknown[])];
+      const cut = (reason: string): BoxOutcome => ({
+        boxId: box.boxId,
+        outcome: 'unknown',
+        reason,
+        output: undefined,
+      });
       let offset = 0;
       let next: unknown = head.next;
       for (let n = 1; ; n++) {
         if (typeof next !== 'number' || !Number.isInteger(next) || next <= offset) break;
-        if (n >= pages) {
-          return { boxId: box.boxId, outcome: 'unknown', reason: 'truncated', output: undefined };
+        if (n >= pages || now() > until || logins.length >= PEOPLE_CAPS.logins) {
+          return cut('truncated');
         }
         offset = next;
         const r = (await run([box.boxId], { offset, limit: USERS_PAGE }))?.find(
@@ -1084,6 +1099,15 @@ export async function readAllUsers(
         }
         logins.push(...(r.output.logins as unknown[]));
         next = r.output.next;
+      }
+      if (logins.length > PEOPLE_CAPS.logins) return cut('truncated');
+      // Offset paging is no snapshot: a login made or removed meanwhile
+      // shifts the pages. The ids read must be the box's own count.
+      const ids = new Set(
+        logins.map((l) => (isObj(l) && typeof l.id === 'string' ? l.id.toLowerCase() : '')),
+      );
+      if (typeof head.total === 'number' && (ids.size !== head.total || ids.has(''))) {
+        return cut('changed');
       }
       return { ...box, output: { ...head, logins, offset: 0, next: null } };
     }),

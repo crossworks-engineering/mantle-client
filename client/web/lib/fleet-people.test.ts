@@ -710,14 +710,20 @@ describe('fleet people', () => {
   });
 
   it('reads every users_list page per box, and caps the pages', async () => {
-    const page = (boxId: string, offset: number, next: number | null, ids: string[]) => ({
+    const page = (
+      boxId: string,
+      offset: number,
+      next: number | null,
+      ids: string[],
+      total = 5,
+    ) => ({
       boxId,
       outcome: 'ok' as const,
       reason: null,
       output: {
         schema: 1,
         at: recent,
-        total: 5,
+        total,
         offset,
         next,
         workspaces: [{ id: `${boxId}-w${offset}`, name: 'Ops', admin: false }],
@@ -730,7 +736,7 @@ describe('fleet people', () => {
       if (args.offset === 0) {
         return [
           page('a', 0, 2, ['l1', 'l2']),
-          page('b', 0, null, ['l9']),
+          page('b', 0, null, ['l9'], 1),
           { boxId: 'c', outcome: 'not-run' as const, reason: 'scope', output: undefined },
         ];
       }
@@ -768,11 +774,33 @@ describe('fleet people', () => {
     // A later page that fails is that box's outcome; a next that goes back stops.
     const failing = async (ids: string[], args: { offset: number; limit: number }) =>
       args.offset === 0
-        ? [page('a', 0, 2, ['l1']), page('b', 0, 0, ['l2'])]
+        ? [page('a', 0, 2, ['l1']), page('b', 0, 0, ['l2'], 1)]
         : [{ boxId: ids[0]!, outcome: 'unknown' as const, reason: 'pending', output: undefined }];
     const f = (await readAllUsers(['a', 'b'], failing))!;
     expect(f[0]).toMatchObject({ outcome: 'unknown', reason: 'pending' });
     expect(f[1]).toMatchObject({ outcome: 'ok' });
     expect(await readAllUsers(['a'], async () => null)).toBeNull();
+
+    // The ids read are not the box's count (a login made or removed while
+    // the pages were read): marked changed, never shown as complete.
+    const shifted = async (ids: string[], args: { offset: number; limit: number }) =>
+      args.offset === 0
+        ? [page('a', 0, 2, ['l1', 'l2'], 4)]
+        : ids.map((id) => page(id, args.offset, null, ['l2', 'l3'], 4));
+    expect((await readAllUsers(['a'], shifted))![0]).toEqual({
+      boxId: 'a',
+      outcome: 'unknown',
+      reason: 'changed',
+      output: undefined,
+    });
+    // One box's pages stop at their deadline, whatever `next` the box sends.
+    let clock = 0;
+    const slow = async (ids: string[], args: { offset: number; limit: number }) => {
+      clock += 60_000;
+      return ids.map((id) => page(id, args.offset, args.offset + 1, [`s${args.offset}`], 999));
+    };
+    const timed = await readAllUsers(['a'], slow, 200, 180_000, () => clock);
+    expect(timed![0]).toMatchObject({ outcome: 'unknown', reason: 'truncated' });
+    expect(clock).toBeLessThanOrEqual(5 * 60_000);
   });
 });
