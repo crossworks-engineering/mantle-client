@@ -177,15 +177,18 @@ export function PersonDetail({
 
   const go = async () => {
     if (!confirm) return;
-    const sent = await onSend(confirm.changes);
-    if (!sent) return;
+    const changes = confirm.changes;
+    // The confirm closes at once: an answer can take a minute or two, and
+    // each cell says it is on its way. The changes sent leave the staged
+    // ones; a change its box never ran joins them again, to send again.
+    // Never a replace: a copy keeps what the grid had staged.
     setConfirm(null);
-    // The changes sent leave the staged ones; a change its box never ran
-    // joins them again, to send again. Never a replace: a copy keeps what
-    // the grid had staged.
-    const sentKeys = new Set(confirm.changes.map(cellKey));
+    const sentKeys = new Set(changes.map(cellKey));
+    setStaged((m) => new Map([...m].filter(([k]) => !sentKeys.has(k))));
+    const sent = await onSend(changes);
+    if (!sent) return;
     setStaged((m) => {
-      const next = new Map([...m].filter(([k]) => !sentKeys.has(k)));
+      const next = new Map(m);
       for (const c of sent.left) next.set(cellKey(c), c);
       return next;
     });

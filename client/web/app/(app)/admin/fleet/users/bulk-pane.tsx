@@ -61,9 +61,11 @@ export function BulkPane({
 
   const go = async () => {
     if (!frozen) return;
-    const sent = await onSend(frozen.changes);
-    if (!sent) return;
+    const changes = frozen.changes;
+    // The confirm closes at once: an answer can take a minute or two.
     setFrozen(null);
+    const sent = await onSend(changes);
+    if (!sent) return;
     setLeft(sent.left.length);
   };
   const ask = () => {
@@ -164,6 +166,12 @@ export function BulkPane({
             call. Send again.
           </Callout>
         )}
+        {sending && (
+          <Callout title="Sending">
+            Each box runs the changes and answers, which can take a minute or two. The answers show
+            on each person.
+          </Callout>
+        )}
         {box && peopleReasonText(box) && (
           <Callout tone="warn" title="This box's list is old">
             {peopleReasonText(box)}
@@ -194,7 +202,7 @@ export function BulkPane({
             )}
             {plan.changes.length > 0 && (
               <div className="flex justify-end">
-                <Button size="sm" disabled={tooMany} onClick={ask}>
+                <Button size="sm" disabled={tooMany || sending} onClick={ask}>
                   {role === 'none' ? 'Remove' : 'Add'}{' '}
                   {plan.changes.length === 1 ? '1 person' : `${plan.changes.length} people`}
                 </Button>

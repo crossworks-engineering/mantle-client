@@ -267,7 +267,7 @@ test('a Control Center before the admin channel: counts, bans and one calm callo
   ).toBeVisible();
   const counts = main.getByRole('table', { name: 'Logins on each box' });
   const rowA = counts.getByRole('row').filter({ hasText: 'Box A' });
-  await expect(rowA.getByRole('cell')).toHaveText(['Box A', '1', '3', '0', '4']);
+  await expect(rowA.getByRole('cell')).toHaveText(['Box A', '1', '3', '0', '4', /ago|just now/]);
   await expect(main.getByText('carol@example.com')).toBeVisible();
   await shot(page, 'fleet-users-fallback');
   await main.getByRole('button', { name: 'Lift ban' }).click();
