@@ -36,6 +36,7 @@ const BOX_B = 'box-b.example.invalid';
 const SCREENS = [
   'Overview',
   'Linked boxes',
+  'Fleet users',
   'Fleet matrix',
   'Bans',
   'Provider keys',

@@ -113,6 +113,44 @@ export type MockFleet = {
   writeSent: { path: string; body: Record<string, unknown> }[];
   /** The pools GET /api/model-pools lists. */
   pools: { id: string; label: string; description: string; group: string }[];
+  /** Fleet users: false is a brain before them (GET /api/fleet/people and
+   *  POST /api/fleet/members answer 404). */
+  peopleOn: boolean;
+  /** Each box's people list, its last read's reason and its ban-list
+   *  logins (only while the people list is null), by box id. */
+  people: Record<
+    string,
+    { people: PeopleList | null; peopleReason: string | null; logins: BanLogin[] | null }
+  >;
+  /** Every POST /api/fleet/members body. */
+  membersSent: Record<string, unknown>[];
+};
+
+export type PeopleLogin = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  owner: boolean;
+  disabled: boolean;
+  archived: boolean;
+  lastSignInAt: string | null;
+  createdAt: string | null;
+  workspaces: { id: string; moderator: boolean }[];
+};
+export type PeopleList = {
+  schema: 1;
+  at: string;
+  workspaces: { id: string; name: string; admin: boolean }[];
+  logins: PeopleLogin[];
+};
+type BanLogin = {
+  id: string;
+  email: string;
+  owner: boolean;
+  disabled: boolean;
+  archived: boolean;
+  marked: boolean;
 };
 
 type Write = Record<string, unknown> & { kind: string; by: string; at: string; reads?: number };
@@ -241,7 +279,177 @@ export const newMockFleet = (): MockFleet => ({
     { id: 'agents', label: 'Agents', description: 'Every agent.', group: 'agents' },
     { id: 'vision', label: 'Read images', description: 'The vision worker.', group: 'workers' },
   ],
+  peopleOn: false,
+  people: {},
+  membersSent: [],
 });
+
+/** The ids of the Fleet users data: logins and workspaces on each box. */
+export const PEOPLE = {
+  a: {
+    admin: 'a0000000-0000-4000-8000-00000000000a',
+    projects: 'a0000000-0000-4000-8000-0000000000a1',
+    ops: 'a0000000-0000-4000-8000-0000000000a2',
+    field: 'a0000000-0000-4000-8000-0000000000a3',
+    owner: 'a1000000-0000-4000-8000-000000000001',
+    ann: 'a1000000-0000-4000-8000-000000000002',
+    bob: 'a1000000-0000-4000-8000-000000000003',
+    carol: 'a1000000-0000-4000-8000-000000000004',
+    dan: 'a1000000-0000-4000-8000-000000000005',
+  },
+  b: {
+    admin: 'b0000000-0000-4000-8000-00000000000b',
+    projects: 'b0000000-0000-4000-8000-0000000000b1',
+    ops: 'b0000000-0000-4000-8000-0000000000b2',
+    ann: 'b1000000-0000-4000-8000-000000000002',
+    erin: 'b1000000-0000-4000-8000-000000000006',
+  },
+} as const;
+
+const RECENT = () => new Date(Date.now() - 2 * 86_400_000).toISOString();
+const login = (p: Partial<PeopleLogin> & { id: string; email: string }): PeopleLogin => ({
+  name: null,
+  role: 'member',
+  owner: false,
+  disabled: false,
+  archived: false,
+  lastSignInAt: RECENT(),
+  createdAt: AT,
+  workspaces: [],
+  ...p,
+});
+
+/**
+ * Turns Fleet users on (and the fleet writes it needs). Box A: its owner,
+ * Ann (an Admin, also on Box B), Bob (the one Moderator of Projects), Carol
+ * (disabled, in no workspace, banned) and Dan (never signed in). Box B: Ann
+ * and Erin. Box B names its Projects workspace in lower case.
+ */
+export function withPeople(f: MockFleet): MockFleet {
+  const a = PEOPLE.a;
+  const b = PEOPLE.b;
+  const at = new Date().toISOString();
+  f.peopleOn = true;
+  f.writesOn = true;
+  f.people = {
+    [FLEET_BOX.id]: {
+      peopleReason: null,
+      logins: null,
+      people: {
+        schema: 1,
+        at,
+        workspaces: [
+          { id: a.admin, name: 'Admin', admin: true },
+          { id: a.projects, name: 'Projects', admin: false },
+          { id: a.ops, name: 'Ops', admin: false },
+          { id: a.field, name: 'Field', admin: false },
+        ],
+        logins: [
+          login({
+            id: a.owner,
+            email: 'owner@example.com',
+            name: 'Box Owner',
+            role: 'admin',
+            owner: true,
+            workspaces: [{ id: a.admin, moderator: true }],
+          }),
+          login({
+            id: a.ann,
+            email: 'ann@example.com',
+            name: 'Ann Admin',
+            role: 'admin',
+            workspaces: [
+              { id: a.admin, moderator: true },
+              { id: a.projects, moderator: false },
+              { id: a.field, moderator: false },
+            ],
+          }),
+          login({
+            id: a.bob,
+            email: 'bob@example.com',
+            name: 'Bob Builder',
+            workspaces: [{ id: a.projects, moderator: true }],
+          }),
+          login({
+            id: a.carol,
+            email: 'carol@example.com',
+            name: 'Carol Gone',
+            disabled: true,
+          }),
+          login({
+            id: a.dan,
+            email: 'dan@example.com',
+            name: 'Dan New',
+            lastSignInAt: null,
+            workspaces: [{ id: a.ops, moderator: false }],
+          }),
+        ],
+      },
+    },
+    [FLEET_BOX_B.id]: {
+      peopleReason: null,
+      logins: null,
+      people: {
+        schema: 1,
+        at,
+        workspaces: [
+          { id: b.admin, name: 'Admin', admin: true },
+          { id: b.projects, name: 'projects', admin: false },
+          { id: b.ops, name: 'Ops', admin: false },
+        ],
+        logins: [
+          login({
+            id: b.ann,
+            email: 'ann@example.com',
+            name: 'Ann Admin',
+            workspaces: [{ id: b.ops, moderator: false }],
+          }),
+          login({
+            id: b.erin,
+            email: 'erin@example.com',
+            name: 'Erin Field',
+            workspaces: [{ id: b.projects, moderator: true }],
+          }),
+        ],
+      },
+    },
+  };
+  // Carol is banned: an active ban holds her email.
+  f.bans.push({
+    id: 'e0e0e0e0-0000-4000-8000-0000000000c0',
+    kind: 'disable',
+    emails: ['carol@example.com'],
+    issuer: null,
+    oid: null,
+    reason: 'Left',
+    madeBy: ADMIN,
+    madeAt: AT,
+    liftedBy: null,
+    liftedAt: null,
+    boxesMatched: 1,
+    loginsMatched: 1,
+    ownerIds: [],
+  });
+  return f;
+}
+
+/** What a login is in a workspace now: none, user or moderator. */
+function memberWas(f: MockFleet, boxId: string, loginId: string, workspaceId: string) {
+  const l = f.people[boxId]?.people?.logins.find((x) => x.id === loginId);
+  const m = l?.workspaces.find((w) => w.id === workspaceId);
+  return { login: l, was: m ? (m.moderator ? 'moderator' : 'user') : 'none' };
+}
+
+/** A workspace change made on the box: its people list then shows it. */
+function applyMember(f: MockFleet, boxId: string, c: Write) {
+  const list = f.people[boxId]?.people;
+  const l = list?.logins.find((x) => x.id === c.loginId);
+  if (!list || !l) return;
+  l.workspaces = l.workspaces.filter((w) => w.id !== c.workspaceId);
+  if (c.role !== 'none')
+    l.workspaces.push({ id: String(c.workspaceId), moderator: c.role === 'moderator' });
+  list.at = new Date().toISOString();
+}
 
 type Agent = { slug: string | null; model: string };
 
@@ -258,6 +466,15 @@ function runWriteJobs(f: MockFleet) {
     const answers = due.map((c): WriteAnswer => {
       const { reads, ...change } = c;
       void reads;
+      if (c.kind === 'workspaceMember') {
+        const { login: l, was } = memberWas(f, boxId, String(c.loginId), String(c.workspaceId));
+        const a =
+          f.writeAnswers[boxId]?.[`${String(c.loginId)}:${String(c.workspaceId)}`] ??
+          f.writeAnswers[boxId]?.workspaceMember ??
+          (l ? { ok: true, reason: null } : { ok: false, reason: 'login' });
+        if (a.ok) applyMember(f, boxId, c);
+        return { ...change, ok: a.ok, was, reason: a.reason, done: new Date().toISOString() };
+      }
       const key = c.kind === 'agentModel' ? String(c.slug) : c.kind;
       const row = c.kind === 'agentModel' ? agents.find((a) => a.slug === c.slug) : undefined;
       const a =
@@ -388,6 +605,51 @@ export function fleetAnswer(
         factsReason: f.facts[b.id]?.factsReason ?? null,
       }));
     return { status: 200, body: { boxes } };
+  }
+  if (path === '/api/fleet/people' && method === 'GET') {
+    if (!f.peopleOn) return { status: 404, body: { error: 'not found' } };
+    const boxes = f.boxes.map((b) => ({
+      id: b.id,
+      url: b.url,
+      label: b.label,
+      lastOkAt: b.lastOkAt,
+      lastReason: b.lastReason,
+      people: f.people[b.id]?.people ?? null,
+      peopleReason: f.people[b.id]?.peopleReason ?? null,
+      logins: f.people[b.id]?.people ? null : (f.people[b.id]?.logins ?? null),
+    }));
+    return { status: 200, body: { boxes } };
+  }
+  if (path === '/api/fleet/members' && method === 'POST') {
+    if (!f.peopleOn) return { status: 404, body: { error: 'not found' } };
+    f.membersSent.push(body);
+    const changes = (body.changes as Record<string, unknown>[] | undefined) ?? [];
+    if (changes.length === 0 || changes.length > 40) {
+      return { status: 400, body: { error: 'Give 1 to 40 changes.' } };
+    }
+    const at = new Date().toISOString();
+    const queued: string[] = [];
+    const stamped: Write[] = [];
+    for (const b of f.boxes) {
+      const mine = changes
+        .filter((c) => c.boxId === b.id)
+        .map((c): Write => ({
+          kind: 'workspaceMember',
+          loginId: String(c.loginId),
+          workspaceId: String(c.workspaceId),
+          role: String(c.role),
+          by: ADMIN,
+          at,
+        }));
+      if (mine.length === 0) continue;
+      const w = (f.writeState[b.id] ??= { writeJob: null, writeResult: null });
+      const waiting = w.writeJob?.changes ?? [];
+      if (waiting.length + mine.length > 40) continue;
+      w.writeJob = { changes: [...waiting, ...mine] };
+      queued.push(b.id);
+      stamped.push(...mine);
+    }
+    return { status: 200, body: { changes: stamped, boxIds: queued } };
   }
   if (path === '/api/fleet' && method === 'GET') {
     runKeyJobs(f);

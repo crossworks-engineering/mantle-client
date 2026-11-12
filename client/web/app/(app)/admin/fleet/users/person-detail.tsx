@@ -50,8 +50,10 @@ function Cell({
   cell,
   staged,
   status,
+  label,
   onStage,
 }: {
+  label: string;
   cell: GridCell;
   staged: MemberState | undefined;
   status: ReturnType<typeof cellStatus>;
@@ -86,7 +88,7 @@ function Cell({
         <SelectTrigger
           size="xs"
           className={cn('w-32', staged !== undefined && 'border-primary ring-1 ring-primary')}
-          aria-label="Workspace role"
+          aria-label={`Role in ${label}`}
         >
           <SelectValue />
         </SelectTrigger>
@@ -337,6 +339,7 @@ export function PersonDetail({
                       return (
                         <TableCell key={c.boxId} className="align-top">
                           <Cell
+                            label={`${row.name} on ${c.box}`}
                             cell={cell}
                             status={status}
                             staged={
