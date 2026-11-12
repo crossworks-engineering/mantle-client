@@ -31,7 +31,13 @@ export type FleetWriteChange =
       routes: { provider: string; model: string }[];
     }
   | { kind: 'updateNotice'; on: boolean }
-  | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean };
+  | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean }
+  | {
+      kind: 'workspaceMember';
+      loginId: string;
+      workspaceId: string;
+      role: 'user' | 'moderator' | 'none';
+    };
 
 /** Who asked a change, and when (its hour runs from here). */
 export type FleetWriteStamp = { by: string; at: string };
@@ -67,6 +73,10 @@ export function changeLabel(c: FleetWriteChange): string {
       return `Update notice ${c.on ? 'on' : 'off'}`;
     case 'workerGroup':
       return `Worker group ${c.slug}`;
+    case 'workspaceMember':
+      return c.role === 'none'
+        ? 'Removed from a workspace'
+        : `Workspace role ${c.role === 'moderator' ? 'Moderator' : 'User'}`;
   }
 }
 
@@ -90,6 +100,20 @@ export function answerText(a: FleetWriteAnswer): { tone: 'ok' | 'bad'; text: str
       );
     case 'members':
       return bad(`A member is not an enabled worker on this box.${NOTHING}`);
+    case 'login':
+      return bad(`This login is no longer on this box.${NOTHING}`);
+    case 'owner':
+      return bad(`This is the owner of the box. The Control Center never changes it.${NOTHING}`);
+    case 'workspace':
+      return bad(`This box has no shared workspace with this id.${NOTHING}`);
+    case 'admin':
+      return bad(
+        `This is the Admin workspace. Who is an Admin is changed on the box itself.${NOTHING}`,
+      );
+    case 'last-moderator':
+      return bad(
+        `This is the last Moderator of the workspace. Make another user a Moderator first.${NOTHING}`,
+      );
     case 'expired':
       return bad(`Not sent within an hour, so it was dropped.${NOTHING}`);
     case 'unreachable':
@@ -123,6 +147,13 @@ function okText(a: FleetWriteAnswer): string {
     }
     case 'workerGroup':
       return a.was === 'updated' ? 'Updated: the group was there.' : 'Made.';
+    case 'workspaceMember': {
+      if (a.was === a.role) return 'No change: it was so already.';
+      if (a.role === 'none') return 'Removed.';
+      const role = a.role === 'moderator' ? 'a Moderator' : 'a user';
+      if (a.was === 'none' || !a.was) return `Added as ${role}.`;
+      return `Now ${role}.`;
+    }
   }
 }
 
