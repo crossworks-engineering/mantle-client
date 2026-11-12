@@ -14,97 +14,8 @@ import { Field, FieldLabel } from '@mantle/web-ui/ui/field';
 import { SelectItem } from '@mantle/web-ui/ui/select';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { deciderPrivacyOf } from '@/lib/decider';
+import { DECISION_USES } from '@/lib/decision-uses';
 import { FormSelect } from './worker-form-select';
-
-/** The uses the server knows (mantle `DecisionUse`). Order = display order.
- *  A use listed here but not yet built on the server is harmless: the
- *  server ignores switches for uses it has no call site for. */
-export const DECISION_USES: ReadonlyArray<{
-  id: string;
-  label: string;
-  description: string;
-  /** Default threshold when the use has one; omitted = no threshold field. */
-  threshold?: number;
-  /** `score` = Jev's 0–3 score, `probability` = a yes/no probability 0–1. */
-  scale?: 'score' | 'probability';
-  /** What the threshold does, for the field hint. */
-  thresholdHint?: string;
-  /** Shows the "passages judged" pool field (passage_scoring). */
-  pool?: boolean;
-}> = [
-  {
-    id: 'passage_scoring',
-    label: 'Passage scoring',
-    description:
-      'Scores each search passage 0–3 for “does it answer the question” and, when live, drops the weak ones before they enter the prompt (search_chunks and the responder’s auto-context).',
-    threshold: 1.5,
-    scale: 'score',
-    thresholdHint: 'Passages scoring below this are dropped when live.',
-    pool: true,
-  },
-  {
-    id: 'context_pruning',
-    label: 'Context pruning',
-    description:
-      'One call per turn over every injected fact, content hit and passage; when live, items under the threshold are dropped. Preferences are always kept; history and the corpus map are never touched.',
-    threshold: 1.0,
-    scale: 'score',
-    thresholdHint: 'Items scoring below this are dropped when live.',
-  },
-  {
-    id: 'delegation_hint',
-    label: 'Delegation hint',
-    description:
-      'Before a turn, picks which delegate (or none) the message looks like work for. When live, one hint line is added to the system context — the responder still decides.',
-  },
-  {
-    id: 'version_grouping',
-    label: 'Version grouping',
-    description:
-      'Once per turn, finds two passages that are versions of the same text. A superseded hit goes when its successor is also there; for unlinked look-alikes Jev decides, and when live the lower-ranked copy is dropped.',
-    threshold: 0.9,
-    scale: 'probability',
-    thresholdHint: 'A “same passage” yes at or above this drops the lower-ranked copy.',
-  },
-  {
-    id: 'fact_add_prefilter',
-    label: 'Fact ADD pre-filter',
-    description:
-      'During fact extraction, a confident “add” from Jev skips the chat classifier. Any other answer still goes to the classifier; Jev never updates or deletes a fact.',
-  },
-  {
-    id: 'history_recall',
-    label: 'History recall',
-    description:
-      'Scores the exchanges older than the history limit (up to 50 messages back) for “does a reply need it”. When live, the ones at the threshold rejoin the history, marked as recalled. Pairs with a history limit of 20.',
-    threshold: 1.0,
-    scale: 'score',
-    thresholdHint: 'Older exchanges scoring at or above this come back when live.',
-  },
-  {
-    id: 'journal_recall',
-    label: 'Journal recall',
-    description:
-      'Scores every rule the agent learned against the message. When live, the best rules (at the threshold, up to 25) are sent with the turn instead of the similarity pick.',
-    threshold: 1.5,
-    scale: 'score',
-    thresholdHint: 'Learned rules scoring at or above this are sent when live.',
-  },
-  {
-    id: 'rule_reconcile',
-    label: 'Rule reconcile',
-    description:
-      'When an agent learns a rule, checks its close older rules: same rule, or changed by the new one? When live, the older rule is retired into the new one (reversible). Also needed by the Journal rules cleanup task.',
-    threshold: 0.8,
-    scale: 'probability',
-    thresholdHint: 'A “same” or “changes it” yes at or above this retires the older rule.',
-  },
-  {
-    id: 'model_routing',
-    label: 'Model routing (not built yet)',
-    description: 'Sizes each request so a cheaper model can take the simple ones.',
-  },
-];
 
 type UseConfig = {
   enabled?: boolean;
@@ -120,9 +31,10 @@ export function DeciderFields({ params }: { params: Record<string, unknown> }) {
       <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         The decider is a <strong>typed-decision model</strong>: it writes no text. Code sends it
         state and typed questions and gets back a choice, a score or a yes/no with probabilities in
-        about 300 ms. A fresh brain ships every built use <strong>live</strong>. Switch a use to{' '}
-        <strong>shadow</strong> to watch it without acting: the answers land in /traces (steps named{' '}
-        <code>decide_*</code>) and nothing else changes. Untick a use to turn it off.
+        about 300 ms. A fresh brain ships every built use <strong>live</strong>, except PDF kind
+        (shadow). Switch a use to <strong>shadow</strong> to watch it without acting: the answers
+        land in /traces (steps named <code>decide_*</code>) and nothing else changes. Untick a use
+        to turn it off.
       </p>
       <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
         <strong>Privacy:</strong> the state sent to the decider leaves this box (OpenRouter → the

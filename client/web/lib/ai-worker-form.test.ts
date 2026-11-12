@@ -50,6 +50,17 @@ describe('decider params from the form', () => {
     expect(deciderPrivacyOf(merged)).toBe('no_training');
   });
 
+  it('writes pdf_kind as the brain seeds it: on, shadow, no threshold', () => {
+    const p = paramsFromForm(
+      'decider',
+      form({ use_pdf_kind_enabled: 'on', use_pdf_kind_mode: 'shadow' }),
+    );
+    expect((p.uses as Record<string, unknown>).pdf_kind).toEqual({
+      enabled: true,
+      mode: 'shadow',
+    });
+  });
+
   it('a blank number field is unset, not 0', () => {
     const p = paramsFromForm('decider', form({ timeout_ms: '' }));
     expect(p.timeout_ms).toBeUndefined();
