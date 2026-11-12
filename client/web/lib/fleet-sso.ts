@@ -246,9 +246,9 @@ export function requiredWarning(status: Pick<FleetSsoStatus, 'linked' | 'active'
   const active = status.active ?? 0;
   const unlinked = Math.max(active - linked, 0);
   return [
-    'Old password sessions of linked logins end. They sign in with the company account only.',
-    `Every unlinked login is held to a link step at its next sign-in. Now: ${linked} of ${active} active logins are linked, ${unlinked} are not.`,
-    'The original account and honoured outside marks keep their passwords.',
+    'Every password session on the box ends, except those of the original account and of honoured outside marks, which keep their passwords.',
+    'Linked logins then sign in with the company account only.',
+    `Unlinked logins sign in with their password once and must link. Now: ${linked} of ${active} active logins are linked, ${unlinked} are not.`,
     'The Control Center cannot lower the mode. The way back is optional in the box .env (scripts/sso-env.sh <box> --mode optional).',
   ];
 }

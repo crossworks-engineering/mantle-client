@@ -378,7 +378,7 @@ function ModePart({
       {next.blocked && <p className="text-xs text-muted-foreground">{blockedText(next.blocked)}</p>}
       {last && (
         <p className={cn('text-xs', last.ok ? 'text-muted-foreground' : TONE_TEXT.bad)}>
-          Last raise to {last.to} by {last.by}, {formatDateTime(last.at)}:{' '}
+          Last raise{last.to ? ` to ${last.to}` : ''} by {last.by}, {formatDateTime(last.at)}:{' '}
           {last.ok
             ? 'done.'
             : last.reason === 'env-wins' || last.reason === 'mode'
