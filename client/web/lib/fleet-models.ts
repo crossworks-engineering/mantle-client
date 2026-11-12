@@ -60,9 +60,10 @@ function sameOrigin(url: string, origin: string): boolean {
  *  runs (a box before the workers' `default` flag, with two of a kind). */
 export type BoxModel = string | null | undefined;
 
-/** What one box runs for an item: its provider and model, or null and
- *  undefined as for BoxModel. */
-export type BoxRun = { provider: string; model: string } | null | undefined;
+/** What one box runs for an item: its route (provider, and endpoint print:
+ *  undefined from a box before the print) and model, or null and undefined
+ *  as for BoxModel. */
+export type BoxRun = { provider: string; endpoint?: string; model: string } | null | undefined;
 
 const modelOf = (run: BoxRun): BoxModel => (run ? run.model : run);
 
@@ -73,6 +74,10 @@ export type CompareLine = {
   right: BoxModel;
   leftProvider: string | null;
   rightProvider: string | null;
+  /** Endpoint prints; undefined where the box sends none (a release
+   *  behind), null where it does not run the item. */
+  leftEndpoint: string | null | undefined;
+  rightEndpoint: string | null | undefined;
   /** Both boxes run it, with different models. */
   differs: boolean;
   /** Only one of the two boxes runs it. */
@@ -82,7 +87,7 @@ export type CompareLine = {
 /** An agent as a box runs it, by shipped slug. */
 export function agentRun(row: FleetMatrixRow, slug: string): BoxRun {
   const agent = row.facts?.agents.find((a) => a.slug === slug);
-  return agent ? { provider: agent.provider, model: agent.model } : null;
+  return agent ? { provider: agent.provider, endpoint: agent.endpoint, model: agent.model } : null;
 }
 
 export function compareLines(
@@ -102,6 +107,8 @@ export function compareLines(
       right: r,
       leftProvider: lr ? lr.provider : null,
       rightProvider: rr ? rr.provider : null,
+      leftEndpoint: lr ? lr.endpoint : null,
+      rightEndpoint: rr ? rr.endpoint : null,
       differs: typeof l === 'string' && typeof r === 'string' && l !== r,
       oneSided: (l === null) !== (r === null),
     };
@@ -109,31 +116,41 @@ export function compareLines(
 }
 
 /** Whether a line's model can go from one side to the other: both boxes
- *  run it on the same provider (a model id means something on one
- *  provider only), they differ, and the source model is one the brain
- *  takes. */
+ *  run it on the same route, the same provider and endpoint print (a model
+ *  id means something on one route only; a box before the print cannot
+ *  show it, so no copy), they differ, and the source model is one the
+ *  brain takes. */
 export function canCopy(line: CompareLine, from: 'left' | 'right'): boolean {
   const model = line[from];
+  return line.differs && typeof model === 'string' && MODEL_ID.test(model) && sameRoute(line);
+}
+
+/** Both boxes run the item on one provider and one endpoint print. */
+export function sameRoute(line: CompareLine): boolean {
   return (
-    line.differs &&
-    typeof model === 'string' &&
-    MODEL_ID.test(model) &&
     !!line.leftProvider &&
-    line.leftProvider === line.rightProvider
+    line.leftProvider === line.rightProvider &&
+    typeof line.leftEndpoint === 'string' &&
+    line.leftEndpoint === line.rightEndpoint
   );
 }
 
-/** Every differing line of one side, as { key, provider, model }, at most the
+/** Every differing line of one side, as { key, provider, endpoint, model }, at most the
  *  route's cap. `may` leaves out lines that cannot be set (a worker kind
  *  the fleet does not set). */
 export function copyAllLines(
   lines: readonly CompareLine[],
   from: 'left' | 'right',
   may: (key: string) => boolean = () => true,
-): { key: string; provider: string; model: string }[] {
+): { key: string; provider: string; endpoint: string; model: string }[] {
   return lines
     .filter((l) => may(l.key) && canCopy(l, from))
-    .map((l) => ({ key: l.key, provider: l.leftProvider!, model: l[from] as string }))
+    .map((l) => ({
+      key: l.key,
+      provider: l.leftProvider!,
+      endpoint: l.leftEndpoint!,
+      model: l[from] as string,
+    }))
     .slice(0, MAX_MODEL_CHANGES);
 }
 
@@ -154,13 +171,18 @@ export function workerKinds(rows: readonly FleetMatrixRow[]): string[] {
   return [...out].sort();
 }
 
-/** The worker that runs this kind on a box (its default). A box before
- *  the `default` flag: its one worker of the kind, else not known. Null
- *  where the box has no facts or no worker of the kind. */
+/** The worker that runs this kind on a box (`default`: the runtime's own
+ *  pick, sent by the box). A box before the flag: its one worker of the
+ *  kind, else not known. Null where the box has no facts or runs no worker
+ *  of the kind. */
 export function workerRun(row: FleetMatrixRow, kind: string): BoxRun {
   const all = (row.facts?.workers ?? []).filter((w) => w.kind === kind);
   if (all.length === 0) return null;
-  const run = (w: (typeof all)[number]) => ({ provider: w.provider, model: w.model });
+  const run = (w: (typeof all)[number]) => ({
+    provider: w.provider,
+    endpoint: w.endpoint,
+    model: w.model,
+  });
   const flagged = all.find((w) => w.default === true);
   if (flagged) return run(flagged);
   if (all.some((w) => w.default === false)) return null; // flags sent, none runs it

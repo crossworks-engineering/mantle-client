@@ -23,7 +23,7 @@ export const MAX_ROUTES = 8;
 export const MAX_MEMBERS = 10;
 
 export type FleetWriteChange =
-  | { kind: 'agentModel'; slug: string; model: string }
+  | { kind: 'agentModel'; slug: string; model: string; provider?: string; endpoint?: string }
   | {
       kind: 'poolEntry';
       pool: string;
@@ -34,7 +34,7 @@ export type FleetWriteChange =
   | { kind: 'updateNotice'; on: boolean }
   | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean }
   /** The model of the default AI worker of a shipped kind (`worker`). */
-  | { kind: 'workerModel'; worker: string; provider: string; model: string };
+  | { kind: 'workerModel'; worker: string; provider: string; endpoint: string; model: string };
 
 /** Who asked a change, and when (its hour runs from here). */
 export type FleetWriteStamp = { by: string; at: string };
@@ -44,7 +44,14 @@ export type FleetWriteJob = { changes: (FleetWriteChange & FleetWriteStamp)[] };
 /** A box's answer to one change: ok and what it had (`was`), or a reason.
  *  `done` is when. */
 export type FleetWriteAnswer = FleetWriteChange &
-  FleetWriteStamp & { ok: boolean; was: string | null; reason: string | null; done: string };
+  FleetWriteStamp & {
+    ok: boolean;
+    was: string | null;
+    reason: string | null;
+    done: string;
+    /** workerModel: the id of the worker the box set (the one it runs). */
+    workerId?: string;
+  };
 
 export type FleetWriteResult = { results: FleetWriteAnswer[] };
 
@@ -101,8 +108,8 @@ export function answerText(a: FleetWriteAnswer): { tone: 'ok' | 'bad'; text: str
       );
     case 'model':
       return bad(`The provider does not list this model for this kind of worker.${keeps}`);
-    case 'provider':
-      return bad(`This box runs the worker on another provider.${keeps}`);
+    case 'route':
+      return bad(`This box runs it on another provider or endpoint.${keeps}`);
     case 'expired':
       return bad(`Not sent within an hour, so it was dropped.${NOTHING}`);
     case 'unreachable':

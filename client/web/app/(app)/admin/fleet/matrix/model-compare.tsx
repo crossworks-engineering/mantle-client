@@ -41,6 +41,7 @@ import {
   defaultPair,
   FLEET_MODELS_PATH,
   MAX_MODEL_CHANGES,
+  sameRoute,
   shippedSlugs,
   workerChange,
   workerKinds,
@@ -63,7 +64,7 @@ import { Part, Pill, ScreenLink, useParam } from '../cc-kit';
 import { ConfirmSend, useFleetSend } from '../fleet-writes';
 
 type Side = 'left' | 'right';
-type Change = { key: string; provider: string; model: string };
+type Change = { key: string; provider: string; endpoint: string; model: string };
 /** The question before a send: the target and source boxes are taken when
  *  the arrow is pressed, so a change of the pair meanwhile never redirects
  *  it. */
@@ -131,7 +132,9 @@ type Spec = {
   /** Whether the fleet may set this item at all. */
   may: (key: string) => boolean;
   path: string;
-  change: (c: Change) => FleetWriteChange | { slug: string; model: string };
+  change: (
+    c: Change,
+  ) => FleetWriteChange | { slug: string; model: string; provider: string; endpoint: string };
   match: (key: string) => Match;
   /** What the item keeps, in the question. */
   keeps: string;
@@ -167,13 +170,14 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
   const lines = compareLines(spec.keys, row('left'), row('right'), spec.read);
   const differing = lines.filter((l) => l.differs).length;
   const shown = onlyDiffer ? lines.filter((l) => l.differs || l.oneSided) : lines;
-  // Only from facts read lately: an old read may no longer be what the box runs.
+  // Only between facts read lately on both boxes: an old read may no
+  // longer be what a box runs, nor its route.
   const fresh = (s: Side) => {
     const r = row(s);
     return !!r && factsAge(r) === 'fresh';
   };
   const copyable = (l: CompareLine, from: Side) =>
-    spec.may(l.key) && fresh(from) && !!row(other(from))?.facts && canCopy(l, from);
+    spec.may(l.key) && fresh(from) && fresh(other(from)) && canCopy(l, from);
   const countable = (from: Side) => lines.filter((l) => copyable(l, from)).length;
 
   // An answer lands with the write result; the box's facts (the new model)
@@ -257,7 +261,12 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
             disabled={pending || writeWaiting(box(to), spec.match(line.key))}
             onClick={() =>
               askFor(to, [
-                { key: line.key, provider: line.leftProvider!, model: line[from] as string },
+                {
+                  key: line.key,
+                  provider: line.leftProvider!,
+                  endpoint: line.leftEndpoint!,
+                  model: line[from] as string,
+                },
               ])
             }
           >
@@ -369,10 +378,13 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
                         <span className="font-medium">{line.key}</span>
                         {line.differs && <Pill tone="warn">differs</Pill>}
                         {line.oneSided && <Pill>one box</Pill>}
-                        {line.differs &&
-                          line.leftProvider &&
-                          line.rightProvider &&
-                          line.leftProvider !== line.rightProvider && <Pill>other provider</Pill>}
+                        {line.differs && !sameRoute(line) && (
+                          <Pill>
+                            {line.leftEndpoint === undefined || line.rightEndpoint === undefined
+                              ? 'update to copy'
+                              : 'other route'}
+                          </Pill>
+                        )}
                       </div>
                       {note && <div className="mt-1">{note}</div>}
                     </TableCell>
@@ -410,8 +422,8 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
         {one
           ? `${askTo} runs ${was || 'no model'} for it now. `
           : `${ask?.changes.map((c) => c.key).join(', ')}. `}
-        {askTo} checks its own model policy first. If it refuses, it keeps the model it had.{' '}
-        {spec.keeps}
+        {askTo} checks the route and its own model policy first. If it refuses, it keeps the model
+        it had. {spec.keeps}
       </ConfirmSend>
     </section>
   );
@@ -424,7 +436,12 @@ const AGENTS = {
   read: agentRun,
   may: () => true,
   path: FLEET_MODELS_PATH,
-  change: (c: Change) => ({ slug: c.key, model: c.model }),
+  change: (c: Change) => ({
+    slug: c.key,
+    model: c.model,
+    provider: c.provider,
+    endpoint: c.endpoint,
+  }),
   match: agentChange,
   keeps: 'The agent keeps its provider and key.',
 } satisfies Omit<Spec, 'keys'>;
@@ -440,6 +457,7 @@ const WORKERS = {
     kind: 'workerModel',
     worker: c.key,
     provider: c.provider,
+    endpoint: c.endpoint,
     model: c.model,
   }),
   match: workerChange,

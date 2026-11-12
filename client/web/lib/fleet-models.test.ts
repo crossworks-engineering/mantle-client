@@ -4,6 +4,7 @@ import type { FleetBox } from './fleet';
 import type { FleetWriteAnswer } from './fleet-writes';
 import {
   canCopy,
+  sameRoute,
   compareLines,
   agentChange,
   copyAllLines,
@@ -29,6 +30,7 @@ const agent = (slug: string | null, model: string) => ({
   model,
   enabled: true,
   assigned: slug === null,
+  endpoint: '',
 });
 const row = (agents: ReturnType<typeof agent>[] | null): FleetMatrixRow => ({
   id: 'r',
@@ -98,6 +100,8 @@ describe('agent models, two boxes', () => {
         right: null,
         leftProvider: 'openrouter',
         rightProvider: null,
+        leftEndpoint: '',
+        rightEndpoint: null,
         differs: false,
         oneSided: true,
       },
@@ -107,6 +111,8 @@ describe('agent models, two boxes', () => {
         right: 'm-2',
         leftProvider: 'openrouter',
         rightProvider: 'openrouter',
+        leftEndpoint: '',
+        rightEndpoint: '',
         differs: true,
         oneSided: false,
       },
@@ -116,6 +122,8 @@ describe('agent models, two boxes', () => {
         right: 'w',
         leftProvider: 'openrouter',
         rightProvider: 'openrouter',
+        leftEndpoint: '',
+        rightEndpoint: '',
         differs: false,
         oneSided: false,
       },
@@ -138,15 +146,15 @@ describe('agent models, two boxes', () => {
     expect(canCopy(lines[2]!, 'left')).toBe(false); // the same already
     expect(canCopy(lines[3]!, 'left')).toBe(false); // not on the other box
     expect(copyAllLines(lines, 'left')).toEqual([
-      { key: 'a', provider: 'openrouter', model: 'm-1' },
+      { key: 'a', provider: 'openrouter', endpoint: '', model: 'm-1' },
     ]);
     expect(copyAllLines(lines, 'right')).toEqual([
-      { key: 'a', provider: 'openrouter', model: 'm-2' },
-      { key: 'b', provider: 'openrouter', model: 'm-3' },
+      { key: 'a', provider: 'openrouter', endpoint: '', model: 'm-2' },
+      { key: 'b', provider: 'openrouter', endpoint: '', model: 'm-3' },
     ]);
     // An item the fleet may not set is left out.
     expect(copyAllLines(lines, 'right', (k) => k !== 'a')).toEqual([
-      { key: 'b', provider: 'openrouter', model: 'm-3' },
+      { key: 'b', provider: 'openrouter', endpoint: '', model: 'm-3' },
     ]);
   });
 
@@ -202,6 +210,7 @@ describe('AI worker models, two boxes', () => {
     provider: 'openrouter',
     model,
     enabled: true,
+    endpoint: '',
     ...(def === undefined ? {} : { default: def }),
   });
   const box = (workers: ReturnType<typeof w>[] | null): FleetMatrixRow => ({
@@ -248,6 +257,8 @@ describe('AI worker models, two boxes', () => {
       right: undefined,
       leftProvider: 'openrouter',
       rightProvider: null,
+      leftEndpoint: '',
+      rightEndpoint: null,
       differs: false,
       oneSided: false,
     });
@@ -257,7 +268,7 @@ describe('AI worker models, two boxes', () => {
     expect(workerKindSettable('embedding')).toBe(false);
     expect(workerKindSettable('stt')).toBe(true);
     expect(copyAllLines(lines, 'left', workerKindSettable)).toEqual([
-      { key: 'stt', provider: 'openrouter', model: 's-1' },
+      { key: 'stt', provider: 'openrouter', endpoint: '', model: 's-1' },
     ]);
   });
 
@@ -273,9 +284,31 @@ describe('AI worker models, two boxes', () => {
       differs: true,
       leftProvider: 'xai',
       rightProvider: 'openrouter',
+      leftEndpoint: '',
+      rightEndpoint: '',
     });
     expect(canCopy(lines[0]!, 'left')).toBe(false);
     expect(canCopy(lines[0]!, 'right')).toBe(false);
     expect(copyAllLines(lines, 'left')).toEqual([]);
+  });
+
+  it('never copies across endpoints, nor to or from a box that sends none', () => {
+    const at = (endpoint: string | undefined, model: string) => {
+      const { endpoint: _e, ...rest } = w('vision', model, true);
+      void _e;
+      return endpoint === undefined ? rest : { ...rest, endpoint };
+    };
+    const pair = (l: string | undefined, r: string | undefined) =>
+      compareLines(
+        ['vision'],
+        box([at(l, 'a') as never]),
+        box([at(r, 'b') as never]),
+        workerRun,
+      )[0]!;
+    expect(canCopy(pair('a1b2c3d4e5f6', 'a1b2c3d4e5f6'), 'left')).toBe(true);
+    expect(canCopy(pair('a1b2c3d4e5f6', ''), 'left')).toBe(false);
+    expect(canCopy(pair(undefined, ''), 'left')).toBe(false);
+    expect(canCopy(pair('', undefined), 'right')).toBe(false);
+    expect(sameRoute(pair('', ''))).toBe(true);
   });
 });

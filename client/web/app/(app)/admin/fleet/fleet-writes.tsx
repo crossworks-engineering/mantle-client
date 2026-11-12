@@ -22,7 +22,8 @@ export function useFleetSend(path: string, onChanged: () => void) {
   const toast = useToast();
   const [pending, setPending] = useState(false);
   const send = async (
-    changes: FleetWriteChange[] | { slug: string; model: string }[],
+    changes:
+      FleetWriteChange[] | { slug: string; model: string; provider?: string; endpoint?: string }[],
     boxIds: string[],
     fallback: string,
   ): Promise<boolean> => {
