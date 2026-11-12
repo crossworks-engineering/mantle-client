@@ -19,6 +19,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -26,7 +27,6 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import {
   CLASH_DETAIL,
-  SHARED_UPLOAD_REFUSED,
   aggregateProgress,
   clashVerdict,
   isNameClash,
@@ -38,6 +38,7 @@ import {
   overLimitMessage,
   progressTicker,
   spreadsheetHint,
+  refreshAfterUpload,
   uploadForm,
 } from '@/lib/upload-progress';
 import type { AggregateProgress, ClashVerdict } from '@/lib/upload-progress';
@@ -90,9 +91,7 @@ type UploadApi = {
   /** The server's per-file cap (from /api/shell); null until known. */
   maxUploadBytes: number | null;
   setMaxUploadBytes: (bytes: number | null) => void;
-  /** `confirm`: the owner said yes to a folder shared with the team or
-   *  clients (the brain refuses such an upload without it, 409). */
-  enqueue: (input: FileList | File[], parentPath: string, opts?: { confirm?: boolean }) => void;
+  enqueue: (input: FileList | File[], parentPath: string) => void;
   cancel: (id: string) => void;
   retry: (id: string) => void;
   /** Send a `conflict` upload again, over the different version. */
@@ -135,8 +134,6 @@ async function checkClash(file: File, parentPath: string): Promise<ClashVerdict 
 type Pending = {
   file: File;
   parentPath: string;
-  /** A yes to a shared folder, kept for a retry. */
-  confirm?: boolean;
   /** Write over the file of the same name (the Replace on a conflict). */
   replace?: boolean;
   controller?: AbortController;
@@ -157,6 +154,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const idRef = useRef(0);
   const uploadOneRef = useRef<(id: string) => Promise<void>>(undefined);
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const update = useCallback((id: string, patch: Partial<UploadTask>) => {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -187,12 +185,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const onProgress = progressTicker((loaded, rate) => update(id, { loaded, rate }));
 
     try {
-      const form = uploadForm(
-        entry.parentPath,
-        entry.file,
-        entry.confirm === true,
-        entry.replace === true,
-      );
+      const form = uploadForm(entry.parentPath, entry.file, entry.replace === true);
       await xhrUploadToBrain('/api/files/files', {
         form,
         signal: controller.signal,
@@ -200,6 +193,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       });
       update(id, { status: 'done', loaded: entry.file.size, rate: null });
       pendingRef.current.delete(id);
+      // Show it now: the realtime stream can be late or blocked.
+      void refreshAfterUpload(queryClient);
     } catch (err) {
       if (err instanceof UploadAbortedError) {
         update(id, { status: 'cancelled', rate: null });
@@ -230,22 +225,13 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           });
         }
       } else {
-        // A folder shared since the screen last looked: the yes is asked
-        // for on the Files screen, not by a retry here.
-        const unasked =
-          err instanceof UploadHttpError && err.status === 409 && err.body?.error === 'visibility';
         // Keep the File so "retry" can resend it without a new picker round.
         update(id, {
           status: 'error',
           rate: null,
-          error: unasked
-            ? SHARED_UPLOAD_REFUSED
-            : err instanceof Error
-              ? err.message
-              : 'Upload failed.',
-          retryable: !unasked,
+          error: err instanceof Error ? err.message : 'Upload failed.',
+          retryable: true,
         });
-        if (unasked) pendingRef.current.delete(id);
       }
     } finally {
       entry.controller = undefined;
@@ -255,7 +241,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   };
 
   const enqueue = useCallback(
-    (input: FileList | File[], parentPath: string, opts: { confirm?: boolean } = {}) => {
+    (input: FileList | File[], parentPath: string) => {
       const files = Array.from(input).filter((f) => f.size > 0);
       if (files.length === 0) return;
       const limit = limitRef.current ?? LEGACY_LIMIT_BYTES;
@@ -283,7 +269,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           refused.push(file.name);
           continue;
         }
-        pendingRef.current.set(id, { file, parentPath, confirm: opts.confirm });
+        pendingRef.current.set(id, { file, parentPath });
         queueRef.current.push(id);
         fresh.push({ ...base, status: 'pending' });
       }

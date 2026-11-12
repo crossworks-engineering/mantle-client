@@ -3,6 +3,7 @@
  * pre-check message, and the aggregate progress across a batch. Kept free of
  * React so they can be unit-tested and reused by any other upload surface.
  */
+import type { QueryClient } from '@tanstack/react-query';
 
 const KB = 1024;
 const MB = KB * 1024;
@@ -40,29 +41,40 @@ export function overLimitMessage(size: number, limit: number): string {
 
 /**
  * The upload's form, in the order the brain reads it: the folder, then
- * `confirm` (a yes to a folder shared with the team or clients, which the
- * brain reads before it streams the file) and `replace` (write over a file of
- * the same name in place), then the file itself. A field after the file part
- * would reach the brain only once the bytes had.
+ * `confirm` and `replace` (write over a file of the same name in place), then
+ * the file itself. A field after the file part would reach the brain only
+ * once the bytes had.
+ *
+ * `confirm` is always sent: a new file takes its folder's sharing with no
+ * question (owner's word, 2026-11-12). A brain from before that still asks
+ * for it on a shared folder, and takes this yes; a newer brain ignores it.
  */
-export function uploadForm(
-  parentPath: string,
-  file: Blob,
-  confirm = false,
-  replace = false,
-): FormData {
+export function uploadForm(parentPath: string, file: Blob, replace = false): FormData {
   const form = new FormData();
   form.set('parentPath', parentPath);
-  if (confirm) form.set('confirm', 'true');
+  form.set('confirm', 'true');
   if (replace) form.set('replace', 'true');
   form.set('file', file);
   return form;
 }
 
-/** The brain's 409 on an upload into a shared folder it was not told of
- *  (the screen's view of the folder was stale): what the dock says. */
-export const SHARED_UPLOAD_REFUSED =
-  'The folder is shared now, so everyone it is shared with would read this. Upload it again from Files to confirm.';
+/** The views a finished upload (or replace) changes, as the Files screen's
+ *  own refresh names them: every Files view (list, pane, tree, Recent, Data
+ *  files) and the tree rail, which lists files too. */
+export const UPLOAD_DONE_KEYS: ReadonlyArray<readonly string[]> = [['files'], ['tree', 'files']];
+
+/** Ask those views again at once, so the new file shows without a reload
+ *  and without waiting on the realtime stream (owner, 2026-11-12). A fetch
+ *  already running may have read the folder before this file landed: it is
+ *  cancelled first (its answer dropped), then the views are fetched again.
+ *  Without the cancel, a view still on its first load would join that fetch
+ *  and end without the file. */
+export async function refreshAfterUpload(queryClient: QueryClient): Promise<void> {
+  for (const queryKey of UPLOAD_DONE_KEYS) {
+    await queryClient.cancelQueries({ queryKey });
+    void queryClient.invalidateQueries({ queryKey });
+  }
+}
 
 /** Exponential moving average of the transfer rate, so the ETA does not
  *  jitter with every progress event. `prev` null seeds it. */

@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { describe, it, expect, vi } from 'vitest';
 import {
   aggregateProgress,
   clashVerdict,
@@ -14,6 +17,8 @@ import {
   spreadsheetHint,
   storedFilename,
   updateRate,
+  UPLOAD_DONE_KEYS,
+  refreshAfterUpload,
   uploadForm,
 } from './upload-progress';
 
@@ -82,19 +87,80 @@ describe('aggregateProgress', () => {
 });
 
 describe('uploadForm', () => {
-  it('sends confirm before the file part, so the brain reads it first', () => {
-    const form = uploadForm('files.shared', new Blob(['x']), true);
+  // A new file asks nothing (owner's word, 2026-11-12): confirm always goes,
+  // before the file part, so a brain from before that rule takes the yes
+  // before it streams the bytes; a newer brain ignores it.
+  it('always sends confirm before the file part', () => {
+    const form = uploadForm('files.shared', new Blob(['x']));
     expect([...form.keys()]).toEqual(['parentPath', 'confirm', 'file']);
     expect(form.get('confirm')).toBe('true');
     expect(form.get('parentPath')).toBe('files.shared');
   });
   it('sends replace before the file part too', () => {
-    const form = uploadForm('files', new Blob(['x']), false, true);
-    expect([...form.keys()]).toEqual(['parentPath', 'replace', 'file']);
+    const form = uploadForm('files', new Blob(['x']), true);
+    expect([...form.keys()]).toEqual(['parentPath', 'confirm', 'replace', 'file']);
   });
-  it('sends no confirm unless asked', () => {
-    expect([...uploadForm('files', new Blob(['x'])).keys()]).toEqual(['parentPath', 'file']);
+});
+
+describe('UPLOAD_DONE_KEYS', () => {
+  const read = (f: string) =>
+    readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8').replace(/\s+/g, ' ');
+
+  it("are the Files screen's own refresh: every Files view and the tree rail", () => {
+    expect(UPLOAD_DONE_KEYS).toEqual([['files'], ['tree', 'files']]);
+    const screen = read('../app/(app)/files/files-client.tsx');
+    expect(screen).toContain("void queryClient.invalidateQueries({ queryKey: ['files'] });");
+    expect(screen).toContain("queryKey: ['tree', 'files']");
   });
+
+  it('a done upload asks them again, in the success branch only', () => {
+    const provider = read('../components/uploads/upload-provider.tsx');
+    const done = provider.indexOf("update(id, { status: 'done'");
+    const ask = provider.indexOf('void refreshAfterUpload(queryClient);');
+    expect(done).toBeGreaterThan(-1);
+    expect(ask).toBeGreaterThan(done);
+    expect(ask).toBeLessThan(provider.indexOf('} catch (err) {', done));
+  });
+
+  // The audit's race: a file finishes while a fetch that read the folder
+  // before it landed is still running. The view must end with the file,
+  // whether it showed a list already or was on its first load.
+  it.each([
+    ['showing a list', ['a.txt'] as string[] | undefined],
+    ['on its first load', undefined],
+  ])(
+    'a fetch running when the file lands is dropped, and the view %s ends with it',
+    async (_name, shown) => {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const key = ['files', 'list', 'files.work'];
+      if (shown) qc.setQueryData(key, shown);
+      let landed = false;
+      let calls = 0;
+      let release: () => void = () => {};
+      const queryFn = async () => {
+        calls++;
+        const seen = landed;
+        if (calls === 1) await new Promise<void>((r) => (release = r));
+        return seen ? ['a.txt', 'b.txt'] : ['a.txt'];
+      };
+      const observer = new QueryObserver(qc, { queryKey: key, queryFn });
+      const statuses: string[] = [];
+      const unsubscribe = observer.subscribe((r) => statuses.push(r.status));
+      // The first fetch is running, and read the folder before b.txt.
+      await vi.waitFor(() => expect(calls).toBe(1));
+      landed = true;
+      await refreshAfterUpload(qc);
+      release();
+      await vi.waitFor(() => expect(qc.getQueryData(key)).toEqual(['a.txt', 'b.txt']));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(qc.getQueryData(key)).toEqual(['a.txt', 'b.txt']);
+      expect(calls).toBe(2);
+      // The dropped fetch never shows as an error.
+      expect(statuses).not.toContain('error');
+      unsubscribe();
+      qc.clear();
+    },
+  );
 });
 
 describe('name clashes', () => {

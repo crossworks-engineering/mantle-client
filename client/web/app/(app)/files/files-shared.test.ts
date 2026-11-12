@@ -103,24 +103,28 @@ describe('derived counts', () => {
 
 /** The Files writes into a shared folder, pinned where the node runner
  *  cannot render them. */
-describe('Files asks before a shared folder exposes what lands in it', () => {
+describe('Files writes into a shared folder', () => {
   const read = (f: string) =>
     readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8').replace(/\s+/g, ' ');
 
-  it('an upload into a shared folder asks once, then sends confirm', () => {
+  // Owner's word, 2026-11-12: a new file takes its folder's sharing, so an
+  // upload (one file, many, a folder) just goes, whatever the screen's view
+  // of the folder says. The drop zone still names who reads the folder.
+  it('an upload into a shared folder asks nothing and goes at once', () => {
     const src = read('./files-client.tsx');
-    // W5b: asked when the folder's grants reach beyond its home. W8: by
-    // nothing else (no folder level).
+    expect(src).not.toMatch(/asksOnUpload|setSharedUpload|sharedUpload|to a shared folder\?/);
+    expect(src).toContain('if (picked.length) enqueue(picked, currentPath);');
+    expect(src).toContain('void sendTree(plan);');
+    expect(src).toContain('for (const b of plan.batches) enqueue(b.files, b.parentPath);');
+    expect(src).toContain('if (e.dataTransfer.files?.length) upload(e.dataTransfer.files);');
     expect(src).toContain(
       'const visibleTo = currentFolder ? uploadVisibleTo(folderGrants.data) : null;',
     );
-    expect(src).toContain('const asksOnUpload = visibleTo !== null;');
-    expect(src).not.toMatch(/folderShareOf|sharedUploadLine|Clients read/);
-    expect(src).toContain(
-      'if (asksOnUpload) setSharedUpload({ files: picked, path: currentPath });',
-    );
-    expect(src).toContain('enqueue(sharedUpload.files, sharedUpload.path, { confirm: true });');
-    expect(src).toContain('if (e.dataTransfer.files?.length) upload(e.dataTransfer.files);');
+  });
+
+  it('the dock has no shared-folder refusal of its own', () => {
+    const src = read('../../../components/uploads/upload-provider.tsx');
+    expect(src).not.toMatch(/SHARED_UPLOAD_REFUSED|confirm/);
   });
 
   it('a new file in a shared folder shows the brain’s list and repeats with confirm', () => {
