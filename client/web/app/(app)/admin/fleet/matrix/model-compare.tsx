@@ -113,8 +113,7 @@ export function ModelCompare({
   const [leftParam, setLeftParam] = useParam('left');
   const [rightParam, setRightParam] = useParam('right');
   // This box: the brain this page reads (its API origin, or the page's own).
-  const origin =
-    typeof window === 'undefined' ? null : runtimeApiBase() || window.location.origin;
+  const origin = typeof window === 'undefined' ? null : runtimeApiBase() || window.location.origin;
   const [defLeft] = defaultPair(rows, origin);
   const has = (id: string | null) => id !== null && rows.some((r) => r.id === id);
   const leftId = has(leftParam) ? leftParam : defLeft;
