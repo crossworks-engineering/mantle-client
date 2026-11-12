@@ -16,7 +16,7 @@ import {
   spreadsheetHint,
   storedFilename,
   updateRate,
-  uploadDoneKeys,
+  UPLOAD_DONE_KEYS,
   uploadForm,
 } from './upload-progress';
 
@@ -100,28 +100,28 @@ describe('uploadForm', () => {
   });
 });
 
-describe('uploadDoneKeys', () => {
-  it("names the folder's list and pane, the tree and Recent", () => {
-    expect(uploadDoneKeys('files.work')).toEqual([
-      ['files', 'list', 'files.work'],
-      ['files', 'pane', 'files.work'],
-      ['files', 'tree'],
-      ['files', 'recent'],
-    ]);
+describe('UPLOAD_DONE_KEYS', () => {
+  const read = (f: string) =>
+    readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8').replace(/\s+/g, ' ');
+
+  it("are the Files screen's own refresh: every Files view and the tree rail", () => {
+    expect(UPLOAD_DONE_KEYS).toEqual([['files'], ['tree', 'files']]);
+    const screen = read('../app/(app)/files/files-client.tsx');
+    expect(screen).toContain("void queryClient.invalidateQueries({ queryKey: ['files'] });");
+    expect(screen).toContain("queryKey: ['tree', 'files']");
   });
-  it('matches the keys the Files screen reads', () => {
-    const read = (f: string) =>
-      readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8').replace(/\s+/g, ' ');
-    expect(read('../app/(app)/files/files-client.tsx')).toContain(
-      "queryKey: ['files', 'list', currentPath],",
-    );
-    expect(read('../app/(app)/files/files-client.tsx')).toContain("queryKey: ['files', 'tree'],");
-    expect(read('../app/(app)/files/files-client.tsx')).toContain("queryKey: ['files', 'recent'],");
-    expect(read('../app/(app)/files/files-panes.tsx')).toContain(
-      "queryKey: ['files', 'pane', path],",
-    );
+
+  it('a done upload asks them again, letting a running fetch finish', () => {
     const provider = read('../components/uploads/upload-provider.tsx');
-    expect(provider).toContain('for (const queryKey of uploadDoneKeys(entry.parentPath)) {');
+    const done = provider.indexOf("update(id, { status: 'done'");
+    const ask = provider.indexOf('for (const queryKey of UPLOAD_DONE_KEYS) {');
+    expect(done).toBeGreaterThan(-1);
+    // In the done branch, before any error handling.
+    expect(ask).toBeGreaterThan(done);
+    expect(ask).toBeLessThan(provider.indexOf('} catch (err) {', done));
+    expect(provider).toContain(
+      'void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });',
+    );
   });
 });
 
