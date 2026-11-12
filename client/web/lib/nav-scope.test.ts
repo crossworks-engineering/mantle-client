@@ -77,7 +77,16 @@ describe('cc (owner, 2026-11-11)', () => {
 
   it('is a tab on a Control Center only, last', () => {
     expect(navScopes(false).map((s) => s.label)).toEqual(['Favorites', 'Work', 'Settings']);
-    expect(navScopes(true).map((s) => s.label)).toEqual(['Favorites', 'Work', 'Settings', 'CC']);
+    expect(navScopes(true).map((s) => s.label)).toEqual([
+      'Favorites',
+      'Work',
+      'Settings',
+      'Control Center',
+    ]);
+  });
+
+  it('shows an icon, not words, and only on the CC tab', () => {
+    expect(navScopes(true).map((s) => Boolean(s.icon))).toEqual([false, false, false, true]);
   });
 
   it('a stored cc on a box that is not a Control Center reads as work', () => {

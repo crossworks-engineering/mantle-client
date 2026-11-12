@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ShieldUser, type LucideIcon } from 'lucide-react';
 import type { NavGroup } from '@mantle/web-ui/layout/nav-items';
 
 /**
@@ -23,17 +24,25 @@ import type { NavGroup } from '@mantle/web-ui/layout/nav-items';
  */
 export type NavScope = 'favorites' | 'work' | 'settings' | 'cc';
 
-export const NAV_SCOPES: Array<{ id: NavScope; label: string }> = [
+/**
+ * One tab of the scope control. `label` is always the tab's name. A tab with
+ * an `icon` shows the icon alone and keeps `label` as its accessible name and
+ * tooltip.
+ */
+export type NavScopeTab = { id: NavScope; label: string; icon?: LucideIcon };
+
+export const NAV_SCOPES: NavScopeTab[] = [
   { id: 'favorites', label: 'Favorites' },
   { id: 'work', label: 'Work' },
   { id: 'settings', label: 'Settings' },
 ];
 
-/** The fourth tab, on a Control Center only. */
-export const CC_SCOPE: { id: NavScope; label: string } = { id: 'cc', label: 'CC' };
+/** The fourth tab, on a Control Center only. It showed the letters CC until
+ *  2026-11-12; now an admin shield (Jason: "an admin looking icon"). */
+export const CC_SCOPE: NavScopeTab = { id: 'cc', label: 'Control Center', icon: ShieldUser };
 
 /** The tabs a box offers: CC last, on a Control Center. */
-export function navScopes(controlCenter: boolean): Array<{ id: NavScope; label: string }> {
+export function navScopes(controlCenter: boolean): NavScopeTab[] {
   return controlCenter ? [...NAV_SCOPES, CC_SCOPE] : NAV_SCOPES;
 }
 
