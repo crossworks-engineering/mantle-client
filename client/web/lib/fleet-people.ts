@@ -89,6 +89,8 @@ export type PersonLogin = {
   boxId: string;
   box: string;
   loginId: string;
+  /** The login's own email, as the box sent it. */
+  email: string;
   name: string | null;
   role: string | null;
   owner: boolean;
@@ -148,6 +150,7 @@ export function groupPeople(
           boxId: b.id,
           box: name,
           loginId: l.id,
+          email: l.email,
           name: l.name?.trim() || null,
           role: l.role,
           owner: l.owner,
@@ -171,6 +174,7 @@ export function groupPeople(
           boxId: b.id,
           box: name,
           loginId: l.id,
+          email: l.email,
           name: null,
           role: null,
           owner: l.owner,
@@ -303,11 +307,15 @@ export function stateWord(s: MemberState): string {
 
 // --- the membership grid --------------------------------------------------------
 
-/** Why a cell cannot be changed here. */
-export type CellLock = 'admin' | 'owner';
+/** Why a cell cannot be changed here: the Admin workspace (a role), the box
+ *  owner, or a disabled or archived login that is not in the workspace (it
+ *  may be taken out of one, never put in). */
+export type CellLock = 'admin' | 'owner' | 'disabled';
 
 export type GridCell =
   | { kind: 'missing' }
+  /** The box has more than one workspace by this name: see its own rows. */
+  | { kind: 'ambiguous'; count: number }
   | {
       kind: 'cell';
       boxId: string;
@@ -315,45 +323,60 @@ export type GridCell =
       workspaceId: string;
       state: MemberState;
       lock: CellLock | null;
+      /** A disabled or archived login: only Not in it may be picked. */
+      removeOnly: boolean;
     };
 
 export type GridRow = {
   key: string;
   name: string;
   admin: boolean;
+  /** One of several workspaces with this name on its box: never merged
+   *  with another box's, never copied by name. */
+  ambiguous: boolean;
+  /** By column key (colKey). */
   cells: Record<string, GridCell>;
 };
 
 export type GridColumn = {
+  /** boxId:loginId: one person may hold two logins on one box. */
+  key: string;
   boxId: string;
   box: string;
+  /** The box, and the login's email when the person has two there. */
+  label: string;
   loginId: string;
   /** The box sent its people list: its cells can be changed. */
   full: boolean;
   owner: boolean;
+  /** Disabled or archived on this box. */
+  off: boolean;
 };
 
-/** A box's workspaces keyed by name (lowercase), a second one with the same
- *  name as `name#2`, and so on. */
-function keyedWorkspaces(ws: readonly FleetPeopleWorkspace[]): Map<string, FleetPeopleWorkspace> {
-  const out = new Map<string, FleetPeopleWorkspace>();
-  const seen = new Map<string, number>();
-  for (const w of [...ws].sort((a, b) => a.id.localeCompare(b.id))) {
-    const base = lower(w.name);
-    const n = (seen.get(base) ?? 0) + 1;
-    seen.set(base, n);
-    out.set(n === 1 ? base : `${base}#${n}`, w);
+export const colKey = (boxId: string, loginId: string) => `${boxId}:${loginId}`;
+
+/** A workspace name as copy-by-name compares it: case and spaces aside. */
+export const normName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** A box's workspaces by normalised name. */
+function byName(ws: readonly FleetPeopleWorkspace[]): Map<string, FleetPeopleWorkspace[]> {
+  const out = new Map<string, FleetPeopleWorkspace[]>();
+  for (const w of ws) {
+    const k = normName(w.name);
+    out.set(k, [...(out.get(k) ?? []), w]);
   }
   return out;
 }
 
 /**
  * The person's workspaces box by box: one row per workspace name on any of
- * the person's boxes (matched without case), one column per box the person
- * is on. A cell is missing when that box has no workspace by that name, and
- * locked on the Admin workspace (who is an Admin is a role, changed on the
- * box) and for the box owner. Rows: Admin first, then the workspaces the
- * person is in, then the rest, each by name.
+ * the person's boxes (matched without case or extra spaces), one column per
+ * login (a box, or two logins on one box). A cell is missing when that box
+ * has no workspace by that name, and locked on the Admin workspace (who is
+ * an Admin is a role, changed on the box), for the box owner, and for a
+ * disabled login that is not in it. A box with two workspaces of one name
+ * shows each in its own row (`ambiguous`), never merged. Rows: Admin first,
+ * then the workspaces the person is in, then the rest, each by name.
  */
 export function membershipGrid(
   person: Person,
@@ -361,63 +384,119 @@ export function membershipGrid(
 ): { columns: GridColumn[]; rows: GridRow[] } {
   const byId = new Map(boxes.map((b) => [b.id, b]));
   const columns: GridColumn[] = person.logins.map((l) => ({
+    key: colKey(l.boxId, l.loginId),
     boxId: l.boxId,
     box: l.box,
+    label:
+      person.logins.filter((x) => x.boxId === l.boxId).length > 1 ? `${l.box} (${l.email})` : l.box,
     loginId: l.loginId,
     full: l.full,
     owner: l.owner,
+    off: l.disabled || l.archived,
   }));
   const rows = new Map<string, GridRow & { member: boolean }>();
+  const row = (key: string, w: FleetPeopleWorkspace, ambiguous: boolean) => {
+    const r = rows.get(key) ?? {
+      key,
+      name: w.name,
+      admin: w.admin,
+      ambiguous,
+      member: false,
+      cells: {},
+    };
+    rows.set(key, r);
+    return r;
+  };
   for (const l of person.logins) {
     const people = byId.get(l.boxId)?.people;
     if (!l.full || !people) continue;
+    const col = colKey(l.boxId, l.loginId);
     const login = people.logins.find((x) => x.id === l.loginId);
     const mine = new Map((login?.workspaces ?? []).map((m) => [m.id, m.moderator]));
-    for (const [key, w] of keyedWorkspaces(people.workspaces)) {
-      const row = rows.get(key) ?? {
-        key,
-        name: w.name,
-        admin: w.admin,
-        member: false,
-        cells: {},
-      };
+    const off = l.disabled || l.archived;
+    const cell = (w: FleetPeopleWorkspace): GridCell => {
       const has = mine.has(w.id);
-      row.member ||= has;
-      row.admin ||= w.admin;
-      row.cells[l.boxId] = {
+      const state: MemberState = has ? (mine.get(w.id) ? 'moderator' : 'user') : 'none';
+      return {
         kind: 'cell',
         boxId: l.boxId,
         loginId: l.loginId,
         workspaceId: w.id,
-        state: has ? (mine.get(w.id) ? 'moderator' : 'user') : 'none',
-        lock: w.admin ? 'admin' : l.owner ? 'owner' : null,
+        state,
+        lock: w.admin ? 'admin' : l.owner ? 'owner' : off && state === 'none' ? 'disabled' : null,
+        removeOnly: off,
       };
-      rows.set(key, row);
+    };
+    for (const [name, list] of byName(people.workspaces)) {
+      if (list.length === 1) {
+        const r = row(`n:${name}`, list[0]!, false);
+        r.cells[col] = cell(list[0]!);
+        r.admin ||= list[0]!.admin;
+        r.member ||= mine.has(list[0]!.id);
+        continue;
+      }
+      // Two or more of one name on this box: each in its own row, and the
+      // name's shared row says so for this box.
+      const shared = rows.get(`n:${name}`);
+      if (shared) shared.cells[col] = { kind: 'ambiguous', count: list.length };
+      for (const w of list) {
+        const r = row(`id:${l.boxId}:${w.id}`, w, true);
+        r.cells[col] = cell(w);
+        r.member ||= mine.has(w.id);
+      }
     }
   }
-  for (const row of rows.values()) {
-    for (const c of columns) if (!row.cells[c.boxId]) row.cells[c.boxId] = { kind: 'missing' };
+  // A shared row made after a box's ambiguous name was seen: mark it there.
+  for (const l of person.logins) {
+    const people = byId.get(l.boxId)?.people;
+    if (!l.full || !people) continue;
+    const col = colKey(l.boxId, l.loginId);
+    for (const [name, list] of byName(people.workspaces)) {
+      const shared = rows.get(`n:${name}`);
+      if (list.length > 1 && shared && !shared.cells[col]) {
+        shared.cells[col] = { kind: 'ambiguous', count: list.length };
+      }
+    }
+  }
+  for (const r of rows.values()) {
+    for (const c of columns) if (!r.cells[c.key]) r.cells[c.key] = { kind: 'missing' };
   }
   const sorted = [...rows.values()].sort(
     (a, b) =>
       Number(b.admin) - Number(a.admin) ||
       Number(b.member) - Number(a.member) ||
-      a.name.localeCompare(b.name),
+      a.name.localeCompare(b.name) ||
+      a.key.localeCompare(b.key),
   );
   return { columns, rows: sorted.map(({ member, ...r }) => (void member, r)) };
 }
 
+/** The roles a cell offers: Not in it only, besides its own, for a
+ *  disabled login. */
+export function cellChoices(cell: Extract<GridCell, { kind: 'cell' }>): MemberState[] {
+  if (!cell.removeOnly) return ['none', 'user', 'moderator'];
+  return cell.state === 'none' ? ['none'] : [cell.state, 'none'];
+}
+
 // --- copy one box's workspaces to another ------------------------------------------
 
-export type CopySkip = { name: string; why: 'missing' | 'admin' | 'owner' };
+export type CopySkip = {
+  name: string;
+  why: 'missing' | 'admin' | 'owner' | 'ambiguous' | 'disabled';
+  /** For `ambiguous`: the box with more than one, and how many. */
+  box?: string;
+  count?: number;
+};
 export type CopyPlan = { changes: MemberChange[]; same: string[]; skipped: CopySkip[] };
 
 /**
- * "Set one box up, then copy": the workspaces the person is in on box
- * `from`, given the same role on box `to` (matched by name, without case).
- * It adds and sets roles only: a workspace the person is in on `to` and not
- * on `from` stays. Skipped: no workspace by that name on `to`, the Admin
- * workspace (a role), and the owner of `to`.
+ * "Set one box up, then copy": the workspaces the person is in on login
+ * column `from` (colKey), given the same role on column `to`, matched by
+ * name without case or extra spaces. It adds and sets roles only: a
+ * workspace the person is in on `to` and not on `from` stays. Skipped: no
+ * workspace by that name on `to`; a name more than one workspace has on
+ * either box (never guessed); the Admin workspace (a role); the owner of
+ * `to`; a disabled or archived login on `to`.
  */
 export function copyPlan(
   person: Person,
@@ -426,6 +505,9 @@ export function copyPlan(
   boxes: readonly FleetPeopleBox[],
 ): CopyPlan {
   const grid = membershipGrid(person, boxes);
+  const cols = new Map(grid.columns.map((c) => [c.key, c]));
+  const fromBox = cols.get(from)?.label ?? 'that box';
+  const toBox = cols.get(to)?.label ?? 'that box';
   const out: CopyPlan = { changes: [], same: [], skipped: [] };
   for (const row of grid.rows) {
     const a = row.cells[from];
@@ -433,15 +515,22 @@ export function copyPlan(
     const b = row.cells[to];
     if (row.admin || a.lock === 'admin') {
       out.skipped.push({ name: row.name, why: 'admin' });
+    } else if (row.ambiguous) {
+      const count = countOnBox(a.boxId, row.name, boxes);
+      out.skipped.push({ name: row.name, why: 'ambiguous', box: fromBox, count });
+    } else if (b?.kind === 'ambiguous') {
+      out.skipped.push({ name: row.name, why: 'ambiguous', box: toBox, count: b.count });
     } else if (!b || b.kind !== 'cell') {
       out.skipped.push({ name: row.name, why: 'missing' });
-    } else if (b.lock) {
-      out.skipped.push({ name: row.name, why: b.lock === 'admin' ? 'admin' : 'owner' });
+    } else if (b.lock === 'admin' || b.lock === 'owner') {
+      out.skipped.push({ name: row.name, why: b.lock });
     } else if (b.state === a.state) {
       out.same.push(row.name);
+    } else if (b.removeOnly) {
+      out.skipped.push({ name: row.name, why: 'disabled' });
     } else {
       out.changes.push({
-        boxId: to,
+        boxId: b.boxId,
         loginId: b.loginId,
         workspaceId: b.workspaceId,
         role: a.state,
@@ -449,6 +538,11 @@ export function copyPlan(
     }
   }
   return out;
+}
+
+function countOnBox(boxId: string, name: string, boxes: readonly FleetPeopleBox[]): number {
+  const ws = boxes.find((x) => x.id === boxId)?.people?.workspaces ?? [];
+  return ws.filter((w) => normName(w.name) === normName(name)).length;
 }
 
 export function skipText(s: CopySkip): string {
@@ -459,16 +553,24 @@ export function skipText(s: CopySkip): string {
       return `${s.name}: the Admin workspace. Who is an Admin is changed on the box itself.`;
     case 'owner':
       return `${s.name}: the owner of that box is never changed here.`;
+    case 'ambiguous':
+      return `${s.name}: ${s.count ?? 2} workspaces are named ${s.name} on ${s.box ?? 'one box'}, so it is not copied. Set it in the grid.`;
+    case 'disabled':
+      return `${s.name}: this login is disabled on that box, so it gets no workspace.`;
   }
 }
 
 // --- bulk ----------------------------------------------------------------------------
 
-export type BulkSkip = { email: string; why: 'not-on-box' | 'owner' | 'same' | 'old' };
+export type BulkSkip = {
+  email: string;
+  why: 'not-on-box' | 'owner' | 'same' | 'old' | 'disabled';
+};
 
-/** Many people into (or out of) one workspace of one box, with one role.
- *  Skipped: a person with no login on that box, the owner, a box a release
- *  behind, and one already so. */
+/** Many people into (or out of) one workspace of one box, with one role:
+ *  each login the person has on that box. Skipped: a person with no login
+ *  there, the owner, a box a release behind, one already so, and a
+ *  disabled or archived login given a role (taking it out is fine). */
 export function bulkPlan(
   people: readonly Person[],
   boxId: string,
@@ -479,26 +581,33 @@ export function bulkPlan(
   const box = boxes.find((b) => b.id === boxId);
   const out = { changes: [] as MemberChange[], skipped: [] as BulkSkip[] };
   for (const p of people) {
-    const l = p.logins.find((x) => x.boxId === boxId);
-    if (!l) {
+    const logins = p.logins.filter((x) => x.boxId === boxId);
+    if (logins.length === 0) {
       out.skipped.push({ email: p.email, why: 'not-on-box' });
       continue;
     }
-    if (!l.full || !box?.people) {
-      out.skipped.push({ email: p.email, why: 'old' });
-      continue;
+    for (const l of logins) {
+      const skip = (why: BulkSkip['why']) => out.skipped.push({ email: l.email, why });
+      if (!l.full || !box?.people) {
+        skip('old');
+        continue;
+      }
+      if (l.owner) {
+        skip('owner');
+        continue;
+      }
+      const m = l.workspaces.find((w) => w.id === workspaceId);
+      const now: MemberState = m ? (m.moderator ? 'moderator' : 'user') : 'none';
+      if (now === role) {
+        skip('same');
+        continue;
+      }
+      if ((l.disabled || l.archived) && role !== 'none') {
+        skip('disabled');
+        continue;
+      }
+      out.changes.push({ boxId, loginId: l.loginId, workspaceId, role });
     }
-    if (l.owner) {
-      out.skipped.push({ email: p.email, why: 'owner' });
-      continue;
-    }
-    const m = l.workspaces.find((w) => w.id === workspaceId);
-    const now: MemberState = m ? (m.moderator ? 'moderator' : 'user') : 'none';
-    if (now === role) {
-      out.skipped.push({ email: p.email, why: 'same' });
-      continue;
-    }
-    out.changes.push({ boxId, loginId: l.loginId, workspaceId, role });
   }
   return out;
 }
@@ -513,6 +622,8 @@ export function bulkSkipText(s: BulkSkip): string {
       return `${s.email}: already so.`;
     case 'old':
       return `${s.email}: that box runs a release before Fleet users.`;
+    case 'disabled':
+      return `${s.email}: disabled on that box, so it gets no workspace. Lift the ban or enable it first.`;
   }
 }
 

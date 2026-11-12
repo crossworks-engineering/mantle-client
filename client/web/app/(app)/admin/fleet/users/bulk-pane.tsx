@@ -47,7 +47,8 @@ export function BulkPane({
   const [boxId, setBoxId] = useState('');
   const [workspaceId, setWorkspaceId] = useState('');
   const [role, setRole] = useState<MemberState>('user');
-  const [confirming, setConfirming] = useState(false);
+  /** The changes the confirm shows, frozen when it opens: exactly these go. */
+  const [frozen, setFrozen] = useState<{ title: string; changes: MemberChange[] } | null>(null);
   const box = boxes.find((b) => b.id === boxId);
   const workspaces = assignableWorkspaces(box);
   const plan = box && workspaceId ? bulkPlan(people, box.id, workspaceId, role, peopleBoxes) : null;
@@ -55,8 +56,17 @@ export function BulkPane({
   const tooMany = (plan?.changes.length ?? 0) > MAX_MEMBER_CHANGES;
 
   const go = async () => {
-    if (!plan) return;
-    if (await onSend(plan.changes)) setConfirming(false);
+    if (!frozen) return;
+    if (await onSend(frozen.changes)) setFrozen(null);
+  };
+  const ask = () => {
+    if (!plan || plan.changes.length === 0) return;
+    const n = plan.changes.length;
+    const where = ws?.name ?? 'the workspace';
+    setFrozen({
+      title: role === 'none' ? `Remove ${n} from ${where}?` : `Add ${n} to ${where}?`,
+      changes: [...plan.changes],
+    });
   };
 
   return (
@@ -163,7 +173,7 @@ export function BulkPane({
             )}
             {plan.changes.length > 0 && (
               <div className="flex justify-end">
-                <Button size="sm" disabled={tooMany} onClick={() => setConfirming(true)}>
+                <Button size="sm" disabled={tooMany} onClick={ask}>
                   {role === 'none' ? 'Remove' : 'Add'}{' '}
                   {plan.changes.length === 1 ? '1 person' : `${plan.changes.length} people`}
                 </Button>
@@ -173,29 +183,22 @@ export function BulkPane({
         )}
       </Part>
       <ConfirmSend
-        open={confirming}
+        open={frozen !== null}
         pending={sending}
-        title={
-          role === 'none'
-            ? `Remove ${plan?.changes.length ?? 0} from ${ws?.name ?? 'the workspace'}?`
-            : `Add ${plan?.changes.length ?? 0} to ${ws?.name ?? 'the workspace'}?`
-        }
+        title={frozen?.title ?? ''}
         action="Send"
-        onCancel={() => setConfirming(false)}
+        onCancel={() => setFrozen(null)}
         onConfirm={() => void go()}
       >
         <span className="block">
           {box ? boxName(box) : 'The box'} makes the changes at its next run, within seconds.
         </span>
-        <span className="mt-2 block">
-          {plan?.changes.slice(0, 10).map((c) => (
-            <span key={c.loginId} className="block text-foreground">
+        <span className="mt-2 block max-h-64 overflow-y-auto scrollbar-thin">
+          {frozen?.changes.map((c) => (
+            <span key={`${c.boxId}:${c.loginId}`} className="block text-foreground">
               {describeChange(c, peopleBoxes)}
             </span>
           ))}
-          {(plan?.changes.length ?? 0) > 10 && (
-            <span className="block">and {(plan?.changes.length ?? 0) - 10} more</span>
-          )}
         </span>
       </ConfirmSend>
     </DetailPane>

@@ -22,6 +22,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { timeAgo } from '@mantle/web-ui/lib/format-datetime';
 import {
+  banKeysText,
   liftText,
   OWNER_MATCH_TEXT,
   previewLine,
@@ -200,6 +201,7 @@ function LiftDialog({
   write: ReturnType<typeof useBanWrite>;
 }) {
   const others = ban ? ban.emails.filter((e) => e.toLowerCase() !== email) : [];
+  const keys = ban ? banKeysText(ban) : '';
   return (
     <AlertDialog open={ban !== null} onOpenChange={(o) => !o && !write.pending && onClose()}>
       <AlertDialogContent>
@@ -209,9 +211,12 @@ function LiftDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>{ban ? liftText(ban.kind) : ''}</AlertDialogDescription>
         </AlertDialogHeader>
-        {others.length > 0 && (
-          <Callout tone="warn" title="This ban names others too">
-            It also holds {others.join(', ')}. Lifting it lifts it for them too.
+        <p className="text-sm">
+          This ban holds: <span className="break-all font-medium">{keys}</span>
+        </p>
+        {(others.length > 0 || (ban?.issuer && ban.oid)) && (
+          <Callout tone="warn" title="This ban holds more than this person">
+            Lifting it lifts it for every key above.
           </Callout>
         )}
         <AlertDialogFooter>

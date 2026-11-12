@@ -22,6 +22,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime, timeAgo } from '@mantle/web-ui/lib/format-datetime';
 import { banKeysText, type FleetBan, type FleetOverview } from '@/lib/fleet';
 import {
+  cellChoices,
   cellStatus,
   copyPlan,
   describeChange,
@@ -42,8 +43,8 @@ import {
 import { Callout, DetailPane, Dot, Part, Pill, TONE_TEXT } from '../cc-kit';
 import { ConfirmSend } from '../fleet-writes';
 
-const STATES: MemberState[] = ['none', 'user', 'moderator'];
-const cellKey = (boxId: string, workspaceId: string) => `${boxId}:${workspaceId}`;
+const cellKey = (c: { boxId: string; loginId: string; workspaceId: string }) =>
+  `${c.boxId}:${c.loginId}:${c.workspaceId}`;
 
 /** One cell of the grid: a role select, or why it cannot be changed. */
 function Cell({
@@ -62,6 +63,13 @@ function Cell({
   if (cell.kind === 'missing') {
     return <span className="text-xs text-muted-foreground/60">No such workspace</span>;
   }
+  if (cell.kind === 'ambiguous') {
+    return (
+      <span className="text-xs text-warning-ink">
+        {cell.count} workspaces have this name: see their own rows
+      </span>
+    );
+  }
   if (cell.lock) {
     return (
       <span
@@ -69,7 +77,9 @@ function Cell({
         title={
           cell.lock === 'admin'
             ? 'Who is an Admin is a role, changed on the box itself.'
-            : 'The owner of the box is never changed here.'
+            : cell.lock === 'owner'
+              ? 'The owner of the box is never changed here.'
+              : 'This login is disabled on that box: it gets no workspace. Lift the ban or enable it first.'
         }
       >
         <Lock className="size-3" aria-hidden />
@@ -93,7 +103,7 @@ function Cell({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {STATES.map((s) => (
+          {cellChoices(cell).map((s) => (
             <SelectItem key={s} value={s}>
               {stateWord(s)}
             </SelectItem>
@@ -132,6 +142,8 @@ export function PersonDetail({
   const [staged, setStaged] = useState<Map<string, MemberChange>>(() => new Map());
   const [confirm, setConfirm] = useState<{ title: string; changes: MemberChange[] } | null>(null);
   const full = grid.columns.filter((c) => c.full && !c.owner);
+  const sources = full;
+  const targets = full.filter((c) => !c.off);
   const [from, setFrom] = useState<string>('');
   const [to, setTo] = useState<string>('');
   const plan = from && to && from !== to ? copyPlan(person, from, to, peopleBoxes) : null;
@@ -141,7 +153,7 @@ export function PersonDetail({
   const stage = (cell: Extract<GridCell, { kind: 'cell' }>, s: MemberState | undefined) => {
     setStaged((m) => {
       const next = new Map(m);
-      const k = cellKey(cell.boxId, cell.workspaceId);
+      const k = cellKey(cell);
       if (s === undefined) next.delete(k);
       else
         next.set(k, {
@@ -305,7 +317,7 @@ export function PersonDetail({
                 <TableRow>
                   <TableHead>Workspace</TableHead>
                   {grid.columns.map((c) => (
-                    <TableHead key={c.boxId}>{c.box}</TableHead>
+                    <TableHead key={c.key}>{c.label}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -316,13 +328,14 @@ export function PersonDetail({
                       <span className="flex items-center gap-1.5">
                         {row.name}
                         {row.admin && <Pill>Admin</Pill>}
+                        {row.ambiguous && <Pill tone="warn">Same name twice</Pill>}
                       </span>
                     </TableCell>
                     {grid.columns.map((c) => {
-                      const cell = row.cells[c.boxId]!;
+                      const cell = row.cells[c.key]!;
                       if (!c.full) {
                         return (
-                          <TableCell key={c.boxId} className="text-xs text-muted-foreground">
+                          <TableCell key={c.key} className="text-xs text-muted-foreground">
                             Not known
                           </TableCell>
                         );
@@ -337,15 +350,13 @@ export function PersonDetail({
                             )
                           : null;
                       return (
-                        <TableCell key={c.boxId} className="align-top">
+                        <TableCell key={c.key} className="align-top">
                           <Cell
-                            label={`${row.name} on ${c.box}`}
+                            label={`${row.name} on ${c.label}`}
                             cell={cell}
                             status={status}
                             staged={
-                              cell.kind === 'cell'
-                                ? staged.get(cellKey(cell.boxId, cell.workspaceId))?.role
-                                : undefined
+                              cell.kind === 'cell' ? staged.get(cellKey(cell))?.role : undefined
                             }
                             onStage={(s) => cell.kind === 'cell' && stage(cell, s)}
                           />
@@ -364,7 +375,7 @@ export function PersonDetail({
         </p>
       </Part>
 
-      {full.length >= 2 && (
+      {sources.length >= 2 && targets.length >= 1 && (
         <Part title="Copy workspaces from one box to another">
           <p className="text-sm text-muted-foreground">
             Set this person up on one box, then copy: the same workspaces, by name, with the same
@@ -376,9 +387,9 @@ export function PersonDetail({
                 <SelectValue placeholder="From box" />
               </SelectTrigger>
               <SelectContent>
-                {full.map((c) => (
-                  <SelectItem key={c.boxId} value={c.boxId}>
-                    {c.box}
+                {sources.map((c) => (
+                  <SelectItem key={c.key} value={c.key}>
+                    {c.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -389,11 +400,11 @@ export function PersonDetail({
                 <SelectValue placeholder="To box" />
               </SelectTrigger>
               <SelectContent>
-                {full
-                  .filter((c) => c.boxId !== from)
+                {targets
+                  .filter((c) => c.key !== from)
                   .map((c) => (
-                    <SelectItem key={c.boxId} value={c.boxId}>
-                      {c.box}
+                    <SelectItem key={c.key} value={c.key}>
+                      {c.label}
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -406,7 +417,7 @@ export function PersonDetail({
               ) : (
                 <ul className="space-y-1">
                   {plan.changes.map((c) => (
-                    <li key={c.workspaceId}>{describeChange(c, peopleBoxes)}</li>
+                    <li key={cellKey(c)}>{describeChange(c, peopleBoxes)}</li>
                   ))}
                 </ul>
               )}
@@ -477,7 +488,7 @@ export function PersonDetail({
         <span className="block">Each box makes the change at its next run, within seconds.</span>
         <span className="mt-2 block space-y-1">
           {confirm?.changes.map((c) => (
-            <span key={cellKey(c.boxId, c.workspaceId)} className="block text-foreground">
+            <span key={cellKey(c)} className="block text-foreground">
               {describeChange(c, peopleBoxes)}
             </span>
           ))}

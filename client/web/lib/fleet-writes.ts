@@ -110,6 +110,8 @@ export function answerText(a: FleetWriteAnswer): { tone: 'ok' | 'bad'; text: str
       return bad(
         `This is the Admin workspace. Who is an Admin is changed on the box itself.${NOTHING}`,
       );
+    case 'disabled':
+      return bad(`This login is disabled on that box. Lift the ban or enable it first.${NOTHING}`);
     case 'last-moderator':
       return bad(
         `This is the last Moderator of the workspace. Make another user a Moderator first.${NOTHING}`,

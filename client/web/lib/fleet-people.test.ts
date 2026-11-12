@@ -3,6 +3,7 @@ import type { FleetBan, FleetBox } from './fleet';
 import { answerText, changeLabel, type FleetWriteAnswer } from './fleet-writes';
 import {
   bulkPlan,
+  cellChoices,
   cellStatus,
   copyPlan,
   describeChange,
@@ -15,7 +16,9 @@ import {
   membersSentText,
   membershipGrid,
   memberHistory,
+  normName,
   peopleReasonText,
+  skipText,
   type FleetPeopleBox,
   type FleetPeopleLogin,
 } from './fleet-people';
@@ -202,19 +205,27 @@ describe('fleet people', () => {
     ]);
     expect(g.rows.map((r) => r.name)).toEqual(['Admin', 'Only on A', 'Ops', 'Projects']);
     const proj = g.rows.find((r) => r.name === 'Projects')!;
-    expect(proj.cells.a).toMatchObject({ state: 'moderator', lock: null, workspaceId: 'a-proj' });
-    expect(proj.cells.b).toMatchObject({ state: 'none', workspaceId: 'b-proj', loginId: 'b1' });
-    expect(proj.cells.c).toEqual({ kind: 'missing' });
-    expect(g.rows.find((r) => r.name === 'Only on A')!.cells.b).toEqual({ kind: 'missing' });
-    expect(g.rows[0]!.cells.a).toMatchObject({ lock: 'admin' });
+    expect(proj.cells['a:a1']).toMatchObject({
+      state: 'moderator',
+      lock: null,
+      workspaceId: 'a-proj',
+    });
+    expect(proj.cells['b:b1']).toMatchObject({
+      state: 'none',
+      workspaceId: 'b-proj',
+      loginId: 'b1',
+    });
+    expect(proj.cells['c:c1']).toEqual({ kind: 'missing' });
+    expect(g.rows.find((r) => r.name === 'Only on A')!.cells['b:b1']).toEqual({ kind: 'missing' });
+    expect(g.rows[0]!.cells['a:a1']).toMatchObject({ lock: 'admin' });
     const owner = groupPeople(boxes).find((p) => p.email === 'owner@example.com')!;
     const og = membershipGrid(owner, boxes);
-    expect(og.rows.find((r) => r.name === 'Ops')!.cells.a).toMatchObject({ lock: 'owner' });
+    expect(og.rows.find((r) => r.name === 'Ops')!.cells['a:a3']).toMatchObject({ lock: 'owner' });
   });
 
   it('plans a copy of workspaces from one box to another', () => {
     const ann = groupPeople(boxes).find((p) => p.email === 'ann@example.com')!;
-    const plan = copyPlan(ann, 'a', 'b', boxes);
+    const plan = copyPlan(ann, 'a:a1', 'b:b1', boxes);
     expect(plan.changes).toEqual([
       { boxId: 'b', loginId: 'b1', workspaceId: 'b-proj', role: 'moderator' },
     ]);
@@ -223,7 +234,7 @@ describe('fleet people', () => {
       { name: 'Only on A', why: 'missing' },
     ]);
     // Ops is only on b: a copy never removes.
-    expect(copyPlan(ann, 'b', 'a', boxes).changes).toEqual([
+    expect(copyPlan(ann, 'b:b1', 'a:a1', boxes).changes).toEqual([
       { boxId: 'a', loginId: 'a1', workspaceId: 'a-ops', role: 'user' },
     ]);
   });
@@ -334,5 +345,119 @@ describe('fleet people', () => {
     expect(membersSentText(ch, ['a'])).toContain('1 change not queued');
     expect(peopleReasonText(boxOld)).toContain('release before Fleet users');
     expect(peopleReasonText(boxA)).toBeNull();
+  });
+
+  it('never merges or copies a name two workspaces share on one box (audit M1)', () => {
+    const dupA: FleetPeopleBox = {
+      ...boxA,
+      people: {
+        ...boxA.people!,
+        workspaces: [...boxA.people!.workspaces, { id: 'a-ops2', name: '  OPS ', admin: false }],
+        logins: boxA.people!.logins.map((l) =>
+          l.id === 'a1'
+            ? { ...l, workspaces: [...l.workspaces, { id: 'a-ops2', moderator: false }] }
+            : l,
+        ),
+      },
+    };
+    const set = [dupA, boxB];
+    expect(normName('  OPS ')).toBe(normName('Ops'));
+    const ann = groupPeople(set).find((p) => p.email === 'ann@example.com')!;
+    const g = membershipGrid(ann, set);
+    // Box A's two Ops each have a row of their own; the shared Ops row says so for A.
+    const own = g.rows.filter((r) => r.ambiguous);
+    expect(own.map((r) => r.cells['a:a1'])).toEqual([
+      expect.objectContaining({ workspaceId: expect.stringMatching(/^a-ops/) }),
+      expect.objectContaining({ workspaceId: expect.stringMatching(/^a-ops/) }),
+    ]);
+    const shared = g.rows.find((r) => !r.ambiguous && normName(r.name) === 'ops')!;
+    expect(shared.cells['a:a1']).toEqual({ kind: 'ambiguous', count: 2 });
+    expect(shared.cells['b:b1']).toMatchObject({ workspaceId: 'b-ops', state: 'user' });
+    // A to B: the duplicated name is skipped, never sent.
+    const ab = copyPlan(ann, 'a:a1', 'b:b1', set);
+    expect(ab.changes.map((c) => c.workspaceId)).toEqual(['b-proj']);
+    const skip = ab.skipped.find((x) => x.why === 'ambiguous')!;
+    expect(skip).toMatchObject({ box: 'Alpha', count: 2 });
+    expect(skipText(skip)).toContain('2 workspaces are named');
+    // B to A: B's Ops would land on one of two on A: skipped too.
+    const ba = copyPlan(ann, 'b:b1', 'a:a1', set);
+    expect(ba.changes).toEqual([]);
+    expect(ba.skipped).toEqual([{ name: 'Ops', why: 'ambiguous', box: 'Alpha', count: 2 }]);
+  });
+
+  it('keeps two logins of one box apart (audit L1)', () => {
+    const twice: FleetPeopleBox = {
+      ...boxB,
+      people: {
+        ...boxB.people!,
+        logins: [
+          ...boxB.people!.logins,
+          login({
+            id: 'b9',
+            email: 'ANN@example.com',
+            workspaces: [{ id: 'b-proj', moderator: true }],
+          }),
+        ],
+      },
+    };
+    const set = [boxA, twice];
+    const ann = groupPeople(set).find((p) => p.email === 'ann@example.com')!;
+    const g = membershipGrid(ann, set);
+    expect(g.columns.map((c) => c.key)).toEqual(['a:a1', 'b:b1', 'b:b9']);
+    expect(g.columns.filter((c) => c.boxId === 'b').map((c) => c.label)).toEqual([
+      'b.example.com (ann@example.com)',
+      'b.example.com (ANN@example.com)',
+    ]);
+    const proj = g.rows.find((r) => normName(r.name) === 'projects')!;
+    expect(proj.cells['b:b1']).toMatchObject({ loginId: 'b1', state: 'none' });
+    expect(proj.cells['b:b9']).toMatchObject({ loginId: 'b9', state: 'moderator' });
+    const plan = bulkPlan([ann], 'b', 'b-proj', 'user', set);
+    expect(plan.changes).toEqual([
+      { boxId: 'b', loginId: 'b1', workspaceId: 'b-proj', role: 'user' },
+      { boxId: 'b', loginId: 'b9', workspaceId: 'b-proj', role: 'user' },
+    ]);
+  });
+
+  it('gives a disabled login no workspace, but lets it be taken out (audit L2)', () => {
+    const off: FleetPeopleBox = {
+      ...boxB,
+      people: {
+        ...boxB.people!,
+        logins: boxB.people!.logins.map((l) => (l.id === 'b1' ? { ...l, disabled: true } : l)),
+      },
+    };
+    const set = [boxA, off];
+    const ann = groupPeople(set).find((p) => p.email === 'ann@example.com')!;
+    const g = membershipGrid(ann, set);
+    const proj = g.rows.find((r) => normName(r.name) === 'projects')!;
+    expect(proj.cells['b:b1']).toMatchObject({ state: 'none', lock: 'disabled' });
+    const ops = g.rows.find((r) => normName(r.name) === 'ops')!.cells['b:b1'];
+    expect(ops).toMatchObject({ state: 'user', lock: null, removeOnly: true });
+    expect(cellChoices(ops as never)).toEqual(['user', 'none']);
+    expect(copyPlan(ann, 'a:a1', 'b:b1', set).skipped).toContainEqual({
+      name: 'Projects',
+      why: 'disabled',
+    });
+    expect(bulkPlan([ann], 'b', 'b-proj', 'user', set).skipped).toEqual([
+      { email: 'ann@example.com', why: 'disabled' },
+    ]);
+    expect(bulkPlan([ann], 'b', 'b-ops', 'none', set).changes).toEqual([
+      { boxId: 'b', loginId: 'b1', workspaceId: 'b-ops', role: 'none' },
+    ]);
+    const said = answerText({
+      kind: 'workspaceMember',
+      loginId: 'b1',
+      workspaceId: 'b-proj',
+      role: 'user',
+      by: 'it@example.com',
+      at: recent,
+      done: recent,
+      ok: false,
+      was: 'none',
+      reason: 'disabled',
+    } as FleetWriteAnswer);
+    expect(said.text).toContain(
+      'This login is disabled on that box. Lift the ban or enable it first.',
+    );
   });
 });
