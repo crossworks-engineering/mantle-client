@@ -60,7 +60,7 @@ export function BulkPane({
   const tooMany = (plan?.changes.length ?? 0) > MAX_MEMBER_CHANGES;
 
   const go = async () => {
-    if (!frozen) return;
+    if (!frozen || sending) return;
     const changes = frozen.changes;
     // The confirm closes at once: an answer can take a minute or two.
     setFrozen(null);

@@ -26,6 +26,8 @@ import {
   skipText,
   staleNotes,
   toolCalls,
+  withoutSent,
+  withSending,
   type MemberAnswer,
   type FleetPeopleBox,
   type FleetPeopleLogin,
@@ -474,6 +476,17 @@ describe('fleet people', () => {
       ['refused', null, 'scope'],
       ['unknown', null, 'bad-reply'],
     ]);
+    // refused at the call level, without per-change rows: unknown (audit N1).
+    const noRows = memberAnswers(changes, {
+      boxId: 'b',
+      outcome: 'unknown',
+      output: undefined,
+      reason: 'refused',
+    });
+    expect(noRows.every((x) => x.outcome === 'unknown')).toBe(true);
+    expect(memberAnswerText(noRows[0]!).text).toBe(
+      'The box refused the call. Not confirmed: the box may still make this change.',
+    );
     const notRun = memberAnswers(changes, {
       boxId: 'b',
       outcome: 'not-run',
@@ -666,5 +679,32 @@ describe('fleet people', () => {
     );
     expect(agoText('2026-11-12T11:59:30.000Z', now)).toBe('just now');
     expect(agoText('2026-11-09T12:00:00.000Z', now)).toBe('3 days ago');
+  });
+
+  it('keeps the changes in flight as a set (audit N2)', () => {
+    const c1 = { boxId: 'a', loginId: 'a1', workspaceId: 'w1', role: 'user' as const };
+    const c2 = { boxId: 'a', loginId: 'a1', workspaceId: 'w2', role: 'none' as const };
+    const c3 = { boxId: 'b', loginId: 'b1', workspaceId: 'w1', role: 'moderator' as const };
+    const one = withSending([], [c1, c2]);
+    const two = withSending(one, [c3, c1]);
+    expect(two).toEqual([c1, c2, c3]);
+    // The first send ends: the second's change stays in flight.
+    expect(withoutSent(two, [c1, c2])).toEqual([c3]);
+  });
+
+  it('names a login whose email is not unique on its box (audit N4)', () => {
+    const twice: FleetPeopleBox = {
+      ...boxB,
+      people: {
+        ...boxB.people!,
+        logins: [...boxB.people!.logins, login({ id: 'b9-second', email: 'ann@example.com' })],
+      },
+    };
+    expect(
+      describeChange({ boxId: 'b', loginId: 'b1', workspaceId: 'b-ops', role: 'none' }, [twice]),
+    ).toBe('Remove ann@example.com (login b1) from Ops on b.example.com');
+    expect(
+      describeChange({ boxId: 'b', loginId: 'b3', workspaceId: 'b-ops', role: 'user' }, [twice]),
+    ).toBe('carol@example.com in Ops as User on b.example.com');
   });
 });

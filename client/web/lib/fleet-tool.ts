@@ -97,7 +97,7 @@ export function parseToolReply(
       callId,
       boxId,
       ok,
-      reason: ok ? null : truncated ? 'truncated' : (reason ?? 'refused'),
+      reason: ok ? null : truncated ? 'truncated' : (reason ?? 'no-reason'),
       output: ok ? r.output : undefined,
       truncated,
     });
@@ -110,22 +110,22 @@ export function parseToolReply(
   };
 }
 
-/** Codes known to mean the box did not run the tool. */
+/** Codes known to mean the box did not run the tool. Every other code
+ *  (error: the tool threw while running; refused with no per-change rows;
+ *  a code this box does not know) leaves the outcome unknown. */
 const NOT_RUN = new Set([
   'scope',
   'tool',
   'size',
   'busy',
   'replay',
-  'refused',
-  'error',
   'expired',
   'bad-call',
   'not-queued',
   'no-channel',
-  'off',
-  'time',
-  'sig',
+  'forbidden',
+  'too-large',
+  'invalid',
 ]);
 
 export type Outcome = 'ok' | 'not-run' | 'unknown';
@@ -156,9 +156,17 @@ export function toolReasonText(code: string | null, tool?: string): string {
     case 'expired':
       return 'The call was not sent within 2 minutes, so it was dropped.';
     case 'refused':
-      return 'The box refused it.';
+      return 'The box refused the call.';
     case 'error':
-      return 'The box could not run it.';
+      return 'The box hit an error while running it.';
+    case 'no-reason':
+      return 'The box gave no reason.';
+    case 'forbidden':
+      return 'The Control Center refused the call: only a Control Center Admin may run it.';
+    case 'too-large':
+      return 'The Control Center refused the call as too large.';
+    case 'invalid':
+      return 'The Control Center refused the call as not valid.';
     case 'not-queued':
       return 'The Control Center could not queue the call: each box holds at most 10 calls.';
     case 'truncated':
@@ -243,7 +251,12 @@ async function post(send: Send, body: unknown, timeoutMs: number): Promise<unkno
 function failCode(err: unknown, ctlAborted: boolean): string {
   if (isNoChannel(err)) return 'no-channel';
   if (ctlAborted || (err as { name?: string } | null)?.name === 'AbortError') return 'timeout';
-  if ((err as { status?: unknown } | null)?.status === 400) return 'not-queued';
+  const status = (err as { status?: unknown } | null)?.status;
+  // Refused by the Control Center before any call was queued: never run.
+  if (status === 400) return 'not-queued';
+  if (status === 403) return 'forbidden';
+  if (status === 413) return 'too-large';
+  if (status === 422) return 'invalid';
   return 'network';
 }
 
@@ -287,7 +300,7 @@ export async function runFleetTool(
   } catch (err) {
     const code = failCode(err, false);
     if (code === 'no-channel') return null;
-    return rest(code === 'not-queued' ? 'not-run' : 'unknown', code);
+    return rest(NOT_RUN.has(code) ? 'not-run' : 'unknown', code);
   }
   reply.answers.forEach(answer);
   let pending = reply.pending;

@@ -176,7 +176,7 @@ export function PersonDetail({
   };
 
   const go = async () => {
-    if (!confirm) return;
+    if (!confirm || sending.length > 0) return;
     const changes = confirm.changes;
     // The confirm closes at once: an answer can take a minute or two, and
     // each cell says it is on its way. The changes sent leave the staged
@@ -215,6 +215,8 @@ export function PersonDetail({
   }, [grid, staged]);
 
   const stagedList = [...staged.values()];
+  /** A members send is on its way: no other send starts until it ends. */
+  const busy = sending.length > 0;
   const stale = confirm ? staleNotes(confirm.changes, peopleBoxes) : [];
   const reasons = person.logins
     .map((l) => ({ l, why: peopleReasonText(peopleById.get(l.boxId)!) }))
@@ -324,7 +326,7 @@ export function PersonDetail({
               </Button>
               <Button
                 size="sm"
-                disabled={stagedList.length > MAX_MEMBER_CHANGES}
+                disabled={busy || stagedList.length > MAX_MEMBER_CHANGES}
                 onClick={() =>
                   setConfirm({
                     title:
@@ -475,7 +477,7 @@ export function PersonDetail({
                 <div className="flex justify-end">
                   <Button
                     size="sm"
-                    disabled={plan.changes.length > MAX_MEMBER_CHANGES}
+                    disabled={busy || plan.changes.length > MAX_MEMBER_CHANGES}
                     onClick={() =>
                       setConfirm({
                         title: `Copy ${plan.changes.length === 1 ? '1 workspace' : `${plan.changes.length} workspaces`}?`,

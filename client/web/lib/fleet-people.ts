@@ -914,7 +914,15 @@ export function describeChange(
   const box = boxes.find((b) => b.id === c.boxId);
   const login = box?.people?.logins.find((l) => l.id === c.loginId);
   const ws = box?.people?.workspaces.find((w) => w.id === c.workspaceId);
-  const who = login?.email ?? 'a login';
+  const twins = (box?.people?.logins ?? []).filter((l) => l.email === login?.email);
+  const who = !login
+    ? 'a login'
+    : twins.length > 1
+      ? `${login.email} (login ${shortId(
+          login.id,
+          twins.map((l) => l.id),
+        )})`
+      : login.email;
   const where = ws ? wsLabel(box?.people, ws) : 'a workspace';
   const on = box ? boxName(box) : 'a box';
   if (c.role === 'none') return `Remove ${who} from ${where} on ${on}`;
@@ -1005,4 +1013,19 @@ export function staleNotes(
   return boxes
     .filter((b) => ids.has(b.id) && b.people && b.peopleReason)
     .map((b) => `${boxName(b)}: ${peopleReasonText(b, now)}`);
+}
+
+const changeKey = (c: MemberChange) => `${c.boxId}:${c.loginId}:${c.workspaceId}`;
+
+/** The changes in flight with `more` added (a send that starts). */
+export function withSending(list: readonly MemberChange[], more: readonly MemberChange[]) {
+  const keys = new Set(list.map(changeKey));
+  return [...list, ...more.filter((c) => !keys.has(changeKey(c)))];
+}
+
+/** The changes in flight with `done` taken out (a send that ended); the
+ *  others stay. */
+export function withoutSent(list: readonly MemberChange[], done: readonly MemberChange[]) {
+  const keys = new Set(done.map(changeKey));
+  return list.filter((c) => !keys.has(changeKey(c)));
 }

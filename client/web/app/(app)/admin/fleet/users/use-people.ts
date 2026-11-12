@@ -12,6 +12,8 @@ import {
   peopleBoxes,
   sentSummary,
   toolCalls,
+  withoutSent,
+  withSending,
   type FleetPeople,
   type MemberAnswer,
   type MemberChange,
@@ -124,7 +126,7 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
   const [answers, setAnswers] = useState<MemberAnswer[]>([]);
   const send = async (changes: MemberChange[]): Promise<MembersSent> => {
     if (changes.length === 0) return false;
-    setSending(changes);
+    setSending((now) => withSending(now, changes));
     try {
       const calls = toolCalls(changes, MAX_TOOL_CHANGES);
       const perBox = [...new Set(calls.map((c) => c.boxId))].map((boxId) =>
@@ -170,8 +172,8 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
       const said = sentSummary(all);
       if (said.tone === 'ok') toast.success(said.text);
       else toast.error(said.text);
-      // Every box that may have changed is read again: made, refused, unknown.
-      await reread([...new Set(all.filter((a) => !boxLevel(a)).map((a) => a.boxId))]);
+      // Every box a call was sent to is read again, not-run boxes too.
+      await reread([...new Set(all.map((a) => a.boxId))]);
       return {
         answers: all,
         left: all
@@ -179,7 +181,7 @@ export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
           .map(({ boxId, loginId, workspaceId, role }) => ({ boxId, loginId, workspaceId, role })),
       };
     } finally {
-      setSending([]);
+      setSending((now) => withoutSent(now, changes));
     }
   };
   return { pending: sending.length > 0, sending, answers, send };

@@ -54,7 +54,7 @@ describe('fleet tool (the admin channel)', () => {
     expect(r.answers.map((a) => [a.callId, a.boxId, a.ok, a.reason, a.output])).toEqual([
       [call(1), A, true, null, { n: 1 }],
       [call(2), B, false, 'scope', undefined],
-      [call(4), A, false, 'refused', undefined],
+      [call(4), A, false, 'no-reason', undefined],
       [call(5), B, false, 'truncated', undefined],
       [call(6), A, false, 'error', undefined],
     ]);
@@ -69,10 +69,36 @@ describe('fleet tool (the admin channel)', () => {
   });
 
   it('sorts reasons into not run and unknown', () => {
-    for (const r of ['scope', 'tool', 'size', 'busy', 'replay', 'refused', 'error', 'expired']) {
+    for (const r of [
+      'scope',
+      'tool',
+      'size',
+      'busy',
+      'replay',
+      'expired',
+      'bad-call',
+      'not-queued',
+      'no-channel',
+      'forbidden',
+      'too-large',
+      'invalid',
+    ]) {
       expect(outcomeOf({ ok: false, reason: r })).toBe('not-run');
     }
-    for (const r of ['pending', 'timeout', 'network', 'unreachable', 'gone', 'truncated']) {
+    // error: the tool threw while running; refused with no rows; no reason;
+    // a code this box does not know: all unknown (audit N1).
+    for (const r of [
+      'error',
+      'refused',
+      'no-reason',
+      'odd-code',
+      'pending',
+      'timeout',
+      'network',
+      'unreachable',
+      'gone',
+      'truncated',
+    ]) {
       expect(outcomeOf({ ok: false, reason: r })).toBe('unknown');
     }
     expect(outcomeOf({ ok: true, reason: null })).toBe('ok');
@@ -88,7 +114,7 @@ describe('fleet tool (the admin channel)', () => {
     expect(toolReasonText('truncated')).toBe(
       "The box's answer was too large; showing nothing for this box.",
     );
-    expect(toolReasonText('error')).toBe('The box could not run it.');
+    expect(toolReasonText('error')).toBe('The box hit an error while running it.');
     expect(toolReasonText('unreachable')).toBe('This box cannot reach the box over HTTPS.');
     expect(toolReasonText('sig')).toBe('The box holds another key. Copy the key line again.');
     expect(toolReasonText('no-channel')).toBe(NO_CHANNEL_TEXT);
@@ -177,6 +203,20 @@ describe('fleet tool (the admin channel)', () => {
       throw Object.assign(new Error('not found'), { status: 404, body: { error: 'not found' } });
     };
     expect(await runFleetTool([A], USERS_LIST_TOOL, {}, { send: gone })).toBeNull();
+    // Refused by the Control Center before queueing: not run, its own words (audit N6).
+    for (const [status, code] of [
+      [403, 'forbidden'],
+      [413, 'too-large'],
+      [422, 'invalid'],
+    ] as const) {
+      const refused: Send = async () => {
+        throw Object.assign(new Error('no'), { status, body: { error: 'no' } });
+      };
+      expect(await runFleetTool([A], USERS_LIST_TOOL, {}, { send: refused })).toEqual([
+        { boxId: A, outcome: 'not-run', reason: code, output: undefined },
+      ]);
+      expect(toolReasonText(code)).toMatch(/^The Control Center refused the call/);
+    }
     const net: Send = async () => {
       throw new TypeError('Failed to fetch');
     };
