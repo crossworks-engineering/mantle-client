@@ -113,7 +113,63 @@ export type MockFleet = {
   writeSent: { path: string; body: Record<string, unknown> }[];
   /** The pools GET /api/model-pools lists. */
   pools: { id: string; label: string; description: string; group: string }[];
+  /** The Default Model: false is a brain before it (its route 404s). */
+  defaultModelOn: boolean;
+  /** The stored provider and key id, or null. */
+  defaultModel: { provider: string; keyId: string } | null;
+  /** Every Default Model write body (null: a clear). */
+  defaultModelSent: ({ provider: string; keyId: string } | null)[];
 };
+
+/** The brain's provider keys the Default Model card offers (never a key:
+ *  the masked hint only). */
+export const MOCK_DM_CHOICES = [
+  {
+    provider: 'openrouter',
+    providerName: 'OpenRouter',
+    keys: [
+      { id: 'k-or-1', name: 'openrouter', label: 'default', masked: 'sk-o\u2026abcd' },
+      { id: 'k-or-2', name: 'openrouter/work', label: 'work', masked: 'sk-o\u2026wxyz' },
+    ],
+  },
+  {
+    provider: 'anthropic',
+    providerName: 'Anthropic',
+    keys: [{ id: 'k-an-1', name: 'anthropic', label: 'default', masked: 'sk-a\u20261234' }],
+  },
+];
+
+/** The catalog GET /api/models answers for the Default Model. */
+export const MOCK_DM_MODELS = [
+  {
+    id: 'vendor/catalog-model',
+    name: 'Catalog Model',
+    contextTokens: 128000,
+    inputPricePerM: 3,
+    outputPricePerM: 15,
+    raw: null,
+  },
+  {
+    id: 'vendor/cheap-model',
+    name: 'Cheap Model',
+    inputPricePerM: 0.1,
+    outputPricePerM: 0.4,
+    raw: null,
+  },
+];
+
+function defaultModelView(f: MockFleet) {
+  const d = f.defaultModel;
+  const choice = d ? MOCK_DM_CHOICES.find((c) => c.provider === d.provider) : undefined;
+  const key = d ? (choice?.keys.find((k) => k.id === d.keyId) ?? null) : null;
+  return {
+    provider: d?.provider ?? null,
+    providerName: d ? (choice?.providerName ?? d.provider) : null,
+    key,
+    problem: d && !key ? 'key-missing' : null,
+    choices: MOCK_DM_CHOICES,
+  };
+}
 
 type Write = Record<string, unknown> & { kind: string; by: string; at: string; reads?: number };
 type WriteAnswer = Write & { ok: boolean; was: string | null; reason: string | null; done: string };
@@ -241,6 +297,9 @@ export const newMockFleet = (): MockFleet => ({
     { id: 'agents', label: 'Agents', description: 'Every agent.', group: 'agents' },
     { id: 'vision', label: 'Read images', description: 'The vision worker.', group: 'workers' },
   ],
+  defaultModelOn: false,
+  defaultModel: null,
+  defaultModelSent: [],
 });
 
 type Agent = { slug: string | null; model: string };
@@ -370,6 +429,10 @@ export function fleetAnswer(
   if (path === '/api/model-pools' && method === 'GET' && f?.writesOn) {
     return { status: 200, body: { pools: f.pools, entries: [] } };
   }
+  // The Default Model's catalog (the Models screen's route).
+  if (path === '/api/models' && method === 'GET' && f?.defaultModelOn) {
+    return { status: 200, body: { models: MOCK_DM_MODELS } };
+  }
   if (!path.startsWith('/api/fleet')) return null;
   if (!f) return { status: 404, body: { error: 'not found' } };
   if (path === '/api/fleet/matrix' && method === 'GET') {
@@ -393,6 +456,18 @@ export function fleetAnswer(
     runKeyJobs(f);
     runWriteJobs(f);
     return { status: 200, body: overview(f) };
+  }
+  if (path === '/api/fleet/default-model') {
+    if (!f.defaultModelOn) return { status: 404, body: { error: 'not found' } };
+    if (method === 'PUT') {
+      const next = { provider: String(body.provider), keyId: String(body.keyId) };
+      f.defaultModelSent.push(next);
+      f.defaultModel = next;
+    } else if (method === 'DELETE') {
+      f.defaultModelSent.push(null);
+      f.defaultModel = null;
+    }
+    return { status: 200, body: defaultModelView(f) };
   }
   if (path === '/api/fleet/models' && method === 'POST') {
     if (!f.writesOn) return { status: 404, body: { error: 'not found' } };
