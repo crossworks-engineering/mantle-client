@@ -12,6 +12,12 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.23: Control Center screens, uploads into shared folders
+
+- **Added:** on a Control Center, the Fleet matrix compares two boxes and copies agent models from one to the other; a Default Model card with model pickers; a Fleet users screen. The CC scope tab shows an admin icon.
+- **Changed:** an upload into a shared folder no longer asks to confirm: the new file takes the folder's sharing. Moving an existing item still asks.
+- **Fixed:** after each finished upload the Files list, the folder tree and Recent show the new file without a page refresh.
+
 ## v0.9.22: the decider form shows the pdf_kind use
 
 - **Added:** the decider form lists the `pdf_kind` use (the kind of a PDF that the rules could not name). It starts in shadow, as on the brain.
