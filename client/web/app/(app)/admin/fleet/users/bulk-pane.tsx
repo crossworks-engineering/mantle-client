@@ -158,8 +158,8 @@ export function BulkPane({
         )}
         {left > 0 && (
           <Callout tone="warn" title="Not sent yet">
-            {left === 1 ? '1 change was' : `${left} changes were`} not queued: 40 changes wait on
-            that box already. Send again in a minute.
+            {left === 1 ? '1 change was' : `${left} changes were`} not run: the box did not take the
+            call. Send again.
           </Callout>
         )}
         {plan && (
@@ -205,7 +205,8 @@ export function BulkPane({
         onConfirm={() => void go()}
       >
         <span className="block">
-          {box ? boxName(box) : 'The box'} makes the changes at its next run, within seconds.
+          {box ? boxName(box) : 'The box'} runs the changes now with its own checks, and answers
+          within 25 seconds.
         </span>
         <span className="mt-2 block max-h-64 overflow-y-auto scrollbar-thin">
           {frozen?.changes.map((c) => (

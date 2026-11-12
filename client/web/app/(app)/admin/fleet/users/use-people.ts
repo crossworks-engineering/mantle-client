@@ -1,80 +1,139 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { FLEET_PATH, type FleetBan, type FleetBox, type FleetPreview } from '@/lib/fleet';
+import { FLEET_PATH, type FleetBan, type FleetOverview, type FleetPreview } from '@/lib/fleet';
 import {
-  FLEET_MEMBERS_PATH,
+  boxLevel,
   FLEET_PEOPLE_KEY,
-  FLEET_PEOPLE_PATH,
-  membersSentText,
-  type FleetPeopleAnswer,
+  memberAnswers,
+  peopleBoxes,
+  sentSummary,
+  toolCalls,
+  type FleetPeople,
+  type MemberAnswer,
   type MemberChange,
 } from '@/lib/fleet-people';
-import { writeUpdatePending } from '@/lib/fleet-writes';
+import {
+  callFleetTool,
+  MAX_TOOL_CHANGES,
+  USERS_LIST_TOOL,
+  WORKSPACE_USER_SET_TOOL,
+  type ToolBoxAnswer,
+} from '@/lib/fleet-tool';
 import { refusalText } from '../fleet-section';
 
-/** The people read. Null: a brain before Fleet users (404 or 405). */
-async function readPeople(): Promise<FleetPeopleAnswer | null> {
-  try {
-    return await apiFetch<FleetPeopleAnswer>(FLEET_PEOPLE_PATH);
-  } catch (err) {
-    if (err instanceof ApiError && (err.status === 404 || err.status === 405)) return null;
-    throw err;
-  }
-}
+/** The users_list read: each box's answer, or `channel: false` while the
+ *  Control Center has no admin channel (the route answers 404). */
+type PeopleRead = { channel: false } | { channel: true; answers: ToolBoxAnswer[] };
 
-/** The people of every box, read again every 3 s while a change waits, and
- *  once more when the last change is answered (the box sends its people
- *  list right after its writes). */
-export function usePeople(boxes: readonly FleetBox[]) {
+/** The people of every linked box: one users_list call over the admin
+ *  channel. A box that did not answer keeps its last good list, with its
+ *  reason. `reread` asks the boxes named again (after a write). */
+export function usePeople(fleet: FleetOverview) {
   const queryClient = useQueryClient();
-  const waiting = writeUpdatePending(boxes);
+  const ids = useMemo(() => fleet.boxes.map((b) => b.id), [fleet.boxes]);
+  const key = useMemo(() => [...FLEET_PEOPLE_KEY, ids.join(',')], [ids]);
   const query = useQuery({
-    queryKey: FLEET_PEOPLE_KEY,
-    queryFn: readPeople,
-    staleTime: 30_000,
-    retry: 1,
-    refetchInterval: waiting ? 3000 : false,
+    queryKey: key,
+    queryFn: async (): Promise<PeopleRead> => {
+      const answers = await callFleetTool(ids, USERS_LIST_TOOL, {});
+      return answers === null ? { channel: false } : { channel: true, answers };
+    },
+    enabled: ids.length > 0,
+    staleTime: 60_000,
+    retry: 0,
+    refetchOnWindowFocus: false,
   });
-  const was = useRef(waiting);
-  useEffect(() => {
-    if (was.current && !waiting) void queryClient.invalidateQueries({ queryKey: FLEET_PEOPLE_KEY });
-    was.current = waiting;
-  }, [waiting, queryClient]);
-  return query;
+  const kept = useRef(new Map<string, FleetPeople>());
+  const read = query.data;
+  const boxes = useMemo(() => {
+    if (!read || !read.channel) return [];
+    const out = peopleBoxes(fleet.boxes, read.answers, kept.current);
+    for (const b of out) if (b.people && !b.peopleReason) kept.current.set(b.id, b.people);
+    return out;
+  }, [read, fleet.boxes]);
+
+  const reread = useCallback(
+    async (boxIds: string[]) => {
+      if (boxIds.length === 0) return;
+      const fresh = await callFleetTool(boxIds, USERS_LIST_TOOL, {}).catch(() => null);
+      if (!fresh) return;
+      queryClient.setQueryData<PeopleRead>(key, (old) => {
+        if (!old || !old.channel) return old;
+        const answers = old.answers.filter((a) => !boxIds.includes(a.boxId));
+        return { channel: true, answers: [...answers, ...fresh] };
+      });
+    },
+    [queryClient, key],
+  );
+
+  return {
+    query,
+    /** Null while loading; false: no admin channel on this Control Center. */
+    channel: read ? read.channel : null,
+    boxes,
+    reread,
+  };
 }
 
-/** What a send did: false when it failed; else the changes of boxes that
- *  were not queued (40 changes wait there already), which the caller keeps. */
-export type MembersSent = false | { left: MemberChange[] };
+/** What a send did: false when nothing ran; else every change's answer and
+ *  the changes the boxes never ran, which the caller keeps staged. */
+export type MembersSent = false | { answers: MemberAnswer[]; left: MemberChange[] };
 
-/** One send of workspace changes, then a toast that says what was queued. */
-export function useMembersSend(onChanged: () => void) {
+/** Workspace changes over the admin channel: one workspace_user_set call
+ *  per box (at most 20 changes each), the answers from the calls' own
+ *  replies, then the boxes read again. */
+export function useMembersWrite(reread: (boxIds: string[]) => Promise<void>) {
   const toast = useToast();
-  const [pending, setPending] = useState(false);
+  const [sending, setSending] = useState<MemberChange[]>([]);
+  const [answers, setAnswers] = useState<MemberAnswer[]>([]);
   const send = async (changes: MemberChange[]): Promise<MembersSent> => {
     if (changes.length === 0) return false;
-    setPending(true);
+    setSending(changes);
     try {
-      const r = await apiSend<{ boxIds?: string[] }>(FLEET_MEMBERS_PATH, 'POST', { changes });
-      const queued = new Set(r?.boxIds ?? []);
-      const left = changes.filter((c) => !queued.has(c.boxId));
-      const said = membersSentText(changes, [...queued]);
-      if (left.length > 0) toast.error(said);
-      else toast.success(said);
-      onChanged();
-      return { left };
-    } catch (err) {
-      toast.error(refusalText(err, 'Could not send the workspace changes.'));
-      return false;
+      const calls = toolCalls(changes, MAX_TOOL_CHANGES);
+      const done = await Promise.all(
+        calls.map(async (call) => {
+          let answer: ToolBoxAnswer | undefined;
+          try {
+            const r = await callFleetTool([call.boxId], WORKSPACE_USER_SET_TOOL, {
+              changes: call.changes.map(({ loginId, workspaceId, role }) => ({
+                loginId,
+                workspaceId,
+                role,
+              })),
+            });
+            answer =
+              r === null
+                ? { boxId: call.boxId, ok: false, output: undefined, reason: 'no-channel' }
+                : r.find((a) => a.boxId === call.boxId);
+          } catch (err) {
+            toast.error(refusalText(err, 'Could not send the workspace changes.'));
+            answer = { boxId: call.boxId, ok: false, output: undefined, reason: 'error' };
+          }
+          return memberAnswers(call.changes, answer);
+        }),
+      );
+      const all = done.flat();
+      setAnswers((a) => [...a, ...all]);
+      const said = sentSummary(all);
+      if (said.tone === 'ok') toast.success(said.text);
+      else toast.error(said.text);
+      await reread([...new Set(all.filter((a) => !boxLevel(a)).map((a) => a.boxId))]);
+      return {
+        answers: all,
+        left: all
+          .filter(boxLevel)
+          .map(({ boxId, loginId, workspaceId, role }) => ({ boxId, loginId, workspaceId, role })),
+      };
     } finally {
-      setPending(false);
+      setSending([]);
     }
   };
-  return { pending, send };
+  return { pending: sending.length > 0, sending, answers, send };
 }
 
 /** The ban write of the Bans screen, for one email: preview, then make; and

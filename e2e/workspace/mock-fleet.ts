@@ -113,17 +113,22 @@ export type MockFleet = {
   writeSent: { path: string; body: Record<string, unknown> }[];
   /** The pools GET /api/model-pools lists. */
   pools: { id: string; label: string; description: string; group: string }[];
-  /** Fleet users: false is a brain before them (GET /api/fleet/people and
-   *  POST /api/fleet/members answer 404). */
-  peopleOn: boolean;
+  /** The admin channel (POST /api/fleet/tool): false is a Control Center
+   *  before it, whose route answers 404. */
+  toolOn: boolean;
+  /** A box that does not run tools, by box id: its reason (e.g. scope). */
+  toolRefused: Record<string, string>;
+  /** What workspace_user_set answers per change, by box id then
+   *  `loginId:workspaceId`: a refusal reason; absent: the change is made. */
+  memberRefusals: Record<string, Record<string, string>>;
+  /** Every POST /api/fleet/tool body. */
+  toolSent: Record<string, unknown>[];
   /** Each box's people list, its last read's reason and its ban-list
    *  logins (only while the people list is null), by box id. */
   people: Record<
     string,
     { people: PeopleList | null; peopleReason: string | null; logins: BanLogin[] | null }
   >;
-  /** Every POST /api/fleet/members body. */
-  membersSent: Record<string, unknown>[];
 };
 
 export type PeopleLogin = {
@@ -279,9 +284,11 @@ export const newMockFleet = (): MockFleet => ({
     { id: 'agents', label: 'Agents', description: 'Every agent.', group: 'agents' },
     { id: 'vision', label: 'Read images', description: 'The vision worker.', group: 'workers' },
   ],
-  peopleOn: false,
+  toolOn: false,
+  toolRefused: {},
+  memberRefusals: {},
+  toolSent: [],
   people: {},
-  membersSent: [],
 });
 
 /** The ids of the Fleet users data: logins and workspaces on each box. */
@@ -329,8 +336,7 @@ export function withPeople(f: MockFleet): MockFleet {
   const a = PEOPLE.a;
   const b = PEOPLE.b;
   const at = new Date().toISOString();
-  f.peopleOn = true;
-  f.writesOn = true;
+  f.toolOn = true;
   f.people = {
     [FLEET_BOX.id]: {
       peopleReason: null,
@@ -441,7 +447,11 @@ function memberWas(f: MockFleet, boxId: string, loginId: string, workspaceId: st
 }
 
 /** A workspace change made on the box: its people list then shows it. */
-function applyMember(f: MockFleet, boxId: string, c: Write) {
+function applyMember(
+  f: MockFleet,
+  boxId: string,
+  c: { loginId: unknown; workspaceId: unknown; role: unknown },
+) {
   const list = f.people[boxId]?.people;
   const l = list?.logins.find((x) => x.id === c.loginId);
   if (!list || !l) return;
@@ -466,15 +476,6 @@ function runWriteJobs(f: MockFleet) {
     const answers = due.map((c): WriteAnswer => {
       const { reads, ...change } = c;
       void reads;
-      if (c.kind === 'workspaceMember') {
-        const { login: l, was } = memberWas(f, boxId, String(c.loginId), String(c.workspaceId));
-        const a =
-          f.writeAnswers[boxId]?.[`${String(c.loginId)}:${String(c.workspaceId)}`] ??
-          f.writeAnswers[boxId]?.workspaceMember ??
-          (l ? { ok: true, reason: null } : { ok: false, reason: 'login' });
-        if (a.ok) applyMember(f, boxId, c);
-        return { ...change, ok: a.ok, was, reason: a.reason, done: new Date().toISOString() };
-      }
       const key = c.kind === 'agentModel' ? String(c.slug) : c.kind;
       const row = c.kind === 'agentModel' ? agents.find((a) => a.slug === c.slug) : undefined;
       const a =
@@ -606,50 +607,40 @@ export function fleetAnswer(
       }));
     return { status: 200, body: { boxes } };
   }
-  if (path === '/api/fleet/people' && method === 'GET') {
-    if (!f.peopleOn) return { status: 404, body: { error: 'not found' } };
-    const boxes = f.boxes.map((b) => ({
-      id: b.id,
-      url: b.url,
-      label: b.label,
-      lastOkAt: b.lastOkAt,
-      lastReason: b.lastReason,
-      people: f.people[b.id]?.people ?? null,
-      peopleReason: f.people[b.id]?.peopleReason ?? null,
-      logins: f.people[b.id]?.people ? null : (f.people[b.id]?.logins ?? null),
-    }));
+  if (path === '/api/fleet/tool' && method === 'POST') {
+    if (!f.toolOn) return { status: 404, body: { error: 'not found' } };
+    f.toolSent.push(body);
+    const ids = (body.boxIds as string[] | undefined) ?? [];
+    const name = String(body.name ?? '');
+    const args = (body.args as Record<string, unknown> | undefined) ?? {};
+    const boxes = ids.map((boxId) => {
+      const refused = f.toolRefused[boxId];
+      if (refused) return { boxId, ok: false, reason: refused };
+      if (name === 'users_list') {
+        const people = f.people[boxId]?.people;
+        return people
+          ? { boxId, ok: true, output: { ...people, at: new Date().toISOString() } }
+          : { boxId, ok: false, reason: 'unreachable' };
+      }
+      if (name === 'workspace_user_set') {
+        const changes = (args.changes as Record<string, unknown>[] | undefined) ?? [];
+        if (changes.length < 1 || changes.length > 20)
+          return { boxId, ok: false, reason: 'bad-call' };
+        const results = changes.map((c) => {
+          const loginId = String(c.loginId);
+          const workspaceId = String(c.workspaceId);
+          const { login: l, was } = memberWas(f, boxId, loginId, workspaceId);
+          const reason =
+            f.memberRefusals[boxId]?.[`${loginId}:${workspaceId}`] ?? (l ? null : 'login');
+          if (reason) return { loginId, workspaceId, ok: false, reason };
+          applyMember(f, boxId, c as { loginId: unknown; workspaceId: unknown; role: unknown });
+          return { loginId, workspaceId, ok: true, was };
+        });
+        return { boxId, ok: true, output: { results } };
+      }
+      return { boxId, ok: false, reason: 'unknown-tool' };
+    });
     return { status: 200, body: { boxes } };
-  }
-  if (path === '/api/fleet/members' && method === 'POST') {
-    if (!f.peopleOn) return { status: 404, body: { error: 'not found' } };
-    f.membersSent.push(body);
-    const changes = (body.changes as Record<string, unknown>[] | undefined) ?? [];
-    if (changes.length === 0 || changes.length > 40) {
-      return { status: 400, body: { error: 'Give 1 to 40 changes.' } };
-    }
-    const at = new Date().toISOString();
-    const queued: string[] = [];
-    const stamped: Write[] = [];
-    for (const b of f.boxes) {
-      const mine = changes
-        .filter((c) => c.boxId === b.id)
-        .map((c): Write => ({
-          kind: 'workspaceMember',
-          loginId: String(c.loginId),
-          workspaceId: String(c.workspaceId),
-          role: String(c.role),
-          by: ADMIN,
-          at,
-        }));
-      if (mine.length === 0) continue;
-      const w = (f.writeState[b.id] ??= { writeJob: null, writeResult: null });
-      const waiting = w.writeJob?.changes ?? [];
-      if (waiting.length + mine.length > 40) continue;
-      w.writeJob = { changes: [...waiting, ...mine] };
-      queued.push(b.id);
-      stamped.push(...mine);
-    }
-    return { status: 200, body: { changes: stamped, boxIds: queued } };
   }
   if (path === '/api/fleet' && method === 'GET') {
     runKeyJobs(f);

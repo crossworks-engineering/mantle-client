@@ -2,15 +2,16 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
-import { FLEET_BOX, FLEET_BOX_B, newMockFleet, PEOPLE, withPeople } from './mock-fleet';
+import { FLEET_BOX, FLEET_BOX_B, newMockFleet, PEOPLE, withMatrix, withPeople } from './mock-fleet';
 import { CC_SCOPE, scopedNav } from './shell-nav';
 
 /**
- * Control Center > Fleet users (docs/control-center.md in the mantle repo,
- * "Fleet users"): every login on every linked box, one person per email,
- * each login's workspaces box by box, the workspace write
- * (POST /api/fleet/members) and the fleet-wide ban. No write goes without
- * its one confirm. In-memory brain (mock-fleet.ts withPeople).
+ * Control Center > Fleet users: every login on every linked box, one person
+ * per email, each login's workspaces box by box, over the admin channel
+ * (POST /api/fleet/tool: each box's users_list and workspace_user_set), and
+ * the fleet-wide ban. No write goes without its one confirm. Without the
+ * channel the screen shows the login counts and the bans. In-memory brain
+ * (mock-fleet.ts withPeople).
  *
  * E2E_SHOTS=<dir> also saves screenshots there.
  */
@@ -34,6 +35,14 @@ async function shot(page: Page, name: string) {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: join(SHOTS, `${name}.png`) });
 }
+
+/** The workspace_user_set calls the Control Center was sent. */
+const writes = () => api.fleet!.toolSent.filter((b) => b.name === 'workspace_user_set');
+const setCall = (boxId: string, changes: Record<string, string>[]) => ({
+  boxIds: [boxId],
+  name: 'workspace_user_set',
+  args: { changes },
+});
 
 const people = (page: Page) => page.getByRole('main').getByRole('list', { name: 'People' });
 const card = (page: Page, text: string) =>
@@ -110,7 +119,13 @@ test('the filters: banned, admins, no workspace, one box, not seen', async ({ pa
   await show(/^All/);
   await main.getByRole('textbox', { name: 'Search people' }).fill('erin');
   await expect.poll(emails).toEqual(['erin@example.com']);
-  expect(api.fleet!.membersSent).toEqual([]);
+  expect(writes()).toEqual([]);
+  // The read is one users_list call over every linked box.
+  expect(api.fleet!.toolSent[0]).toEqual({
+    boxIds: [FLEET_BOX.id, FLEET_BOX_B.id],
+    name: 'users_list',
+    args: {},
+  });
 });
 
 test('a person: change a cell, confirm, the ids go, and the answer shows', async ({ page }) => {
@@ -132,19 +147,14 @@ test('a person: change a cell, confirm, the ids go, and the answer shows', async
   const dialog = page.getByRole('alertdialog');
   await expect(dialog.getByText(`ann@example.com in projects as User on ${BOX_B}`)).toBeVisible();
   // Nothing goes before the confirm.
-  expect(api.fleet!.membersSent).toEqual([]);
+  expect(writes()).toEqual([]);
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect.poll(() => api.fleet!.membersSent.length).toBe(1);
-  expect(api.fleet!.membersSent[0]).toEqual({
-    changes: [
-      {
-        boxId: FLEET_BOX_B.id,
-        loginId: PEOPLE.b.ann,
-        workspaceId: PEOPLE.b.projects,
-        role: 'user',
-      },
-    ],
-  });
+  await expect.poll(() => writes().length).toBe(1);
+  expect(writes()[0]).toEqual(
+    setCall(FLEET_BOX_B.id, [
+      { loginId: PEOPLE.b.ann, workspaceId: PEOPLE.b.projects, role: 'user' },
+    ]),
+  );
   const changes = main
     .getByRole('heading', { name: 'Workspace changes' })
     .locator('..')
@@ -152,8 +162,8 @@ test('a person: change a cell, confirm, the ids go, and the answer shows', async
   await expect(changes.getByText('Added as a user.')).toBeVisible();
 
   // A box that refuses says why, in plain words.
-  api.fleet!.writeAnswers[FLEET_BOX.id] = {
-    [`${PEOPLE.a.ann}:${PEOPLE.a.field}`]: { ok: false, reason: 'last-moderator' },
+  api.fleet!.memberRefusals[FLEET_BOX.id] = {
+    [`${PEOPLE.a.ann}:${PEOPLE.a.field}`]: 'last-moderator',
   };
   await pick(
     page,
@@ -162,12 +172,10 @@ test('a person: change a cell, confirm, the ids go, and the answer shows', async
   );
   await main.getByRole('button', { name: 'Send 1 change' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Send', exact: true }).click();
-  await expect.poll(() => api.fleet!.membersSent.length).toBe(2);
-  expect(api.fleet!.membersSent[1]).toEqual({
-    changes: [
-      { boxId: FLEET_BOX.id, loginId: PEOPLE.a.ann, workspaceId: PEOPLE.a.field, role: 'none' },
-    ],
-  });
+  await expect.poll(() => writes().length).toBe(2);
+  expect(writes()[1]).toEqual(
+    setCall(FLEET_BOX.id, [{ loginId: PEOPLE.a.ann, workspaceId: PEOPLE.a.field, role: 'none' }]),
+  );
   await expect(changes.getByText(/This is the last Moderator of the workspace/)).toBeVisible();
 });
 
@@ -192,19 +200,18 @@ test('copy workspaces from Box A to Box B: a preview, then one confirm', async (
   await main.getByText('Copy workspaces from one box to another').scrollIntoViewIfNeeded();
   await shot(page, 'fleet-users-copy-preview');
   await main.getByRole('button', { name: 'Copy 1 workspace' }).click();
-  expect(api.fleet!.membersSent).toEqual([]);
+  expect(writes()).toEqual([]);
   await page.getByRole('alertdialog').getByRole('button', { name: 'Send', exact: true }).click();
-  await expect.poll(() => api.fleet!.membersSent.length).toBe(1);
-  expect(api.fleet!.membersSent[0]).toEqual({
-    changes: [
-      {
-        boxId: FLEET_BOX_B.id,
-        loginId: PEOPLE.b.ann,
-        workspaceId: PEOPLE.b.projects,
-        role: 'user',
-      },
-    ],
-  });
+  await expect.poll(() => writes().length).toBe(1);
+  expect(writes()[0]).toEqual(
+    setCall(FLEET_BOX_B.id, [
+      { loginId: PEOPLE.b.ann, workspaceId: PEOPLE.b.projects, role: 'user' },
+    ]),
+  );
+  // The box made it: the grid reads the box again and shows it.
+  await expect(
+    grid(page).getByRole('combobox', { name: /^Role in projects on box-b/i }),
+  ).toHaveText('User');
 });
 
 test('Ban: the fleet-wide sentence, the preview first, then the ban', async ({ page }) => {
@@ -225,13 +232,46 @@ test('Ban: the fleet-wide sentence, the preview first, then the ban', async ({ p
   await expect(page.getByRole('main').getByText('Banned on every linked box')).toBeVisible();
 });
 
-test('a brain before Fleet users says so', async ({ page }) => {
-  api.fleet!.peopleOn = false;
+test('a box that has not opened its admin tools says so, the others show', async ({ page }) => {
+  api.fleet!.toolRefused[FLEET_BOX_B.id] = 'scope';
   await signIn(page, 'admin');
   await page.goto(USERS);
+  const main = page.getByRole('main');
   await expect(
-    page.getByRole('main').getByText(/This Control Center runs a release before Fleet users/),
+    main
+      .getByRole('list', { name: 'Boxes not shown in full' })
+      .getByText(
+        /has not opened its admin tools to the Control Center \(MANTLE_CONTROL_CENTER_SCOPE\)/,
+      ),
   ).toBeVisible();
+  await expect(people(page).getByRole('listitem')).toHaveCount(5);
+  await expect(card(page, 'erin@example.com')).toHaveCount(0);
+  await expect(card(page, 'ann@example.com').getByText(BOX_B)).toHaveCount(0);
+});
+
+test('a Control Center before the admin channel: counts, bans and one calm callout', async ({
+  page,
+}) => {
+  api.fleet = withMatrix(withPeople(newMockFleet()));
+  api.fleet.toolOn = false;
+  await signIn(page, 'admin');
+  await page.goto(USERS);
+  const main = page.getByRole('main');
+  await expect(
+    main.getByText(
+      "Names and workspaces show once the admin channel is on (Control Center release + each box's scope).",
+    ),
+  ).toBeVisible();
+  const counts = main.getByRole('table', { name: 'Logins on each box' });
+  const rowA = counts.getByRole('row').filter({ hasText: 'Box A' });
+  await expect(rowA.getByRole('cell')).toHaveText(['Box A', '1', '3', '0', '4']);
+  await expect(main.getByText('carol@example.com')).toBeVisible();
+  await shot(page, 'fleet-users-fallback');
+  await main.getByRole('button', { name: 'Lift ban' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog.getByText('carol@example.com')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Lift ban' }).click();
+  await expect.poll(() => api.fleet!.lifted.length).toBe(1);
 });
 
 test('dark: the list and a person', async ({ page }) => {

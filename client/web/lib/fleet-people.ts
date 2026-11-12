@@ -1,24 +1,23 @@
 /**
- * Fleet users (Control Center task 4; docs/control-center.md in the mantle
- * repo, "Fleet users"): every login on every linked box, one person per
- * email across boxes, the workspaces each login is in, and the workspace
- * changes the Control Center sends (POST /api/fleet/members, the write
- * `workspaceMember`). The types mirror GET /api/fleet/people. Pure, so it is
- * unit-tested.
+ * Fleet users (Control Center task 4): every login on every linked box,
+ * one person per email across boxes, the workspaces each login is in, and
+ * the workspace changes the Control Center sends. The data comes over the
+ * admin channel (lib/fleet-tool.ts): each box's own `users_list` tool, and
+ * `workspace_user_set` for the changes, each box answering for itself.
+ * Pure, so it is unit-tested.
  *
  * A ban is fleet-wide: it disables the person on every linked box (the Bans
  * write). The brain has no per-box ban.
  */
-import { boxName, FLEET_KEY, FLEET_PATH, reasonText, type FleetBan, type FleetBox } from './fleet';
-import { answerText, type FleetWriteAnswer, type FleetWriteChange } from './fleet-writes';
+import { boxName, FLEET_KEY, type FleetBan } from './fleet';
 import type { Tone } from './fleet-view';
+import { toolReasonText, type ToolBoxAnswer } from './fleet-tool';
 
-export const FLEET_PEOPLE_PATH = `${FLEET_PATH}/people`;
 /** Under FLEET_KEY: the Fleet's refresh reads the people again too. */
-export const FLEET_PEOPLE_KEY = [...FLEET_KEY, 'people'];
-export const FLEET_MEMBERS_PATH = `${FLEET_PATH}/members`;
+export const FLEET_PEOPLE_KEY = [...FLEET_KEY, 'users'];
 
-/** The most workspace changes one request sends (the brain's cap). */
+/** The most workspace changes one confirm sends (split per box into calls
+ *  of at most 20, MAX_TOOL_CHANGES). */
 export const MAX_MEMBER_CHANGES = 40;
 /** Not seen for this long reads as stale. */
 export const STALE_DAYS = 30;
@@ -71,8 +70,6 @@ export type FleetPeopleBox = {
   /** The ban path's login list, only while `people` is null. */
   logins: FleetBanLogin[] | null;
 };
-
-export type FleetPeopleAnswer = { boxes: FleetPeopleBox[] };
 
 export type MemberChange = {
   boxId: string;
@@ -693,10 +690,176 @@ export function assignableWorkspaces(
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-// --- what a change says, and where it stands --------------------------------------------
+// --- the admin channel's answers ----------------------------------------------------
 
-type MemberWrite = Extract<FleetWriteChange, { kind: 'workspaceMember' }>;
-const isMember = (c: FleetWriteChange): c is MemberWrite => c.kind === 'workspaceMember';
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
+const str = (v: unknown) => (typeof v === 'string' ? v : null);
+
+/** A box's `users_list` output as a people list, or null when it is not one. */
+export function parsePeople(output: unknown): FleetPeople | null {
+  if (!isObj(output) || !Array.isArray(output.workspaces) || !Array.isArray(output.logins)) {
+    return null;
+  }
+  const workspaces = output.workspaces.filter(isObj).flatMap((w) => {
+    const id = str(w.id);
+    return id ? [{ id, name: str(w.name) ?? '', admin: w.admin === true }] : [];
+  });
+  const logins = output.logins.filter(isObj).flatMap((l): FleetPeopleLogin[] => {
+    const id = str(l.id);
+    const email = str(l.email);
+    if (!id || !email) return [];
+    return [
+      {
+        id,
+        email: email.toLowerCase(),
+        name: str(l.name),
+        role: str(l.role) ?? 'member',
+        owner: l.owner === true,
+        disabled: l.disabled === true,
+        archived: l.archived === true,
+        lastSignInAt: str(l.lastSignInAt),
+        createdAt: str(l.createdAt),
+        workspaces: (Array.isArray(l.workspaces) ? l.workspaces : []).filter(isObj).flatMap((m) => {
+          const wid = str(m.id);
+          return wid ? [{ id: wid, moderator: m.moderator === true }] : [];
+        }),
+      },
+    ];
+  });
+  return { schema: 1, at: str(output.at) ?? new Date().toISOString(), workspaces, logins };
+}
+
+/**
+ * The linked boxes with their people, from one `users_list` call. A box
+ * that did not answer keeps the list it had (`kept`, by box id), with its
+ * reason: the screen says how old it is.
+ */
+export function peopleBoxes(
+  boxes: readonly {
+    id: string;
+    url: string;
+    label: string | null;
+    lastOkAt: string | null;
+    lastReason: string | null;
+  }[],
+  answers: readonly ToolBoxAnswer[],
+  kept: ReadonlyMap<string, FleetPeople> = new Map(),
+): FleetPeopleBox[] {
+  return boxes.map((b) => {
+    const a = answers.find((x) => x.boxId === b.id);
+    const people = a?.ok ? parsePeople(a.output) : null;
+    const reason = !a ? null : a.ok ? (people ? null : 'bad-reply') : a.reason;
+    return {
+      id: b.id,
+      url: b.url,
+      label: b.label,
+      lastOkAt: b.lastOkAt,
+      lastReason: b.lastReason,
+      people: people ?? kept.get(b.id) ?? null,
+      peopleReason: reason,
+      logins: null,
+    };
+  });
+}
+
+/** One change's answer: the box's word for it, or the call's reason. */
+export type MemberAnswer = MemberChange & {
+  ok: boolean;
+  was: MemberState | null;
+  reason: string | null;
+  done: string;
+};
+
+const asState = (v: unknown): MemberState | null =>
+  v === 'none' || v === 'user' || v === 'moderator' ? v : null;
+
+/** Every change of one call, answered: from the box's results when it ran
+ *  the tool, else each with the box's reason. */
+export function memberAnswers(
+  changes: readonly MemberChange[],
+  answer: ToolBoxAnswer | undefined,
+  done: string = new Date().toISOString(),
+): MemberAnswer[] {
+  const results =
+    answer?.ok && isObj(answer.output) && Array.isArray(answer.output.results)
+      ? answer.output.results.filter(isObj)
+      : null;
+  return changes.map((c) => {
+    if (!answer) return { ...c, ok: false, was: null, reason: 'missing', done };
+    if (!answer.ok) return { ...c, ok: false, was: null, reason: answer.reason ?? 'error', done };
+    const r = results?.find((x) => x.loginId === c.loginId && x.workspaceId === c.workspaceId);
+    if (!r) return { ...c, ok: false, was: null, reason: 'bad-reply', done };
+    const ok = r.ok === true;
+    const reason = ok ? null : (str(r.reason) ?? 'refused');
+    return { ...c, ok, was: asState(r.was), reason, done };
+  });
+}
+
+/** Changes split into calls: per box, at most MAX_TOOL_CHANGES each. */
+export function toolCalls(
+  changes: readonly MemberChange[],
+  max = 20,
+): { boxId: string; changes: MemberChange[] }[] {
+  const out: { boxId: string; changes: MemberChange[] }[] = [];
+  for (const boxId of [...new Set(changes.map((c) => c.boxId))]) {
+    const mine = changes.filter((c) => c.boxId === boxId);
+    for (let i = 0; i < mine.length; i += max) out.push({ boxId, changes: mine.slice(i, i + max) });
+  }
+  return out;
+}
+
+/** The reasons a box gives that end with the box itself (it did not run
+ *  the tool): their changes stay staged, to send again. */
+export function boxLevel(a: MemberAnswer): boolean {
+  return !a.ok && !MEMBER_REASONS.has(a.reason ?? '');
+}
+
+const MEMBER_REASONS = new Set([
+  'login',
+  'owner',
+  'disabled',
+  'workspace',
+  'admin',
+  'last-moderator',
+  'refused',
+]);
+
+/** Plain words for one change's answer. */
+export function memberAnswerText(a: MemberAnswer): { tone: 'ok' | 'bad'; text: string } {
+  if (a.ok) {
+    if (a.was === a.role) return { tone: 'ok', text: 'No change: it was so already.' };
+    if (a.role === 'none') return { tone: 'ok', text: 'Removed.' };
+    const role = a.role === 'moderator' ? 'a Moderator' : 'a user';
+    if (a.was === 'none' || !a.was) return { tone: 'ok', text: `Added as ${role}.` };
+    return { tone: 'ok', text: `Now ${role}.` };
+  }
+  const nothing = ' Nothing was set.';
+  const bad = (text: string) => ({ tone: 'bad' as const, text });
+  switch (a.reason) {
+    case 'login':
+      return bad(`This login is no longer on this box.${nothing}`);
+    case 'owner':
+      return bad(`This is the owner of the box. The Control Center never changes it.${nothing}`);
+    case 'disabled':
+      return bad(`This login is disabled on that box. Lift the ban or enable it first.${nothing}`);
+    case 'workspace':
+      return bad(`This box has no shared workspace with this id.${nothing}`);
+    case 'admin':
+      return bad(
+        `This is the Admin workspace. Who is an Admin is changed on the box itself.${nothing}`,
+      );
+    case 'last-moderator':
+      return bad(
+        `This is the last Moderator of the workspace. Make another user a Moderator first.${nothing}`,
+      );
+    case 'refused':
+      return bad(`The box refused it.${nothing}`);
+    default:
+      return bad(`${toolReasonText(a.reason)}${nothing}`);
+  }
+}
+
+// --- what a change says, and where it stands --------------------------------------------
 
 /** The change named in full: who, which workspace, what role, which box. */
 export function describeChange(
@@ -715,94 +878,71 @@ export function describeChange(
 
 export type CellStatus = { tone: Tone; text: string; role: MemberState; waiting: boolean };
 
-/** Where the latest change of one cell stands: waiting, or the box's answer
- *  (only one newer than `since`, the people list's time, so an answer the
- *  list already shows is not repeated). Null: nothing to say. */
+const sameCell = (c: MemberChange, boxId: string, loginId: string, workspaceId: string) =>
+  c.boxId === boxId && c.loginId === loginId && c.workspaceId === workspaceId;
+
+/** Where one cell's latest change stands: sending, or its answer. */
 export function cellStatus(
-  box: Pick<FleetBox, 'writeJob' | 'writeResult'> | undefined,
+  answers: readonly MemberAnswer[],
+  sending: readonly MemberChange[],
+  boxId: string,
   loginId: string,
   workspaceId: string,
-  since: string | null = null,
 ): CellStatus | null {
-  if (!box) return null;
-  const same = (c: FleetWriteChange) =>
-    isMember(c) && c.loginId === loginId && c.workspaceId === workspaceId;
-  const waiting = (box.writeJob?.changes ?? []).filter(same).at(-1) as
-    (MemberWrite & { at: string }) | undefined;
-  if (waiting) {
-    return { tone: 'wait', text: 'Waiting for the next run.', role: waiting.role, waiting: true };
-  }
-  const done = (box.writeResult?.results ?? []).filter(same).at(-1) as
-    (FleetWriteAnswer & MemberWrite) | undefined;
+  const now = sending.filter((c) => sameCell(c, boxId, loginId, workspaceId)).at(-1);
+  if (now) return { tone: 'wait', text: 'Sending…', role: now.role, waiting: true };
+  const done = answers.filter((a) => sameCell(a, boxId, loginId, workspaceId)).at(-1);
   if (!done) return null;
-  if (since && done.done <= since && done.ok) return null;
-  const said = answerText(done);
+  const said = memberAnswerText(done);
   return { tone: said.tone, text: said.text, role: done.role, waiting: false };
 }
 
-/** Every workspace change for these logins, newest first: waiting ones,
- *  then the box's answers. */
+/** This session's workspace changes for these logins, newest first. */
 export function memberHistory(
-  fleetBoxes: readonly FleetBox[],
+  answers: readonly MemberAnswer[],
   logins: readonly { boxId: string; loginId: string }[],
   boxes: readonly FleetPeopleBox[],
-): { key: string; tone: Tone; label: string; text: string; at: string; by: string }[] {
-  const out: { key: string; tone: Tone; label: string; text: string; at: string; by: string }[] =
-    [];
-  for (const fb of fleetBoxes) {
-    const mine = new Set(logins.filter((l) => l.boxId === fb.id).map((l) => l.loginId));
-    if (mine.size === 0) continue;
-    (fb.writeJob?.changes ?? []).forEach((c, i) => {
-      if (!isMember(c) || !mine.has(c.loginId)) return;
-      out.push({
-        key: `${fb.id}-w-${i}`,
-        tone: 'wait',
-        label: describeChange({ ...c, boxId: fb.id }, boxes),
-        text: 'Waiting for the next run.',
-        at: c.at,
-        by: c.by,
-      });
-    });
-    (fb.writeResult?.results ?? []).forEach((r, i) => {
-      if (!isMember(r) || !mine.has(r.loginId)) return;
-      const said = answerText(r);
-      out.push({
-        key: `${fb.id}-r-${i}`,
+): { key: string; tone: Tone; label: string; text: string; at: string }[] {
+  const mine = new Set(logins.map((l) => `${l.boxId}:${l.loginId}`));
+  return answers
+    .map((a, i) => ({ a, i }))
+    .filter(({ a }) => mine.has(`${a.boxId}:${a.loginId}`))
+    .map(({ a, i }) => {
+      const said = memberAnswerText(a);
+      return {
+        key: `${i}`,
         tone: said.tone,
-        label: describeChange({ ...r, boxId: fb.id }, boxes),
+        label: describeChange(a, boxes),
         text: said.text,
-        at: r.done,
-        by: r.by,
-      });
-    });
-  }
-  return out.sort((a, b) => b.at.localeCompare(a.at));
+        at: a.done,
+      };
+    })
+    .sort((x, y) => y.at.localeCompare(x.at) || Number(y.key) - Number(x.key));
 }
 
-/** Why a box shows no people list, or null when it has one. */
+/** Why a box shows no people list, or an old one; null when it is current. */
 export function peopleReasonText(box: FleetPeopleBox, now: number = Date.now()): string | null {
   if (box.people) {
     if (!box.peopleReason) return null;
-    const words = (reasonText(box.peopleReason) ?? 'the read failed').replace(/\.$/, '');
+    const words = toolReasonText(box.peopleReason).replace(/\.$/, '');
     return `The last read failed (${words}). This list is from ${agoText(box.people.at, now)}.`;
   }
-  if (box.peopleReason === 'bad-call') {
-    return 'This box runs a release before Fleet users: it shows its logins only, without workspaces.';
-  }
-  if (box.peopleReason) return reasonText(box.peopleReason) ?? 'The last read failed.';
-  return 'No people list yet. It comes with the next good run.';
+  if (box.peopleReason) return toolReasonText(box.peopleReason);
+  return 'No people list yet.';
 }
 
-/** The toast after a send: how many changes went, and the boxes not queued. */
-export function membersSentText(
-  changes: readonly MemberChange[],
-  queued: readonly string[],
-): string {
-  const q = new Set(queued);
-  const sent = changes.filter((c) => q.has(c.boxId)).length;
-  const left = changes.length - sent;
+/** The toast after a send: how many changes the boxes made, refused, or
+ *  never ran. */
+export function sentSummary(answers: readonly MemberAnswer[]): {
+  tone: 'ok' | 'bad';
+  text: string;
+} {
   const n = (k: number) => (k === 1 ? '1 change' : `${k} changes`);
-  const head =
-    sent > 0 ? `Sent ${n(sent)}. Each box makes it at its next run.` : 'Nothing was queued.';
-  return left > 0 ? `${head} ${n(left)} not queued: 40 changes wait on that box already.` : head;
+  const ok = answers.filter((a) => a.ok).length;
+  const left = answers.filter(boxLevel).length;
+  const refused = answers.length - ok - left;
+  const parts = [`${n(ok)} made.`];
+  if (refused > 0) parts.push(`${n(refused)} refused by the box.`);
+  if (left > 0) parts.push(`${n(left)} not run: kept, to send again.`);
+  return { tone: refused + left > 0 ? 'bad' : 'ok', text: parts.join(' ') };
 }

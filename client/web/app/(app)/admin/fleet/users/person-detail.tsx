@@ -20,7 +20,7 @@ import {
 } from '@mantle/web-ui/ui/table';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime, timeAgo } from '@mantle/web-ui/lib/format-datetime';
-import { banKeysText, type FleetBan, type FleetOverview } from '@/lib/fleet';
+import { banKeysText, type FleetBan } from '@/lib/fleet';
 import {
   cellChoices,
   cellStatus,
@@ -36,6 +36,7 @@ import {
   stateWord,
   type FleetPeopleBox,
   type GridCell,
+  type MemberAnswer,
   type MemberChange,
   type MemberState,
   type Person,
@@ -127,7 +128,7 @@ function Cell({
 export function PersonDetail({
   person,
   peopleBoxes,
-  fleet,
+  answers,
   sending,
   onSend,
   onBan,
@@ -135,14 +136,15 @@ export function PersonDetail({
 }: {
   person: Person;
   peopleBoxes: FleetPeopleBox[];
-  fleet: FleetOverview;
-  sending: boolean;
+  /** This session's answers to workspace changes. */
+  answers: MemberAnswer[];
+  /** The changes on their way now. */
+  sending: MemberChange[];
   onSend: (changes: MemberChange[]) => Promise<MembersSent>;
   onBan: () => void;
   onLift: (ban: FleetBan) => void;
 }) {
   const grid = useMemo(() => membershipGrid(person, peopleBoxes), [person, peopleBoxes]);
-  const fleetById = useMemo(() => new Map(fleet.boxes.map((b) => [b.id, b])), [fleet.boxes]);
   const peopleById = useMemo(() => new Map(peopleBoxes.map((b) => [b.id, b])), [peopleBoxes]);
   const [staged, setStaged] = useState<Map<string, MemberChange>>(() => new Map());
   const [left, setLeft] = useState(0);
@@ -154,7 +156,7 @@ export function PersonDetail({
   const [to, setTo] = useState<string>('');
   const plan = from && to && from !== to ? copyPlan(person, from, to, peopleBoxes) : null;
   const banned = person.bans.length > 0;
-  const history = memberHistory(fleet.boxes, person.logins, peopleBoxes).slice(0, 12);
+  const history = memberHistory(answers, person.logins, peopleBoxes).slice(0, 12);
 
   const stage = (cell: Extract<GridCell, { kind: 'cell' }>, s: MemberState | undefined) => {
     setStaged((m) => {
@@ -310,8 +312,8 @@ export function PersonDetail({
       >
         {left > 0 && stagedList.length > 0 && (
           <Callout tone="warn" title="Not sent yet">
-            {left === 1 ? '1 change was' : `${left} changes were`} not queued: 40 changes wait on
-            that box already. They are kept here: send them again in a minute.
+            {left === 1 ? '1 change was' : `${left} changes were`} not run: the box did not take the
+            call (see each change below). They are kept here: send them again.
           </Callout>
         )}
         {grid.rows.length === 0 ? (
@@ -350,12 +352,7 @@ export function PersonDetail({
                       }
                       const status =
                         cell.kind === 'cell'
-                          ? cellStatus(
-                              fleetById.get(c.boxId),
-                              cell.loginId,
-                              cell.workspaceId,
-                              peopleById.get(c.boxId)?.people?.at ?? null,
-                            )
+                          ? cellStatus(answers, sending, c.boxId, cell.loginId, cell.workspaceId)
                           : null;
                       return (
                         <TableCell key={c.key} className="align-top">
@@ -487,13 +484,15 @@ export function PersonDetail({
 
       <ConfirmSend
         open={confirm !== null}
-        pending={sending}
+        pending={sending.length > 0}
         title={confirm?.title ?? ''}
         action="Send"
         onCancel={() => setConfirm(null)}
         onConfirm={() => void go()}
       >
-        <span className="block">Each box makes the change at its next run, within seconds.</span>
+        <span className="block">
+          Each box runs it now with its own checks, and answers within 25 seconds.
+        </span>
         <span className="mt-2 block space-y-1">
           {confirm?.changes.map((c) => (
             <span key={cellKey(c)} className="block text-foreground">

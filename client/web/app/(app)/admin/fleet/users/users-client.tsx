@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Users } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { timeAgo } from '@mantle/web-ui/lib/format-datetime';
 import {
   banKeysText,
+  boxName,
   liftText,
   OWNER_MATCH_TEXT,
   previewLine,
@@ -35,14 +36,36 @@ import {
   filterPeople,
   groupPeople,
   PEOPLE_FILTERS,
+  peopleReasonText,
   roleWord,
   type PeopleFilter,
   type Person,
 } from '@/lib/fleet-people';
-import { Callout, FleetScreen, ListEmpty, ListPane, Pill, useParam } from '../cc-kit';
+import {
+  Callout,
+  DetailPane,
+  FleetScreen,
+  ListEmpty,
+  ListPane,
+  Part,
+  Pill,
+  ScreenLink,
+  useMatrixRows,
+  useParam,
+} from '../cc-kit';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@mantle/web-ui/ui/table';
+import { ccHref } from '@/lib/fleet-view';
+import { NO_CHANNEL_TEXT } from '@/lib/fleet-tool';
 import { BulkPane } from './bulk-pane';
 import { PersonDetail } from './person-detail';
-import { useBanWrite, useMembersSend, usePeople } from './use-people';
+import { useBanWrite, useMembersWrite, usePeople } from './use-people';
 
 const isFilter = (v: string | null): v is PeopleFilter => PEOPLE_FILTERS.some((f) => f.id === v);
 
@@ -236,40 +259,132 @@ function LiftDialog({
   );
 }
 
+/** What shows while the Control Center has no admin channel: the login
+ *  counts each box already sends in its facts, and the active bans. */
+function Fallback({ data, onLift }: { data: FleetOverview; onLift: (ban: FleetBan) => void }) {
+  const { rows } = useMatrixRows(data.boxes);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const bans = data.bans.filter((b) => !b.liftedAt);
+  return (
+    <div className="mx-auto max-w-4xl">
+      <DetailPane icon={<Users />} title="Fleet users">
+        <Callout title="Names and workspaces show once the admin channel is on (Control Center release + each box's scope).">
+          {NO_CHANNEL_TEXT} Until then this screen shows how many logins each box has, and the bans.
+          A ban disables a person on every linked box.
+        </Callout>
+        <Part title="Logins on each box">
+          <div className="overflow-x-auto rounded-lg border border-border scrollbar-thin">
+            <Table aria-label="Logins on each box">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Box</TableHead>
+                  <TableHead className="text-right">Admins</TableHead>
+                  <TableHead className="text-right">Members</TableHead>
+                  <TableHead className="text-right">Disabled</TableHead>
+                  <TableHead className="text-right">All</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.boxes.map((b) => {
+                  const l = byId.get(b.id)?.facts?.status?.logins ?? null;
+                  return (
+                    <TableRow key={b.id}>
+                      <TableCell className="font-medium">{boxName(b)}</TableCell>
+                      {l ? (
+                        <>
+                          <TableCell className="text-right tabular-nums">{l.admin}</TableCell>
+                          <TableCell className="text-right tabular-nums">{l.member}</TableCell>
+                          <TableCell className="text-right tabular-nums">{l.disabled}</TableCell>
+                          <TableCell className="text-right tabular-nums">{l.total}</TableCell>
+                        </>
+                      ) : (
+                        <TableCell colSpan={4} className="text-right text-muted-foreground">
+                          {b.loginCount === null ? 'No facts yet' : `${b.loginCount} logins`}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </Part>
+        <Part
+          title={`Active bans (${bans.length})`}
+          action={<ScreenLink href={ccHref('bans')}>Open Bans</ScreenLink>}
+        >
+          {bans.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No active ban.</p>
+          ) : (
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {bans.map((b) => (
+                <li
+                  key={b.id}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 break-all">
+                    {banKeysText(b)}
+                    {b.reason ? <span className="text-muted-foreground">: {b.reason}</span> : null}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => onLift(b)}>
+                    {b.kind === 'archive' ? 'Retire ban' : 'Lift ban'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Part>
+      </DetailPane>
+    </div>
+  );
+}
+
 function People({ data, refresh }: { data: FleetOverview; refresh: () => void }) {
-  const query = usePeople(data.boxes);
+  const read = usePeople(data);
+  const query = read.query;
   const [param, setParam] = useParam('person');
   const [filterParam, setFilterParam] = useParam('show');
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [banning, setBanning] = useState<Person | null>(null);
   const [lifting, setLifting] = useState<{ ban: FleetBan; email: string } | null>(null);
-  const members = useMembersSend(refresh);
+  const members = useMembersWrite(read.reread);
   const banWrite = useBanWrite(refresh);
   const filter: PeopleFilter = isFilter(filterParam) ? filterParam : 'all';
 
-  const peopleBoxes = useMemo(() => query.data?.boxes ?? [], [query.data]);
+  const peopleBoxes = read.boxes;
   const people = useMemo(() => groupPeople(peopleBoxes, data.bans), [peopleBoxes, data.bans]);
   const shown = useMemo(() => filterPeople(people, filter, q), [people, filter, q]);
   const counts = useMemo(() => filterCounts(people, q), [people, q]);
   const pickedPeople = people.filter((p) => picked.has(p.email));
 
+  const liftDialog = (
+    <LiftDialog
+      ban={lifting?.ban ?? null}
+      email={lifting?.email ?? ''}
+      onClose={() => setLifting(null)}
+      write={banWrite}
+    />
+  );
+  if (data.boxes.length === 0) {
+    return <p className="p-6 text-sm text-muted-foreground">No box is linked.</p>;
+  }
   if (query.isLoading) {
     return (
       <div className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
-        <Spinner size={20} /> Loading the people of each box…
+        <Spinner size={20} /> Asking each box for its logins…
       </div>
     );
   }
-  if (query.data === null) {
+  if (read.channel === false) {
     return (
-      <p className="p-6 text-sm text-muted-foreground">
-        This Control Center runs a release before Fleet users. It shows here once the Control Center
-        is rolled.
-      </p>
+      <>
+        <Fallback data={data} onLift={(ban) => setLifting({ ban, email: '' })} />
+        {liftDialog}
+      </>
     );
   }
-  if (query.data === undefined) {
+  if (query.isError || read.channel === null) {
     return <p className="p-6 text-sm text-destructive-ink">Could not load the people.</p>;
   }
 
@@ -285,8 +400,9 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
       return next;
     });
   const allShownPicked = shown.length > 0 && shown.every((p) => picked.has(p.email));
-  const boxesWithoutPeople = peopleBoxes.filter((b) => !b.people).length;
-  const boxesOld = peopleBoxes.filter((b) => b.people && b.peopleReason).length;
+  const boxNotes = peopleBoxes
+    .map((b) => ({ b, why: peopleReasonText(b) }))
+    .filter((x): x is { b: (typeof peopleBoxes)[number]; why: string } => x.why !== null);
 
   return (
     <>
@@ -338,17 +454,14 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
                 </Button>
               ))}
             </div>
-            {boxesWithoutPeople > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {boxesWithoutPeople === 1 ? '1 box shows' : `${boxesWithoutPeople} boxes show`}{' '}
-                logins only, without workspaces.
-              </p>
-            )}
-            {boxesOld > 0 && (
-              <p className="text-xs text-warning-ink">
-                {boxesOld === 1 ? '1 box' : `${boxesOld} boxes`} did not answer the last read: the
-                list shown is the one kept. Open a person to see from when.
-              </p>
+            {boxNotes.length > 0 && (
+              <ul className="space-y-1" aria-label="Boxes not shown in full">
+                {boxNotes.map(({ b, why }) => (
+                  <li key={b.id} className="text-xs text-warning-ink">
+                    <span className="font-medium">{boxName(b)}:</span> {why}
+                  </li>
+                ))}
+              </ul>
             )}
             {pickedPeople.length > 0 && (
               <div className="flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
@@ -399,8 +512,8 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
               key={selected.email}
               person={selected}
               peopleBoxes={peopleBoxes}
-              fleet={data}
-              sending={members.pending}
+              answers={members.answers}
+              sending={members.sending}
               onSend={members.send}
               onBan={() => setBanning(selected)}
               onLift={(ban) => setLifting({ ban, email: selected.email })}
@@ -411,12 +524,7 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
         }
       />
       <BanDialog person={banning} onClose={() => setBanning(null)} write={banWrite} />
-      <LiftDialog
-        ban={lifting?.ban ?? null}
-        email={lifting?.email ?? ''}
-        onClose={() => setLifting(null)}
-        write={banWrite}
-      />
+      {liftDialog}
     </>
   );
 }
