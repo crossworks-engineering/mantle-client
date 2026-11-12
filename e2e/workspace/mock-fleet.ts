@@ -119,6 +119,67 @@ export type MockFleet = {
   defaultModel: { provider: string; keyId: string } | null;
   /** Every Default Model write body (null: a clear). */
   defaultModelSent: ({ provider: string; keyId: string } | null)[];
+  /** The admin channel (POST /api/fleet/tool): false is a Control Center
+   *  before it, whose route answers 404. */
+  toolOn: boolean;
+  /** A box that does not run tools, by box id: its reason (e.g. scope). */
+  toolRefused: Record<string, string>;
+  /** What workspace_user_set answers per change, by box id then
+   *  `loginId:workspaceId`: a refusal reason; absent: the change is made. */
+  memberRefusals: Record<string, Record<string, string>>;
+  /** Every POST /api/fleet/tool body. */
+  toolSent: Record<string, unknown>[];
+  /** A box whose answers come late, by box id: how many asks a call stays
+   *  pending first (each ask after the one that made it counts one). */
+  toolDelay: Record<string, number>;
+  /** users_list's page size (the tool's own is 150); small here so the
+   *  screen reads more than one page. */
+  usersPage: number;
+  /** A box whose answer is too large (truncated), by box id. */
+  toolTruncated: Record<string, boolean>;
+  /** The calls made and not handed out yet, by call id. */
+  toolCalls: Record<string, ToolCall>;
+  /** Each box's people list, its last read's reason and its ban-list
+   *  logins (only while the people list is null), by box id. */
+  people: Record<
+    string,
+    { people: PeopleList | null; peopleReason: string | null; logins: BanLogin[] | null }
+  >;
+};
+
+export type PeopleLogin = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  owner: boolean;
+  disabled: boolean;
+  archived: boolean;
+  lastSignInAt: string | null;
+  createdAt: string | null;
+  workspaces: { id: string; moderator: boolean }[];
+};
+export type PeopleList = {
+  schema: 1;
+  at: string;
+  workspaces: { id: string; name: string; admin: boolean }[];
+  logins: PeopleLogin[];
+};
+type BanLogin = {
+  id: string;
+  email: string;
+  owner: boolean;
+  disabled: boolean;
+  archived: boolean;
+  marked: boolean;
+};
+
+type ToolCall = {
+  id: string;
+  boxId: string;
+  name: string;
+  wait: number;
+  answer: { ok: boolean; reason: string | null; output?: unknown; truncated?: true };
 };
 
 /** The brain's provider keys the Default Model card offers (never a key:
@@ -300,7 +361,188 @@ export const newMockFleet = (): MockFleet => ({
   defaultModelOn: false,
   defaultModel: null,
   defaultModelSent: [],
+  toolOn: false,
+  toolRefused: {},
+  memberRefusals: {},
+  toolSent: [],
+  toolDelay: {},
+  toolTruncated: {},
+  usersPage: 150,
+  toolCalls: {},
+  people: {},
 });
+
+/** The ids of the Fleet users data: logins and workspaces on each box. */
+export const PEOPLE = {
+  a: {
+    admin: 'a0000000-0000-4000-8000-00000000000a',
+    projects: 'a0000000-0000-4000-8000-0000000000a1',
+    ops: 'a0000000-0000-4000-8000-0000000000a2',
+    field: 'a0000000-0000-4000-8000-0000000000a3',
+    owner: 'a1000000-0000-4000-8000-000000000001',
+    ann: 'a1000000-0000-4000-8000-000000000002',
+    bob: 'a1000000-0000-4000-8000-000000000003',
+    carol: 'a1000000-0000-4000-8000-000000000004',
+    dan: 'a1000000-0000-4000-8000-000000000005',
+  },
+  b: {
+    admin: 'b0000000-0000-4000-8000-00000000000b',
+    projects: 'b0000000-0000-4000-8000-0000000000b1',
+    ops: 'b0000000-0000-4000-8000-0000000000b2',
+    ann: 'b1000000-0000-4000-8000-000000000002',
+    erin: 'b1000000-0000-4000-8000-000000000006',
+  },
+} as const;
+
+const RECENT = () => new Date(Date.now() - 2 * 86_400_000).toISOString();
+const login = (p: Partial<PeopleLogin> & { id: string; email: string }): PeopleLogin => ({
+  name: null,
+  role: 'member',
+  owner: false,
+  disabled: false,
+  archived: false,
+  lastSignInAt: RECENT(),
+  createdAt: AT,
+  workspaces: [],
+  ...p,
+});
+
+/**
+ * Turns Fleet users on (and the fleet writes it needs). Box A: its owner,
+ * Ann (an Admin, also on Box B), Bob (the one Moderator of Projects), Carol
+ * (disabled, in no workspace, banned) and Dan (never signed in). Box B: Ann
+ * and Erin. Box B names its Projects workspace in lower case.
+ */
+export function withPeople(f: MockFleet): MockFleet {
+  const a = PEOPLE.a;
+  const b = PEOPLE.b;
+  const at = new Date().toISOString();
+  f.toolOn = true;
+  // Box A's five logins come in three pages.
+  f.usersPage = 2;
+  f.people = {
+    [FLEET_BOX.id]: {
+      peopleReason: null,
+      logins: null,
+      people: {
+        schema: 1,
+        at,
+        workspaces: [
+          { id: a.admin, name: 'Admin', admin: true },
+          { id: a.projects, name: 'Projects', admin: false },
+          { id: a.ops, name: 'Ops', admin: false },
+          { id: a.field, name: 'Field', admin: false },
+        ],
+        logins: [
+          login({
+            id: a.owner,
+            email: 'owner@example.com',
+            name: 'Box Owner',
+            role: 'admin',
+            owner: true,
+            workspaces: [{ id: a.admin, moderator: true }],
+          }),
+          login({
+            id: a.ann,
+            email: 'ann@example.com',
+            name: 'Ann Admin',
+            role: 'admin',
+            workspaces: [
+              { id: a.admin, moderator: true },
+              { id: a.projects, moderator: false },
+              { id: a.field, moderator: false },
+            ],
+          }),
+          login({
+            id: a.bob,
+            email: 'bob@example.com',
+            name: 'Bob Builder',
+            workspaces: [{ id: a.projects, moderator: true }],
+          }),
+          login({
+            id: a.carol,
+            email: 'carol@example.com',
+            name: 'Carol Gone',
+            disabled: true,
+          }),
+          login({
+            id: a.dan,
+            email: 'dan@example.com',
+            name: 'Dan New',
+            lastSignInAt: null,
+            workspaces: [{ id: a.ops, moderator: false }],
+          }),
+        ],
+      },
+    },
+    [FLEET_BOX_B.id]: {
+      peopleReason: null,
+      logins: null,
+      people: {
+        schema: 1,
+        at,
+        workspaces: [
+          { id: b.admin, name: 'Admin', admin: true },
+          { id: b.projects, name: 'projects', admin: false },
+          { id: b.ops, name: 'Ops', admin: false },
+        ],
+        logins: [
+          login({
+            id: b.ann,
+            email: 'ann@example.com',
+            name: 'Ann Admin',
+            workspaces: [{ id: b.ops, moderator: false }],
+          }),
+          login({
+            id: b.erin,
+            email: 'erin@example.com',
+            name: 'Erin Field',
+            workspaces: [{ id: b.projects, moderator: true }],
+          }),
+        ],
+      },
+    },
+  };
+  // Carol is banned: an active ban holds her email.
+  f.bans.push({
+    id: 'e0e0e0e0-0000-4000-8000-0000000000c0',
+    kind: 'disable',
+    emails: ['carol@example.com'],
+    issuer: null,
+    oid: null,
+    reason: 'Left',
+    madeBy: ADMIN,
+    madeAt: AT,
+    liftedBy: null,
+    liftedAt: null,
+    boxesMatched: 1,
+    loginsMatched: 1,
+    ownerIds: [],
+  });
+  return f;
+}
+
+/** What a login is in a workspace now: none, user or moderator. */
+function memberWas(f: MockFleet, boxId: string, loginId: string, workspaceId: string) {
+  const l = f.people[boxId]?.people?.logins.find((x) => x.id === loginId);
+  const m = l?.workspaces.find((w) => w.id === workspaceId);
+  return { login: l, was: m ? (m.moderator ? 'moderator' : 'user') : 'none' };
+}
+
+/** A workspace change made on the box: its people list then shows it. */
+function applyMember(
+  f: MockFleet,
+  boxId: string,
+  c: { loginId: unknown; workspaceId: unknown; role: unknown },
+) {
+  const list = f.people[boxId]?.people;
+  const l = list?.logins.find((x) => x.id === c.loginId);
+  if (!list || !l) return;
+  l.workspaces = l.workspaces.filter((w) => w.id !== c.workspaceId);
+  if (c.role !== 'none')
+    l.workspaces.push({ id: String(c.workspaceId), moderator: c.role === 'moderator' });
+  list.at = new Date().toISOString();
+}
 
 type Agent = { slug: string | null; model: string };
 
@@ -451,6 +693,68 @@ export function fleetAnswer(
         factsReason: f.facts[b.id]?.factsReason ?? null,
       }));
     return { status: 200, body: { boxes } };
+  }
+  if (path === '/api/fleet/tool' && method === 'POST') {
+    if (!f.toolOn) return { status: 404, body: { error: 'not found' } };
+    f.toolSent.push(body);
+    // The route's reply: the answers that came (each handed out once), the
+    // calls still on their way, and ids no box holds.
+    const reply = (ids: string[]) => {
+      const answers: unknown[] = [];
+      const pending: string[] = [];
+      const gone: string[] = [];
+      for (const id of ids) {
+        const c = f.toolCalls[id];
+        if (!c) {
+          gone.push(id);
+          continue;
+        }
+        if (c.wait > 0) {
+          pending.push(id);
+          continue;
+        }
+        delete f.toolCalls[id];
+        answers.push({
+          id,
+          boxId: c.boxId,
+          kind: 'tool',
+          name: c.name,
+          by: ADMIN,
+          at: AT,
+          sentAt: AT,
+          done: new Date().toISOString(),
+          ...c.answer,
+        });
+      }
+      return { status: 200, body: { answers, pending, gone } };
+    };
+    if (Array.isArray(body.callIds)) {
+      const ids = body.callIds as string[];
+      for (const id of ids) {
+        const c = f.toolCalls[id];
+        if (c && c.wait > 0) c.wait -= 1;
+      }
+      return reply(ids);
+    }
+    const boxIds = (body.boxIds as string[] | undefined) ?? [];
+    const name = String(body.name ?? '');
+    const args = (body.args as Record<string, unknown> | undefined) ?? {};
+    const linked = boxIds.filter((id) => f.boxes.some((b) => b.id === id));
+    if (linked.length === 0) {
+      return { status: 400, body: { error: 'No call was queued.' } };
+    }
+    const made = linked.map((boxId) => {
+      const id = uuid();
+      f.toolCalls[id] = {
+        id,
+        boxId,
+        name,
+        wait: f.toolDelay[boxId] ?? 0,
+        answer: runTool(f, boxId, name, args),
+      };
+      return id;
+    });
+    return reply(made);
   }
   if (path === '/api/fleet' && method === 'GET') {
     runKeyJobs(f);
@@ -604,4 +908,52 @@ export function fleetAnswer(
     return { status: 200, body: { ban } };
   }
   return null;
+}
+
+/** What a box's own tool answers (users_list, workspace_user_set). */
+function runTool(
+  f: MockFleet,
+  boxId: string,
+  name: string,
+  args: Record<string, unknown>,
+): ToolCall['answer'] {
+  const refused = f.toolRefused[boxId];
+  if (refused) return { ok: false, reason: refused };
+  if (f.toolTruncated[boxId])
+    return { ok: true, reason: null, output: '{"logins":[', truncated: true };
+  if (name === 'users_list') {
+    const people = f.people[boxId]?.people;
+    if (!people) return { ok: false, reason: 'error' };
+    // The tool's own paging: { offset, limit } in, { total, offset, next } out.
+    const limit = Math.min(Number(args.limit ?? 150) || 150, 150, f.usersPage);
+    const offset = Math.max(0, Number(args.offset ?? 0) || 0);
+    const end = offset + limit;
+    return {
+      ok: true,
+      reason: null,
+      output: {
+        ...people,
+        at: new Date().toISOString(),
+        logins: people.logins.slice(offset, end),
+        total: people.logins.length,
+        offset,
+        next: end < people.logins.length ? end : null,
+      },
+    };
+  }
+  if (name === 'workspace_user_set') {
+    const changes = (args.changes as Record<string, unknown>[] | undefined) ?? [];
+    if (changes.length < 1 || changes.length > 20) return { ok: false, reason: 'refused' };
+    const results = changes.map((c) => {
+      const loginId = String(c.loginId);
+      const workspaceId = String(c.workspaceId);
+      const { login: l, was } = memberWas(f, boxId, loginId, workspaceId);
+      const reason = f.memberRefusals[boxId]?.[`${loginId}:${workspaceId}`] ?? (l ? null : 'login');
+      if (reason) return { loginId, workspaceId, ok: false, reason };
+      applyMember(f, boxId, c as { loginId: unknown; workspaceId: unknown; role: unknown });
+      return { loginId, workspaceId, ok: true, was };
+    });
+    return { ok: true, reason: null, output: { results } };
+  }
+  return { ok: false, reason: 'tool' };
 }

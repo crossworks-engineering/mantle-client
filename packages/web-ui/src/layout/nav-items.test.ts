@@ -150,6 +150,7 @@ describe('the Admin group (owner, 2026-11-09)', () => {
     expect(cc.items.map((i) => i.name)).toEqual([
       'Overview',
       'Linked boxes',
+      'Fleet users',
       'Fleet matrix',
       'Bans',
       'Provider keys',
@@ -164,6 +165,7 @@ describe('the Admin group (owner, 2026-11-09)', () => {
       expect(i.href === '/admin/fleet' || i.href.startsWith('/admin/fleet/')).toBe(true);
     expect(matchNavItem('/admin/fleet')?.name).toBe('Overview');
     expect(matchNavItem('/admin/fleet/matrix')?.name).toBe('Fleet matrix');
+    expect(matchNavItem('/admin/fleet/users')?.name).toBe('Fleet users');
   });
 
   it('Settings no longer holds Company sign-in', () => {
