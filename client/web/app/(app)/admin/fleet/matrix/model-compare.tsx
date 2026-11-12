@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@mantle/web-ui/ui/select';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import {
   Table,
@@ -166,6 +167,7 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
   const [sent, setSent] = useState<Record<string, number>>({});
   const [ask, setAsk] = useState<Ask | null>(null);
   const { pending, send } = useFleetSend(spec.path, refresh);
+  const toast = useToast();
 
   const lines = compareLines(spec.keys, row('left'), row('right'), spec.read);
   const differing = lines.filter((l) => l.differs).length;
@@ -201,9 +203,22 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
   const confirm = async () => {
     if (!ask) return;
     const target = ask.toId;
-    // The pair changed while the question was open: send nothing.
-    if (ids[ask.to] !== target || ids[other(ask.to)] !== ask.fromId) {
+    // The pair changed while the question was open, or a newer read moved a
+    // line (its model, its route, or its facts went old): send nothing.
+    const from = other(ask.to);
+    const still = ask.changes.every((c) => {
+      const l = lines.find((x) => x.key === c.key);
+      return (
+        !!l &&
+        copyable(l, from) &&
+        l[from] === c.model &&
+        l.leftProvider === c.provider &&
+        l.leftEndpoint === c.endpoint
+      );
+    });
+    if (ids[ask.to] !== target || ids[from] !== ask.fromId || !still) {
       setAsk(null);
+      toast.info('The boxes changed while you looked. Nothing was sent: check the row again.');
       return;
     }
     const at = Date.now() - 60_000; // the brain stamps it; allow for clock drift
