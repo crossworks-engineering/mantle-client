@@ -36,7 +36,7 @@ import {
   type FleetFacts,
   type FleetMatrixRow,
 } from '@/lib/fleet-matrix';
-import { shippedSlugs } from '@/lib/fleet-models';
+import { shippedSlugs, workerKinds } from '@/lib/fleet-models';
 import { ccHref } from '@/lib/fleet-view';
 
 import { pctLevel, type BoxStatus } from '@/lib/status';
@@ -220,7 +220,7 @@ function AllBoxes({
         </div>
       </Part>
 
-      {shippedSlugs(rows).length > 0 && (
+      {(shippedSlugs(rows).length > 0 || workerKinds(rows).length > 0) && (
         <ModelCompare rows={rows} boxes={boxes} refresh={refresh} />
       )}
     </DetailPane>

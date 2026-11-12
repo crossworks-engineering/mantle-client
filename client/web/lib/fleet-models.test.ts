@@ -5,15 +5,20 @@ import type { FleetWriteAnswer } from './fleet-writes';
 import {
   canCopy,
   compareLines,
-  copyAllChanges,
+  agentChange,
+  copyAllLines,
   currentModel,
+  currentWorkerModel,
   defaultPair,
   FLEET_MODELS_PATH,
   MAX_MODEL_CHANGES,
-  modelAnswer,
-  modelWaiting,
   MODEL_ID,
   shippedSlugs,
+  workerChange,
+  workerKinds,
+  workerKindSettable,
+  writeAnswer,
+  writeWaiting,
 } from './fleet-models';
 
 const agent = (slug: string | null, model: string) => ({
@@ -86,9 +91,9 @@ describe('agent models, two boxes', () => {
     const right = row([agent('coder', 'm-2'), agent('writer', 'w')]);
     const lines = compareLines(['chat', 'coder', 'writer'], left, right);
     expect(lines).toEqual([
-      { slug: 'chat', left: 'c', right: null, differs: false, oneSided: true },
-      { slug: 'coder', left: 'm-1', right: 'm-2', differs: true, oneSided: false },
-      { slug: 'writer', left: 'w', right: 'w', differs: false, oneSided: false },
+      { key: 'chat', left: 'c', right: null, differs: false, oneSided: true },
+      { key: 'coder', left: 'm-1', right: 'm-2', differs: true, oneSided: false },
+      { key: 'writer', left: 'w', right: 'w', differs: false, oneSided: false },
     ]);
     expect(compareLines(['coder'], left, undefined)[0]).toMatchObject({
       right: null,
@@ -107,11 +112,13 @@ describe('agent models, two boxes', () => {
     expect(canCopy(lines[1]!, 'right')).toBe(true);
     expect(canCopy(lines[2]!, 'left')).toBe(false); // the same already
     expect(canCopy(lines[3]!, 'left')).toBe(false); // not on the other box
-    expect(copyAllChanges(lines, 'left')).toEqual([{ slug: 'a', model: 'm-1' }]);
-    expect(copyAllChanges(lines, 'right')).toEqual([
-      { slug: 'a', model: 'm-2' },
-      { slug: 'b', model: 'm-3' },
+    expect(copyAllLines(lines, 'left')).toEqual([{ key: 'a', model: 'm-1' }]);
+    expect(copyAllLines(lines, 'right')).toEqual([
+      { key: 'a', model: 'm-2' },
+      { key: 'b', model: 'm-3' },
     ]);
+    // An item the fleet may not set is left out.
+    expect(copyAllLines(lines, 'right', (k) => k !== 'a')).toEqual([{ key: 'b', model: 'm-3' }]);
   });
 
   it('sends at most the route cap in one request', () => {
@@ -121,7 +128,7 @@ describe('agent models, two boxes', () => {
       row(slugs.map((s) => agent(s, 'l'))),
       row(slugs.map((s) => agent(s, 'r'))),
     );
-    expect(copyAllChanges(lines, 'left')).toHaveLength(MAX_MODEL_CHANGES);
+    expect(copyAllLines(lines, 'left')).toHaveLength(MAX_MODEL_CHANGES);
   });
 
   it('reads what waits and the answer since a send', () => {
@@ -148,12 +155,76 @@ describe('agent models, two boxes', () => {
         ],
       },
     } as unknown as FleetBox;
-    expect(modelWaiting(box, 'coder')).toBe(true);
-    expect(modelWaiting(box, 'writer')).toBe(false);
-    expect(modelWaiting(undefined, 'coder')).toBe(false);
+    expect(writeWaiting(box, agentChange('coder'))).toBe(true);
+    expect(writeWaiting(box, agentChange('writer'))).toBe(false);
+    expect(writeWaiting(box, workerChange('coder'))).toBe(false);
+    expect(writeWaiting(undefined, agentChange('coder'))).toBe(false);
     const since = Date.parse('2026-11-12T10:00:00.000Z');
-    expect(modelAnswer(box, 'writer', since)?.reason).toBe('policy');
-    expect(modelAnswer(box, 'writer', since + 3_600_000)).toBeNull();
-    expect(modelAnswer(box, 'coder', 0)).toBeNull();
+    expect(writeAnswer(box, agentChange('writer'), since)?.reason).toBe('policy');
+    expect(writeAnswer(box, agentChange('writer'), since + 3_600_000)).toBeNull();
+    expect(writeAnswer(box, agentChange('coder'), 0)).toBeNull();
+    expect(writeAnswer(box, workerChange('writer'), 0)).toBeNull();
+  });
+});
+
+describe('AI worker models, two boxes', () => {
+  const w = (kind: string, model: string, def?: boolean) => ({
+    kind,
+    provider: 'openrouter',
+    model,
+    enabled: true,
+    ...(def === undefined ? {} : { default: def }),
+  });
+  const box = (workers: ReturnType<typeof w>[] | null): FleetMatrixRow => ({
+    id: 'r',
+    url: 'https://b',
+    label: null,
+    lastOkAt: null,
+    lastReason: null,
+    factsReason: null,
+    facts: workers ? ({ agents: [], workers } as never) : null,
+  });
+
+  it('names each kind once, sorted', () => {
+    expect(
+      workerKinds([
+        box([w('vision', 'a'), w('extractor', 'b')]),
+        box([w('vision', 'c')]),
+        box(null),
+      ]),
+    ).toEqual(['extractor', 'vision']);
+  });
+
+  it('reads the worker that runs the kind: the flagged one, else the only one', () => {
+    // Flagged (a rolled box).
+    expect(
+      currentWorkerModel(box([w('vision', 'a', false), w('vision', 'b', true)]), 'vision'),
+    ).toBe('b');
+    // Flags sent, none runs the kind: nothing to compare.
+    expect(currentWorkerModel(box([w('vision', 'a', false)]), 'vision')).toBeNull();
+    // A box before the flag: its one worker of the kind, else not known.
+    expect(currentWorkerModel(box([w('vision', 'a')]), 'vision')).toBe('a');
+    expect(currentWorkerModel(box([w('vision', 'a'), w('vision', 'b')]), 'vision')).toBeUndefined();
+    expect(currentWorkerModel(box([w('vision', 'a')]), 'stt')).toBeNull();
+    expect(currentWorkerModel(box(null), 'vision')).toBeNull();
+  });
+
+  it('compares by kind; a model not known never differs nor copies', () => {
+    const left = box([w('vision', 'a', true), w('stt', 's-1', true), w('embedding', 'e-1', true)]);
+    const right = box([w('vision', 'x'), w('vision', 'y'), w('stt', 's-2'), w('embedding', 'e-2')]);
+    const lines = compareLines(['embedding', 'stt', 'vision'], left, right, currentWorkerModel);
+    expect(lines[2]).toEqual({
+      key: 'vision',
+      left: 'a',
+      right: undefined,
+      differs: false,
+      oneSided: false,
+    });
+    expect(canCopy(lines[2]!, 'left')).toBe(false);
+    expect(lines[1]).toMatchObject({ differs: true });
+    // Embedding is never set by the fleet.
+    expect(workerKindSettable('embedding')).toBe(false);
+    expect(workerKindSettable('stt')).toBe(true);
+    expect(copyAllLines(lines, 'left', workerKindSettable)).toEqual([{ key: 'stt', model: 's-1' }]);
   });
 });

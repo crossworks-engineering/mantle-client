@@ -32,7 +32,9 @@ export type FleetFacts = {
     /** A person's own assistant. */
     assigned: boolean;
   }[];
-  workers: { kind: string; provider: string; model: string; enabled: boolean }[];
+  /** `default`: the worker that runs its kind. A box before the flag sends
+   *  none. */
+  workers: { kind: string; provider: string; model: string; enabled: boolean; default?: boolean }[];
   counts: { workspaces: number; apps: number };
   backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
 };

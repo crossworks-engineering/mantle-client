@@ -7,7 +7,7 @@
  */
 import { FLEET_PATH, type FleetBox } from './fleet';
 import type { FleetMatrixRow } from './fleet-matrix';
-import type { FleetWriteAnswer } from './fleet-writes';
+import type { FleetWriteAnswer, FleetWriteChange } from './fleet-writes';
 
 export const FLEET_MODELS_PATH = `${FLEET_PATH}/models`;
 
@@ -55,72 +55,118 @@ function sameOrigin(url: string, origin: string): boolean {
   }
 }
 
-/** One agent across the two boxes. A model is null where the box has no
- *  facts or no such agent, `''` where the agent has no model. */
+/** A model as one box runs it: the id (`''`: no model), null where the box
+ *  has no facts or no such item, undefined where it is not known which one
+ *  runs (a box before the workers' `default` flag, with two of a kind). */
+export type BoxModel = string | null | undefined;
+
+/** One agent, or one worker kind, across the two boxes. */
 export type CompareLine = {
-  slug: string;
-  left: string | null;
-  right: string | null;
-  /** Both boxes run the agent, with different models. */
+  key: string;
+  left: BoxModel;
+  right: BoxModel;
+  /** Both boxes run it, with different models. */
   differs: boolean;
   /** Only one of the two boxes runs it. */
   oneSided: boolean;
 };
 
 export function compareLines(
-  slugs: readonly string[],
+  keys: readonly string[],
   left: FleetMatrixRow | undefined,
   right: FleetMatrixRow | undefined,
+  read: (row: FleetMatrixRow, key: string) => BoxModel = currentModel,
 ): CompareLine[] {
-  return slugs.map((slug) => {
-    const l = left ? currentModel(left, slug) : null;
-    const r = right ? currentModel(right, slug) : null;
+  return keys.map((key) => {
+    const l = left ? read(left, key) : null;
+    const r = right ? read(right, key) : null;
     return {
-      slug,
+      key,
       left: l,
       right: r,
-      differs: l !== null && r !== null && l !== r,
+      differs: typeof l === 'string' && typeof r === 'string' && l !== r,
       oneSided: (l === null) !== (r === null),
     };
   });
 }
 
 /** Whether a line's model can go from one side to the other: both boxes
- *  run the agent, they differ, and the source model is one the brain
- *  takes. */
+ *  run it, they differ, and the source model is one the brain takes. */
 export function canCopy(line: CompareLine, from: 'left' | 'right'): boolean {
   const model = line[from];
-  return line.differs && model !== null && MODEL_ID.test(model);
+  return line.differs && typeof model === 'string' && MODEL_ID.test(model);
 }
 
-/** The changes that bring every differing line of one side onto the other,
- *  at most the route's cap. */
-export function copyAllChanges(
+/** Every differing line of one side, as { key, model }, at most the
+ *  route's cap. `may` leaves out lines that cannot be set (a worker kind
+ *  the fleet does not set). */
+export function copyAllLines(
   lines: readonly CompareLine[],
   from: 'left' | 'right',
-): { slug: string; model: string }[] {
+  may: (key: string) => boolean = () => true,
+): { key: string; model: string }[] {
   return lines
-    .filter((l) => canCopy(l, from))
-    .map((l) => ({ slug: l.slug, model: l[from]! }))
+    .filter((l) => may(l.key) && canCopy(l, from))
+    .map((l) => ({ key: l.key, model: l[from] as string }))
     .slice(0, MAX_MODEL_CHANGES);
 }
 
-/** Whether a box still waits to send an agentModel change for this agent. */
-export function modelWaiting(box: FleetBox | undefined, slug: string): boolean {
-  return (box?.writeJob?.changes ?? []).some((c) => c.kind === 'agentModel' && c.slug === slug);
+// --- AI workers, by kind ---------------------------------------------------------
+
+/** A worker kind the fleet does not set: a new embedding model would not
+ *  match the stored vectors (the box refuses it too). */
+export const WORKER_KIND_NOT_SET = 'embedding';
+
+export function workerKindSettable(kind: string): boolean {
+  return kind !== WORKER_KIND_NOT_SET;
 }
 
-/** The box's newest answer for this agent's model asked at or after
- *  `since` (ms), or null. */
-export function modelAnswer(
+/** The worker kinds the matrix names on any box, each once, sorted. */
+export function workerKinds(rows: readonly FleetMatrixRow[]): string[] {
+  const out = new Set<string>();
+  for (const r of rows) for (const w of r.facts?.workers ?? []) if (w.kind) out.add(w.kind);
+  return [...out].sort();
+}
+
+/** The model of the worker that runs this kind on a box (its default).
+ *  A box before the `default` flag: its one worker of the kind, else not
+ *  known. Null where the box has no facts or no worker of the kind. */
+export function currentWorkerModel(row: FleetMatrixRow, kind: string): BoxModel {
+  const all = (row.facts?.workers ?? []).filter((w) => w.kind === kind);
+  if (all.length === 0) return null;
+  const flagged = all.find((w) => w.default === true);
+  if (flagged) return flagged.model;
+  if (all.some((w) => w.default === false)) return null; // flags sent, none runs it
+  return all.length === 1 ? all[0]!.model : undefined;
+}
+
+// --- what waits, and the answers -------------------------------------------------
+
+/** Matches the change that sets one agent's model, or one worker kind's. */
+export const agentChange = (slug: string) => (c: FleetWriteChange) =>
+  c.kind === 'agentModel' && c.slug === slug;
+export const workerChange = (kind: string) => (c: FleetWriteChange) =>
+  c.kind === 'workerModel' && c.worker === kind;
+
+/** Whether a box still waits to send a change that `match` names. */
+export function writeWaiting(
   box: FleetBox | undefined,
-  slug: string,
+  match: (c: FleetWriteChange) => boolean,
+): boolean {
+  return (box?.writeJob?.changes ?? []).some(match);
+}
+
+/** The box's newest answer that `match` names, asked at or after `since`
+ *  (ms), or null. */
+export function writeAnswer(
+  box: FleetBox | undefined,
+  match: (c: FleetWriteChange) => boolean,
   since: number,
 ): FleetWriteAnswer | null {
   const answers = box?.writeResult?.results ?? [];
   for (let i = answers.length - 1; i >= 0; i--) {
     const a = answers[i]!;
-    if (a.kind !== 'agentModel' || a.slug !== slug) continue;
+    if (!match(a)) continue;
     const at = Date.parse(a.at);
     if (!Number.isNaN(at) && at >= since) return a;
   }
