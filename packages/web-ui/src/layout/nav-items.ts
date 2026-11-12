@@ -133,6 +133,7 @@ export const ADDED_NAV_GROUPS: ReadonlyArray<{ after: string; group: NavGroup }>
         { name: 'Fleet matrix', href: `${CC}/matrix`, icon: Grid3x3 },
         { name: 'Bans', href: `${CC}/bans`, icon: ShieldBan },
         { name: 'Provider keys', href: `${CC}/keys`, icon: KeyRound },
+        { name: 'Fleet sign-in', href: `${CC}/sso`, icon: Building2 },
         { name: 'Agent models', href: `${CC}/models`, icon: Bot },
         { name: 'Pool entry', href: `${CC}/pools`, icon: SquareStack },
         { name: 'Worker groups', href: `${CC}/groups`, icon: UsersRound },

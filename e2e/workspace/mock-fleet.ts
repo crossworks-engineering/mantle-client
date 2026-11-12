@@ -145,7 +145,56 @@ export type MockFleet = {
     string,
     { people: PeopleList | null; peopleReason: string | null; logins: BanLogin[] | null }
   >;
+  /** Fleet sign-in (POST /api/fleet/sso): false is a Control Center before
+   *  it, whose route answers 404. */
+  ssoOn: boolean;
+  /** Each box's sign-in status as the box would answer it, by box id;
+   *  absent: the box does not answer (unreachable). */
+  ssoStatus: Record<string, SsoStatus>;
+  /** The Control Center's view of each box, by box id. */
+  ssoView: Record<string, unknown>;
+  /** Every POST /api/fleet/sso body (the password and secret included, so
+   *  a spec can check what was sent). */
+  ssoSent: Record<string, unknown>[];
 };
+
+type SsoStatus = {
+  mode: 'off' | 'setup' | 'optional' | 'required';
+  tenant: string | null;
+  issuer: string;
+  issuerFrom: 'env' | 'row' | 'none';
+  clientId: string;
+  clientIdFrom: 'env' | 'row' | 'none';
+  secret: 'env' | 'row' | 'none';
+  secretSetAt: string | null;
+  redirectUri: string;
+  missing: string[];
+  linked: number | null;
+  active: number | null;
+};
+
+/** The password the mock takes on a Fleet sign-in save. */
+export const SSO_PASSWORD = 'the right password';
+
+/** Box A in setup mode with nothing set yet; box B does not answer. */
+export function withSso(f: MockFleet): MockFleet {
+  f.ssoOn = true;
+  f.ssoStatus[FLEET_BOX.id] = {
+    mode: 'setup',
+    tenant: null,
+    issuer: '',
+    issuerFrom: 'none',
+    clientId: '',
+    clientIdFrom: 'env',
+    secret: 'none',
+    secretSetAt: null,
+    redirectUri: 'https://box-a.example.invalid/api/auth/oidc/callback',
+    missing: [],
+    linked: 0,
+    active: 0,
+  };
+  return f;
+}
 
 export type PeopleLogin = {
   id: string;
@@ -370,6 +419,10 @@ export const newMockFleet = (): MockFleet => ({
   usersPage: 150,
   toolCalls: {},
   people: {},
+  ssoOn: false,
+  ssoStatus: {},
+  ssoView: {},
+  ssoSent: [],
 });
 
 /** The ids of the Fleet users data: logins and workspaces on each box. */
@@ -694,6 +747,7 @@ export function fleetAnswer(
       }));
     return { status: 200, body: { boxes } };
   }
+  if (path === '/api/fleet/sso' && method === 'POST') return ssoAnswer(f, body);
   if (path === '/api/fleet/tool' && method === 'POST') {
     if (!f.toolOn) return { status: 404, body: { error: 'not found' } };
     f.toolSent.push(body);
@@ -956,4 +1010,78 @@ function runTool(
     return { ok: true, reason: null, output: { results } };
   }
   return { ok: false, reason: 'tool' };
+}
+
+/** POST /api/fleet/sso: every ask is answered at once (nothing pending). */
+function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: number; body: unknown } {
+  if (!f.ssoOn) return { status: 404, body: { error: 'not found' } };
+  f.ssoSent.push(body);
+  if (body.do === 'list') {
+    return {
+      status: 200,
+      body: {
+        boxes: f.boxes.map((b) => ({
+          id: b.id,
+          url: b.url,
+          label: b.label,
+          lastOkAt: b.lastOkAt,
+          lastReason: b.lastReason,
+          version: b.id === FLEET_BOX.id ? '0.601.0' : null,
+          ssoView: f.ssoView[b.id] ?? null,
+        })),
+      },
+    };
+  }
+  if (body.do === 'set' && body.password !== SSO_PASSWORD) {
+    return { status: 403, body: { code: 'password', error: 'That password is not right.' } };
+  }
+  const at = new Date().toISOString();
+  const boxIds = body.do === 'set' ? [String(body.boxId)] : ((body.boxIds as string[]) ?? []);
+  const name = body.do === 'set' ? 'sso_set' : body.do === 'test' ? 'sso_test' : 'sso_status';
+  const answers = boxIds.map((boxId) => {
+    const prev = (f.ssoView[boxId] ?? null) as Record<string, unknown> | null;
+    const status = f.ssoStatus[boxId];
+    const base = { id: uuid(), boxId, kind: 'sso', name, by: ADMIN, at, done: at };
+    if (!status) {
+      f.ssoView[boxId] = {
+        ...(prev ?? { test: null, set: null }),
+        at,
+        reason: 'unreachable',
+        status: prev?.status ?? null,
+      };
+      return { ...base, ok: false, reason: 'unreachable' };
+    }
+    let test: string | undefined;
+    if (body.do === 'test') test = status.secret === 'none' ? 'no-secret' : 'ok';
+    const fields: string[] = [];
+    if (body.do === 'set') {
+      if (typeof body.tenant === 'string') {
+        status.tenant = body.tenant;
+        status.issuerFrom = 'row';
+        fields.push('tenant');
+      }
+      if (typeof body.secret === 'string') {
+        status.secret = 'row';
+        status.secretSetAt = at;
+        fields.push('secret');
+      }
+    }
+    f.ssoView[boxId] = {
+      at,
+      reason: null,
+      status: { ...status },
+      test: test ? { code: test, at, by: ADMIN } : ((prev?.test as unknown) ?? null),
+      set:
+        body.do === 'set'
+          ? { fields, ok: true, reason: null, by: ADMIN, at }
+          : ((prev?.set as unknown) ?? null),
+    };
+    return {
+      ...base,
+      ok: true,
+      reason: null,
+      output: { ok: true, ...(test ? { test } : {}), status: { ...status } },
+    };
+  });
+  return { status: 200, body: { answers, pending: [], gone: [] } };
 }

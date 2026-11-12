@@ -154,6 +154,7 @@ describe('the Admin group (owner, 2026-11-09)', () => {
       'Fleet matrix',
       'Bans',
       'Provider keys',
+      'Fleet sign-in',
       'Agent models',
       'Pool entry',
       'Worker groups',
