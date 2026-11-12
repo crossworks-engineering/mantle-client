@@ -144,7 +144,8 @@ describe('UPLOAD_DONE_KEYS', () => {
         return seen ? ['a.txt', 'b.txt'] : ['a.txt'];
       };
       const observer = new QueryObserver(qc, { queryKey: key, queryFn });
-      const unsubscribe = observer.subscribe(() => {});
+      const statuses: string[] = [];
+      const unsubscribe = observer.subscribe((r) => statuses.push(r.status));
       // The first fetch is running, and read the folder before b.txt.
       await vi.waitFor(() => expect(calls).toBe(1));
       landed = true;
@@ -154,6 +155,8 @@ describe('UPLOAD_DONE_KEYS', () => {
       await new Promise((r) => setTimeout(r, 20));
       expect(qc.getQueryData(key)).toEqual(['a.txt', 'b.txt']);
       expect(calls).toBe(2);
+      // The dropped fetch never shows as an error.
+      expect(statuses).not.toContain('error');
       unsubscribe();
       qc.clear();
     },
