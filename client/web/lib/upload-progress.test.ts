@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect } from 'vitest';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { describe, it, expect, vi } from 'vitest';
 import {
   aggregateProgress,
   clashVerdict,
@@ -17,6 +18,7 @@ import {
   storedFilename,
   updateRate,
   UPLOAD_DONE_KEYS,
+  refreshAfterUpload,
   uploadForm,
 } from './upload-progress';
 
@@ -111,18 +113,51 @@ describe('UPLOAD_DONE_KEYS', () => {
     expect(screen).toContain("queryKey: ['tree', 'files']");
   });
 
-  it('a done upload asks them again, letting a running fetch finish', () => {
+  it('a done upload asks them again, in the success branch only', () => {
     const provider = read('../components/uploads/upload-provider.tsx');
     const done = provider.indexOf("update(id, { status: 'done'");
-    const ask = provider.indexOf('for (const queryKey of UPLOAD_DONE_KEYS) {');
+    const ask = provider.indexOf('void refreshAfterUpload(queryClient);');
     expect(done).toBeGreaterThan(-1);
-    // In the done branch, before any error handling.
     expect(ask).toBeGreaterThan(done);
     expect(ask).toBeLessThan(provider.indexOf('} catch (err) {', done));
-    expect(provider).toContain(
-      'void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });',
-    );
   });
+
+  // The audit's race: a file finishes while a fetch that read the folder
+  // before it landed is still running. The view must end with the file,
+  // whether it showed a list already or was on its first load.
+  it.each([
+    ['showing a list', ['a.txt'] as string[] | undefined],
+    ['on its first load', undefined],
+  ])(
+    'a fetch running when the file lands is dropped, and the view %s ends with it',
+    async (_name, shown) => {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const key = ['files', 'list', 'files.work'];
+      if (shown) qc.setQueryData(key, shown);
+      let landed = false;
+      let calls = 0;
+      let release: () => void = () => {};
+      const queryFn = async () => {
+        calls++;
+        const seen = landed;
+        if (calls === 1) await new Promise<void>((r) => (release = r));
+        return seen ? ['a.txt', 'b.txt'] : ['a.txt'];
+      };
+      const observer = new QueryObserver(qc, { queryKey: key, queryFn });
+      const unsubscribe = observer.subscribe(() => {});
+      // The first fetch is running, and read the folder before b.txt.
+      await vi.waitFor(() => expect(calls).toBe(1));
+      landed = true;
+      await refreshAfterUpload(qc);
+      release();
+      await vi.waitFor(() => expect(qc.getQueryData(key)).toEqual(['a.txt', 'b.txt']));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(qc.getQueryData(key)).toEqual(['a.txt', 'b.txt']);
+      expect(calls).toBe(2);
+      unsubscribe();
+      qc.clear();
+    },
+  );
 });
 
 describe('name clashes', () => {

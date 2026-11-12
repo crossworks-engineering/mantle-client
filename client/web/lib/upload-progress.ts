@@ -3,6 +3,7 @@
  * pre-check message, and the aggregate progress across a batch. Kept free of
  * React so they can be unit-tested and reused by any other upload surface.
  */
+import type { QueryClient } from '@tanstack/react-query';
 
 const KB = 1024;
 const MB = KB * 1024;
@@ -59,10 +60,21 @@ export function uploadForm(parentPath: string, file: Blob, replace = false): For
 
 /** The views a finished upload (or replace) changes, as the Files screen's
  *  own refresh names them: every Files view (list, pane, tree, Recent, Data
- *  files) and the tree rail, which lists files too. Asked again at once, so
- *  the new file shows without a reload and without waiting on the realtime
- *  stream (owner, 2026-11-12). */
+ *  files) and the tree rail, which lists files too. */
 export const UPLOAD_DONE_KEYS: ReadonlyArray<readonly string[]> = [['files'], ['tree', 'files']];
+
+/** Ask those views again at once, so the new file shows without a reload
+ *  and without waiting on the realtime stream (owner, 2026-11-12). A fetch
+ *  already running may have read the folder before this file landed: it is
+ *  cancelled first (its answer dropped), then the views are fetched again.
+ *  Without the cancel, a view still on its first load would join that fetch
+ *  and end without the file. */
+export async function refreshAfterUpload(queryClient: QueryClient): Promise<void> {
+  for (const queryKey of UPLOAD_DONE_KEYS) {
+    await queryClient.cancelQueries({ queryKey });
+    void queryClient.invalidateQueries({ queryKey });
+  }
+}
 
 /** Exponential moving average of the transfer rate, so the ETA does not
  *  jitter with every progress event. `prev` null seeds it. */

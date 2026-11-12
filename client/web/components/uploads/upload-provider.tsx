@@ -38,7 +38,7 @@ import {
   overLimitMessage,
   progressTicker,
   spreadsheetHint,
-  UPLOAD_DONE_KEYS,
+  refreshAfterUpload,
   uploadForm,
 } from '@/lib/upload-progress';
 import type { AggregateProgress, ClashVerdict } from '@/lib/upload-progress';
@@ -193,11 +193,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       });
       update(id, { status: 'done', loaded: entry.file.size, rate: null });
       pendingRef.current.delete(id);
-      // Show it now: the realtime stream can be late or blocked. A fetch
-      // already running is left to finish (no restart per file of a batch).
-      for (const queryKey of UPLOAD_DONE_KEYS) {
-        void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
-      }
+      // Show it now: the realtime stream can be late or blocked.
+      void refreshAfterUpload(queryClient);
     } catch (err) {
       if (err instanceof UploadAbortedError) {
         update(id, { status: 'cancelled', rate: null });
