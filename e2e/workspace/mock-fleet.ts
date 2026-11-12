@@ -160,6 +160,7 @@ export type MockFleet = {
 
 type SsoStatus = {
   mode: 'off' | 'setup' | 'optional' | 'required';
+  modeFrom?: 'env' | 'row' | 'none';
   tenant: string | null;
   issuer: string;
   issuerFrom: 'env' | 'row' | 'none';
@@ -181,6 +182,7 @@ export function withSso(f: MockFleet): MockFleet {
   f.ssoOn = true;
   f.ssoStatus[FLEET_BOX.id] = {
     mode: 'setup',
+    modeFrom: 'row',
     tenant: null,
     issuer: '',
     issuerFrom: 'none',
@@ -1032,12 +1034,20 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
       },
     };
   }
-  if (body.do === 'set' && body.password !== SSO_PASSWORD) {
+  if ((body.do === 'set' || body.do === 'mode') && body.password !== SSO_PASSWORD) {
     return { status: 403, body: { code: 'password', error: 'That password is not right.' } };
   }
   const at = new Date().toISOString();
-  const boxIds = body.do === 'set' ? [String(body.boxId)] : ((body.boxIds as string[]) ?? []);
-  const name = body.do === 'set' ? 'sso_set' : body.do === 'test' ? 'sso_test' : 'sso_status';
+  const one = body.do === 'set' || body.do === 'mode';
+  const boxIds = one ? [String(body.boxId)] : ((body.boxIds as string[]) ?? []);
+  const name =
+    body.do === 'set'
+      ? 'sso_set'
+      : body.do === 'mode'
+        ? 'sso_mode'
+        : body.do === 'test'
+          ? 'sso_test'
+          : 'sso_status';
   const answers = boxIds.map((boxId) => {
     const prev = (f.ssoView[boxId] ?? null) as Record<string, unknown> | null;
     const status = f.ssoStatus[boxId];
@@ -1050,6 +1060,34 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
         status: prev?.status ?? null,
       };
       return { ...base, ok: false, reason: 'unreachable' };
+    }
+    if (body.do === 'mode') {
+      // The box's rule: no .env mode line, and one step up only.
+      const order = ['off', 'setup', 'optional', 'required'];
+      const from = status.mode;
+      const reason =
+        status.modeFrom === 'env'
+          ? 'env-wins'
+          : order.indexOf(String(body.mode)) !== order.indexOf(from) + 1
+            ? 'mode'
+            : null;
+      if (!reason) {
+        status.mode = body.mode as SsoStatus['mode'];
+        status.modeFrom = 'row';
+      }
+      f.ssoView[boxId] = {
+        ...(prev ?? { test: null, set: null }),
+        at,
+        reason: null,
+        status: { ...status },
+        mode: { to: body.mode, from, ok: !reason, reason, by: ADMIN, at },
+      };
+      return {
+        ...base,
+        ok: !reason,
+        reason,
+        output: { ok: !reason, ...(reason ? { reason } : {}), from, status: { ...status } },
+      };
     }
     let test: string | undefined;
     if (body.do === 'test') test = status.secret === 'none' ? 'no-secret' : 'ok';
@@ -1067,6 +1105,7 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
       }
     }
     f.ssoView[boxId] = {
+      ...(prev ?? {}),
       at,
       reason: null,
       status: { ...status },

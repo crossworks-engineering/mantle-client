@@ -7,7 +7,8 @@ import { FLEET_BOX, newMockFleet, SSO_PASSWORD, withSso } from './mock-fleet';
 /**
  * Control Center > Fleet sign-in: each box's company sign-in staged from
  * the Control Center (POST /api/fleet/sso). The secret is typed once, sent
- * with the person's own password, and never shown. In-memory brain
+ * with the person's own password, and never shown. The mode goes up one
+ * step at a time from here, never down; required asks a warning first. In-memory brain
  * (mock-fleet.ts withSso: box A in setup mode, box B does not answer).
  *
  * E2E_SHOTS=<dir> also saves screenshots there.
@@ -88,6 +89,74 @@ test('a save asks the password, sends only the filled fields, and never shows th
   await expect(
     main.getByText('The provider accepted the client id and secret.', { exact: false }),
   ).toBeVisible();
+});
+
+test('the mode goes up one step at a time: Turn on after a Test, required after a warning', async ({
+  page,
+}) => {
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Read status' }).click();
+  // Setup, no Test passed yet: Turn on waits for one.
+  const turnOn = main.getByRole('button', { name: 'Turn on (optional)' });
+  await expect(turnOn).toBeDisabled();
+  await expect(main.getByText('Run a Test first.', { exact: false })).toBeVisible();
+  await main.getByLabel('Client secret').fill('the-secret-value');
+  await main.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(dialog).toHaveCount(0);
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await expect(turnOn).toBeEnabled();
+
+  await turnOn.click();
+  await expect(dialog.getByRole('heading', { name: 'Raise to Optional' })).toBeVisible();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Raise mode' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(main.getByText('Raised to Optional.', { exact: true })).toBeVisible();
+  expect(sent('mode').at(-1)).toEqual({
+    do: 'mode',
+    boxId: FLEET_BOX.id,
+    mode: 'optional',
+    password: SSO_PASSWORD,
+  });
+
+  // Required: the warning first, then the password.
+  await main.getByRole('button', { name: 'Make required' }).click();
+  await expect(
+    dialog.getByRole('heading', { name: 'Make company sign-in required?' }),
+  ).toBeVisible();
+  await expect(dialog).toContainText('0 of 0 active logins are linked');
+  await expect(dialog).toContainText('--mode optional');
+  await shot(page, 'fleet-sso-required-warning');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(sent('mode')).toHaveLength(1);
+  await main.getByRole('button', { name: 'Make required' }).click();
+  await dialog.getByRole('button', { name: 'I understand, continue' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Raise to Required' })).toBeVisible();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Raise mode' }).click();
+  await expect(main.getByText('Raised to Required.', { exact: true })).toBeVisible();
+  // No step above required, and none down from here.
+  await expect(main.getByRole('button', { name: /Open setup|Turn on|Make required/ })).toHaveCount(
+    0,
+  );
+  await expect(main.getByText('Required is the top mode.', { exact: false })).toBeVisible();
+});
+
+test('a mode set in the box .env cannot be raised from here', async ({ page }) => {
+  api.fleet!.ssoStatus[FLEET_BOX.id]!.modeFrom = 'env';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Read status' }).click();
+  await expect(main.getByRole('button', { name: 'Turn on (optional)' })).toBeDisabled();
+  await expect(main.getByText('Set in .env', { exact: false })).toBeVisible();
+  await expect(main.getByText('from .env').first()).toBeVisible();
 });
 
 test('a Control Center before Fleet sign-in says so', async ({ page }) => {

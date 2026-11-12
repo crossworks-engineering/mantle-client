@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   answerText,
   askMany,
+  blockedText,
+  modeBody,
+  nextStep,
+  requiredWarning,
   FLEET_SSO_PATH,
   formRules,
   fromLabel,
@@ -183,5 +187,81 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
       return { answers: [], pending: [], gone: [] };
     });
     expect(sizes).toEqual([50, 1]);
+  });
+
+  it('offers one raise at a time, never down, and says why when it cannot', () => {
+    const row = (mode: FleetSsoStatus['mode'], modeFrom?: FleetSsoStatus['modeFrom']) =>
+      status({ mode, ...(modeFrom ? { modeFrom } : {}) });
+    expect(nextStep(row('off', 'none'), null)).toEqual({
+      mode: 'setup',
+      label: 'Open setup',
+      blocked: null,
+    });
+    // Turning on asks a passed Test first (the page's rule, not the box's).
+    expect(nextStep(row('setup', 'row'), null)).toMatchObject({
+      mode: 'optional',
+      blocked: 'test',
+    });
+    expect(nextStep(row('setup', 'row'), 'secret-refused').blocked).toBe('test');
+    expect(nextStep(row('setup', 'row'), 'ok')).toEqual({
+      mode: 'optional',
+      label: 'Turn on (optional)',
+      blocked: null,
+    });
+    expect(nextStep(row('optional', 'row'), null)).toEqual({
+      mode: 'required',
+      label: 'Make required',
+      blocked: null,
+    });
+    expect(nextStep(row('required', 'row'), 'ok')).toEqual({
+      mode: null,
+      label: null,
+      blocked: 'top',
+    });
+    // A .env mode line wins; a box a release behind has no modeFrom.
+    expect(nextStep(row('setup', 'env'), 'ok').blocked).toBe('env');
+    expect(nextStep(row('off', 'env'), null).blocked).toBe('env');
+    expect(nextStep(row('off'), null).blocked).toBe('old');
+    expect(nextStep(null, null).blocked).toBe('none');
+    for (const b of ['env', 'old', 'test', 'none', 'top'] as const) {
+      expect(blockedText(b).length).toBeGreaterThan(10);
+    }
+    expect(blockedText('env')).toContain('--mode cc');
+  });
+
+  it('sends the raise with the password, and reads its answer', () => {
+    expect(modeBody(A, 'optional', 'pw')).toEqual({
+      do: 'mode',
+      boxId: A,
+      mode: 'optional',
+      password: 'pw',
+    });
+    const raised = answer({
+      name: 'sso_mode',
+      ok: true,
+      output: { ok: true, from: 'setup', status: status({ mode: 'optional' }) },
+    });
+    expect(answerText(raised)).toEqual({ tone: 'ok', text: 'Raised to Optional.' });
+    const envWins = answer({
+      name: 'sso_mode',
+      ok: false,
+      output: { ok: false, reason: 'env-wins' },
+    });
+    expect(answerText(envWins)).toMatchObject({ tone: 'bad' });
+    expect(answerText(envWins).text).toContain('.env sets the mode');
+    const mode = answer({ name: 'sso_mode', ok: false, output: { ok: false, reason: 'mode' } });
+    expect(answerText(mode).text).toContain('one step up');
+    // A box a release behind: the call's own code.
+    expect(answerText(answer({ name: 'sso_mode', ok: false, reason: 'bad-call' })).text).toBe(
+      ssoReasonText('bad-call'),
+    );
+  });
+
+  it('warns before required: what it does, the numbers, the way back', () => {
+    const lines = requiredWarning({ linked: 3, active: 5 });
+    expect(lines.join(' ')).toContain('3 of 5 active logins are linked, 2 are not');
+    expect(lines.join(' ')).toContain('original account');
+    expect(lines.join(' ')).toContain('--mode optional');
+    expect(requiredWarning({ linked: null, active: null }).join(' ')).toContain('0 of 0');
   });
 });

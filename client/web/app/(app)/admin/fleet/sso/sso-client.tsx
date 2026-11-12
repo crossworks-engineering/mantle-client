@@ -43,14 +43,19 @@ import {
   answerText,
   askMany,
   askSso,
+  blockedText,
   FLEET_SSO_KEY,
   formRules,
   fromLabel,
   hasChange,
   linksText,
   listSso,
+  modeBody,
   modeLabel,
+  modeRefusalText,
+  nextStep,
   readAnswer,
+  requiredWarning,
   secretText,
   setBody,
   settleSso,
@@ -60,6 +65,7 @@ import {
   type FleetSsoRow,
   type FleetSsoStatus,
   type SsoFrom,
+  type SsoStep,
 } from '@/lib/fleet-sso';
 import { isNoChannel } from '@/lib/fleet-tool';
 import { boxesText } from '@/lib/fleet-view';
@@ -80,7 +86,7 @@ import { refusalText } from '../fleet-section';
 const ALL = 'all';
 
 const HELP =
-  'Set the box to setup mode first (scripts/sso-env.sh <box> --mode setup). Going live stays a .env step on the box (--mode optional). In optional or required mode a new secret is saved only when its Test passes.';
+  'Raise each box one step at a time: Open setup, stage the values, Test, then Turn on. Required comes later, after a warning. The Control Center never lowers the mode: the way down is the box .env (scripts/sso-env.sh <box> --mode optional or off), and a mode line there always wins. In optional or required mode a new secret is saved only when its Test passes.';
 
 /** The words of a refused ask: the brain's own, or a rate limit. */
 function askRefusal(err: unknown, fallback: string): string {
@@ -213,11 +219,17 @@ function PasswordDialog({
   onOpenChange,
   send,
   onDone,
+  title = 'Save company sign-in',
+  description = 'Type your password to send it to the box.',
+  submit: submitLabel = 'Save sign-in',
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   send: (password: string) => Promise<FleetSsoAnswers>;
   onDone: (first: FleetSsoAnswers) => void;
+  title?: string;
+  description?: string;
+  submit?: string;
 }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +252,7 @@ function PasswordDialog({
       setPassword('');
       onDone(first);
     } catch (err) {
-      setError(askRefusal(err, 'Could not save. Try again.'));
+      setError(askRefusal(err, 'Could not send it. Try again.'));
     } finally {
       setPending(false);
     }
@@ -250,8 +262,8 @@ function PasswordDialog({
     <Dialog open={open} onOpenChange={change}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Save company sign-in</DialogTitle>
-          <DialogDescription>Type your password to send it to the box.</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate>
           <FieldGroup>
@@ -277,13 +289,104 @@ function PasswordDialog({
                 Cancel
               </Button>
               <SubmitButton pending={pending} disabled={!password} data-agent-risk="person">
-                Save sign-in
+                {submitLabel}
               </SubmitButton>
             </div>
           </FieldGroup>
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// --- the warning before required ------------------------------------------------------
+
+function RequiredWarning({
+  open,
+  onOpenChange,
+  status,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  status: FleetSsoStatus;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Make company sign-in required?</DialogTitle>
+          <DialogDescription>Read what required does on this box first.</DialogDescription>
+        </DialogHeader>
+        <ul className="list-disc space-y-2 pl-5 text-sm">
+          {requiredWarning(status).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <div className="flex justify-end gap-2 border-t border-border pt-4">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm}>
+            I understand, continue
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The mode, where it comes from, and the one raise the page offers. */
+function ModePart({
+  status,
+  last,
+  lastTest,
+  busy,
+  onRaise,
+}: {
+  status: FleetSsoStatus | null;
+  last: NonNullable<FleetSsoRow['ssoView']>['mode'] | null;
+  lastTest: string | null;
+  busy: boolean;
+  onRaise: (mode: SsoStep) => void;
+}) {
+  const next = nextStep(status, lastTest);
+  return (
+    <Part title="Sign-in mode">
+      <div className="flex flex-wrap items-center gap-3">
+        <ModePill status={status} />
+        {status && fromLabel(status.modeFrom ?? 'none') && (
+          <span className="text-xs text-muted-foreground">
+            {fromLabel(status.modeFrom ?? 'none')}
+          </span>
+        )}
+        {next.mode && (
+          <Button
+            type="button"
+            size="sm"
+            className="ml-auto"
+            variant={next.mode === 'required' ? 'destructive' : 'default'}
+            disabled={next.blocked !== null || busy}
+            data-agent-risk="person"
+            onClick={() => onRaise(next.mode)}
+          >
+            {next.label}
+          </Button>
+        )}
+      </div>
+      {next.blocked && <p className="text-xs text-muted-foreground">{blockedText(next.blocked)}</p>}
+      {last && (
+        <p className={cn('text-xs', last.ok ? 'text-muted-foreground' : TONE_TEXT.bad)}>
+          Last raise to {last.to} by {last.by}, {formatDateTime(last.at)}:{' '}
+          {last.ok
+            ? 'done.'
+            : last.reason === 'env-wins' || last.reason === 'mode'
+              ? modeRefusalText(last.reason)
+              : ssoReasonText(last.reason)}
+        </p>
+      )}
+    </Part>
   );
 }
 
@@ -311,7 +414,10 @@ function OneBox({ row }: { row: FleetSsoRow }) {
   // Bumped by a save: the next secret starts hidden again.
   const [fieldKey, setFieldKey] = useState(0);
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState<null | 'status' | 'test' | 'set'>(null);
+  const [busy, setBusy] = useState<null | 'status' | 'test' | 'set' | 'mode'>(null);
+  // The raise asked: the warning first for required, then the password.
+  const [raising, setRaising] = useState<SsoStep | null>(null);
+  const [warned, setWarned] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const form = { tenant, clientId, secret };
 
@@ -349,6 +455,23 @@ function OneBox({ row }: { row: FleetSsoRow }) {
       setNotice(said);
       if (said.tone === 'bad') toast.error('The box did not save it.');
       else toast.success('Saved on the box.');
+    } catch (err) {
+      setNotice({ tone: 'bad', text: askRefusal(err, 'Could not read the answer of the box.') });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const raised = async (first: FleetSsoAnswers) => {
+    setRaising(null);
+    setWarned(false);
+    setBusy('mode');
+    setNotice(null);
+    try {
+      const said = noticeOf(await settle(first), row.id);
+      setNotice(said);
+      if (said.tone === 'bad') toast.error('The box did not raise the mode.');
+      else toast.success('Mode raised on the box.');
     } catch (err) {
       setNotice({ tone: 'bad', text: askRefusal(err, 'Could not read the answer of the box.') });
     } finally {
@@ -446,6 +569,17 @@ function OneBox({ row }: { row: FleetSsoRow }) {
         )}
       </Part>
 
+      <ModePart
+        status={status}
+        last={view?.mode ?? null}
+        lastTest={view?.test?.code ?? null}
+        busy={busy !== null}
+        onRaise={(mode) => {
+          setWarned(mode !== 'required');
+          setRaising(mode);
+        }}
+      />
+
       <Part title="Stage the sign-in">
         <form
           noValidate
@@ -508,7 +642,7 @@ function OneBox({ row }: { row: FleetSsoRow }) {
               </FieldDescription>
             </Field>
             <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
-              {busy === 'set' || busy === 'test' ? (
+              {busy === 'set' || busy === 'test' || busy === 'mode' ? (
                 <span className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
                   <Spinner size={16} /> Waiting for the box…
                 </span>
@@ -538,6 +672,30 @@ function OneBox({ row }: { row: FleetSsoRow }) {
         onOpenChange={setAsking}
         send={(password) => askSso(setBody(row.id, form, rules, password))}
         onDone={(first) => void saved(first)}
+      />
+      {raising === 'required' && status && (
+        <RequiredWarning
+          open={!warned}
+          onOpenChange={(open) => {
+            if (!open) setRaising(null);
+          }}
+          status={status}
+          onConfirm={() => setWarned(true)}
+        />
+      )}
+      <PasswordDialog
+        open={raising !== null && warned}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRaising(null);
+            setWarned(false);
+          }
+        }}
+        title={raising ? `Raise to ${modeLabel(raising)}` : 'Raise the mode'}
+        description="Type your password to send it to the box. The Control Center cannot lower the mode again."
+        submit="Raise mode"
+        send={(password) => askSso(modeBody(row.id, raising!, password))}
+        onDone={(first) => void raised(first)}
       />
     </DetailPane>
   );

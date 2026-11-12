@@ -8,6 +8,9 @@
  *  - `{ do: 'list' }`: every box with its last sign-in view;
  *  - `{ do: 'status' | 'test', boxIds }`: ask 1 to 50 boxes;
  *  - `{ do: 'set', boxId, tenant?, clientId?, secret?, password }`;
+ *  - `{ do: 'mode', boxId, mode, password }`: raise the box's sign-in mode
+ *    one step (off, setup, optional, required), never down; the box holds
+ *    the rule, and a mode line in its .env always wins;
  *  - `{ do: 'answers', callIds }`: the calls still pending (1 to 100).
  * The route waits up to 25 s, then hands back the ids still pending. The
  * Control Center saves each answer into the box's view, so the list is read
@@ -31,11 +34,17 @@ export const MAX_SSO_CALL_IDS = 100;
 export const SSO_FOLLOW_UPS = 4;
 
 export type SsoMode = 'off' | 'setup' | 'optional' | 'required';
+/** What the Control Center may raise a box to, one step at a time. */
+export type SsoStep = Exclude<SsoMode, 'off'>;
 export type SsoFrom = 'env' | 'row' | 'none';
 
 /** What a box says of its sign-in. Never a value of the secret. */
 export type FleetSsoStatus = {
   mode: SsoMode;
+  /** Where the mode comes from: the box .env (the Control Center cannot
+   *  raise it), the Control Center, or neither (off). Absent from a box a
+   *  release behind. */
+  modeFrom?: SsoFrom;
   tenant: string | null;
   issuer: string;
   issuerFrom: SsoFrom;
@@ -57,6 +66,15 @@ export type FleetSsoView = {
   status: FleetSsoStatus | null;
   test: { code: string; at: string; by: string } | null;
   set: { fields: string[]; ok: boolean; reason: string | null; by: string; at: string } | null;
+  /** The last raise of the mode: the mode asked, and the one before. */
+  mode?: {
+    to: string;
+    from: string | null;
+    ok: boolean;
+    reason: string | null;
+    by: string;
+    at: string;
+  } | null;
 };
 
 export type FleetSsoRow = {
@@ -74,6 +92,8 @@ export type FleetSsoOutput = {
   reason?: string | null;
   test?: string;
   secretCleared?: true;
+  /** sso_mode: the mode before the raise. */
+  from?: string;
   status?: FleetSsoStatus;
 };
 
@@ -81,7 +101,7 @@ export type FleetSsoAnswer = {
   id: string;
   boxId: string;
   kind: 'sso';
-  name: 'sso_status' | 'sso_set' | 'sso_test';
+  name: 'sso_status' | 'sso_set' | 'sso_test' | 'sso_mode';
   by: string;
   at: string;
   done?: string;
@@ -103,6 +123,7 @@ export type FleetSsoAsk =
       secret?: string;
       password: string;
     }
+  | { do: 'mode'; boxId: string; mode: SsoStep; password: string }
   | { do: 'answers'; callIds: string[] };
 
 // --- what the form may change ---------------------------------------------------------
@@ -156,6 +177,80 @@ export function hasChange(
     (rules.clientId && !!form.clientId.trim()) ||
     (rules.secret && !!form.secret.trim())
   );
+}
+
+// --- the one-way mode ------------------------------------------------------------------
+
+/** The next step up and its button's word. */
+const NEXT: Record<SsoMode, { mode: SsoStep; label: string } | null> = {
+  off: { mode: 'setup', label: 'Open setup' },
+  setup: { mode: 'optional', label: 'Turn on (optional)' },
+  optional: { mode: 'required', label: 'Make required' },
+  required: null,
+};
+
+/**
+ * The one raise the page offers a box now, or why none. The Control Center
+ * raises one step at a time and never lowers (the box holds that rule too):
+ *  - `env`: the box .env sets the mode, which always wins;
+ *  - `old`: the box runs a release before the raise;
+ *  - `top`: required already;
+ *  - `test`: setup, and the last Test did not pass (the page asks a passed
+ *    Test before turning sign-in on; the box does not);
+ *  - `none`: no status read yet.
+ */
+export function nextStep(
+  status: FleetSsoStatus | null,
+  lastTest: string | null,
+):
+  | { mode: SsoStep; label: string; blocked: null | 'env' | 'old' | 'test' }
+  | { mode: null; label: null; blocked: 'none' | 'top' } {
+  if (!status) return { mode: null, label: null, blocked: 'none' };
+  const next = NEXT[status.mode];
+  if (!next) return { mode: null, label: null, blocked: 'top' };
+  if (status.modeFrom === 'env') return { ...next, blocked: 'env' };
+  if (status.modeFrom === undefined) return { ...next, blocked: 'old' };
+  if (next.mode === 'optional' && lastTest !== 'ok') return { ...next, blocked: 'test' };
+  return { ...next, blocked: null };
+}
+
+/** Why the raise button is off, in a sentence. */
+export function blockedText(blocked: 'env' | 'old' | 'test' | 'none' | 'top'): string {
+  switch (blocked) {
+    case 'env':
+      return 'Set in .env: the box .env holds MANTLE_OIDC_MODE, which always wins. Remove it with scripts/sso-env.sh <box> --mode cc to raise the mode from here.';
+    case 'old':
+      return 'The box runs an older release without the raise from the Control Center. Update it.';
+    case 'test':
+      return 'Run a Test first. Sign-in turns on only after a Test passes.';
+    case 'none':
+      return 'Read the status first.';
+    case 'top':
+      return 'Required is the top mode. The way down is the box .env (scripts/sso-env.sh <box> --mode optional).';
+  }
+}
+
+/** The raise body. */
+export function modeBody(
+  boxId: string,
+  mode: SsoStep,
+  password: string,
+): Extract<FleetSsoAsk, { do: 'mode' }> {
+  return { do: 'mode', boxId, mode, password };
+}
+
+/** What the warning before "Make required" says: what required does, the
+ *  numbers, and the way back. */
+export function requiredWarning(status: Pick<FleetSsoStatus, 'linked' | 'active'>): string[] {
+  const linked = status.linked ?? 0;
+  const active = status.active ?? 0;
+  const unlinked = Math.max(active - linked, 0);
+  return [
+    'Old password sessions of linked logins end. They sign in with the company account only.',
+    `Every unlinked login is held to a link step at its next sign-in. Now: ${linked} of ${active} active logins are linked, ${unlinked} are not.`,
+    'The original account and honoured outside marks keep their passwords.',
+    'The Control Center cannot lower the mode. The way back is optional in the box .env (scripts/sso-env.sh <box> --mode optional).',
+  ];
 }
 
 // --- words ------------------------------------------------------------------------------
@@ -265,12 +360,26 @@ export function readAnswer(a: FleetSsoAnswer): {
   };
 }
 
+/** Why a box refused a raise. */
+export function modeRefusalText(reason: 'env-wins' | 'mode'): string {
+  return reason === 'env-wins'
+    ? 'The box .env sets the mode, which always wins, so it was not raised.'
+    : 'Not one step up from the mode the box runs now, or required cannot work on the box yet (its sign-in settings must be on). Read the status and try again.';
+}
+
 /** What a person reads after one answer of a box. */
 export function answerText(a: FleetSsoAnswer): { tone: 'ok' | 'warn' | 'bad'; text: string } {
   const r = readAnswer(a);
   if (!r.ok) {
+    if (a.name === 'sso_mode' && (r.reason === 'env-wins' || r.reason === 'mode')) {
+      return { tone: 'bad', text: modeRefusalText(r.reason) };
+    }
     const test = r.reason === 'test' && r.test ? ` ${testText(r.test).text}` : '';
     return { tone: 'bad', text: `${ssoReasonText(r.reason)}${test}` };
+  }
+  if (a.name === 'sso_mode') {
+    const to = a.output?.status?.mode;
+    return { tone: 'ok', text: to ? `Raised to ${modeLabel(to)}.` : 'Raised.' };
   }
   if (a.name === 'sso_test') {
     const t = r.test ? testText(r.test) : null;
