@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   aggregateProgress,
@@ -14,6 +16,7 @@ import {
   spreadsheetHint,
   storedFilename,
   updateRate,
+  uploadDoneKeys,
   uploadForm,
 } from './upload-progress';
 
@@ -94,6 +97,31 @@ describe('uploadForm', () => {
   it('sends replace before the file part too', () => {
     const form = uploadForm('files', new Blob(['x']), true);
     expect([...form.keys()]).toEqual(['parentPath', 'confirm', 'replace', 'file']);
+  });
+});
+
+describe('uploadDoneKeys', () => {
+  it("names the folder's list and pane, the tree and Recent", () => {
+    expect(uploadDoneKeys('files.work')).toEqual([
+      ['files', 'list', 'files.work'],
+      ['files', 'pane', 'files.work'],
+      ['files', 'tree'],
+      ['files', 'recent'],
+    ]);
+  });
+  it('matches the keys the Files screen reads', () => {
+    const read = (f: string) =>
+      readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8').replace(/\s+/g, ' ');
+    expect(read('../app/(app)/files/files-client.tsx')).toContain(
+      "queryKey: ['files', 'list', currentPath],",
+    );
+    expect(read('../app/(app)/files/files-client.tsx')).toContain("queryKey: ['files', 'tree'],");
+    expect(read('../app/(app)/files/files-client.tsx')).toContain("queryKey: ['files', 'recent'],");
+    expect(read('../app/(app)/files/files-panes.tsx')).toContain(
+      "queryKey: ['files', 'pane', path],",
+    );
+    const provider = read('../components/uploads/upload-provider.tsx');
+    expect(provider).toContain('for (const queryKey of uploadDoneKeys(entry.parentPath)) {');
   });
 });
 

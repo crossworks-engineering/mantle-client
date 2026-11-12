@@ -19,6 +19,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -37,6 +38,7 @@ import {
   overLimitMessage,
   progressTicker,
   spreadsheetHint,
+  uploadDoneKeys,
   uploadForm,
 } from '@/lib/upload-progress';
 import type { AggregateProgress, ClashVerdict } from '@/lib/upload-progress';
@@ -152,6 +154,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const idRef = useRef(0);
   const uploadOneRef = useRef<(id: string) => Promise<void>>(undefined);
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const update = useCallback((id: string, patch: Partial<UploadTask>) => {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -190,6 +193,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       });
       update(id, { status: 'done', loaded: entry.file.size, rate: null });
       pendingRef.current.delete(id);
+      // Show it now: the realtime stream can be late or blocked.
+      for (const queryKey of uploadDoneKeys(entry.parentPath)) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
     } catch (err) {
       if (err instanceof UploadAbortedError) {
         update(id, { status: 'cancelled', rate: null });

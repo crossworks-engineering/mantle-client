@@ -57,6 +57,19 @@ export function uploadForm(parentPath: string, file: Blob, replace = false): For
   return form;
 }
 
+/** The Files views a finished upload (or replace) into `parentPath` changes:
+ *  that folder's list and its pane, the folder tree, and Recent. Asked again
+ *  at once, so the new file shows without a reload and without waiting on
+ *  the realtime stream (owner, 2026-11-12). */
+export function uploadDoneKeys(parentPath: string): ReadonlyArray<readonly string[]> {
+  return [
+    ['files', 'list', parentPath],
+    ['files', 'pane', parentPath],
+    ['files', 'tree'],
+    ['files', 'recent'],
+  ];
+}
+
 /** Exponential moving average of the transfer rate, so the ETA does not
  *  jitter with every progress event. `prev` null seeds it. */
 export function updateRate(
