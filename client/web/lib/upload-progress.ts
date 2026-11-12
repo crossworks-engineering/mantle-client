@@ -40,29 +40,22 @@ export function overLimitMessage(size: number, limit: number): string {
 
 /**
  * The upload's form, in the order the brain reads it: the folder, then
- * `confirm` (a yes to a folder shared with the team or clients, which the
- * brain reads before it streams the file) and `replace` (write over a file of
- * the same name in place), then the file itself. A field after the file part
- * would reach the brain only once the bytes had.
+ * `confirm` and `replace` (write over a file of the same name in place), then
+ * the file itself. A field after the file part would reach the brain only
+ * once the bytes had.
+ *
+ * `confirm` is always sent: a new file takes its folder's sharing with no
+ * question (owner's word, 2026-11-12). A brain from before that still asks
+ * for it on a shared folder, and takes this yes; a newer brain ignores it.
  */
-export function uploadForm(
-  parentPath: string,
-  file: Blob,
-  confirm = false,
-  replace = false,
-): FormData {
+export function uploadForm(parentPath: string, file: Blob, replace = false): FormData {
   const form = new FormData();
   form.set('parentPath', parentPath);
-  if (confirm) form.set('confirm', 'true');
+  form.set('confirm', 'true');
   if (replace) form.set('replace', 'true');
   form.set('file', file);
   return form;
 }
-
-/** The brain's 409 on an upload into a shared folder it was not told of
- *  (the screen's view of the folder was stale): what the dock says. */
-export const SHARED_UPLOAD_REFUSED =
-  'The folder is shared now, so everyone it is shared with would read this. Upload it again from Files to confirm.';
 
 /** Exponential moving average of the transfer rate, so the ETA does not
  *  jitter with every progress event. `prev` null seeds it. */

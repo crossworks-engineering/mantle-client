@@ -82,18 +82,18 @@ describe('aggregateProgress', () => {
 });
 
 describe('uploadForm', () => {
-  it('sends confirm before the file part, so the brain reads it first', () => {
-    const form = uploadForm('files.shared', new Blob(['x']), true);
+  // A new file asks nothing (owner's word, 2026-11-12): confirm always goes,
+  // before the file part, so a brain from before that rule takes the yes
+  // before it streams the bytes; a newer brain ignores it.
+  it('always sends confirm before the file part', () => {
+    const form = uploadForm('files.shared', new Blob(['x']));
     expect([...form.keys()]).toEqual(['parentPath', 'confirm', 'file']);
     expect(form.get('confirm')).toBe('true');
     expect(form.get('parentPath')).toBe('files.shared');
   });
   it('sends replace before the file part too', () => {
-    const form = uploadForm('files', new Blob(['x']), false, true);
-    expect([...form.keys()]).toEqual(['parentPath', 'replace', 'file']);
-  });
-  it('sends no confirm unless asked', () => {
-    expect([...uploadForm('files', new Blob(['x'])).keys()]).toEqual(['parentPath', 'file']);
+    const form = uploadForm('files', new Blob(['x']), true);
+    expect([...form.keys()]).toEqual(['parentPath', 'confirm', 'replace', 'file']);
   });
 });
 

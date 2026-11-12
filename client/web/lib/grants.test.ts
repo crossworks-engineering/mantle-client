@@ -29,7 +29,6 @@ import {
   isItemGone,
   isNoGrants,
   uploadVisibleTo,
-  uploadLine,
   appMoveLines,
   needsConfirm,
   rowNote,
@@ -405,12 +404,9 @@ describe('upload into a folder (S6)', () => {
       row({ wsId: 'x', name: 'Board', excluded: true, viaFolder: { id: 'f', title: 'F' } }),
     ];
     expect(uploadVisibleTo({ rows })).toEqual(['Admin', 'Sales']);
-    expect(uploadLine(['Admin', 'Sales'], 2)).toBe(
-      'These 2 files will also be visible to: Admin, Sales.',
-    );
   });
 
-  it('asks nothing for a folder only its home reads', () => {
+  it('names nobody for a folder only its home reads', () => {
     expect(uploadVisibleTo({ rows: [row({ isHome: true })] })).toBeNull();
     expect(uploadVisibleTo(null)).toBeNull();
   });

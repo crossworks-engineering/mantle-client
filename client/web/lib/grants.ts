@@ -502,19 +502,14 @@ export function folderConfirm(
 // ── Upload into a folder ────────────────────────────────────────────────
 
 /** Who reads what lands in a folder (S6), when it is shared beyond its home:
- *  every row that is not removed here. Null when nobody else reads it. */
+ *  every row that is not removed here. Null when nobody else reads it. Shown
+ *  on the drop zone only: an upload asks nothing (owner's word, 2026-11-12). */
 export function uploadVisibleTo(
   view: Pick<GrantsView, 'rows'> | null | undefined,
 ): string[] | null {
   const live = (view?.rows ?? []).filter((r) => !r.excluded);
   if (!live.some((r) => !r.isHome)) return null;
   return live.map((r) => r.name);
-}
-
-/** The question before an upload into a shared folder. */
-export function uploadLine(names: readonly string[], count: number): string {
-  const what = count === 1 ? 'This file' : `These ${count} files`;
-  return `${what} will also be visible to: ${names.join(', ')}.`;
 }
 
 // ── The open link's served list (plan 8.1, contract 30 and 32) ─────────

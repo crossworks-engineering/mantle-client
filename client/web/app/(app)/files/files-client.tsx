@@ -5,7 +5,7 @@ import { ItemHeader } from '@/components/layout/item-header';
 import { AccessSlot } from '@/components/share/access-slot';
 import { itemAccess } from '@/lib/item-access';
 import { guardedNavigate } from '@/lib/nav-guard';
-import { grantsKey, grantsUrl, uploadLine, uploadVisibleTo, type GrantsView } from '@/lib/grants';
+import { grantsKey, grantsUrl, uploadVisibleTo, type GrantsView } from '@/lib/grants';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { WorkspaceChips } from '@/components/share/workspace-chips';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -351,10 +351,10 @@ function FilesView({
   const { enqueue } = useUploads();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const triggerUpload = () => fileInputRef.current?.click();
-  // Into a folder shared beyond its home, what lands is read there at once
-  // (S6): asked once per upload, then sent with `confirm` (the brain refuses
-  // it without, 409). Who reads it comes from the folder's grants (W8: no
-  // level, so no other source).
+  // A new file takes its folder's sharing with no confirm (owner's word,
+  // 2026-11-12): an upload just goes. Who reads the folder is shown on the
+  // drop zone only, from its grants (W8: no level, so no other source); a
+  // view the caller cannot read shows nothing and asks nothing.
   const folderGrants = useQuery({
     queryKey: grantsKey(currentFolder?.id ?? 'none'),
     queryFn: () => apiFetch<GrantsView>(grantsUrl(currentFolder!.id)),
@@ -362,18 +362,9 @@ function FilesView({
     retry: false,
   });
   const visibleTo = currentFolder ? uploadVisibleTo(folderGrants.data) : null;
-  const asksOnUpload = visibleTo !== null;
-  // `tree`: a folder upload, whose files land in the folders it makes.
-  const [sharedUpload, setSharedUpload] = useState<{
-    files: File[];
-    path: string;
-    tree?: FolderUploadPlan;
-  } | null>(null);
   const upload = (list: FileList | File[]) => {
     const picked = Array.from(list);
-    if (!picked.length) return;
-    if (asksOnUpload) setSharedUpload({ files: picked, path: currentPath });
-    else enqueue(picked, currentPath);
+    if (picked.length) enqueue(picked, currentPath);
   };
   const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -386,7 +377,7 @@ function FilesView({
   // existing folder, so each missing folder is made first, parents before
   // children, then each folder's files go to the upload dock.
   const folderInputRef = useRef<HTMLInputElement | null>(null);
-  const sendTree = async (plan: FolderUploadPlan, confirm: boolean) => {
+  const sendTree = async (plan: FolderUploadPlan) => {
     for (const step of plan.folders) {
       if (foldersByPath.has(step.path)) continue;
       try {
@@ -404,7 +395,7 @@ function FilesView({
       }
     }
     void queryClient.invalidateQueries({ queryKey: ['files', 'tree'] });
-    for (const b of plan.batches) enqueue(b.files, b.parentPath, confirm ? { confirm: true } : {});
+    for (const b of plan.batches) enqueue(b.files, b.parentPath);
     const notice = folderUploadNotice(plan);
     if (notice) toast.info(notice);
   };
@@ -414,9 +405,7 @@ function FilesView({
       toast.info(folderUploadNotice(plan) ?? 'That folder has no files to upload.');
       return;
     }
-    const files = plan.batches.flatMap((b) => b.files);
-    if (asksOnUpload) setSharedUpload({ files, path: currentPath, tree: plan });
-    else void sendTree(plan, false);
+    void sendTree(plan);
   };
   const onFolderInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -1489,40 +1478,6 @@ function FilesView({
         parentPath={(dialog?.kind === 'createFolder' && dialog.parentPath) || currentPath}
         onCreated={refresh}
       />
-
-      {/* ── Upload into a shared folder ───────────────────────────── */}
-      <AlertDialog
-        open={sharedUpload !== null}
-        onOpenChange={(open) => !open && setSharedUpload(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Upload{' '}
-              {sharedUpload?.files.length === 1
-                ? 'a file'
-                : `${sharedUpload?.files.length ?? 0} files`}{' '}
-              to a shared folder?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {sharedUpload && visibleTo ? uploadLine(visibleTo, sharedUpload.files.length) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (sharedUpload?.tree) void sendTree(sharedUpload.tree, true);
-                else if (sharedUpload)
-                  enqueue(sharedUpload.files, sharedUpload.path, { confirm: true });
-                setSharedUpload(null);
-              }}
-            >
-              Upload
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* ── Create file dialog ────────────────────────────────────── */}
       <CreateFileDialog
