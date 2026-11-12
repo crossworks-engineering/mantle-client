@@ -287,7 +287,7 @@ test('a box whose answer is too large shows nothing, and says so', async ({ page
     page
       .getByRole('main')
       .getByRole('list', { name: 'Boxes not shown in full' })
-      .getByText("The box's answer was too large; showing nothing for this box."),
+      .getByText("The box's list was too large or too slow to read in full; it shows no new list."),
   ).toBeVisible();
   await expect(card(page, 'erin@example.com')).toHaveCount(0);
 });
