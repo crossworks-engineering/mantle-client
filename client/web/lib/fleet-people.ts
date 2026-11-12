@@ -1033,7 +1033,7 @@ export function withoutSent(list: readonly MemberChange[], done: readonly Member
 /** users_list pages: at most this many logins each (the tool's own cap),
  *  and at most this many pages per box (more: the box is marked truncated). */
 export const USERS_PAGE = 150;
-export const MAX_USER_PAGES = 40;
+export const MAX_USER_PAGES = 400;
 
 /** One users_list run on some boxes with these args (runFleetTool). */
 export type RunUsersList = (
