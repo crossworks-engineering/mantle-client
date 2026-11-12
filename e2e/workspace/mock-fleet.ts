@@ -126,6 +126,9 @@ export type MockFleet = {
   /** A box whose answers come late, by box id: how many asks a call stays
    *  pending first (each ask after the one that made it counts one). */
   toolDelay: Record<string, number>;
+  /** users_list's page size (the tool's own is 150); small here so the
+   *  screen reads more than one page. */
+  usersPage: number;
   /** A box whose answer is too large (truncated), by box id. */
   toolTruncated: Record<string, boolean>;
   /** The calls made and not handed out yet, by call id. */
@@ -305,6 +308,7 @@ export const newMockFleet = (): MockFleet => ({
   toolSent: [],
   toolDelay: {},
   toolTruncated: {},
+  usersPage: 150,
   toolCalls: {},
   people: {},
 });
@@ -355,6 +359,8 @@ export function withPeople(f: MockFleet): MockFleet {
   const b = PEOPLE.b;
   const at = new Date().toISOString();
   f.toolOn = true;
+  // Box A's five logins come in three pages.
+  f.usersPage = 2;
   f.people = {
     [FLEET_BOX.id]: {
       peopleReason: null,
@@ -842,9 +848,23 @@ function runTool(
     return { ok: true, reason: null, output: '{"logins":[', truncated: true };
   if (name === 'users_list') {
     const people = f.people[boxId]?.people;
-    return people
-      ? { ok: true, reason: null, output: { ...people, at: new Date().toISOString() } }
-      : { ok: false, reason: 'error' };
+    if (!people) return { ok: false, reason: 'error' };
+    // The tool's own paging: { offset, limit } in, { total, offset, next } out.
+    const limit = Math.min(Number(args.limit ?? 150) || 150, 150, f.usersPage);
+    const offset = Math.max(0, Number(args.offset ?? 0) || 0);
+    const end = offset + limit;
+    return {
+      ok: true,
+      reason: null,
+      output: {
+        ...people,
+        at: new Date().toISOString(),
+        logins: people.logins.slice(offset, end),
+        total: people.logins.length,
+        offset,
+        next: end < people.logins.length ? end : null,
+      },
+    };
   }
   if (name === 'workspace_user_set') {
     const changes = (args.changes as Record<string, unknown>[] | undefined) ?? [];

@@ -10,6 +10,7 @@ import {
   FLEET_PEOPLE_KEY,
   memberAnswers,
   peopleBoxes,
+  readAllUsers,
   sentSummary,
   toolCalls,
   withoutSent,
@@ -33,12 +34,15 @@ import { refusalText } from '../fleet-section';
  *  Control Center has no admin channel. */
 type PeopleRead = { channel: false } | { channel: true; outcomes: BoxOutcome[] };
 
-/** users_list on many boxes, at most 50 per call (the route's cap). */
+/** users_list on many boxes, every page, at most 50 boxes per call (the
+ *  route's cap). */
 async function readUsers(boxIds: readonly string[], followUps: number) {
   const out: BoxOutcome[] = [];
   for (let i = 0; i < boxIds.length; i += MAX_TOOL_BOXES) {
     const part = boxIds.slice(i, i + MAX_TOOL_BOXES);
-    const r = await runFleetTool(part, USERS_LIST_TOOL, {}, { followUps });
+    const r = await readAllUsers(part, (ids, args) =>
+      runFleetTool(ids, USERS_LIST_TOOL, args, { followUps }),
+    );
     if (r === null) return null;
     out.push(...r);
   }

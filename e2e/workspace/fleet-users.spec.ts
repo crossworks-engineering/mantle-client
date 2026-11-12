@@ -123,12 +123,14 @@ test('the filters: banned, admins, no workspace, one box, not seen', async ({ pa
   await main.getByRole('textbox', { name: 'Search people' }).fill('erin');
   await expect.poll(emails).toEqual(['erin@example.com']);
   expect(writes()).toEqual([]);
-  // The read is one users_list call over every linked box.
-  expect(api.fleet!.toolSent[0]).toEqual({
-    boxIds: [FLEET_BOX.id, FLEET_BOX_B.id],
-    name: 'users_list',
-    args: {},
-  });
+  // The read is one users_list call over every linked box, then the next
+  // pages of each box that has more (Box A: five logins, two a page).
+  const reads = api.fleet!.toolSent.filter((b) => b.name === 'users_list');
+  expect(reads.slice(0, 3)).toEqual([
+    { boxIds: [FLEET_BOX.id, FLEET_BOX_B.id], name: 'users_list', args: { offset: 0, limit: 150 } },
+    { boxIds: [FLEET_BOX.id], name: 'users_list', args: { offset: 2, limit: 150 } },
+    { boxIds: [FLEET_BOX.id], name: 'users_list', args: { offset: 4, limit: 150 } },
+  ]);
 });
 
 test('a person: change a cell, confirm, the ids go, and the answer shows', async ({ page }) => {

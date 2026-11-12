@@ -22,6 +22,7 @@ import {
   parsePeople,
   peopleBoxes,
   peopleReasonText,
+  readAllUsers,
   sentSummary,
   skipText,
   staleNotes,
@@ -706,5 +707,72 @@ describe('fleet people', () => {
     expect(
       describeChange({ boxId: 'b', loginId: 'b3', workspaceId: 'b-ops', role: 'user' }, [twice]),
     ).toBe('carol@example.com in Ops as User on b.example.com');
+  });
+
+  it('reads every users_list page per box, and caps the pages', async () => {
+    const page = (boxId: string, offset: number, next: number | null, ids: string[]) => ({
+      boxId,
+      outcome: 'ok' as const,
+      reason: null,
+      output: {
+        schema: 1,
+        at: recent,
+        total: 5,
+        offset,
+        next,
+        workspaces: [{ id: `${boxId}-w${offset}`, name: 'Ops', admin: false }],
+        logins: ids.map((id) => ({ id, email: `${id}@example.com`, owner: false })),
+      },
+    });
+    const asked: [string[], { offset: number; limit: number }][] = [];
+    const run = async (ids: string[], args: { offset: number; limit: number }) => {
+      asked.push([ids, args]);
+      if (args.offset === 0) {
+        return [
+          page('a', 0, 2, ['l1', 'l2']),
+          page('b', 0, null, ['l9']),
+          { boxId: 'c', outcome: 'not-run' as const, reason: 'scope', output: undefined },
+        ];
+      }
+      return ids[0] === 'a' && args.offset === 2
+        ? [page('a', 2, 4, ['l3', 'l4'])]
+        : [page('a', 4, null, ['l5'])];
+    };
+    const out = (await readAllUsers(['a', 'b', 'c'], run))!;
+    expect(asked).toEqual([
+      [['a', 'b', 'c'], { offset: 0, limit: 150 }],
+      [['a'], { offset: 2, limit: 150 }],
+      [['a'], { offset: 4, limit: 150 }],
+    ]);
+    const a = out[0]!.output as {
+      logins: { id: string }[];
+      workspaces: { id: string }[];
+      next: unknown;
+    };
+    expect(a.logins.map((l) => l.id)).toEqual(['l1', 'l2', 'l3', 'l4', 'l5']);
+    // The first page's workspaces.
+    expect(a.workspaces.map((w) => w.id)).toEqual(['a-w0']);
+    expect(a.next).toBeNull();
+    expect((out[1]!.output as { logins: unknown[] }).logins).toHaveLength(1);
+    expect(out[2]).toMatchObject({ outcome: 'not-run', reason: 'scope' });
+
+    // Past the page cap: marked truncated.
+    const endless = async (ids: string[], args: { offset: number; limit: number }) =>
+      ids.map((id) => page(id, args.offset, args.offset + 1, [`x${args.offset}`]));
+    expect((await readAllUsers(['a'], endless, 3))![0]).toEqual({
+      boxId: 'a',
+      outcome: 'unknown',
+      reason: 'truncated',
+      output: undefined,
+    });
+    // A later page that fails is that box's outcome; a next that goes back stops.
+    const failing = async (ids: string[], args: { offset: number; limit: number }) =>
+      args.offset === 0
+        ? [page('a', 0, 2, ['l1']), page('b', 0, 0, ['l2'])]
+        : [{ boxId: ids[0]!, outcome: 'unknown' as const, reason: 'pending', output: undefined }];
+    const f = (await readAllUsers(['a', 'b'], failing))!;
+    expect(f[0]).toMatchObject({ outcome: 'unknown', reason: 'pending' });
+    expect(f[1]).toMatchObject({ outcome: 'ok' });
+    expect(await readAllUsers(['a'], async () => null)).toBeNull();
   });
 });

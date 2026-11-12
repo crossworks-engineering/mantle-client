@@ -1029,3 +1029,63 @@ export function withoutSent(list: readonly MemberChange[], done: readonly Member
   const keys = new Set(done.map(changeKey));
   return list.filter((c) => !keys.has(changeKey(c)));
 }
+
+/** users_list pages: at most this many logins each (the tool's own cap),
+ *  and at most this many pages per box (more: the box is marked truncated). */
+export const USERS_PAGE = 150;
+export const MAX_USER_PAGES = 40;
+
+/** One users_list run on some boxes with these args (runFleetTool). */
+export type RunUsersList = (
+  boxIds: string[],
+  args: { offset: number; limit: number },
+) => Promise<BoxOutcome[] | null>;
+
+/**
+ * Every page of every box's users_list: one call for all boxes at offset
+ * 0, then per box (boxes side by side, a box's pages one after another)
+ * again at its `next` until it is null. The logins are merged; the
+ * workspaces and time are the first page's. A later page that fails makes
+ * the box's outcome that failure (its kept list then shows, marked old);
+ * a box past MAX_USER_PAGES is marked truncated. Null: no admin channel.
+ */
+export async function readAllUsers(
+  boxIds: readonly string[],
+  run: RunUsersList,
+  pages = MAX_USER_PAGES,
+): Promise<BoxOutcome[] | null> {
+  const first = await run([...boxIds], { offset: 0, limit: USERS_PAGE });
+  if (first === null) return null;
+  return Promise.all(
+    first.map(async (box): Promise<BoxOutcome> => {
+      if (box.outcome !== 'ok' || !isObj(box.output) || !Array.isArray(box.output.logins)) {
+        return box;
+      }
+      const head = box.output;
+      const logins: unknown[] = [...(head.logins as unknown[])];
+      let offset = 0;
+      let next: unknown = head.next;
+      for (let n = 1; ; n++) {
+        if (typeof next !== 'number' || !Number.isInteger(next) || next <= offset) break;
+        if (n >= pages) {
+          return { boxId: box.boxId, outcome: 'unknown', reason: 'truncated', output: undefined };
+        }
+        offset = next;
+        const r = (await run([box.boxId], { offset, limit: USERS_PAGE }))?.find(
+          (x) => x.boxId === box.boxId,
+        );
+        if (!r) {
+          return { boxId: box.boxId, outcome: 'not-run', reason: 'no-channel', output: undefined };
+        }
+        if (r.outcome !== 'ok' || !isObj(r.output) || !Array.isArray(r.output.logins)) {
+          return r.outcome === 'ok'
+            ? { boxId: box.boxId, outcome: 'unknown', reason: 'bad-reply', output: undefined }
+            : r;
+        }
+        logins.push(...(r.output.logins as unknown[]));
+        next = r.output.next;
+      }
+      return { ...box, output: { ...head, logins, offset: 0, next: null } };
+    }),
+  );
+}
