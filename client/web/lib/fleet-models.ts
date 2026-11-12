@@ -60,30 +60,48 @@ function sameOrigin(url: string, origin: string): boolean {
  *  runs (a box before the workers' `default` flag, with two of a kind). */
 export type BoxModel = string | null | undefined;
 
+/** What one box runs for an item: its provider and model, or null and
+ *  undefined as for BoxModel. */
+export type BoxRun = { provider: string; model: string } | null | undefined;
+
+const modelOf = (run: BoxRun): BoxModel => (run ? run.model : run);
+
 /** One agent, or one worker kind, across the two boxes. */
 export type CompareLine = {
   key: string;
   left: BoxModel;
   right: BoxModel;
+  leftProvider: string | null;
+  rightProvider: string | null;
   /** Both boxes run it, with different models. */
   differs: boolean;
   /** Only one of the two boxes runs it. */
   oneSided: boolean;
 };
 
+/** An agent as a box runs it, by shipped slug. */
+export function agentRun(row: FleetMatrixRow, slug: string): BoxRun {
+  const agent = row.facts?.agents.find((a) => a.slug === slug);
+  return agent ? { provider: agent.provider, model: agent.model } : null;
+}
+
 export function compareLines(
   keys: readonly string[],
   left: FleetMatrixRow | undefined,
   right: FleetMatrixRow | undefined,
-  read: (row: FleetMatrixRow, key: string) => BoxModel = currentModel,
+  read: (row: FleetMatrixRow, key: string) => BoxRun = agentRun,
 ): CompareLine[] {
   return keys.map((key) => {
-    const l = left ? read(left, key) : null;
-    const r = right ? read(right, key) : null;
+    const lr = left ? read(left, key) : null;
+    const rr = right ? read(right, key) : null;
+    const l = modelOf(lr);
+    const r = modelOf(rr);
     return {
       key,
       left: l,
       right: r,
+      leftProvider: lr ? lr.provider : null,
+      rightProvider: rr ? rr.provider : null,
       differs: typeof l === 'string' && typeof r === 'string' && l !== r,
       oneSided: (l === null) !== (r === null),
     };
@@ -91,23 +109,31 @@ export function compareLines(
 }
 
 /** Whether a line's model can go from one side to the other: both boxes
- *  run it, they differ, and the source model is one the brain takes. */
+ *  run it on the same provider (a model id means something on one
+ *  provider only), they differ, and the source model is one the brain
+ *  takes. */
 export function canCopy(line: CompareLine, from: 'left' | 'right'): boolean {
   const model = line[from];
-  return line.differs && typeof model === 'string' && MODEL_ID.test(model);
+  return (
+    line.differs &&
+    typeof model === 'string' &&
+    MODEL_ID.test(model) &&
+    !!line.leftProvider &&
+    line.leftProvider === line.rightProvider
+  );
 }
 
-/** Every differing line of one side, as { key, model }, at most the
+/** Every differing line of one side, as { key, provider, model }, at most the
  *  route's cap. `may` leaves out lines that cannot be set (a worker kind
  *  the fleet does not set). */
 export function copyAllLines(
   lines: readonly CompareLine[],
   from: 'left' | 'right',
   may: (key: string) => boolean = () => true,
-): { key: string; model: string }[] {
+): { key: string; provider: string; model: string }[] {
   return lines
     .filter((l) => may(l.key) && canCopy(l, from))
-    .map((l) => ({ key: l.key, model: l[from] as string }))
+    .map((l) => ({ key: l.key, provider: l.leftProvider!, model: l[from] as string }))
     .slice(0, MAX_MODEL_CHANGES);
 }
 
@@ -128,16 +154,22 @@ export function workerKinds(rows: readonly FleetMatrixRow[]): string[] {
   return [...out].sort();
 }
 
-/** The model of the worker that runs this kind on a box (its default).
- *  A box before the `default` flag: its one worker of the kind, else not
- *  known. Null where the box has no facts or no worker of the kind. */
-export function currentWorkerModel(row: FleetMatrixRow, kind: string): BoxModel {
+/** The worker that runs this kind on a box (its default). A box before
+ *  the `default` flag: its one worker of the kind, else not known. Null
+ *  where the box has no facts or no worker of the kind. */
+export function workerRun(row: FleetMatrixRow, kind: string): BoxRun {
   const all = (row.facts?.workers ?? []).filter((w) => w.kind === kind);
   if (all.length === 0) return null;
+  const run = (w: (typeof all)[number]) => ({ provider: w.provider, model: w.model });
   const flagged = all.find((w) => w.default === true);
-  if (flagged) return flagged.model;
+  if (flagged) return run(flagged);
   if (all.some((w) => w.default === false)) return null; // flags sent, none runs it
-  return all.length === 1 ? all[0]!.model : undefined;
+  return all.length === 1 ? run(all[0]!) : undefined;
+}
+
+/** The model of the worker that runs this kind on a box (workerRun). */
+export function currentWorkerModel(row: FleetMatrixRow, kind: string): BoxModel {
+  return modelOf(workerRun(row, kind));
 }
 
 // --- what waits, and the answers -------------------------------------------------

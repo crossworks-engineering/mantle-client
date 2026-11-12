@@ -31,14 +31,13 @@ import {
 } from '@mantle/web-ui/ui/tooltip';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { boxName, type FleetBox } from '@/lib/fleet';
-import { FLEET_MATRIX_KEY, type FleetMatrixRow } from '@/lib/fleet-matrix';
+import { factsAge, FLEET_MATRIX_KEY, type FleetMatrixRow } from '@/lib/fleet-matrix';
 import {
   agentChange,
   canCopy,
   compareLines,
+  agentRun,
   copyAllLines,
-  currentModel,
-  currentWorkerModel,
   defaultPair,
   FLEET_MODELS_PATH,
   MAX_MODEL_CHANGES,
@@ -46,9 +45,11 @@ import {
   workerChange,
   workerKinds,
   workerKindSettable,
+  workerRun,
   writeAnswer,
   writeWaiting,
   type BoxModel,
+  type BoxRun,
   type CompareLine,
 } from '@/lib/fleet-models';
 import {
@@ -62,8 +63,11 @@ import { Part, Pill, ScreenLink, useParam } from '../cc-kit';
 import { ConfirmSend, useFleetSend } from '../fleet-writes';
 
 type Side = 'left' | 'right';
-type Change = { key: string; model: string };
-type Ask = { to: Side; changes: Change[] };
+type Change = { key: string; provider: string; model: string };
+/** The question before a send: the target and source boxes are taken when
+ *  the arrow is pressed, so a change of the pair meanwhile never redirects
+ *  it. */
+type Ask = { to: Side; toId: string; fromId: string; changes: Change[] };
 type Match = (c: FleetWriteChange) => boolean;
 
 const other = (s: Side): Side => (s === 'left' ? 'right' : 'left');
@@ -98,11 +102,21 @@ function BoxPicker({
   );
 }
 
-function ModelText({ model }: { model: BoxModel }) {
+function ModelText({ model, provider }: { model: BoxModel; provider: string | null }) {
   if (model === null) return <span className="text-muted-foreground">Not on this box</span>;
   if (model === undefined) return <span className="text-muted-foreground">Not known</span>;
-  if (model === '') return <span className="text-muted-foreground">no model</span>;
-  return <span className="break-all">{model}</span>;
+  return (
+    <span className="min-w-0">
+      {model === '' ? (
+        <span className="text-muted-foreground">no model</span>
+      ) : (
+        <span className="break-all">{model}</span>
+      )}
+      {provider && (
+        <span className="block font-sans text-xs text-muted-foreground">{provider}</span>
+      )}
+    </span>
+  );
 }
 
 /** What one table compares: agents (by shipped slug) or AI workers (by
@@ -113,11 +127,11 @@ type Spec = {
   head: string;
   noun: string;
   keys: string[];
-  read: (row: FleetMatrixRow, key: string) => BoxModel;
+  read: (row: FleetMatrixRow, key: string) => BoxRun;
   /** Whether the fleet may set this item at all. */
   may: (key: string) => boolean;
   path: string;
-  change: (key: string, model: string) => FleetWriteChange | { slug: string; model: string };
+  change: (c: Change) => FleetWriteChange | { slug: string; model: string };
   match: (key: string) => Match;
   /** What the item keeps, in the question. */
   keeps: string;
@@ -153,7 +167,13 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
   const lines = compareLines(spec.keys, row('left'), row('right'), spec.read);
   const differing = lines.filter((l) => l.differs).length;
   const shown = onlyDiffer ? lines.filter((l) => l.differs || l.oneSided) : lines;
-  const copyable = (l: CompareLine, from: Side) => spec.may(l.key) && canCopy(l, from);
+  // Only from facts read lately: an old read may no longer be what the box runs.
+  const fresh = (s: Side) => {
+    const r = row(s);
+    return !!r && factsAge(r) === 'fresh';
+  };
+  const copyable = (l: CompareLine, from: Side) =>
+    spec.may(l.key) && fresh(from) && !!row(other(from))?.facts && canCopy(l, from);
   const countable = (from: Side) => lines.filter((l) => copyable(l, from)).length;
 
   // An answer lands with the write result; the box's facts (the new model)
@@ -176,10 +196,14 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
 
   const confirm = async () => {
     if (!ask) return;
-    const target = ids[ask.to];
-    if (!target) return;
+    const target = ask.toId;
+    // The pair changed while the question was open: send nothing.
+    if (ids[ask.to] !== target || ids[other(ask.to)] !== ask.fromId) {
+      setAsk(null);
+      return;
+    }
     const at = Date.now() - 60_000; // the brain stamps it; allow for clock drift
-    const changes = ask.changes.map((c) => spec.change(c.key, c.model));
+    const changes = ask.changes.map((c) => spec.change(c));
     if (await send(changes as FleetWriteChange[], [target], 'Could not send the model.')) {
       setSent((prev) => {
         const next = { ...prev };
@@ -232,7 +256,9 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
             aria-label={`${label} (${line.key})`}
             disabled={pending || writeWaiting(box(to), spec.match(line.key))}
             onClick={() =>
-              setAsk({ to, changes: [{ key: line.key, model: line[from] as string }] })
+              askFor(to, [
+                { key: line.key, provider: line.leftProvider!, model: line[from] as string },
+              ])
             }
           >
             <Icon aria-hidden />
@@ -241,6 +267,12 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
         <TooltipContent side="top">{label}</TooltipContent>
       </Tooltip>
     );
+  };
+
+  const askFor = (to: Side, changes: Change[]) => {
+    const toId = ids[to];
+    const fromId = ids[other(to)];
+    if (toId && fromId && changes.length > 0) setAsk({ to, toId, fromId, changes });
   };
 
   const allButton = (from: Side) => {
@@ -253,7 +285,12 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
         variant="outline"
         size="2xs"
         disabled={pending}
-        onClick={() => setAsk({ to, changes: copyAllLines(lines, from, spec.may) })}
+        onClick={() =>
+          askFor(
+            to,
+            copyAllLines(lines, from, (k) => spec.may(k)),
+          )
+        }
       >
         {from === 'left' ? null : <ArrowLeft aria-hidden />}
         Copy {n === 1 ? '1 model' : `${n} models`} to {name(to)}
@@ -332,19 +369,23 @@ function CompareTable({ spec, pair }: { spec: Spec; pair: Pair }) {
                         <span className="font-medium">{line.key}</span>
                         {line.differs && <Pill tone="warn">differs</Pill>}
                         {line.oneSided && <Pill>one box</Pill>}
+                        {line.differs &&
+                          line.leftProvider &&
+                          line.rightProvider &&
+                          line.leftProvider !== line.rightProvider && <Pill>other provider</Pill>}
                       </div>
                       {note && <div className="mt-1">{note}</div>}
                     </TableCell>
                     <TableCell className="align-top font-mono text-[13px]">
                       <div className="flex items-start justify-between gap-1">
-                        <ModelText model={line.left} />
+                        <ModelText model={line.left} provider={line.leftProvider} />
                         {copyButton(line, 'left')}
                       </div>
                     </TableCell>
                     <TableCell className="pr-3 align-top font-mono text-[13px]">
                       <div className="flex items-start gap-1">
                         {copyButton(line, 'right')}
-                        <ModelText model={line.right} />
+                        <ModelText model={line.right} provider={line.rightProvider} />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -380,10 +421,10 @@ const AGENTS = {
   title: 'Agents',
   head: 'Agent',
   noun: 'agent',
-  read: currentModel,
+  read: agentRun,
   may: () => true,
   path: FLEET_MODELS_PATH,
-  change: (slug: string, model: string) => ({ slug, model }),
+  change: (c: Change) => ({ slug: c.key, model: c.model }),
   match: agentChange,
   keeps: 'The agent keeps its provider and key.',
 } satisfies Omit<Spec, 'keys'>;
@@ -392,13 +433,14 @@ const WORKERS = {
   title: 'AI workers',
   head: 'Worker',
   noun: 'worker',
-  read: currentWorkerModel,
+  read: workerRun,
   may: workerKindSettable,
   path: FLEET_SETTINGS_PATH,
-  change: (worker: string, model: string): FleetWriteChange => ({
+  change: (c: Change): FleetWriteChange => ({
     kind: 'workerModel',
-    worker,
-    model,
+    worker: c.key,
+    provider: c.provider,
+    model: c.model,
   }),
   match: workerChange,
   keeps: 'The worker that runs this kind keeps its provider and key.',

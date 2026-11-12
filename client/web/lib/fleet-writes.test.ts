@@ -33,7 +33,12 @@ const pool: FleetWriteChange = {
 const on: FleetWriteChange = { kind: 'updateNotice', on: true };
 const off: FleetWriteChange = { kind: 'updateNotice', on: false };
 const group: FleetWriteChange = { kind: 'workerGroup', slug: 'review', members: ['a', 'b'] };
-const workerModel: FleetWriteChange = { kind: 'workerModel', worker: 'vision', model: 'new' };
+const workerModel: FleetWriteChange = {
+  kind: 'workerModel',
+  worker: 'vision',
+  provider: 'openrouter',
+  model: 'new',
+};
 
 describe('fleet writes (phase 4)', () => {
   it('posts the settings to their route', () => {
@@ -89,6 +94,9 @@ describe('fleet writes (phase 4)', () => {
     );
     expect(answerText(answer(workerModel, false, 'old', 'policy')).text).toBe(
       'The model policy of this box does not allow it. It keeps old.',
+    );
+    expect(answerText(answer(workerModel, false, 'old', 'provider')).text).toBe(
+      'This box runs the worker on another provider. It keeps old.',
     );
     expect(answerText(answer(workerModel, false, 'old', 'model')).text).toBe(
       'The provider does not list this model for this kind of worker. It keeps old.',

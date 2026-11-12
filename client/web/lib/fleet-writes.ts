@@ -34,7 +34,7 @@ export type FleetWriteChange =
   | { kind: 'updateNotice'; on: boolean }
   | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean }
   /** The model of the default AI worker of a shipped kind (`worker`). */
-  | { kind: 'workerModel'; worker: string; model: string };
+  | { kind: 'workerModel'; worker: string; provider: string; model: string };
 
 /** Who asked a change, and when (its hour runs from here). */
 export type FleetWriteStamp = { by: string; at: string };
@@ -101,6 +101,8 @@ export function answerText(a: FleetWriteAnswer): { tone: 'ok' | 'bad'; text: str
       );
     case 'model':
       return bad(`The provider does not list this model for this kind of worker.${keeps}`);
+    case 'provider':
+      return bad(`This box runs the worker on another provider.${keeps}`);
     case 'expired':
       return bad(`Not sent within an hour, so it was dropped.${NOTHING}`);
     case 'unreachable':
