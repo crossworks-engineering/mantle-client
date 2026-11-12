@@ -47,19 +47,26 @@ export function usePeople(boxes: readonly FleetBox[]) {
   return query;
 }
 
+/** What a send did: false when it failed; else the changes of boxes that
+ *  were not queued (40 changes wait there already), which the caller keeps. */
+export type MembersSent = false | { left: MemberChange[] };
+
 /** One send of workspace changes, then a toast that says what was queued. */
 export function useMembersSend(onChanged: () => void) {
   const toast = useToast();
   const [pending, setPending] = useState(false);
-  const send = async (changes: MemberChange[]): Promise<boolean> => {
+  const send = async (changes: MemberChange[]): Promise<MembersSent> => {
     if (changes.length === 0) return false;
     setPending(true);
     try {
       const r = await apiSend<{ boxIds?: string[] }>(FLEET_MEMBERS_PATH, 'POST', { changes });
-      const queued = r?.boxIds ?? [...new Set(changes.map((c) => c.boxId))];
-      toast.success(membersSentText(changes, queued));
+      const queued = new Set(r?.boxIds ?? []);
+      const left = changes.filter((c) => !queued.has(c.boxId));
+      const said = membersSentText(changes, [...queued]);
+      if (left.length > 0) toast.error(said);
+      else toast.success(said);
       onChanged();
-      return true;
+      return { left };
     } catch (err) {
       toast.error(refusalText(err, 'Could not send the workspace changes.'));
       return false;

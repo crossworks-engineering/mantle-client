@@ -42,6 +42,11 @@ import {
 } from '@/lib/fleet-people';
 import { Callout, DetailPane, Dot, Part, Pill, TONE_TEXT } from '../cc-kit';
 import { ConfirmSend } from '../fleet-writes';
+import type { MembersSent } from './use-people';
+
+/** The keys a ban holds besides this person's email. */
+const otherKeys = (b: FleetBan, email: string) =>
+  banKeysText({ ...b, emails: b.emails.filter((e) => e.toLowerCase() !== email) });
 
 const cellKey = (c: { boxId: string; loginId: string; workspaceId: string }) =>
   `${c.boxId}:${c.loginId}:${c.workspaceId}`;
@@ -132,7 +137,7 @@ export function PersonDetail({
   peopleBoxes: FleetPeopleBox[];
   fleet: FleetOverview;
   sending: boolean;
-  onSend: (changes: MemberChange[]) => Promise<boolean>;
+  onSend: (changes: MemberChange[]) => Promise<MembersSent>;
   onBan: () => void;
   onLift: (ban: FleetBan) => void;
 }) {
@@ -140,6 +145,7 @@ export function PersonDetail({
   const fleetById = useMemo(() => new Map(fleet.boxes.map((b) => [b.id, b])), [fleet.boxes]);
   const peopleById = useMemo(() => new Map(peopleBoxes.map((b) => [b.id, b])), [peopleBoxes]);
   const [staged, setStaged] = useState<Map<string, MemberChange>>(() => new Map());
+  const [left, setLeft] = useState(0);
   const [confirm, setConfirm] = useState<{ title: string; changes: MemberChange[] } | null>(null);
   const full = grid.columns.filter((c) => c.full && !c.owner);
   const sources = full;
@@ -168,11 +174,12 @@ export function PersonDetail({
 
   const go = async () => {
     if (!confirm) return;
-    const ok = await onSend(confirm.changes);
-    if (ok) {
-      setConfirm(null);
-      setStaged(new Map());
-    }
+    const sent = await onSend(confirm.changes);
+    if (!sent) return;
+    setConfirm(null);
+    // A box that was not queued keeps its changes here, to send again.
+    setStaged(new Map(sent.left.map((c) => [cellKey(c), c])));
+    setLeft(sent.left.length);
   };
 
   const stagedList = [...staged.values()];
@@ -213,14 +220,9 @@ export function PersonDetail({
                   {b.kind === 'archive' ? 'Archive ban' : 'Ban'} made {formatDateTime(b.madeAt)}
                   {b.madeBy ? ` by ${b.madeBy}` : ''}
                   {b.reason ? `: ${b.reason}` : ''}
-                  {b.emails.length > 1 && (
+                  {otherKeys(b, person.email) && (
                     <span className="block text-xs text-muted-foreground">
-                      Also names{' '}
-                      {banKeysText({
-                        ...b,
-                        emails: b.emails.filter((e) => e.toLowerCase() !== person.email),
-                      })}
-                      .
+                      Also holds {otherKeys(b, person.email)}.
                     </span>
                   )}
                 </span>
@@ -273,7 +275,7 @@ export function PersonDetail({
           </Table>
         </div>
         {reasons.map(({ l, why }) => (
-          <p key={l.boxId} className="text-xs text-muted-foreground">
+          <p key={`${l.boxId}-${l.loginId}`} className="text-xs text-warning-ink">
             {l.box}: {why}
           </p>
         ))}
@@ -306,6 +308,12 @@ export function PersonDetail({
           ) : undefined
         }
       >
+        {left > 0 && stagedList.length > 0 && (
+          <Callout tone="warn" title="Not sent yet">
+            {left === 1 ? '1 change was' : `${left} changes were`} not queued: 40 changes wait on
+            that box already. They are kept here: send them again in a minute.
+          </Callout>
+        )}
         {grid.rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No workspaces to show: none of this person&apos;s boxes sent its people list yet.
@@ -326,7 +334,7 @@ export function PersonDetail({
                   <TableRow key={row.key}>
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-1.5">
-                        {row.name}
+                        {row.label}
                         {row.admin && <Pill>Admin</Pill>}
                         {row.ambiguous && <Pill tone="warn">Same name twice</Pill>}
                       </span>
@@ -352,7 +360,7 @@ export function PersonDetail({
                       return (
                         <TableCell key={c.key} className="align-top">
                           <Cell
-                            label={`${row.name} on ${c.label}`}
+                            label={`${row.label} on ${c.label}`}
                             cell={cell}
                             status={status}
                             staged={
@@ -424,8 +432,8 @@ export function PersonDetail({
               {plan.same.length > 0 && (
                 <p className="text-xs text-muted-foreground">Already so: {plan.same.join(', ')}.</p>
               )}
-              {plan.skipped.map((s) => (
-                <p key={s.name} className="text-xs text-warning-ink">
+              {plan.skipped.map((s, i) => (
+                <p key={`${s.why}-${s.name}-${i}`} className="text-xs text-warning-ink">
                   {skipText(s)}
                 </p>
               ))}

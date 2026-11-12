@@ -274,7 +274,9 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
   }
 
   const selected =
-    pickedPeople.length > 0 ? null : (shown.find((p) => p.email === param) ?? shown[0] ?? null);
+    pickedPeople.length > 0
+      ? null
+      : (shown.find((p) => p.logins.some((l) => l.loginId === param)) ?? shown[0] ?? null);
   const pick = (email: string, on: boolean) =>
     setPicked((s) => {
       const next = new Set(s);
@@ -284,6 +286,7 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
     });
   const allShownPicked = shown.length > 0 && shown.every((p) => picked.has(p.email));
   const boxesWithoutPeople = peopleBoxes.filter((b) => !b.people).length;
+  const boxesOld = peopleBoxes.filter((b) => b.people && b.peopleReason).length;
 
   return (
     <>
@@ -341,6 +344,12 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
                 logins only, without workspaces.
               </p>
             )}
+            {boxesOld > 0 && (
+              <p className="text-xs text-warning-ink">
+                {boxesOld === 1 ? '1 box' : `${boxesOld} boxes`} did not answer the last read: the
+                list shown is the one kept. Open a person to see from when.
+              </p>
+            )}
             {pickedPeople.length > 0 && (
               <div className="flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
                 <span>
@@ -365,7 +374,8 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
                       picked={picked.has(p.email)}
                       onOpen={() => {
                         setPicked(new Set());
-                        setParam(p.email);
+                        // An opaque key in the address: the first login's id, never the email.
+                        setParam(p.logins[0]?.loginId ?? null);
                       }}
                       onPick={(on) => pick(p.email, on)}
                     />

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { FleetBan, FleetBox } from './fleet';
 import { answerText, changeLabel, type FleetWriteAnswer } from './fleet-writes';
 import {
+  agoText,
+  assignableWorkspaces,
   bulkPlan,
   cellChoices,
   cellStatus,
@@ -17,6 +19,7 @@ import {
   membershipGrid,
   memberHistory,
   normName,
+  wsLabel,
   peopleReasonText,
   skipText,
   type FleetPeopleBox,
@@ -392,9 +395,11 @@ describe('fleet people', () => {
         ...boxB.people!,
         logins: [
           ...boxB.people!.logins,
+          // Emails arrive lowercase: the second login has the same one.
           login({
             id: 'b9',
-            email: 'ANN@example.com',
+            email: 'ann@example.com',
+            createdAt: '2026-10-01T00:00:00.000Z',
             workspaces: [{ id: 'b-proj', moderator: true }],
           }),
         ],
@@ -405,8 +410,8 @@ describe('fleet people', () => {
     const g = membershipGrid(ann, set);
     expect(g.columns.map((c) => c.key)).toEqual(['a:a1', 'b:b1', 'b:b9']);
     expect(g.columns.filter((c) => c.boxId === 'b').map((c) => c.label)).toEqual([
-      'b.example.com (ann@example.com)',
-      'b.example.com (ANN@example.com)',
+      'b.example.com (login b1, made 2026-09-01)',
+      'b.example.com (login b9, made 2026-10-01)',
     ]);
     const proj = g.rows.find((r) => normName(r.name) === 'projects')!;
     expect(proj.cells['b:b1']).toMatchObject({ loginId: 'b1', state: 'none' });
@@ -459,5 +464,50 @@ describe('fleet people', () => {
     expect(said.text).toContain(
       'This login is disabled on that box. Lift the ban or enable it first.',
     );
+  });
+
+  it('marks a name two workspaces share wherever it is chosen (audit 2, item 1)', () => {
+    const two: FleetPeopleBox = {
+      ...boxA,
+      people: {
+        ...boxA.people!,
+        workspaces: [...boxA.people!.workspaces, { id: 'a-opz9', name: 'ops', admin: false }],
+        logins: boxA.people!.logins.map((l) =>
+          l.id === 'a2' ? { ...l, workspaces: [{ id: 'a-opz9', moderator: false }] } : l,
+        ),
+      },
+    };
+    const w1 = two.people!.workspaces.find((w) => w.id === 'a-ops')!;
+    const w2 = two.people!.workspaces.find((w) => w.id === 'a-opz9')!;
+    expect(wsLabel(two.people, w1)).toBe('Ops (0 people, id a-ops)');
+    expect(wsLabel(two.people, w2)).toBe('ops (1 person, id a-opz)');
+    expect(
+      wsLabel(
+        two.people,
+        two.people!.workspaces.find((w) => w.id === 'a-proj')!,
+      ),
+    ).toBe('Projects');
+    const labels = assignableWorkspaces(two).map((w) => w.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(labels).toContain('Ops (0 people, id a-ops)');
+    expect(
+      describeChange({ boxId: 'a', loginId: 'a2', workspaceId: 'a-opz9', role: 'user' }, [two]),
+    ).toBe('bob@example.com in ops (1 person, id a-opz) as User on Alpha');
+    const bob = groupPeople([two]).find((p) => p.email === 'bob@example.com')!;
+    const own = membershipGrid(bob, [two]).rows.filter((r) => r.ambiguous);
+    expect(own.map((r) => r.label).sort()).toEqual([
+      'Ops (0 people, id a-ops)',
+      'ops (1 person, id a-opz)',
+    ]);
+  });
+
+  it('says when a kept list is old (audit 2, item 4)', () => {
+    const now = Date.parse('2026-11-12T12:00:00.000Z');
+    const kept = { ...boxA, peopleReason: 'unreachable' };
+    expect(peopleReasonText(kept, now)).toBe(
+      'The last read failed (This box cannot reach the box over HTTPS). This list is from 1 hour ago.',
+    );
+    expect(agoText('2026-11-12T11:59:30.000Z', now)).toBe('just now');
+    expect(agoText('2026-11-09T12:00:00.000Z', now)).toBe('3 days ago');
   });
 });

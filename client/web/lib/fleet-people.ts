@@ -305,6 +305,59 @@ export function stateWord(s: MemberState): string {
   return s === 'moderator' ? 'Moderator' : s === 'user' ? 'User' : 'Not in it';
 }
 
+// --- names that need a mark -------------------------------------------------------
+
+/** The shortest id prefix (4 or more) that tells `id` from every other in
+ *  `ids`. */
+function shortId(id: string, ids: readonly string[]): string {
+  for (let n = 4; n < id.length; n++) {
+    const p = id.slice(0, n);
+    if (ids.every((o) => o === id || !o.startsWith(p))) return p;
+  }
+  return id;
+}
+
+/**
+ * A workspace's name as a choice or a confirm shows it. When another
+ * workspace of the same box has the same name (case and spaces aside) the
+ * name gets a mark, its member count and a short id, so the two never look
+ * the same: "Ops (2 people, id 3f2a)".
+ */
+export function wsLabel(
+  people: FleetPeople | null | undefined,
+  w: Pick<FleetPeopleWorkspace, 'id' | 'name'>,
+): string {
+  const same = (people?.workspaces ?? []).filter((x) => normName(x.name) === normName(w.name));
+  if (same.length < 2) return w.name;
+  const n = (people?.logins ?? []).filter((l) => l.workspaces.some((m) => m.id === w.id)).length;
+  const who = n === 1 ? '1 person' : `${n} people`;
+  return `${w.name} (${who}, id ${shortId(
+    w.id,
+    same.map((x) => x.id),
+  )})`;
+}
+
+/** A login's column when the person has two logins on one box (emails
+ *  arrive lowercase, so the email cannot tell them apart): the box, the
+ *  day it was made and a short login id. */
+export function loginLabel(l: Pick<PersonLogin, 'box' | 'loginId' | 'createdAt'>): string {
+  const made = l.createdAt ? `, made ${l.createdAt.slice(0, 10)}` : '';
+  return `${l.box} (login ${l.loginId.slice(0, 8)}${made})`;
+}
+
+/** How long ago `iso` was, in plain words. */
+export function agoText(iso: string | null, now: number = Date.now()): string {
+  const at = iso ? new Date(iso).getTime() : NaN;
+  if (Number.isNaN(at)) return 'an unknown time';
+  const min = Math.max(0, Math.floor((now - at) / 60_000));
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h} hour${h === 1 ? '' : 's'} ago`;
+  const d = Math.round(h / 24);
+  return `${d} days ago`;
+}
+
 // --- the membership grid --------------------------------------------------------
 
 /** Why a cell cannot be changed here: the Admin workspace (a role), the box
@@ -330,6 +383,9 @@ export type GridCell =
 export type GridRow = {
   key: string;
   name: string;
+  /** What the screen shows: the name, marked (wsLabel) when two workspaces
+   *  of one box share it. */
+  label: string;
   admin: boolean;
   /** One of several workspaces with this name on its box: never merged
    *  with another box's, never copied by name. */
@@ -387,18 +443,18 @@ export function membershipGrid(
     key: colKey(l.boxId, l.loginId),
     boxId: l.boxId,
     box: l.box,
-    label:
-      person.logins.filter((x) => x.boxId === l.boxId).length > 1 ? `${l.box} (${l.email})` : l.box,
+    label: person.logins.filter((x) => x.boxId === l.boxId).length > 1 ? loginLabel(l) : l.box,
     loginId: l.loginId,
     full: l.full,
     owner: l.owner,
     off: l.disabled || l.archived,
   }));
   const rows = new Map<string, GridRow & { member: boolean }>();
-  const row = (key: string, w: FleetPeopleWorkspace, ambiguous: boolean) => {
+  const row = (key: string, w: FleetPeopleWorkspace, ambiguous: boolean, people: FleetPeople) => {
     const r = rows.get(key) ?? {
       key,
       name: w.name,
+      label: ambiguous ? wsLabel(people, w) : w.name,
       admin: w.admin,
       ambiguous,
       member: false,
@@ -429,7 +485,7 @@ export function membershipGrid(
     };
     for (const [name, list] of byName(people.workspaces)) {
       if (list.length === 1) {
-        const r = row(`n:${name}`, list[0]!, false);
+        const r = row(`n:${name}`, list[0]!, false, people);
         r.cells[col] = cell(list[0]!);
         r.admin ||= list[0]!.admin;
         r.member ||= mine.has(list[0]!.id);
@@ -440,7 +496,7 @@ export function membershipGrid(
       const shared = rows.get(`n:${name}`);
       if (shared) shared.cells[col] = { kind: 'ambiguous', count: list.length };
       for (const w of list) {
-        const r = row(`id:${l.boxId}:${w.id}`, w, true);
+        const r = row(`id:${l.boxId}:${w.id}`, w, true, people);
         r.cells[col] = cell(w);
         r.member ||= mine.has(w.id);
       }
@@ -628,10 +684,13 @@ export function bulkSkipText(s: BulkSkip): string {
 }
 
 /** The workspaces of a box a change may name: shared, never Admin. */
-export function assignableWorkspaces(box: FleetPeopleBox | undefined): FleetPeopleWorkspace[] {
+export function assignableWorkspaces(
+  box: FleetPeopleBox | undefined,
+): (FleetPeopleWorkspace & { label: string })[] {
   return (box?.people?.workspaces ?? [])
     .filter((w) => !w.admin)
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map((w) => ({ ...w, label: wsLabel(box?.people, w) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 // --- what a change says, and where it stands --------------------------------------------
@@ -648,7 +707,7 @@ export function describeChange(
   const login = box?.people?.logins.find((l) => l.id === c.loginId);
   const ws = box?.people?.workspaces.find((w) => w.id === c.workspaceId);
   const who = login?.email ?? 'a login';
-  const where = ws?.name ?? 'a workspace';
+  const where = ws ? wsLabel(box?.people, ws) : 'a workspace';
   const on = box ? boxName(box) : 'a box';
   if (c.role === 'none') return `Remove ${who} from ${where} on ${on}`;
   return `${who} in ${where} as ${stateWord(c.role)} on ${on}`;
@@ -721,8 +780,12 @@ export function memberHistory(
 }
 
 /** Why a box shows no people list, or null when it has one. */
-export function peopleReasonText(box: FleetPeopleBox): string | null {
-  if (box.people) return null;
+export function peopleReasonText(box: FleetPeopleBox, now: number = Date.now()): string | null {
+  if (box.people) {
+    if (!box.peopleReason) return null;
+    const words = (reasonText(box.peopleReason) ?? 'the read failed').replace(/\.$/, '');
+    return `The last read failed (${words}). This list is from ${agoText(box.people.at, now)}.`;
+  }
   if (box.peopleReason === 'bad-call') {
     return 'This box runs a release before Fleet users: it shows its logins only, without workspaces.';
   }

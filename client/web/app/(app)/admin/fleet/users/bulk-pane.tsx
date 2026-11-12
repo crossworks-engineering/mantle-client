@@ -26,6 +26,7 @@ import {
 } from '@/lib/fleet-people';
 import { Callout, DetailPane, Part } from '../cc-kit';
 import { ConfirmSend } from '../fleet-writes';
+import type { MembersSent } from './use-people';
 
 /** Many people at once: into one workspace of one box, or out of it. */
 export function BulkPane({
@@ -38,7 +39,7 @@ export function BulkPane({
   people: Person[];
   peopleBoxes: FleetPeopleBox[];
   sending: boolean;
-  onSend: (changes: MemberChange[]) => Promise<boolean>;
+  onSend: (changes: MemberChange[]) => Promise<MembersSent>;
   onClear: () => void;
 }) {
   const boxes = peopleBoxes.filter(
@@ -48,6 +49,7 @@ export function BulkPane({
   const [workspaceId, setWorkspaceId] = useState('');
   const [role, setRole] = useState<MemberState>('user');
   /** The changes the confirm shows, frozen when it opens: exactly these go. */
+  const [left, setLeft] = useState(0);
   const [frozen, setFrozen] = useState<{ title: string; changes: MemberChange[] } | null>(null);
   const box = boxes.find((b) => b.id === boxId);
   const workspaces = assignableWorkspaces(box);
@@ -57,12 +59,15 @@ export function BulkPane({
 
   const go = async () => {
     if (!frozen) return;
-    if (await onSend(frozen.changes)) setFrozen(null);
+    const sent = await onSend(frozen.changes);
+    if (!sent) return;
+    setFrozen(null);
+    setLeft(sent.left.length);
   };
   const ask = () => {
     if (!plan || plan.changes.length === 0) return;
     const n = plan.changes.length;
-    const where = ws?.name ?? 'the workspace';
+    const where = ws?.label ?? 'the workspace';
     setFrozen({
       title: role === 'none' ? `Remove ${n} from ${where}?` : `Add ${n} to ${where}?`,
       changes: [...plan.changes],
@@ -126,7 +131,7 @@ export function BulkPane({
                   <SelectContent>
                     {workspaces.map((w) => (
                       <SelectItem key={w.id} value={w.id}>
-                        {w.name}
+                        {w.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -151,6 +156,12 @@ export function BulkPane({
             </p>
           </FieldGroup>
         )}
+        {left > 0 && (
+          <Callout tone="warn" title="Not sent yet">
+            {left === 1 ? '1 change was' : `${left} changes were`} not queued: 40 changes wait on
+            that box already. Send again in a minute.
+          </Callout>
+        )}
         {plan && (
           <div className="space-y-2 rounded-lg border border-border bg-primary/5 p-3 text-sm">
             {plan.changes.length === 0 ? (
@@ -158,11 +169,14 @@ export function BulkPane({
             ) : (
               <p>
                 {plan.changes.length === 1 ? '1 change' : `${plan.changes.length} changes`}:{' '}
-                {role === 'none' ? `remove from ${ws?.name}` : `${stateWord(role)} in ${ws?.name}`}.
+                {role === 'none'
+                  ? `remove from ${ws?.label}`
+                  : `${stateWord(role)} in ${ws?.label}`}
+                .
               </p>
             )}
-            {plan.skipped.map((s) => (
-              <p key={s.email} className="text-xs text-muted-foreground">
+            {plan.skipped.map((s, i) => (
+              <p key={`${s.email}-${s.why}-${i}`} className="text-xs text-muted-foreground">
                 {bulkSkipText(s)}
               </p>
             ))}

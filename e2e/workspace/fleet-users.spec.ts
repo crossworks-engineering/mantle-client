@@ -41,9 +41,17 @@ const card = (page: Page, text: string) =>
 const grid = (page: Page) =>
   page.getByRole('main').getByRole('table', { name: 'Workspaces, box by box' });
 
+/** A person's first login (by box name): the address names it, never the email. */
+const FIRST_LOGIN: Record<string, string> = {
+  'ann@example.com': PEOPLE.a.ann,
+  'owner@example.com': PEOPLE.a.owner,
+  'dan@example.com': PEOPLE.a.dan,
+};
+
 async function open(page: Page, email: string) {
-  await page.goto(`${USERS}?person=${encodeURIComponent(email)}`);
+  await page.goto(`${USERS}?person=${FIRST_LOGIN[email]}`);
   await expect(grid(page)).toBeVisible();
+  await expect(page.getByRole('main').getByText(email).first()).toBeVisible();
 }
 
 async function pick(page: Page, trigger: ReturnType<Page['getByRole']>, option: string) {
@@ -64,6 +72,10 @@ test('the nav shows Fleet users, and the list groups one person across boxes', a
   await expect(ann.getByText(BOX_B)).toBeVisible();
   await expect(card(page, 'carol@example.com').getByText('Banned')).toBeVisible();
   await shot(page, 'fleet-users-list');
+  // A card opens its person; the address names a login id, never the email.
+  await card(page, 'dan@example.com').getByRole('button').click();
+  await expect(page).toHaveURL(new RegExp(`\\?person=${PEOPLE.a.dan}$`));
+  expect(page.url()).not.toContain('example.com');
 });
 
 test('the filters: banned, admins, no workspace, one box, not seen', async ({ page }) => {
