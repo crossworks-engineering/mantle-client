@@ -57,6 +57,17 @@ const target = (page: import('@playwright/test').Page, name: string) =>
 const change = (page: import('@playwright/test').Page, box: string) =>
   page.getByRole('table', { name: 'Fleet changes' }).getByRole('row').filter({ hasText: box });
 
+/** Type a model id into a model picker (the Default Model's list, or the
+ *  typed fallback), and take it. */
+async function typeModel(page: import('@playwright/test').Page, id: string, model: string) {
+  await page.locator(`#${id}`).click();
+  await page.getByPlaceholder('Search models…').fill(model);
+  await page
+    .getByRole('option')
+    .filter({ hasText: `Use ${model}` })
+    .click();
+}
+
 test('not a Control Center: no CC tab, no screen in the nav, and the address says so', async ({
   page,
 }) => {
@@ -109,7 +120,7 @@ test('Overview: the numbers, the service, the two lines, and what needs an admin
   await signIn(page, 'admin');
   await page.goto(PATH);
   const main = page.getByRole('main');
-  await expect(main.getByRole('heading', { name: 'Fleet summary' })).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Fleet setup' })).toBeVisible();
   await expect(main.getByText('1 of 2')).toBeVisible();
   await expect(main.getByText('SHA256:mock-fingerprint')).toBeVisible();
   await expect(main.getByText('The control service is running')).toBeVisible();
@@ -474,12 +485,13 @@ test('phase 4: set a shipped agent model on every box, see each answer', async (
   await expect(target(page, 'Box A').getByText('model-a', { exact: true })).toBeVisible();
 
   const field = main.locator('#fleet-model-value');
-  await field.fill('has space');
+  // A brain before the Default Model: the picker takes a typed id.
+  await typeModel(page, 'fleet-model-value', 'has space');
   await expect(main.getByText(/A model id has letters, digits/)).toBeVisible();
   // A model the fleet runs fills the field in one click.
   await main.getByRole('button', { name: 'model-a', exact: true }).click();
-  await expect(field).toHaveValue('model-a');
-  await field.fill('vendor/new-model');
+  await expect(field).toHaveText('model-a');
+  await typeModel(page, 'fleet-model-value', 'vendor/new-model');
   await main.getByRole('checkbox', { name: 'Box A' }).click();
   await main.getByRole('checkbox', { name: BOX_B }).click();
   await main.getByRole('button', { name: 'Set model on 2 boxes' }).click();
@@ -496,7 +508,7 @@ test('phase 4: set a shipped agent model on every box, see each answer', async (
       },
     },
   ]);
-  await expect(field).toHaveValue('');
+  await expect(field).toHaveText('Pick or type a model');
 
   // The matrix is read again when the last change is answered: the card shows the new model.
   await expect(target(page, 'Box A').getByText('vendor/new-model', { exact: true })).toBeVisible({
@@ -526,7 +538,7 @@ test('phase 4: one box picked sends that box only', async ({ page }) => {
   await signIn(page, 'admin');
   await page.goto(MODELS);
   const main = page.getByRole('main');
-  await main.locator('#fleet-model-value').fill('vendor/other');
+  await typeModel(page, 'fleet-model-value', 'vendor/other');
   await main.getByRole('checkbox', { name: BOX_B }).click();
   await main.getByRole('button', { name: 'Set model on 1 box' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Set model' }).click();
@@ -558,12 +570,12 @@ test('phase 4: a pool entry and the update notice, each on its own screen', asyn
   await main.locator('#fleet-pool-name').fill('Model A');
   await main.locator('#fleet-pool-vendor').fill('Vendor');
   await main.locator('#fleet-pool-provider-0').fill('OpenRouter');
-  await main.locator('#fleet-pool-model-0').fill('has space');
+  await typeModel(page, 'fleet-pool-model-0', 'has space');
   await expect(main.getByText('Each route needs a provider id and a model id')).toBeVisible();
-  await main.locator('#fleet-pool-model-0').fill('vendor/a');
+  await typeModel(page, 'fleet-pool-model-0', 'vendor/a');
   await main.getByRole('button', { name: 'Add route' }).click();
   await main.locator('#fleet-pool-provider-1').fill('direct');
-  await main.locator('#fleet-pool-model-1').fill('a-1');
+  await typeModel(page, 'fleet-pool-model-1', 'a-1');
   await main.getByRole('checkbox', { name: 'Box A' }).click();
   await main.getByRole('checkbox', { name: BOX_B }).click();
   await main.getByRole('button', { name: 'Send pool entry to 2 boxes' }).click();
@@ -668,4 +680,55 @@ test('phase 4: a worker group, and each reason in plain words', async ({ page })
   await expect(
     main.getByRole('list', { name: 'Needs you' }).getByText(`${BOX_B} refused 1 change`),
   ).toBeVisible();
+});
+
+test('Default Model: pick a provider and key on the Overview; the model pickers list its models', async ({
+  page,
+}) => {
+  const fleet = withMatrix(newMockFleet());
+  fleet.writesOn = true;
+  fleet.defaultModelOn = true;
+  api.fleet = fleet;
+  await signIn(page, 'admin');
+
+  // None set: the picker says so and points to the card.
+  await page.goto(MODELS);
+  const main = page.getByRole('main');
+  await expect(main.getByText('No Default Model is set.')).toBeVisible();
+  await main.getByRole('link', { name: 'Set it on the Overview' }).click();
+  await expect(main.getByRole('heading', { name: 'Default Model' })).toBeVisible();
+  await expect(main.getByText('Not set: model pickers have no list')).toBeVisible();
+
+  // A provider, then one of its keys: by name and the masked hint, never the key.
+  await main.locator('#fleet-default-provider').click();
+  await page.getByRole('option', { name: 'OpenRouter' }).click();
+  await main.locator('#fleet-default-key').click();
+  await page.getByRole('option', { name: /openrouter\/work/ }).click();
+  await main.getByRole('button', { name: 'Save Default Model' }).click();
+  await expect
+    .poll(() => fleet.defaultModelSent)
+    .toEqual([{ provider: 'openrouter', keyId: 'k-or-2' }]);
+  await expect(main.getByText('OpenRouter, openrouter/work')).toBeVisible();
+  await expect(main.getByText('Models listed')).toBeVisible();
+
+  // The Agent models picker lists the catalog, with the price per 1M tokens.
+  await page.goto(MODELS);
+  await main.locator('#fleet-model-value').click();
+  const option = page.getByRole('option').filter({ hasText: 'Catalog Model' });
+  await expect(option).toBeVisible();
+  await expect(option.getByText('$3')).toBeVisible();
+  await option.click();
+  await expect(main.locator('#fleet-model-value')).toContainText('Catalog Model');
+
+  // A pool route from the list starts on the Default Model's provider.
+  await page.goto(POOLS);
+  await main.locator('#fleet-pool-model-0').click();
+  await page.getByRole('option').filter({ hasText: 'Cheap Model' }).click();
+  await expect(main.locator('#fleet-pool-provider-0')).toHaveValue('openrouter');
+
+  // Clear: back to none.
+  await page.goto(`${PATH}?open=default-model`);
+  await main.getByRole('button', { name: 'Clear' }).click();
+  await expect.poll(() => fleet.defaultModelSent.length).toBe(2);
+  await expect(main.getByText('Not set: model pickers have no list')).toBeVisible();
 });

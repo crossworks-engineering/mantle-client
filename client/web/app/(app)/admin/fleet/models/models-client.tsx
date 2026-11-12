@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Bot } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
-import { Input } from '@mantle/web-ui/ui/input';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import {
   Select,
@@ -26,6 +25,7 @@ import {
   useBoxPick,
   useMatrixRows,
 } from '../cc-kit';
+import { FleetModelPicker, PickerHint } from '../default-model';
 import { ConfirmSend, useFleetSend } from '../fleet-writes';
 
 /**
@@ -130,22 +130,18 @@ function Models({ data, refresh }: { data: FleetOverview; refresh: () => void })
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="fleet-model-value">Model</FieldLabel>
-                    <Input
+                    <FleetModelPicker
                       id="fleet-model-value"
-                      className="font-mono"
-                      placeholder="vendor/model-name"
-                      autoComplete="off"
-                      spellCheck={false}
-                      maxLength={200}
                       value={model}
-                      aria-invalid={typed !== '' && !valid}
-                      onChange={(e) => setModel(e.target.value)}
+                      invalid={typed !== '' && !valid}
+                      onValueChange={setModel}
                     />
                     <FieldDescription>
                       {typed !== '' && !valid
                         ? 'A model id has letters, digits and . _ : / @ + - only, with no space.'
-                        : 'The model id as the provider names it.'}
+                        : "From the Default Model's list, or type the model id as the agent's provider names it."}
                     </FieldDescription>
+                    <PickerHint />
                   </Field>
                   {inUse.length > 0 && (
                     <div className="space-y-1.5">
