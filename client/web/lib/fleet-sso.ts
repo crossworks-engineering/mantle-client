@@ -230,6 +230,63 @@ export function blockedText(blocked: 'env' | 'old' | 'test' | 'none' | 'top'): s
   }
 }
 
+/** A stored status older than this is read again when its box opens. */
+export const SSO_STATUS_MAX_AGE_MS = 10 * 60_000;
+
+/** Whether opening a box reads its status by itself, once: the Control
+ *  Center holds no status for it, or the one it holds is old. */
+export function needsRead(view: Pick<FleetSsoView, 'at' | 'status'> | null, now: number): boolean {
+  if (!view?.status) return true;
+  const at = Date.parse(view.at);
+  return !Number.isFinite(at) || now - at > SSO_STATUS_MAX_AGE_MS;
+}
+
+/** Whether opening the list reads every box by itself, once: no box has a
+ *  status yet. */
+export function needsReadAll(rows: readonly Pick<FleetSsoRow, 'ssoView'>[]): boolean {
+  return rows.length > 0 && rows.every((r) => !r.ssoView?.status);
+}
+
+/**
+ * What the Sign-in mode part shows, so it never shows no button and no
+ * reason:
+ *  - `raise`: the raise button, off with its reason when blocked;
+ *  - `wait`: no status yet and the status is being read: a spinner button;
+ *  - `read`: no status: the reason (the failed read, or none yet) and a
+ *    Read status button;
+ *  - `top`: required already: no button, the sentence says why.
+ */
+export function modeControl(
+  status: FleetSsoStatus | null,
+  lastTest: string | null,
+  reading: boolean,
+  failed: string | null,
+):
+  | { act: 'raise'; mode: SsoStep; label: string; text: string | null; blocked: boolean }
+  | { act: 'wait'; label: string; text: null }
+  | { act: 'read'; label: string; text: string }
+  | { act: 'top'; text: string } {
+  if (!status) {
+    if (reading) return { act: 'wait', label: 'Reading status', text: null };
+    return { act: 'read', label: 'Read status', text: failed ?? blockedText('none') };
+  }
+  const next = nextStep(status, lastTest);
+  if (!next.mode) return { act: 'top', text: blockedText('top') };
+  return {
+    act: 'raise',
+    mode: next.mode,
+    label: next.label,
+    text: next.blocked ? blockedText(next.blocked) : null,
+    blocked: next.blocked !== null,
+  };
+}
+
+/** Why the staging fields are off, when the mode is: off opens nothing. */
+export function stageText(status: Pick<FleetSsoStatus, 'mode'> | null): string | null {
+  if (status?.mode !== 'off') return null;
+  return `The fields open in setup mode. Press ${NEXT.off!.label} first.`;
+}
+
 /** The raise body. */
 export function modeBody(
   boxId: string,

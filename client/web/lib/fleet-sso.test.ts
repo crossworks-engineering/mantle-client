@@ -11,12 +11,17 @@ import {
   fromLabel,
   hasChange,
   linksText,
+  modeControl,
+  needsRead,
+  needsReadAll,
   parseAnswers,
   readAnswer,
   secretText,
   setBody,
   settleSso,
+  SSO_STATUS_MAX_AGE_MS,
   ssoReasonText,
+  stageText,
   testText,
   type FleetSsoAnswer,
   type FleetSsoAsk,
@@ -263,5 +268,96 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
     expect(lines.join(' ')).toContain('original account');
     expect(lines.join(' ')).toContain('--mode optional');
     expect(requiredWarning({ linked: null, active: null }).join(' ')).toContain('0 of 0');
+  });
+  it('reads a status by itself on open: none held, or an old one', () => {
+    const at = '2026-11-12T10:00:00.000Z';
+    const t = Date.parse(at);
+    expect(needsRead(null, t)).toBe(true);
+    expect(needsRead({ at, status: null }, t)).toBe(true);
+    expect(needsRead({ at, status: status() }, t)).toBe(false);
+    expect(needsRead({ at, status: status() }, t + SSO_STATUS_MAX_AGE_MS)).toBe(false);
+    expect(needsRead({ at, status: status() }, t + SSO_STATUS_MAX_AGE_MS + 1)).toBe(true);
+    expect(needsRead({ at: 'not a time', status: status() }, t)).toBe(true);
+    expect(SSO_STATUS_MAX_AGE_MS).toBe(10 * 60_000);
+  });
+
+  it('reads every box on open only when no box has a status', () => {
+    const view = { at: '2026-11-12T10:00:00.000Z', reason: null, test: null, set: null };
+    expect(needsReadAll([])).toBe(false);
+    expect(needsReadAll([{ ssoView: null }, { ssoView: { ...view, status: null } }])).toBe(true);
+    expect(needsReadAll([{ ssoView: null }, { ssoView: { ...view, status: status() } }])).toBe(
+      false,
+    );
+  });
+
+  it('always shows a mode control or a reason, never neither', () => {
+    // No status: a spinner while the read runs, then the reason and Read status.
+    expect(modeControl(null, null, true, null)).toEqual({
+      act: 'wait',
+      label: 'Reading status',
+      text: null,
+    });
+    expect(modeControl(null, null, false, null)).toEqual({
+      act: 'read',
+      label: 'Read status',
+      text: blockedText('none'),
+    });
+    const failed = ssoReasonText('unreachable');
+    expect(modeControl(null, null, false, failed)).toEqual({
+      act: 'read',
+      label: 'Read status',
+      text: failed,
+    });
+    // A status: the raise, off with the existing sentence when blocked.
+    expect(modeControl(status({ mode: 'off', modeFrom: 'none' }), null, false, null)).toEqual({
+      act: 'raise',
+      mode: 'setup',
+      label: 'Open setup',
+      text: null,
+      blocked: false,
+    });
+    expect(modeControl(status({ mode: 'setup', modeFrom: 'row' }), null, true, null)).toEqual({
+      act: 'raise',
+      mode: 'optional',
+      label: 'Turn on (optional)',
+      text: blockedText('test'),
+      blocked: true,
+    });
+    expect(modeControl(status({ mode: 'off', modeFrom: 'env' }), null, false, null)).toMatchObject({
+      act: 'raise',
+      text: blockedText('env'),
+      blocked: true,
+    });
+    expect(modeControl(status({ mode: 'off' }), null, false, null)).toMatchObject({
+      act: 'raise',
+      text: blockedText('old'),
+      blocked: true,
+    });
+    expect(modeControl(status({ mode: 'required', modeFrom: 'row' }), 'ok', false, null)).toEqual({
+      act: 'top',
+      text: blockedText('top'),
+    });
+    // Every state has a button or a sentence.
+    for (const c of [
+      modeControl(null, null, true, null),
+      modeControl(null, null, false, null),
+      modeControl(status({ mode: 'required', modeFrom: 'row' }), null, false, null),
+    ]) {
+      expect('label' in c || c.text).toBeTruthy();
+    }
+  });
+
+  it('says why the staging fields are off in mode off, and names the button', () => {
+    expect(stageText(status({ mode: 'off' }))).toBe(
+      'The fields open in setup mode. Press Open setup first.',
+    );
+    expect(stageText(status({ mode: 'off' }))).toContain(
+      nextStep(status({ mode: 'off', modeFrom: 'none' }), null).label!,
+    );
+    for (const mode of ['setup', 'optional', 'required'] as const) {
+      expect(stageText(status({ mode }))).toBeNull();
+    }
+    // No status: the Sign-in mode part says what to do.
+    expect(stageText(null)).toBeNull();
   });
 });
