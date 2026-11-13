@@ -12,6 +12,10 @@
  *    one step (off, setup, optional, required), never down; the box holds
  *    the rule, and a mode line in its .env always wins;
  *  - `{ do: 'answers', callIds }`: the calls still pending (1 to 100).
+ * The Control Center's own box is the target `self` (`boxIds: ['self']`,
+ * `boxId: 'self'`): the route runs the box's own code at once, so its one
+ * answer comes back with no pending ids, and the Control Center keeps no
+ * view of it: the page holds it (selfView).
  * The route waits up to 25 s, then hands back the ids still pending. The
  * Control Center saves each answer into the box's view, so the list is read
  * again after the answers come.
@@ -230,6 +234,63 @@ export function blockedText(blocked: 'env' | 'old' | 'test' | 'none' | 'top'): s
   }
 }
 
+/** A stored status older than this is read again when its box opens. */
+export const SSO_STATUS_MAX_AGE_MS = 10 * 60_000;
+
+/** Whether opening a box reads its status by itself, once: the Control
+ *  Center holds no status for it, or the one it holds is old. */
+export function needsRead(view: Pick<FleetSsoView, 'at' | 'status'> | null, now: number): boolean {
+  if (!view?.status) return true;
+  const at = Date.parse(view.at);
+  return !Number.isFinite(at) || now - at > SSO_STATUS_MAX_AGE_MS;
+}
+
+/** Whether opening the list reads every box by itself, once: no box has a
+ *  status yet. */
+export function needsReadAll(rows: readonly Pick<FleetSsoRow, 'ssoView'>[]): boolean {
+  return rows.length > 0 && rows.every((r) => !r.ssoView?.status);
+}
+
+/**
+ * What the Sign-in mode part shows, so it never shows no button and no
+ * reason:
+ *  - `raise`: the raise button, off with its reason when blocked;
+ *  - `wait`: no status yet and the status is being read: a spinner button;
+ *  - `read`: no status: the reason (the failed read, or none yet) and a
+ *    Read status button;
+ *  - `top`: required already: no button, the sentence says why.
+ */
+export function modeControl(
+  status: FleetSsoStatus | null,
+  lastTest: string | null,
+  reading: boolean,
+  failed: string | null,
+):
+  | { act: 'raise'; mode: SsoStep; label: string; text: string | null; blocked: boolean }
+  | { act: 'wait'; label: string; text: null }
+  | { act: 'read'; label: string; text: string }
+  | { act: 'top'; text: string } {
+  if (!status) {
+    if (reading) return { act: 'wait', label: 'Reading status', text: null };
+    return { act: 'read', label: 'Read status', text: failed ?? blockedText('none') };
+  }
+  const next = nextStep(status, lastTest);
+  if (!next.mode) return { act: 'top', text: blockedText('top') };
+  return {
+    act: 'raise',
+    mode: next.mode,
+    label: next.label,
+    text: next.blocked ? blockedText(next.blocked) : null,
+    blocked: next.blocked !== null,
+  };
+}
+
+/** Why the staging fields are off, when the mode is: off opens nothing. */
+export function stageText(status: Pick<FleetSsoStatus, 'mode'> | null): string | null {
+  if (status?.mode !== 'off') return null;
+  return `The fields open in setup mode. Press ${NEXT.off!.label} first.`;
+}
+
 /** The raise body. */
 export function modeBody(
   boxId: string,
@@ -240,16 +301,25 @@ export function modeBody(
 }
 
 /** What the warning before "Make required" says: what required does, the
- *  numbers, and the way back. */
-export function requiredWarning(status: Pick<FleetSsoStatus, 'linked' | 'active'>): string[] {
+ *  numbers, and the way back. `self`: the box is this Control Center, the
+ *  one the person is signed in to, so their own session ends too unless they
+ *  are the original account (an Admin cannot be marked outside). */
+export function requiredWarning(
+  status: Pick<FleetSsoStatus, 'linked' | 'active'>,
+  self = false,
+): string[] {
   const linked = status.linked ?? 0;
   const active = status.active ?? 0;
   const unlinked = Math.max(active - linked, 0);
   return [
-    'Every password session on the box ends, except those of the original account and of honoured outside marks, which keep their passwords.',
+    self
+      ? 'This is the box you are signed in to. Every password session on it ends, yours too, unless you are the original account. Only the original account and honoured outside marks keep their passwords: keep the original account at hand.'
+      : 'Every password session on the box ends, except those of the original account and of honoured outside marks, which keep their passwords.',
     'Linked logins then sign in with the company account only.',
     `Unlinked logins sign in with their password once and must link. Now: ${linked} of ${active} active logins are linked, ${unlinked} are not.`,
-    'The Control Center cannot lower the mode. The way back is optional in the box .env (scripts/sso-env.sh <box> --mode optional).',
+    self
+      ? 'Nothing on this page can lower the mode. The way back is optional in the .env of this box (scripts/sso-env.sh <box> --mode optional).'
+      : 'The Control Center cannot lower the mode. The way back is optional in the box .env (scripts/sso-env.sh <box> --mode optional).',
   ];
 }
 
@@ -473,4 +543,171 @@ export async function settleSso(
     pending = next;
   }
   return { answers, pending, gone };
+}
+
+// --- the Microsoft side ----------------------------------------------------------------
+
+/** One step of the click path in the Entra admin center. `values` are what
+ *  the person types or picks there, each with a copy button. */
+export type EntraStep = {
+  title: string;
+  text: string[];
+  values: { label: string; value: string }[];
+};
+
+/** The name of the box's app in Entra: Mantle and the box host. */
+export function entraAppName(url: string): string {
+  try {
+    return `Mantle ${new URL(url).host}`;
+  } catch {
+    return `Mantle ${url}`;
+  }
+}
+
+/** Whether the Microsoft steps show open: in off and setup, where the app
+ *  is still made. In optional and required they fold away. */
+export function entraOpen(mode: SsoMode): boolean {
+  return mode === 'off' || mode === 'setup';
+}
+
+export const ENTRA_FOLDED =
+  'Sign-in is on. Show the Microsoft steps again, for example for a new secret.';
+
+/**
+ * The click path in the Entra admin center for one box, from mantle
+ * docs/oidc-entra.md ("In the Entra admin center"), with this box's own
+ * values. Menu names are Microsoft's; they change often.
+ */
+export function entraSteps(box: { url: string }, redirectUri: string): EntraStep[] {
+  const app = entraAppName(box.url);
+  return [
+    {
+      title: 'Entra ID > App registrations > New registration',
+      text: [
+        'Make one app for this box.',
+        'Supported account types: Single tenant only.',
+        'Redirect URI: pick the platform Web, and paste the address below.',
+      ],
+      values: [
+        { label: 'Name', value: app },
+        { label: 'Redirect URI (Web)', value: redirectUri },
+      ],
+    },
+    {
+      title: "On the app's Overview",
+      text: [
+        'Copy the Directory (tenant) ID. It goes in Tenant ID on this page.',
+        'Copy the Application (client) ID. It goes in Client ID on this page.',
+      ],
+      values: [],
+    },
+    {
+      title: 'Certificates & secrets > Client secrets > New client secret',
+      text: [
+        'Copy the Value. Not the Secret ID. Microsoft shows the Value only once.',
+        'The Value goes in Client secret on this page.',
+        'The secret has an end date. Put that date in a calendar: sign-in stops on that day.',
+      ],
+      values: [],
+    },
+    {
+      title: 'Token configuration > Add optional claim',
+      text: ['Token type: ID. Claim: auth_time.'],
+      values: [{ label: 'Claim', value: 'auth_time' }],
+    },
+    {
+      title: 'Entra ID > Enterprise apps > All applications',
+      text: [
+        'Open the app of this box. Entra made it at the registration.',
+        'Properties: set Assignment required? to Yes.',
+        'Users and groups > Add user/group: add the people or groups who may sign in to this box. Entra refuses a person who is not assigned.',
+      ],
+      values: [{ label: 'App', value: app }],
+    },
+    {
+      title: 'On this page',
+      text: [
+        'Open setup, if the mode is still off.',
+        'Under Stage the sign-in, paste the tenant ID, the client ID and the secret Value. Save.',
+        'Then Test. Then Turn on (optional).',
+      ],
+      values: [],
+    },
+  ];
+}
+
+// --- this box: the Control Center itself -------------------------------------------------
+
+/** The route's target for the Control Center's own box. */
+export const SELF = 'self';
+/** Under the sign-in key: a Fleet refresh reads this box's status again too. */
+export const FLEET_SSO_SELF_KEY = [...FLEET_SSO_KEY, SELF];
+
+/**
+ * This box's view after its answers. The Control Center keeps no view of
+ * its own box, so the page holds it, as the Control Center holds a fleet
+ * box's (mantle packages/db control-center.ts nextSsoView: keep the two
+ * alike): a new status replaces the old, a Test's code is kept, and a save
+ * that went through makes the last Test stale (unless it ran its own). A
+ * reload drops it, so Turn on asks a new Test. No last save or raise: the
+ * answer shows at once on the pane.
+ */
+export function selfView(
+  prev: FleetSsoView | null,
+  all: FleetSsoAnswers,
+  now: string,
+): FleetSsoView | null {
+  let view = prev;
+  for (const a of all.answers) {
+    if (a.boxId !== SELF) continue;
+    const r = readAnswer(a);
+    const status = a.output?.status ?? null;
+    view = {
+      at: now,
+      reason: status ? null : (r.reason ?? 'refused'),
+      status: status ?? view?.status ?? null,
+      test: r.test
+        ? { code: r.test, at: now, by: a.by }
+        : a.name === 'sso_set' && r.ok
+          ? null
+          : (view?.test ?? null),
+      set: null,
+      mode: null,
+    };
+  }
+  return view;
+}
+
+/** This box as a row of the list: its own name, its address (the redirect
+ *  URI's origin once a status names it, else `fallbackUrl`), and the view
+ *  the page holds. */
+export function selfRow(name: string, fallbackUrl: string, view: FleetSsoView | null): FleetSsoRow {
+  let url = fallbackUrl;
+  try {
+    if (view?.status?.redirectUri) url = new URL(view.status.redirectUri).origin;
+  } catch {
+    // A status with no usable redirect URI keeps the fallback.
+  }
+  return {
+    id: SELF,
+    url,
+    label: name,
+    lastOkAt: null,
+    lastReason: null,
+    version: null,
+    ssoView: view,
+  };
+}
+
+/** This box's status, read live (one ask), folded into the view the page
+ *  holds so a read keeps the last Test. `held` is read after the answer, so
+ *  a save that lands while the read is on its way keeps its cleared Test
+ *  (the status may be one read old until the next read). */
+export async function readSelf(
+  held: () => FleetSsoView | null,
+  send: SsoSend = defaultSend,
+  now: () => string = () => new Date().toISOString(),
+): Promise<FleetSsoView | null> {
+  const all = await askSso({ do: 'status', boxIds: [SELF] }, send);
+  return selfView(held(), all, now());
 }

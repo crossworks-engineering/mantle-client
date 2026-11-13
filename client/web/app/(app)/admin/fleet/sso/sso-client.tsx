@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, RefreshCw, Server } from 'lucide-react';
-import { ApiError } from '@mantle/web-ui/api-fetch';
+import type { Shell } from '@mantle/client-types';
+import { ApiError, apiFetch } from '@mantle/web-ui/api-fetch';
+import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
 import { Button } from '@mantle/web-ui/ui/button';
 import { CopyButton } from '@mantle/web-ui/ui/copy-button';
 import {
@@ -42,28 +44,39 @@ import { boxName } from '@/lib/fleet';
 import {
   answerText,
   askMany,
+  ENTRA_FOLDED,
+  entraOpen,
+  entraSteps,
   askSso,
-  blockedText,
   FLEET_SSO_KEY,
+  FLEET_SSO_SELF_KEY,
   formRules,
   fromLabel,
   hasChange,
   linksText,
   listSso,
   modeBody,
+  modeControl,
   modeLabel,
   modeRefusalText,
-  nextStep,
+  needsRead,
+  needsReadAll,
   readAnswer,
+  readSelf,
   requiredWarning,
   secretText,
+  SELF,
+  selfRow,
+  selfView,
   setBody,
   settleSso,
   ssoReasonText,
+  stageText,
   testText,
   type FleetSsoAnswers,
   type FleetSsoRow,
   type FleetSsoStatus,
+  type FleetSsoView,
   type SsoFrom,
   type SsoStep,
 } from '@/lib/fleet-sso';
@@ -96,7 +109,7 @@ function askRefusal(err: unknown, fallback: string): string {
   return refusalText(err, fallback);
 }
 
-function ModePill({ status }: { status: FleetSsoStatus | null }) {
+export function ModePill({ status }: { status: FleetSsoStatus | null }) {
   if (!status) return <Pill>Not read</Pill>;
   const tone = status.mode === 'off' ? 'muted' : status.mode === 'setup' ? 'warn' : 'ok';
   return <Pill tone={tone}>{modeLabel(status.mode)}</Pill>;
@@ -129,21 +142,48 @@ function LastTest({ test }: { test: { code: string; at: string; by: string } | n
 // --- the answers of the boxes ---------------------------------------------------------
 
 /** Wait for every answer, then read the list again: the Control Center has
- *  saved each answer into the box's view by then. */
+ *  saved each answer into the box's view by then. This box answers at once,
+ *  and the Control Center keeps no view of it: its answer goes into the view
+ *  the page holds. */
 function useSettle() {
   const queryClient = useQueryClient();
   return async (first: FleetSsoAnswers): Promise<FleetSsoAnswers> => {
+    if (first.answers.some((a) => a.boxId === SELF)) {
+      queryClient.setQueryData<FleetSsoView | null>(FLEET_SSO_SELF_KEY, (prev) =>
+        selfView(prev ?? null, first, new Date().toISOString()),
+      );
+      return first;
+    }
     try {
       return await settleSso(first);
     } finally {
-      void queryClient.invalidateQueries({ queryKey: FLEET_SSO_KEY });
+      // The list only: this box's view is the page's own, read on its own.
+      void queryClient.invalidateQueries({ queryKey: FLEET_SSO_KEY, exact: true });
     }
   };
 }
 
 // --- all boxes ------------------------------------------------------------------------
 
-function AllBoxes({ rows, onOpen }: { rows: FleetSsoRow[]; onOpen: (id: string) => void }) {
+function AllBoxes({
+  rows,
+  onOpen,
+  onRead,
+}: {
+  rows: FleetSsoRow[];
+  onOpen: (id: string) => void;
+  onRead: () => void;
+}) {
+  // No box has a status yet: read every box once, on open. No retry.
+  const opened = useRef(false);
+  const readOnOpen = useEffectEvent(() => {
+    if (needsReadAll(rows)) onRead();
+  });
+  useEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
+    readOnOpen();
+  }, []);
   return (
     <DetailPane icon={<Building2 />} title="All boxes" pill={<Pill>{boxesText(rows.length)}</Pill>}>
       <Callout>{HELP}</Callout>
@@ -305,11 +345,13 @@ function RequiredWarning({
   open,
   onOpenChange,
   status,
+  self,
   onConfirm,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   status: FleetSsoStatus;
+  self: boolean;
   onConfirm: () => void;
 }) {
   return (
@@ -320,7 +362,7 @@ function RequiredWarning({
           <DialogDescription>Read what required does on this box first.</DialogDescription>
         </DialogHeader>
         <ul className="list-disc space-y-2 pl-5 text-sm">
-          {requiredWarning(status).map((line) => (
+          {requiredWarning(status, self).map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
@@ -337,21 +379,29 @@ function RequiredWarning({
   );
 }
 
-/** The mode, where it comes from, and the one raise the page offers. */
+/** The mode, where it comes from, and the one raise the page offers. It
+ *  always shows a button or a reason: while the status is read, a spinner;
+ *  with no status, the reason and Read status. */
 function ModePart({
   status,
   last,
   lastTest,
   busy,
+  reading,
+  failed,
   onRaise,
+  onRead,
 }: {
   status: FleetSsoStatus | null;
   last: NonNullable<FleetSsoRow['ssoView']>['mode'] | null;
   lastTest: string | null;
   busy: boolean;
+  reading: boolean;
+  failed: string | null;
   onRaise: (mode: SsoStep) => void;
+  onRead: () => void;
 }) {
-  const next = nextStep(status, lastTest);
+  const c = modeControl(status, lastTest, reading, failed);
   return (
     <Part title="Sign-in mode">
       <div className="flex flex-wrap items-center gap-3">
@@ -361,21 +411,42 @@ function ModePart({
             {fromLabel(status.modeFrom ?? 'none')}
           </span>
         )}
-        {next.mode && (
+        {c.act === 'raise' && (
           <Button
             type="button"
             size="sm"
             className="ml-auto"
-            variant={next.mode === 'required' ? 'destructive' : 'default'}
-            disabled={next.blocked !== null || busy}
+            variant={c.mode === 'required' ? 'destructive' : 'default'}
+            disabled={c.blocked || busy}
             data-agent-risk="person"
-            onClick={() => onRaise(next.mode)}
+            onClick={() => onRaise(c.mode)}
           >
-            {next.label}
+            {c.label}
+          </Button>
+        )}
+        {c.act === 'wait' && (
+          <Button type="button" size="sm" className="ml-auto" disabled>
+            <Spinner size={16} />
+            {c.label}
+          </Button>
+        )}
+        {c.act === 'read' && (
+          <Button type="button" size="sm" className="ml-auto" disabled={busy} onClick={onRead}>
+            <RefreshCw aria-hidden />
+            {c.label}
           </Button>
         )}
       </div>
-      {next.blocked && <p className="text-xs text-muted-foreground">{blockedText(next.blocked)}</p>}
+      {c.text && (
+        <p
+          className={cn(
+            'text-xs',
+            c.act === 'read' && failed ? TONE_TEXT.bad : 'text-muted-foreground',
+          )}
+        >
+          {c.text}
+        </p>
+      )}
       {last && (
         <p className={cn('text-xs', last.ok ? 'text-muted-foreground' : TONE_TEXT.bad)}>
           Last raise{last.to ? ` to ${last.to}` : ''} by {last.by}, {formatDateTime(last.at)}:{' '}
@@ -385,6 +456,49 @@ function ModePart({
               ? modeRefusalText(last.reason)
               : ssoReasonText(last.reason)}
         </p>
+      )}
+    </Part>
+  );
+}
+
+/** The click path in the Entra admin center, with this box's own values to
+ *  copy. Open in off and setup; folded once sign-in is on. */
+function MicrosoftPart({ row, status }: { row: FleetSsoRow; status: FleetSsoStatus }) {
+  if (!status.redirectUri) return null;
+  const list = (
+    <ol className="list-decimal space-y-4 pl-5 text-sm">
+      {entraSteps(row, status.redirectUri).map((step) => (
+        <li key={step.title} className="space-y-1.5 pl-1">
+          <p className="font-medium">{step.title}</p>
+          {step.text.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+          {step.values.length > 0 && (
+            <Facts
+              rows={step.values.map((v) => ({
+                label: v.label,
+                value: (
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 break-all font-mono text-[13px]">{v.value}</span>
+                    <CopyButton value={v.value} ariaLabel={`Copy: ${v.label}`} />
+                  </span>
+                ),
+              }))}
+            />
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+  return (
+    <Part title="Microsoft side">
+      {entraOpen(status.mode) ? (
+        list
+      ) : (
+        <details>
+          <summary className="cursor-pointer text-sm text-muted-foreground">{ENTRA_FOLDED}</summary>
+          <div className="pt-3">{list}</div>
+        </details>
       )}
     </Part>
   );
@@ -403,6 +517,7 @@ function noticeOf(all: FleetSsoAnswers, boxId: string): Notice {
 }
 
 function OneBox({ row }: { row: FleetSsoRow }) {
+  const self = row.id === SELF;
   const toast = useToast();
   const settle = useSettle();
   const view = row.ssoView;
@@ -414,7 +529,12 @@ function OneBox({ row }: { row: FleetSsoRow }) {
   // Bumped by a save: the next secret starts hidden again.
   const [fieldKey, setFieldKey] = useState(0);
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState<null | 'status' | 'test' | 'set' | 'mode'>(null);
+  // No status held, or an old one: the status is read once, on open. The
+  // spinner shows from the first paint.
+  const [readOnOpen] = useState(() => needsRead(view, Date.now()));
+  const [busy, setBusy] = useState<null | 'status' | 'test' | 'set' | 'mode'>(
+    readOnOpen ? 'status' : null,
+  );
   // The raise asked: the warning first for required, then the password.
   const [raising, setRaising] = useState<SsoStep | null>(null);
   const [warned, setWarned] = useState(false);
@@ -426,12 +546,14 @@ function OneBox({ row }: { row: FleetSsoRow }) {
     if (!rules.secret) setSecret('');
   }, [rules.secret]);
 
-  const run = async (what: 'status' | 'test') => {
+  /** `quiet`: the read on open, which shows its answer only when it failed. */
+  const run = async (what: 'status' | 'test', quiet = false) => {
     setBusy(what);
     setNotice(null);
     try {
       const all = await settle(await askSso({ do: what, boxIds: [row.id] }));
-      setNotice(noticeOf(all, row.id));
+      const said = noticeOf(all, row.id);
+      if (!quiet || said.tone !== 'ok') setNotice(said);
     } catch (err) {
       setNotice({
         tone: 'bad',
@@ -441,6 +563,14 @@ function OneBox({ row }: { row: FleetSsoRow }) {
       setBusy(null);
     }
   };
+
+  const opened = useRef(false);
+  const startRead = useEffectEvent(() => void run('status', true));
+  useEffect(() => {
+    if (opened.current || !readOnOpen) return;
+    opened.current = true;
+    startRead();
+  }, [readOnOpen]);
 
   const saved = async (first: FleetSsoAnswers) => {
     setAsking(false);
@@ -512,6 +642,7 @@ function OneBox({ row }: { row: FleetSsoRow }) {
       pill={
         <>
           <ModePill status={status} />
+          {self && <Pill>This box</Pill>}
           {row.version && (
             <span className="font-mono text-xs text-muted-foreground">v{row.version}</span>
           )}
@@ -542,6 +673,22 @@ function OneBox({ row }: { row: FleetSsoRow }) {
         </Callout>
       )}
 
+      <ModePart
+        status={status}
+        last={view?.mode ?? null}
+        lastTest={view?.test?.code ?? null}
+        busy={busy !== null}
+        reading={busy === 'status'}
+        failed={
+          notice?.tone === 'bad' ? notice.text : view?.reason ? ssoReasonText(view.reason) : null
+        }
+        onRead={() => void run('status')}
+        onRaise={(mode) => {
+          setWarned(mode !== 'required');
+          setRaising(mode);
+        }}
+      />
+
       <Part title="This box">
         {status ? (
           <>
@@ -569,18 +716,10 @@ function OneBox({ row }: { row: FleetSsoRow }) {
         )}
       </Part>
 
-      <ModePart
-        status={status}
-        last={view?.mode ?? null}
-        lastTest={view?.test?.code ?? null}
-        busy={busy !== null}
-        onRaise={(mode) => {
-          setWarned(mode !== 'required');
-          setRaising(mode);
-        }}
-      />
+      {status && <MicrosoftPart row={row} status={status} />}
 
       <Part title="Stage the sign-in">
+        {stageText(status) && <p className="text-sm text-muted-foreground">{stageText(status)}</p>}
         <form
           noValidate
           onSubmit={(e) => {
@@ -680,6 +819,7 @@ function OneBox({ row }: { row: FleetSsoRow }) {
             if (!open) setRaising(null);
           }}
           status={status}
+          self={self}
           onConfirm={() => setWarned(true)}
         />
       )}
@@ -699,6 +839,73 @@ function OneBox({ row }: { row: FleetSsoRow }) {
       />
     </DetailPane>
   );
+}
+
+// --- this box -------------------------------------------------------------------------
+
+/** This box's name: the site name, else its host. */
+function useSelfName(): string {
+  const shell = useQuery({
+    queryKey: ['shell'],
+    queryFn: () => apiFetch<Shell>('/api/shell'),
+  });
+  const named = shell.data?.siteName?.trim();
+  if (named) return named;
+  return hostOf(selfOrigin()) || 'This box';
+}
+
+/** This box's origin: the API base (the desktop app's renderer is on
+ *  another host), else the page's own. */
+function selfOrigin(): string {
+  return runtimeApiBase() || (typeof window === 'undefined' ? '' : window.location.origin);
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+}
+
+/** This box's sign-in, read live (the Control Center keeps no view of it):
+ *  its row of the list, and the read. Also the Overview's card. */
+export function useSelfSso() {
+  const queryClient = useQueryClient();
+  const name = useSelfName();
+  const query = useQuery({
+    queryKey: FLEET_SSO_SELF_KEY,
+    queryFn: () =>
+      readSelf(() => queryClient.getQueryData<FleetSsoView | null>(FLEET_SSO_SELF_KEY) ?? null),
+    staleTime: 30_000,
+    retry: 1,
+  });
+  return { row: selfRow(name, selfOrigin(), query.data ?? null), query };
+}
+
+function SelfCard({ selected, onOpen }: { selected: boolean; onOpen: () => void }) {
+  const { row } = useSelfSso();
+  return (
+    <ListCard selected={selected} onClick={onOpen}>
+      <div className="flex items-center gap-2">
+        <ListCardTitle className="min-w-0 flex-1">{boxName(row)}</ListCardTitle>
+        <ModePill status={row.ssoView?.status ?? null} />
+      </div>
+      <ListCardMeta>This box</ListCardMeta>
+    </ListCard>
+  );
+}
+
+function SelfBox() {
+  const { row, query } = useSelfSso();
+  if (query.isLoading) {
+    return (
+      <div className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
+        <Spinner size={20} /> Loading…
+      </div>
+    );
+  }
+  return <OneBox key={SELF} row={row} />;
 }
 
 // --- the screen -----------------------------------------------------------------------
@@ -729,6 +936,7 @@ function BoxCard({
 
 function FleetSso() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const settle = useSettle();
   const [param, setParam] = useParam('box');
   const query = useQuery({
@@ -740,6 +948,8 @@ function FleetSso() {
   const [refreshing, setRefreshing] = useState(false);
   const rows = query.data ?? [];
   const selected = rows.find((r) => r.id === param) ?? null;
+  // This box: asked for, or the only box there is (once the list is read).
+  const selfOpen = param === SELF || (!selected && !query.isLoading && rows.length === 0);
 
   const refreshAll = async () => {
     setRefreshing(true);
@@ -783,7 +993,11 @@ function FleetSso() {
                 size="sm"
                 variant="ghost"
                 disabled={refreshing}
-                onClick={() => void refreshAll()}
+                onClick={() => {
+                  void refreshAll();
+                  // This box too: its status is read live.
+                  void queryClient.invalidateQueries({ queryKey: FLEET_SSO_SELF_KEY });
+                }}
               >
                 {refreshing ? <Spinner size={16} /> : <RefreshCw aria-hidden />}
                 Refresh
@@ -791,6 +1005,7 @@ function FleetSso() {
             ) : undefined
           }
         >
+          <SelfCard selected={selfOpen} onOpen={() => setParam(SELF)} />
           {query.isLoading ? (
             <div className="flex items-center gap-3 px-1 py-6 text-sm text-muted-foreground">
               <Spinner size={20} /> Loading…
@@ -800,10 +1015,10 @@ function FleetSso() {
               {askRefusal(query.error, 'Could not load the boxes.')}
             </p>
           ) : rows.length === 0 ? (
-            <ListEmpty>No box is linked.</ListEmpty>
+            <ListEmpty>No other box is linked.</ListEmpty>
           ) : (
             <>
-              <ListCard selected={!selected} onClick={() => setParam(ALL)}>
+              <ListCard selected={!selected && !selfOpen} onClick={() => setParam(ALL)}>
                 <div className="flex items-center gap-2">
                   <Building2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   <ListCardTitle>All boxes</ListCardTitle>
@@ -823,10 +1038,12 @@ function FleetSso() {
         </ListPane>
       }
       detail={
-        selected ? (
+        selfOpen ? (
+          <SelfBox />
+        ) : selected ? (
           <OneBox key={selected.id} row={selected} />
         ) : rows.length > 0 ? (
-          <AllBoxes rows={rows} onOpen={setParam} />
+          <AllBoxes rows={rows} onOpen={setParam} onRead={() => void refreshAll()} />
         ) : null
       }
     />

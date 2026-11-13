@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, CircleCheck, Cpu, Radar, TriangleAlert } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowRight, CircleCheck, Cpu, KeyRound, Radar, TriangleAlert } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { CopyBlock, CopyButton } from '@mantle/web-ui/ui/copy-button';
 import { ListCard, ListCardSnippet, ListCardTitle } from '@mantle/web-ui/ui/list-card';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { formatMicroUsd } from '@mantle/web-ui/traces-format';
-import { banState, tickIsStale, type FleetOverview } from '@/lib/fleet';
+import { banState, boxName, tickIsStale, type FleetOverview } from '@/lib/fleet';
+import { modeLabel, SELF } from '@/lib/fleet-sso';
 import { healthLevel } from '@/lib/fleet-matrix';
 import {
   boxesText,
@@ -38,8 +40,33 @@ import {
   defaultModelLine,
   useDefaultModel,
 } from './default-model';
+import { ModePill, useSelfSso } from './sso/sso-client';
 
 const SUMMARY = 'summary';
+
+/** This box's company sign-in: its mode, and the way to its entry on the
+ *  sign-in page (the one page for all sign-in setup). */
+function SelfSsoCard() {
+  const router = useRouter();
+  const { row, query } = useSelfSso();
+  const status = row.ssoView?.status ?? null;
+  return (
+    <ListCard onClick={() => router.push(ccHref('sso', SELF))}>
+      <div className="flex items-center gap-2">
+        <KeyRound className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <ListCardTitle className="min-w-0 flex-1">Company sign-in</ListCardTitle>
+        <ModePill status={status} />
+      </div>
+      <ListCardSnippet>
+        {status
+          ? `${boxName(row)}: ${modeLabel(status.mode)}`
+          : query.isLoading
+            ? `${boxName(row)}: reading…`
+            : `${boxName(row)}: not read. Open it to read the status.`}
+      </ListCardSnippet>
+    </ListCard>
+  );
+}
 
 /** The state of the fleet in numbers, then this Control Center's own service. */
 function Summary({ data, issues }: { data: FleetOverview; issues: FleetIssue[] }) {
@@ -203,6 +230,7 @@ function Overview({ data }: { data: FleetOverview }) {
             </div>
             <ListCardSnippet>{defaultModelLine(model)}</ListCardSnippet>
           </ListCard>
+          <SelfSsoCard />
           <p className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Needs you ({issues.length})
           </p>

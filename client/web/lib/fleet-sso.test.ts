@@ -3,20 +3,35 @@ import {
   answerText,
   askMany,
   blockedText,
+  ENTRA_FOLDED,
+  entraAppName,
+  entraOpen,
+  entraSteps,
   modeBody,
   nextStep,
   requiredWarning,
+  FLEET_SSO_KEY,
   FLEET_SSO_PATH,
+  FLEET_SSO_SELF_KEY,
   formRules,
   fromLabel,
   hasChange,
   linksText,
+  modeControl,
+  needsRead,
+  needsReadAll,
   parseAnswers,
   readAnswer,
+  readSelf,
   secretText,
+  SELF,
+  selfRow,
+  selfView,
   setBody,
   settleSso,
+  SSO_STATUS_MAX_AGE_MS,
   ssoReasonText,
+  stageText,
   testText,
   type FleetSsoAnswer,
   type FleetSsoAsk,
@@ -263,5 +278,290 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
     expect(lines.join(' ')).toContain('original account');
     expect(lines.join(' ')).toContain('--mode optional');
     expect(requiredWarning({ linked: null, active: null }).join(' ')).toContain('0 of 0');
+  });
+  it('reads a status by itself on open: none held, or an old one', () => {
+    const at = '2026-11-12T10:00:00.000Z';
+    const t = Date.parse(at);
+    expect(needsRead(null, t)).toBe(true);
+    expect(needsRead({ at, status: null }, t)).toBe(true);
+    expect(needsRead({ at, status: status() }, t)).toBe(false);
+    expect(needsRead({ at, status: status() }, t + SSO_STATUS_MAX_AGE_MS)).toBe(false);
+    expect(needsRead({ at, status: status() }, t + SSO_STATUS_MAX_AGE_MS + 1)).toBe(true);
+    expect(needsRead({ at: 'not a time', status: status() }, t)).toBe(true);
+    expect(SSO_STATUS_MAX_AGE_MS).toBe(10 * 60_000);
+  });
+
+  it('reads every box on open only when no box has a status', () => {
+    const view = { at: '2026-11-12T10:00:00.000Z', reason: null, test: null, set: null };
+    expect(needsReadAll([])).toBe(false);
+    expect(needsReadAll([{ ssoView: null }, { ssoView: { ...view, status: null } }])).toBe(true);
+    expect(needsReadAll([{ ssoView: null }, { ssoView: { ...view, status: status() } }])).toBe(
+      false,
+    );
+  });
+
+  it('always shows a mode control or a reason, never neither', () => {
+    // No status: a spinner while the read runs, then the reason and Read status.
+    expect(modeControl(null, null, true, null)).toEqual({
+      act: 'wait',
+      label: 'Reading status',
+      text: null,
+    });
+    expect(modeControl(null, null, false, null)).toEqual({
+      act: 'read',
+      label: 'Read status',
+      text: blockedText('none'),
+    });
+    const failed = ssoReasonText('unreachable');
+    expect(modeControl(null, null, false, failed)).toEqual({
+      act: 'read',
+      label: 'Read status',
+      text: failed,
+    });
+    // A status: the raise, off with the existing sentence when blocked.
+    expect(modeControl(status({ mode: 'off', modeFrom: 'none' }), null, false, null)).toEqual({
+      act: 'raise',
+      mode: 'setup',
+      label: 'Open setup',
+      text: null,
+      blocked: false,
+    });
+    expect(modeControl(status({ mode: 'setup', modeFrom: 'row' }), null, true, null)).toEqual({
+      act: 'raise',
+      mode: 'optional',
+      label: 'Turn on (optional)',
+      text: blockedText('test'),
+      blocked: true,
+    });
+    expect(modeControl(status({ mode: 'off', modeFrom: 'env' }), null, false, null)).toMatchObject({
+      act: 'raise',
+      text: blockedText('env'),
+      blocked: true,
+    });
+    expect(modeControl(status({ mode: 'off' }), null, false, null)).toMatchObject({
+      act: 'raise',
+      text: blockedText('old'),
+      blocked: true,
+    });
+    expect(modeControl(status({ mode: 'required', modeFrom: 'row' }), 'ok', false, null)).toEqual({
+      act: 'top',
+      text: blockedText('top'),
+    });
+    // Every state has a button or a sentence.
+    for (const c of [
+      modeControl(null, null, true, null),
+      modeControl(null, null, false, null),
+      modeControl(status({ mode: 'required', modeFrom: 'row' }), null, false, null),
+    ]) {
+      expect('label' in c || c.text).toBeTruthy();
+    }
+  });
+
+  it('says why the staging fields are off in mode off, and names the button', () => {
+    expect(stageText(status({ mode: 'off' }))).toBe(
+      'The fields open in setup mode. Press Open setup first.',
+    );
+    expect(stageText(status({ mode: 'off' }))).toContain(
+      nextStep(status({ mode: 'off', modeFrom: 'none' }), null).label!,
+    );
+    for (const mode of ['setup', 'optional', 'required'] as const) {
+      expect(stageText(status({ mode }))).toBeNull();
+    }
+    // No status: the Sign-in mode part says what to do.
+    expect(stageText(null)).toBeNull();
+  });
+  it('walks the Microsoft side with the values of this box', () => {
+    const uri = 'https://box-a.example.invalid/api/auth/oidc/callback';
+    expect(entraAppName('https://box-a.example.invalid')).toBe('Mantle box-a.example.invalid');
+    expect(entraAppName('https://box-a.example.invalid:8443/x')).toBe(
+      'Mantle box-a.example.invalid:8443',
+    );
+    expect(entraAppName('not a url')).toBe('Mantle not a url');
+    const steps = entraSteps({ url: 'https://box-a.example.invalid' }, uri);
+    const all = steps.flatMap((s) => [s.title, ...s.text]).join(' ');
+    const values = steps.flatMap((s) => s.values.map((v) => v.value));
+    // The doc's menus, in its order.
+    expect(steps.map((s) => s.title)).toEqual([
+      'Entra ID > App registrations > New registration',
+      "On the app's Overview",
+      'Certificates & secrets > Client secrets > New client secret',
+      'Token configuration > Add optional claim',
+      'Entra ID > Enterprise apps > All applications',
+      'On this page',
+    ]);
+    // The box's own values, each one to copy.
+    expect(values).toEqual([
+      'Mantle box-a.example.invalid',
+      uri,
+      'auth_time',
+      'Mantle box-a.example.invalid',
+    ]);
+    expect(all).toContain('Single tenant only');
+    expect(all).toContain('platform Web');
+    expect(all).toContain('Assignment required? to Yes');
+    expect(all).toContain('Add user/group');
+    // Where each Microsoft value goes on this page.
+    expect(all).toContain('Directory (tenant) ID. It goes in Tenant ID');
+    expect(all).toContain('Application (client) ID. It goes in Client ID');
+    expect(all).toContain('Copy the Value. Not the Secret ID.');
+    expect(all).toContain('calendar');
+    expect(all).toMatch(/Then Test\. Then Turn on \(optional\)\.$/);
+    // No terminal: no script and no .env.
+    expect(all).not.toMatch(/scripts\/|\.sh|\.env/);
+  });
+
+  it('shows the Microsoft steps open in off and setup, folded once sign-in is on', () => {
+    expect(entraOpen('off')).toBe(true);
+    expect(entraOpen('setup')).toBe(true);
+    expect(entraOpen('optional')).toBe(false);
+    expect(entraOpen('required')).toBe(false);
+    expect(ENTRA_FOLDED).toContain('new secret');
+  });
+});
+
+describe('this box: the Control Center itself (target self)', () => {
+  const NOW = '2026-11-13T09:00:00.000Z';
+  const LATER = '2026-11-13T09:05:00.000Z';
+  const mine = (more: Partial<FleetSsoAnswer>) => answer({ boxId: SELF, ok: true, ...more });
+  const one = (a: FleetSsoAnswer) => ({ answers: [a], pending: [], gone: [] });
+
+  it('is the target self, and its key sits under the sign-in key', () => {
+    expect(SELF).toBe('self');
+    expect(FLEET_SSO_SELF_KEY).toEqual([...FLEET_SSO_KEY, 'self']);
+  });
+
+  it('a status read makes the view; a Test keeps its code; a later read keeps the Test', () => {
+    const v1 = selfView(null, one(mine({ output: { ok: true, status: status() } })), NOW);
+    expect(v1).toEqual({
+      at: NOW,
+      reason: null,
+      status: status(),
+      test: null,
+      set: null,
+      mode: null,
+    });
+    const v2 = selfView(
+      v1,
+      one(mine({ name: 'sso_test', output: { ok: true, test: 'ok', status: status() } })),
+      LATER,
+    );
+    expect(v2!.test).toEqual({ code: 'ok', at: LATER, by: 'it@example.com' });
+    const v3 = selfView(
+      v2,
+      one(mine({ output: { ok: true, status: status({ mode: 'optional' }) } })),
+      LATER,
+    );
+    expect(v3!.test?.code).toBe('ok');
+    expect(v3!.status?.mode).toBe('optional');
+  });
+
+  it('a save that went through makes the Test stale, unless it ran its own', () => {
+    const tested = selfView(
+      null,
+      one(mine({ name: 'sso_test', output: { ok: true, test: 'ok', status: status() } })),
+      NOW,
+    );
+    const saved = selfView(
+      tested,
+      one(mine({ name: 'sso_set', output: { ok: true, status: status() } })),
+      LATER,
+    );
+    expect(saved!.test).toBeNull();
+    const savedLive = selfView(
+      tested,
+      one(mine({ name: 'sso_set', output: { ok: true, test: 'ok', status: status() } })),
+      LATER,
+    );
+    expect(savedLive!.test?.code).toBe('ok');
+    // A refused save keeps the last Test.
+    const refused = selfView(
+      tested,
+      one(
+        mine({ name: 'sso_set', ok: false, reason: 'mode', output: { ok: false, reason: 'mode' } }),
+      ),
+      LATER,
+    );
+    expect(refused!.test?.code).toBe('ok');
+    expect(refused!.status).toEqual(status());
+    expect(refused!.reason).toBe('mode');
+  });
+
+  it("reads only this box's answers", () => {
+    expect(selfView(null, one(answer({ output: { ok: true, status: status() } })), NOW)).toBeNull();
+  });
+
+  it('is a row with its own name, its address from the redirect URI, and no version', () => {
+    const r = selfRow('Control', 'https://fallback.example.invalid', null);
+    expect(r).toEqual({
+      id: 'self',
+      url: 'https://fallback.example.invalid',
+      label: 'Control',
+      lastOkAt: null,
+      lastReason: null,
+      version: null,
+      ssoView: null,
+    });
+    const view = selfView(null, one(mine({ output: { ok: true, status: status() } })), NOW);
+    expect(selfRow('Control', 'https://fallback.example.invalid', view).url).toBe(
+      'https://box.example.invalid',
+    );
+    const bare = selfView(
+      null,
+      one(mine({ output: { ok: true, status: status({ redirectUri: '' }) } })),
+      NOW,
+    );
+    expect(selfRow('Control', 'https://fallback.example.invalid', bare).url).toBe(
+      'https://fallback.example.invalid',
+    );
+  });
+
+  it('readSelf asks the status of self alone, and folds it into the view held after the answer', async () => {
+    const asked: FleetSsoAsk[] = [];
+    const prev = selfView(
+      null,
+      one(mine({ name: 'sso_test', output: { ok: true, test: 'ok', status: status() } })),
+      NOW,
+    );
+    let held = prev;
+    const v = await readSelf(
+      () => held,
+      async (body) => {
+        asked.push(body);
+        // A save lands while the read is on its way: its stale Test stays stale.
+        held = prev && { ...prev, test: null };
+        return {
+          answers: [mine({ output: { ok: true, status: status() } })],
+          pending: [],
+          gone: [],
+        };
+      },
+      () => LATER,
+    );
+    expect(asked).toEqual([{ do: 'status', boxIds: ['self'] }]);
+    expect(v).toMatchObject({ at: LATER, test: null });
+    // With nothing landing, the read keeps the last Test.
+    const kept = await readSelf(
+      () => prev,
+      async () => ({
+        answers: [mine({ output: { ok: true, status: status() } })],
+        pending: [],
+        gone: [],
+      }),
+      () => LATER,
+    );
+    expect(kept).toMatchObject({ test: { code: 'ok' } });
+  });
+
+  it('the warning before required names this box, your own session and the .env of this box', () => {
+    const lines = requiredWarning({ linked: 1, active: 3 }, true);
+    expect(lines[0]).toContain('This is the box you are signed in to.');
+    expect(lines[0]).toContain('yours too, unless you are the original account');
+    expect(lines[2]).toContain('1 of 3 active logins are linked, 2 are not.');
+    expect(lines[3]).toContain('the .env of this box');
+    expect(lines[3]).toContain('--mode optional');
+    // A fleet box keeps its own words.
+    expect(requiredWarning({ linked: 1, active: 3 })[0]).toContain(
+      'Every password session on the box ends',
+    );
   });
 });
