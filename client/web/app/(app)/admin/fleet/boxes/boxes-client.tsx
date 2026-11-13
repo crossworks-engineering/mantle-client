@@ -26,6 +26,7 @@ import { formatMicroUsd } from '@mantle/web-ui/traces-format';
 import {
   boxName,
   FLEET_PATH,
+  ipLine,
   keyBoxText,
   reasonText,
   type FleetBox,
@@ -64,6 +65,7 @@ function BoxCard({
   onOpen: () => void;
 }) {
   const state = linkState(box);
+  const ip = ipLine(box.ips);
   return (
     <ListCard
       selected={selected}
@@ -75,6 +77,11 @@ function BoxCard({
         <Pill tone={state.tone}>{state.label}</Pill>
       </div>
       <ListCardMeta>{box.url}</ListCardMeta>
+      {ip && (
+        <ListCardMeta className="font-mono" title={ip.title}>
+          {ip.text}
+        </ListCardMeta>
+      )}
       <ListCardMeta>
         {box.lastRunAt ? `Last run ${formatDateTime(box.lastRunAt)}` : 'No run yet'}
         {box.loginCount !== null &&
@@ -192,6 +199,7 @@ function BoxDetail({
 }) {
   const state = linkState(box);
   const reason = reasonText(box.lastReason);
+  const ip = ipLine(box.ips);
   const facts = row?.facts ?? null;
   const level = healthLevel(facts?.status ?? null);
   const key = keyBoxText(box);
@@ -264,10 +272,20 @@ function BoxDetail({
             {
               label: 'Address',
               value: (
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 break-all font-mono text-[13px]">{box.url}</span>
-                  <CopyButton value={box.url} ariaLabel="Copy the box address" />
-                </span>
+                <>
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 break-all font-mono text-[13px]">{box.url}</span>
+                    <CopyButton value={box.url} ariaLabel="Copy the box address" />
+                  </span>
+                  {ip && (
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      <span className="min-w-0 break-all font-mono text-xs" title={ip.title}>
+                        {ip.text}
+                      </span>
+                      <CopyButton value={ip.title} ariaLabel="Copy the box IP" />
+                    </span>
+                  )}
+                </>
               ),
             },
             { label: 'Linked since', value: formatDateTime(box.createdAt) },

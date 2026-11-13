@@ -151,6 +151,12 @@ test('Linked boxes: each box as a card, link one more, remove one', async ({ pag
   await expect(main.getByRole('heading', { name: 'Box A' })).toBeVisible();
   await expect(main.getByText('https://box-a.example.invalid').first()).toBeVisible();
   await expect(main.getByText('4 logins', { exact: true })).toBeVisible();
+  // The IP the Control Center resolves, under the address (the card and the
+  // detail): the first and +N, all in the title; the detail copies them.
+  const ips = main.getByTitle('192.0.2.10, 192.0.2.11, 2001:db8::10');
+  await expect(ips).toHaveCount(2);
+  await expect(ips.nth(1)).toHaveText('192.0.2.10 +2');
+  await expect(main.getByRole('button', { name: 'Copy the box IP' })).toBeVisible();
 
   // Box B: its code and its plain words.
   await main.getByRole('button', { name: new RegExp(BOX_B) }).click();

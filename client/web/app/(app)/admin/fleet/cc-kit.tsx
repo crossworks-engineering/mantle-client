@@ -15,6 +15,7 @@ import {
   boxName,
   FLEET_KEY,
   fleetKeysOffered,
+  ipLine,
   keyUpdatePending,
   type FleetBox,
   type FleetOverview,
@@ -465,6 +466,7 @@ export function TargetList({
             const id = `${prefix}-${b.id}`;
             const on = picked.has(b.id);
             const said = line?.(b) ?? null;
+            const ip = ipLine(b.ips);
             return (
               <li key={b.id}>
                 <ListCard asChild selected={on}>
@@ -483,7 +485,14 @@ export function TargetList({
                           {said.text}
                         </span>
                       ) : (
-                        <ListCardMeta>{b.url}</ListCardMeta>
+                        <>
+                          <ListCardMeta>{b.url}</ListCardMeta>
+                          {ip && (
+                            <ListCardMeta className="font-mono" title={ip.title}>
+                              {ip.text}
+                            </ListCardMeta>
+                          )}
+                        </>
                       )}
                     </span>
                   </label>

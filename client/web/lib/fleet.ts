@@ -21,6 +21,10 @@ export type FleetBox = {
   id: string;
   url: string;
   label: string | null;
+  /** The IPs the Control Center resolves for the host of `url`, IPv4 first
+   *  (docs/control-center.md in the mantle repo). Empty: the host is an IP,
+   *  or no DNS answer. Absent: a brain before this field. */
+  ips?: string[];
   addedBy: string | null;
   createdAt: string;
   lastRunAt: string | null;
@@ -175,6 +179,17 @@ export function boxName(box: { url: string; label: string | null }): string {
   } catch {
     return box.url;
   }
+}
+
+/** The IP line under a box address: the first IP, and "+N" for the rest;
+ *  `title` lists them all. Null: no IP to show. */
+export function ipLine(ips: string[] | undefined): { text: string; title: string } | null {
+  const first = ips?.[0];
+  if (!ips || !first) return null;
+  return {
+    text: ips.length > 1 ? `${first} +${ips.length - 1}` : first,
+    title: ips.join(', '),
+  };
 }
 
 /** Plain words for a box's reason code. Null: the last run was good. */
