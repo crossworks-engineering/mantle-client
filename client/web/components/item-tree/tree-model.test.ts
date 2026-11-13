@@ -6,6 +6,7 @@ import {
   canNestFolder,
   childEntries,
   childGuides,
+  collapseAllOpen,
   crumbLine,
   dropPosition,
   flattenTree,
@@ -178,6 +179,33 @@ describe('flattening the tree for the virtual list', () => {
     );
     expect(shape(rows)).toEqual(['f:a@0', 'f:b@1', 'f:c@0']);
     expect(needed).toEqual([null, 'a']);
+  });
+
+  it('collapse all shuts every folder at every depth, the selected item’s folder too', () => {
+    const load = (id: string | null) => loads[id ?? 'root']!;
+    // a and its child b open, c open; the selected item a1 sits in a.
+    const open = new Set(['a', 'b', 'c']);
+    const before = flattenTree(load, (id) => open.has(id), { emptyText: 'none' });
+    expect(shape(before.rows)).toContain('i:a1@1');
+
+    const after = collapseAllOpen(open);
+    expect([...after]).toEqual([]);
+    // The old set is left as it was (React state is never changed in place).
+    expect([...open]).toEqual(['a', 'b', 'c']);
+    const { rows, needed } = flattenTree(load, (id) => after.has(id), { emptyText: 'none' });
+    // Only the top level: no child folder, no child item, nothing more to load.
+    expect(shape(rows)).toEqual(['f:a@0', 'f:c@0', 'i:r1@0', 'm:root:1@0']);
+    expect(needed).toEqual([null]);
+    expect(rows.some((r) => r.key === 'i:a1')).toBe(false);
+
+    // Opening one folder again shows its children, and only its own.
+    const one = flattenTree(load, (id) => id === 'a', { emptyText: 'none' });
+    expect(shape(one.rows)).toEqual(['f:a@0', 'f:b@1', 'i:a1@1', 'f:c@0', 'i:r1@0', 'm:root:1@0']);
+  });
+
+  it('collapse all with nothing open gives the same set back (no redraw, no write)', () => {
+    const none: ReadonlySet<string> = new Set();
+    expect(collapseAllOpen(none)).toBe(none);
   });
 
   it('draws an item or folder met twice (just moved, one page stale) once, where first met', () => {

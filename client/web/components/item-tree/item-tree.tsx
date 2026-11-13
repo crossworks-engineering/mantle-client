@@ -38,6 +38,7 @@ import {
 } from '@dnd-kit/core';
 import {
   ArrowDownAZ,
+  ChevronsDownUp,
   FolderInput,
   FolderPlus,
   FolderTree,
@@ -122,6 +123,7 @@ import {
   afterFor,
   afterForStep,
   canNestFolder,
+  collapseAllOpen,
   dropPosition,
   isAtOrBelow,
   isOnTheWayTo,
@@ -207,13 +209,11 @@ function useOpenFolders(scope: string) {
       /* no storage: everything starts folded */
     }
   }, [key]);
-  const setOpen = useCallback(
-    (id: string, o: boolean) => {
+  const change = useCallback(
+    (fn: (prev: ReadonlySet<string>) => ReadonlySet<string>) => {
       setOpenSet((prev) => {
-        if (prev.has(id) === o) return prev;
-        const next = new Set(prev);
-        if (o) next.add(id);
-        else next.delete(id);
+        const next = fn(prev);
+        if (next === prev) return prev;
         try {
           window.localStorage.setItem(key, JSON.stringify([...next]));
         } catch {
@@ -224,7 +224,19 @@ function useOpenFolders(scope: string) {
     },
     [key],
   );
-  return [open, setOpen] as const;
+  const setOpen = useCallback(
+    (id: string, o: boolean) =>
+      change((prev) => {
+        if (prev.has(id) === o) return prev;
+        const next = new Set(prev);
+        if (o) next.add(id);
+        else next.delete(id);
+        return next;
+      }),
+    [change],
+  );
+  const collapseAll = useCallback(() => change(collapseAllOpen), [change]);
+  return [open, setOpen, collapseAll] as const;
 }
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -342,7 +354,7 @@ export function ItemTree({
     (s) => (spec.sorts.includes(s as never) ? (s as TreeSort) : null),
   );
   const sort: TreeSort = sorts.includes(chosenSort) ? chosenSort : sorts[0]!;
-  const [open, setOpen] = useOpenFolders(scope);
+  const [open, setOpen, collapseAllFolders] = useOpenFolders(scope);
   // Show or hide the share pills (task ca907a89): one choice for every tree,
   // per login, kept in this browser. Hidden by default: each workspace's icon
   // beside the name, so names keep their width.
@@ -1392,7 +1404,7 @@ export function ItemTree({
             {actions}
           </div>
           {!searching && (
-            <div className="relative flex items-center gap-1.5">
+            <div className="relative flex flex-wrap items-center gap-1.5">
               {/* The labels at their natural width, never seen: what the
                   tabs need, measured in the user's font (view-tabs.ts). */}
               <div
@@ -1420,7 +1432,7 @@ export function ItemTree({
                   setFilter({});
                 }}
                 aria-label={`How to list ${adapter.noun.many}`}
-                className="flex min-w-0 flex-1"
+                className="flex min-w-[calc(7rem+8px)] flex-1"
               >
                 {views.map((v) => (
                   <ToggleGroupItem
@@ -1434,99 +1446,128 @@ export function ItemTree({
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-              <Button
-                variant={showShares ? 'secondary' : 'outline'}
-                size="icon-xs"
-                // A toggle: the name stays, aria-pressed says whether it is on.
-                aria-pressed={showShares}
-                aria-label="Show shares"
-                title="Show shares: the workspaces under each name"
-                onClick={() => setShowShares(!showShares)}
-              >
-                <Layers />
-              </Button>
-              {(owner || (view === 'tree' && spec.sorts.length > 1)) && (
-                <DropdownMenu open={filterMenuOpen} onOpenChange={setFilterMenuOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant={filtering ? 'secondary' : 'outline'}
-                      size="icon-xs"
-                      aria-label={
-                        !owner
-                          ? 'Sort'
-                          : filtering
-                            ? 'Sort and filter (filter on)'
-                            : 'Sort and filter'
-                      }
-                      title={
-                        owner
-                          ? `Sort: ${SORT_LABEL[sort]}. Filter by state or tag`
-                          : `Sort: ${SORT_LABEL[sort]}`
-                      }
+              {/* The icon group. The tabs keep room for their four icons
+                  (in rem, so it grows with the font); when the list is too
+                  narrow for both, this group drops to its own line, at the
+                  right, rather than squeeze the tabs. */}
+              <div className="ml-auto flex items-center gap-1.5">
+                {/* Every folder shut, at every depth, and back to the top: a
+                  long tree becomes its top level, to find something fast.
+                  Only the Folders view has folders to shut; a tag filter
+                  lists items flat (the search hides this row). No "Expand
+                  all": each folder's children load on their own, so it would
+                  ask the brain once per folder. */}
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  aria-label="Collapse all folders"
+                  title={
+                    view === 'tree' && !filtering
+                      ? 'Collapse all folders'
+                      : 'Collapse all folders: in the Folders view, with no filter'
+                  }
+                  disabled={view !== 'tree' || filtering}
+                  onClick={() => {
+                    collapseAllFolders();
+                    scrollRoot.current?.scrollTo({ top: 0 });
+                  }}
+                >
+                  <ChevronsDownUp />
+                </Button>
+                <Button
+                  variant={showShares ? 'secondary' : 'outline'}
+                  size="icon-xs"
+                  // A toggle: the name stays, aria-pressed says whether it is on.
+                  aria-pressed={showShares}
+                  aria-label="Show shares"
+                  title="Show shares: the workspaces under each name"
+                  onClick={() => setShowShares(!showShares)}
+                >
+                  <Layers />
+                </Button>
+                {(owner || (view === 'tree' && spec.sorts.length > 1)) && (
+                  <DropdownMenu open={filterMenuOpen} onOpenChange={setFilterMenuOpen}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant={filtering ? 'secondary' : 'outline'}
+                        size="icon-xs"
+                        aria-label={
+                          !owner
+                            ? 'Sort'
+                            : filtering
+                              ? 'Sort and filter (filter on)'
+                              : 'Sort and filter'
+                        }
+                        title={
+                          owner
+                            ? `Sort: ${SORT_LABEL[sort]}. Filter by state or tag`
+                            : `Sort: ${SORT_LABEL[sort]}`
+                        }
+                      >
+                        <ListFilter />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="max-h-96 w-52 overflow-y-auto scrollbar-thin"
                     >
-                      <ListFilter />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="max-h-96 w-52 overflow-y-auto scrollbar-thin"
-                  >
-                    {view === 'tree' && !filtering && sorts.length > 1 && (
-                      <>
-                        <DropdownMenuLabel>Sort {adapter.noun.many}</DropdownMenuLabel>
-                        <DropdownMenuRadioGroup
-                          value={sort}
-                          onValueChange={(v) => setSort(v as TreeSort)}
-                        >
-                          {sorts.map((s) => (
-                            <DropdownMenuRadioItem key={s} value={s}>
-                              {SORT_LABEL[s]}
-                            </DropdownMenuRadioItem>
-                          ))}
-                        </DropdownMenuRadioGroup>
-                        {owner && <DropdownMenuSeparator />}
-                      </>
-                    )}
-                    {/* Tags are the owner's to filter by. Levels are gone (W5b):
+                      {view === 'tree' && !filtering && sorts.length > 1 && (
+                        <>
+                          <DropdownMenuLabel>Sort {adapter.noun.many}</DropdownMenuLabel>
+                          <DropdownMenuRadioGroup
+                            value={sort}
+                            onValueChange={(v) => setSort(v as TreeSort)}
+                          >
+                            {sorts.map((s) => (
+                              <DropdownMenuRadioItem key={s} value={s}>
+                                {SORT_LABEL[s]}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                          {owner && <DropdownMenuSeparator />}
+                        </>
+                      )}
+                      {/* Tags are the owner's to filter by. Levels are gone (W5b):
                         the workspace switcher narrows the lists instead. */}
-                    {owner && (
-                      <>
-                        <DropdownMenuLabel>Tag</DropdownMenuLabel>
-                        <DropdownMenuRadioGroup
-                          value={filter.tag ?? ''}
-                          onValueChange={(v) =>
-                            setFilter((f) => ({ ...f, tag: v === '' ? undefined : v }))
-                          }
-                        >
-                          <DropdownMenuRadioItem value="">Any</DropdownMenuRadioItem>
-                          {filter.tag && !tagsQ.data?.tags.some((t) => t.tag === filter.tag) && (
-                            <DropdownMenuRadioItem value={filter.tag}>
-                              {filter.tag}
-                            </DropdownMenuRadioItem>
+                      {owner && (
+                        <>
+                          <DropdownMenuLabel>Tag</DropdownMenuLabel>
+                          <DropdownMenuRadioGroup
+                            value={filter.tag ?? ''}
+                            onValueChange={(v) =>
+                              setFilter((f) => ({ ...f, tag: v === '' ? undefined : v }))
+                            }
+                          >
+                            <DropdownMenuRadioItem value="">Any</DropdownMenuRadioItem>
+                            {filter.tag && !tagsQ.data?.tags.some((t) => t.tag === filter.tag) && (
+                              <DropdownMenuRadioItem value={filter.tag}>
+                                {filter.tag}
+                              </DropdownMenuRadioItem>
+                            )}
+                            {tagsQ.data?.tags.map((t) => (
+                              <DropdownMenuRadioItem key={t.tag} value={t.tag}>
+                                <span className="min-w-0 flex-1 truncate">{t.tag}</span>
+                                <span className="text-[11px] tabular-nums text-muted-foreground">
+                                  {t.count}
+                                </span>
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                          {tagsQ.isPending && (
+                            <DropdownMenuItem disabled>Loading tags…</DropdownMenuItem>
                           )}
-                          {tagsQ.data?.tags.map((t) => (
-                            <DropdownMenuRadioItem key={t.tag} value={t.tag}>
-                              <span className="min-w-0 flex-1 truncate">{t.tag}</span>
-                              <span className="text-[11px] tabular-nums text-muted-foreground">
-                                {t.count}
-                              </span>
-                            </DropdownMenuRadioItem>
-                          ))}
-                        </DropdownMenuRadioGroup>
-                        {tagsQ.isPending && (
-                          <DropdownMenuItem disabled>Loading tags…</DropdownMenuItem>
-                        )}
-                        {tagsQ.isError && (
-                          <DropdownMenuItem disabled>Couldn’t load the tags.</DropdownMenuItem>
-                        )}
-                        {tagsQ.data && tagsQ.data.tags.length === 0 && (
-                          <DropdownMenuItem disabled>No tags yet.</DropdownMenuItem>
-                        )}
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+                          {tagsQ.isError && (
+                            <DropdownMenuItem disabled>Couldn’t load the tags.</DropdownMenuItem>
+                          )}
+                          {tagsQ.data && tagsQ.data.tags.length === 0 && (
+                            <DropdownMenuItem disabled>No tags yet.</DropdownMenuItem>
+                          )}
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </div>
           )}
           {filtering && (

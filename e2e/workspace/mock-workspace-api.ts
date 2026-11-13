@@ -278,6 +278,8 @@ export type MockWorkspaceApi = {
   screenshots: MockScreenshot[];
   /** The pages tree holds a top-level Lessons folder (components/lessons). */
   lessons: boolean;
+  /** The files tree holds the nested FILE_FOLDERS (Collapse all). */
+  fileFolders: boolean;
   /** A page's stored document by page id (GET /api/pages/:id `doc`). A
    *  page with none answers no `doc`, as before. */
   pageDocs: Record<string, unknown>;
@@ -318,6 +320,17 @@ export const MOCK_AGENT = {
   slug: 'saskia',
   name: 'Saskia',
 } as const;
+
+/** Nested folders in the files tree, made-up names: Projects > Alpha >
+ *  Drawings, and Archive beside Projects. Each `parent` is a key, or null
+ *  for the top level. */
+export const FILE_FOLDERS = {
+  projects: { id: 'f0f00001-0000-4000-8000-000000000001', name: 'Projects', parent: null },
+  alpha: { id: 'f0f00002-0000-4000-8000-000000000002', name: 'Alpha', parent: 'projects' },
+  drawings: { id: 'f0f00003-0000-4000-8000-000000000003', name: 'Drawings', parent: 'alpha' },
+  archive: { id: 'f0f00004-0000-4000-8000-000000000004', name: 'Archive', parent: null },
+} as const satisfies Record<string, { id: string; name: string; parent: string | null }>;
+type FileFolderKey = keyof typeof FILE_FOLDERS;
 
 /** The lessons the mock brain holds (components/lessons). */
 export const LESSONS = {
@@ -401,6 +414,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     down: false,
     screenshots: [],
     lessons: false,
+    fileFolders: false,
     pageDocs: {},
     agentUi: {},
     uiAnswers: [],
@@ -639,6 +653,24 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
         if (!folder) {
           return (json(res, 200, { ...tree(kind, items, url), folders: [lessons], ...echo }), true);
         }
+      }
+      if (kind === 'files' && state.fileFolders) {
+        const at = url.searchParams.get('folder');
+        const here = (Object.keys(FILE_FOLDERS) as FileFolderKey[]).find(
+          (k) => FILE_FOLDERS[k].id === at,
+        );
+        const kids = (Object.keys(FILE_FOLDERS) as FileFolderKey[])
+          .filter((k) => FILE_FOLDERS[k].parent === (here ?? null))
+          .map(fileTreeFolder);
+        return (
+          json(res, 200, {
+            ...tree(kind, here ? [] : items, url),
+            folder: here ? fileTreeFolder(here) : null,
+            folders: kids,
+            ...(here ? {} : echo),
+          }),
+          true
+        );
       }
       return (json(res, 200, { ...tree(kind, items, url), ...echo }), true);
     }
@@ -893,7 +925,15 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     if (path === '/api/files/folders' && method === 'GET') {
       return (
         json(res, 200, {
-          folders: [folderRow('files', 'Files'), folderRow(FILE.parentPath, 'crew')],
+          folders: [
+            folderRow('files', 'Files'),
+            folderRow(FILE.parentPath, 'crew'),
+            ...(state.fileFolders
+              ? (Object.keys(FILE_FOLDERS) as FileFolderKey[]).map((k) =>
+                  folderRow(fileFolderPath(k), FILE_FOLDERS[k].name),
+                )
+              : []),
+          ],
         }),
         true
       );
@@ -910,6 +950,30 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
       return (json(res, 200, { file: fileRow(), content: FILE.content }), true);
     }
     return false;
+  };
+  /** A FILE_FOLDERS folder's ltree path: files.projects.alpha. */
+  const fileFolderPath = (k: FileFolderKey): string => {
+    const parent: FileFolderKey | null = FILE_FOLDERS[k].parent;
+    return `${parent ? fileFolderPath(parent) : 'files'}.${k}`;
+  };
+  /** A FILE_FOLDERS folder as the tree answers it. */
+  const fileTreeFolder = (k: FileFolderKey) => {
+    const path = fileFolderPath(k);
+    return {
+      id: FILE_FOLDERS[k].id,
+      path,
+      name: FILE_FOLDERS[k].name,
+      icon: null,
+      color: null,
+      depth: path.split('.').length - 1,
+      parentId: FILE_FOLDERS[k].parent ? FILE_FOLDERS[FILE_FOLDERS[k].parent].id : null,
+      share: null,
+      system: false,
+      folderCount: Object.values(FILE_FOLDERS).filter((f) => f.parent === k).length,
+      itemCount: 0,
+      workspaces: [],
+      hasLink: false,
+    };
   };
   const folderRow = (p: string, title: string) => ({
     id: `folder-${title}`,
