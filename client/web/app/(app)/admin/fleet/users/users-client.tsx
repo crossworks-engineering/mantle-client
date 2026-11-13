@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Users } from 'lucide-react';
+import { Search, UserPlus, Users } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,6 +64,14 @@ import {
 } from '@mantle/web-ui/ui/table';
 import { ccHref } from '@/lib/fleet-view';
 import { NO_CHANNEL_TEXT } from '@/lib/fleet-tool';
+import {
+  canAddSomewhere,
+  markText,
+  openMarks,
+  withMark,
+  type InviteMark,
+} from '@/lib/fleet-invite';
+import { AddPersonDialog } from './add-person';
 import { BulkPane } from './bulk-pane';
 import { PersonDetail } from './person-detail';
 import { useBanWrite, useMembersWrite, usePeople } from './use-people';
@@ -373,6 +381,11 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
   const [lifting, setLifting] = useState<{ ban: FleetBan; emails: string[] } | null>(null);
   const members = useMembersWrite(read.reread);
   const banWrite = useBanWrite(refresh);
+  /** Add a person: the dialog's email (null: typed), or closed. */
+  const [adding, setAdding] = useState<{ email: string | null } | null>(null);
+  /** This screen's invites (never a link), and the boxes a release behind. */
+  const [marks, setMarks] = useState<InviteMark[]>([]);
+  const [older, setOlder] = useState<Set<string>>(() => new Set());
   const filter: PeopleFilter = isFilter(filterParam) ? filterParam : 'all';
 
   const peopleBoxes = read.boxes;
@@ -425,6 +438,10 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
       return next;
     });
   const allShownPicked = shown.length > 0 && shown.every((p) => picked.has(p.email));
+  const openInvites = openMarks(marks, peopleBoxes);
+  const known = new Set(people.map((p) => p.email));
+  /** Invites for an email on no box yet: no person card to show them on. */
+  const newcomers = openInvites.filter((m) => !known.has(m.email));
   const boxNotes = peopleBoxes
     .map((b) => ({ b, why: peopleReasonText(b) }))
     .filter((x): x is { b: (typeof peopleBoxes)[number]; why: string } => x.why !== null);
@@ -438,17 +455,22 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
           <ListPane
             title={`People (${people.length})`}
             action={
-              shown.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    setPicked(allShownPicked ? new Set() : new Set(shown.map((p) => p.email)))
-                  }
-                >
-                  {allShownPicked ? 'Clear' : 'Pick all'}
+              <>
+                <Button size="sm" variant="outline" onClick={() => setAdding({ email: null })}>
+                  <UserPlus /> Add a person
                 </Button>
-              ) : undefined
+                {shown.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      setPicked(allShownPicked ? new Set() : new Set(shown.map((p) => p.email)))
+                    }
+                  >
+                    {allShownPicked ? 'Clear' : 'Pick all'}
+                  </Button>
+                )}
+              </>
             }
           >
             <div className="relative">
@@ -484,6 +506,16 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
                 {boxNotes.map(({ b, why }) => (
                   <li key={b.id} className="text-xs text-warning-ink">
                     <span className="font-medium">{boxName(b)}:</span> {why}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {newcomers.length > 0 && (
+              <ul className="space-y-1" aria-label="Invited, not joined yet">
+                {newcomers.map((m) => (
+                  <li key={`${m.boxId}-${m.email}`} className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground break-all">{m.email}</span>{' '}
+                    {markText(m, peopleBoxes)}
                   </li>
                 ))}
               </ul>
@@ -544,6 +576,9 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
               onSend={members.send}
               onBan={() => setBanning(selected)}
               onLift={(ban) => setLifting({ ban, emails: [selected.email] })}
+              invites={openInvites.filter((m) => m.email === selected.email)}
+              canAdd={canAddSomewhere(selected, peopleBoxes, older)}
+              onAdd={() => setAdding({ email: selected.email })}
             />
           ) : (
             <div className="p-6 text-sm text-muted-foreground">Pick a person on the left.</div>
@@ -551,6 +586,15 @@ function People({ data, refresh }: { data: FleetOverview; refresh: () => void })
         }
       />
       <BanDialog person={banning} onClose={() => setBanning(null)} write={banWrite} />
+      <AddPersonDialog
+        open={adding !== null}
+        onOpenChange={(o) => !o && setAdding(null)}
+        email={adding?.email ?? null}
+        peopleBoxes={peopleBoxes}
+        older={older}
+        onInvited={(m) => setMarks((now) => withMark(now, m))}
+        onOlder={(id) => setOlder((s) => new Set(s).add(id.toLowerCase()))}
+      />
       {liftDialog}
     </>
   );

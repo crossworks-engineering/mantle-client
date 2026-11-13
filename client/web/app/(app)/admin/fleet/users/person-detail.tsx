@@ -1,7 +1,15 @@
 'use client';
 
 import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { ChevronRight, Copy, Lock, ShieldBan, ShieldCheck, UserRound } from 'lucide-react';
+import {
+  ChevronRight,
+  Copy,
+  Lock,
+  ShieldBan,
+  ShieldCheck,
+  UserPlus,
+  UserRound,
+} from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
   Select,
@@ -22,6 +30,7 @@ import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime, timeAgo } from '@mantle/web-ui/lib/format-datetime';
 import { banKeysText, type FleetBan } from '@/lib/fleet';
+import { markText, type InviteMark } from '@/lib/fleet-invite';
 import {
   boxWorkspaces,
   cellChoices,
@@ -208,8 +217,16 @@ export function PersonDetail({
   onSend,
   onBan,
   onLift,
+  invites,
+  canAdd,
+  onAdd,
 }: {
   person: Person;
+  /** This screen's open invites for this person's email. */
+  invites: InviteMark[];
+  /** A box can take this person (a current list, no login there). */
+  canAdd: boolean;
+  onAdd: () => void;
   peopleBoxes: FleetPeopleBox[];
   /** This session's answers to workspace changes. */
   answers: MemberAnswer[];
@@ -322,13 +339,29 @@ export function PersonDetail({
       }
       actions={
         banned ? undefined : (
-          <Button size="sm" variant="outline" onClick={onBan}>
-            <ShieldBan /> Ban
-          </Button>
+          <>
+            <Button size="sm" variant="outline" disabled={!canAdd} onClick={onAdd}>
+              <UserPlus /> Add to a box
+            </Button>
+            <Button size="sm" variant="outline" onClick={onBan}>
+              <ShieldBan /> Ban
+            </Button>
+          </>
         )
       }
     >
       {person.name && <p className="-mt-2 text-sm text-muted-foreground">{person.email}</p>}
+
+      {invites.length > 0 && (
+        <ul className="space-y-1" aria-label="Invites">
+          {invites.map((m) => (
+            <li key={m.boxId} className="flex items-center gap-2 text-sm">
+              <Pill tone="wait">Invited</Pill>
+              <span>{markText(m, peopleBoxes)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {banned && (
         <Callout tone="bad" title="Banned on every linked box">

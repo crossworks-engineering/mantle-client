@@ -2,7 +2,16 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
-import { FLEET_BOX, FLEET_BOX_B, newMockFleet, PEOPLE, withMatrix, withPeople } from './mock-fleet';
+import {
+  FLEET_BOX,
+  FLEET_BOX_B,
+  newMockFleet,
+  PEOPLE,
+  SSO_PASSWORD,
+  withMatrix,
+  withPeople,
+} from './mock-fleet';
+import { inviteState } from './mock-fleet-invite';
 import { CC_SCOPE, scopedNav } from './shell-nav';
 
 /**
@@ -513,4 +522,119 @@ test('a person on 3 boxes sees every box open at the start', async ({ page }) =>
     );
   }
   await noSideScroll(page);
+});
+
+// --- add a person to a box -----------------------------------------------------------
+
+/** A ninth box with no Ann on it (workspaces, no logins). */
+function withEmptyBox(i: number) {
+  const f = api.fleet!;
+  const id = extraId(i, 'e');
+  f.boxes.push({
+    ...FLEET_BOX,
+    id,
+    url: `https://box-${i}.example.invalid`,
+    label: `Box ${String(i).padStart(2, '0')}`,
+  });
+  f.people[id] = {
+    peopleReason: null,
+    logins: null,
+    people: {
+      schema: 1,
+      at: new Date().toISOString(),
+      workspaces: [{ id: extraId(i, 'c'), name: 'Admin', admin: true }],
+      logins: [],
+    },
+  };
+  return id;
+}
+
+test('add a person on 8 boxes to the ninth: the link once, then Invited, not joined yet', async ({
+  page,
+}) => {
+  withBoxes(8);
+  const ninth = withEmptyBox(9);
+  await signIn(page, 'admin');
+  await open(page, 'ann@example.com');
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Add to a box' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add to a box' });
+  await expect(dialog.getByText('ann@example.com')).toBeVisible();
+  // The eight boxes she is on are not offered, with the reason.
+  await expect(
+    dialog.getByRole('list', { name: 'Not available' }).getByRole('listitem'),
+  ).toHaveCount(8);
+  await expect(dialog.getByText(/replaces the open one/)).toBeVisible();
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), 'Box 09');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await shot(page, 'fleet-users-add-dialog');
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  const link = dialog.getByRole('textbox', { name: 'Invite link' });
+  await expect(link).toHaveValue(/^https:\/\/box-9\.example\.invalid\/invite#code=/);
+  await expect(dialog.getByText(/^Shown once; valid 72 hours\./)).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Copy the invite link' })).toBeVisible();
+  await shot(page, 'fleet-users-add-link');
+  // The ask: the box, the email; the password never stays in the mock's record.
+  const s = inviteState(api.fleet!);
+  expect(s.sent).toEqual([{ do: 'invite', boxId: ninth, email: 'ann@example.com' }]);
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toBeHidden();
+  // The person shows the invite, never the link.
+  const invites = main.getByRole('list', { name: 'Invites' });
+  await expect(invites).toContainText('Box 09: Invited, not joined yet');
+  await expect(main.getByText(/#code=/)).toHaveCount(0);
+  await shot(page, 'fleet-users-invited');
+  // Opened again, the dialog has no link: it was shown once.
+  await main.getByRole('button', { name: 'Add to a box' }).click();
+  await expect(page.getByRole('dialog').getByRole('textbox', { name: 'Invite link' })).toHaveCount(
+    0,
+  );
+});
+
+test('add a person: a typed email; a refused box says why; an older box is then not offered', async ({
+  page,
+}) => {
+  const s = inviteState(api.fleet!);
+  s.refusals[FLEET_BOX_B.id] = 'scope';
+  s.refusals[FLEET_BOX.id] = 'bad-call';
+  await signIn(page, 'admin');
+  await page.goto(USERS);
+  await expect(people(page).getByRole('listitem').first()).toBeVisible();
+  await page.getByRole('main').getByRole('button', { name: 'Add a person' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a person' });
+  await dialog.getByLabel('Email').fill('not an email');
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), BOX_B);
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText(/like name@example\.com/)).toBeVisible();
+  expect(s.sent).toEqual([]);
+  await dialog.getByLabel('Email').fill('new.person@example.com');
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText('The box made no invite')).toBeVisible();
+  await expect(dialog.getByText(/MANTLE_CONTROL_CENTER_SCOPE=none/)).toBeVisible();
+  await shot(page, 'fleet-users-add-refused');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  // Box A runs an older release: it answers bad-call, and is then not offered.
+  await page.getByRole('main').getByRole('button', { name: 'Add a person' }).click();
+  await dialog.getByLabel('Email').fill('new.person@example.com');
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), 'Box A');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText(/older release\. Update the box/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('main').getByRole('button', { name: 'Add a person' }).click();
+  await dialog.getByLabel('Email').fill('new.person@example.com');
+  await expect(
+    dialog.getByRole('list', { name: 'Not available' }).getByText(/Box A:.*older release/),
+  ).toBeVisible();
+  // A wrong password, and a banned email: said in the dialog.
+  s.banned.push('banned.person@example.com');
+  await dialog.getByLabel('Email').fill('banned.person@example.com');
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), BOX_B);
+  await dialog.getByLabel('Your password').fill('not it');
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText(/password is not correct/)).toBeVisible();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText('A fleet ban names this email. Lift the ban first.')).toBeVisible();
 });

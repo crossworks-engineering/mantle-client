@@ -4,6 +4,8 @@
  * a box that is not a Control Center: every Fleet route answers 404.
  */
 
+import { inviteAnswer } from './mock-fleet-invite';
+
 const AT = '2026-11-09T08:00:00.000Z';
 const ADMIN = 'ada@example.invalid';
 
@@ -750,6 +752,7 @@ export function fleetAnswer(
     return { status: 200, body: { boxes } };
   }
   if (path === '/api/fleet/sso' && method === 'POST') return ssoAnswer(f, body);
+  if (path === '/api/fleet/invite' && method === 'POST') return inviteAnswer(f, body);
   if (path === '/api/fleet/tool' && method === 'POST') {
     if (!f.toolOn) return { status: 404, body: { error: 'not found' } };
     f.toolSent.push(body);
