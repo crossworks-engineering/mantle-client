@@ -31,7 +31,7 @@ import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { play } from '@/lib/sounds/play';
 import { FileDataView, hasDataView } from './file-data';
-import { withDbView } from './file-data-model';
+import { readDbView, withDbView } from './file-data-model';
 
 type FileRow = {
   id: string;
@@ -55,7 +55,6 @@ export function FileEditor({
   onClose,
   onSaved,
   onLoaded,
-  startWithData = false,
 }: {
   fileId: string;
   onClose: () => void;
@@ -63,8 +62,6 @@ export function FileEditor({
   /** The file's detail, once loaded: the files screen opens its folder when
    *  the link named only the file (a /n link). */
   onLoaded?: (file: { parentPath: string }) => void;
-  /** Open on the file's database (a link from Data files). */
-  startWithData?: boolean;
 }) {
   const toAsset = useAssetUrl();
   const toast = useToast();
@@ -82,14 +79,13 @@ export function FileEditor({
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
   // The file's read-only database instead of its preview (file-data.tsx).
-  const [showData, setShowData] = useState(startWithData);
-  // The database view is in the URL too (view=data, dbtab=…), so a link or
-  // a reload opens it; back to the file clears it.
+  // The URL alone says so (view=data or view=query, and dbtab), so a link,
+  // a Data files row or a reload opens it; back to the file clears it.
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const showData = readDbView(params).on;
   const showDataView = (on: boolean) => {
-    setShowData(on);
     const next = withDbView(params, on ? { on: true, query: false, tab: null } : { on: false });
     router.replace(`${pathname}?${next}`, { scroll: false });
   };

@@ -377,7 +377,9 @@ function TabPane({ fileId, tab }: { fileId: string; tab: Tab }) {
       });
       if (answer.kind !== 'rows')
         throw new Error(answer.kind === 'none' ? answer.reason : 'No rows.');
-      return answer;
+      // The page's own place, so the row numbers and the words match the
+      // rows on screen while the next page loads.
+      return { ...answer, offset, sortKey: JSON.stringify(sort) };
     },
     placeholderData: keepPreviousData,
     gcTime: 0,
@@ -409,13 +411,15 @@ function TabPane({ fileId, tab }: { fileId: string; tab: Tab }) {
             got.isPlaceholderData && 'opacity-60',
           )}
         >
+          {/* A new page or sort starts at the top of the grid. */}
           <TableGrid
+            key={`${got.data!.offset}:${got.data!.sortKey}`}
             doc={doc}
             onChange={noChange}
             readOnly
             viewer={{
               label: `${tab.name}: rows`,
-              firstRowNumber: offset + 1,
+              firstRowNumber: got.data!.offset + 1,
               sorting,
               onSortingChange: (next) => {
                 setSorting(next);
@@ -426,7 +430,7 @@ function TabPane({ fileId, tab }: { fileId: string; tab: Tab }) {
         </div>
       )}
       <Pager
-        text={pageText(offset, got.data?.rows.length ?? 0, tab.row_count)}
+        text={pageText(got.data?.offset ?? offset, got.data?.rows.length ?? 0, tab.row_count)}
         busy={got.isFetching}
         page={page}
         pages={pages}
@@ -560,6 +564,9 @@ function QueryPane({
   const [result, setResult] = useState<Rows | null>(null);
   const [error, setError] = useState<string | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
+  // Until the field has had the focus its caret is at 0: a click on a name
+  // then adds to the end of the query, not the start.
+  const focused = useRef(false);
   // A result column named as a tab's column takes its type (numbers sort as
   // numbers); any other is text.
   const types = useMemo(
@@ -594,12 +601,8 @@ function QueryPane({
   /** Put a table or column name in the query at the caret. */
   const put = (name: string) => {
     const el = field.current;
-    const next = insertName(
-      text,
-      el?.selectionStart ?? text.length,
-      el?.selectionEnd ?? text.length,
-      name,
-    );
+    const at = el && focused.current ? null : text.length;
+    const next = insertName(text, at ?? el!.selectionStart, at ?? el!.selectionEnd, name);
     setText(next.text);
     requestAnimationFrame(() => {
       if (!el) return;
@@ -610,49 +613,11 @@ function QueryPane({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
-      <nav
-        aria-label="Tabs and columns"
-        className="max-h-40 shrink-0 overflow-y-auto scrollbar-thin border-b border-border bg-muted/20 py-1 md:max-h-none md:w-60 md:border-r md:border-b-0"
-      >
-        <p className="px-3 pt-1 pb-1.5 text-xs text-muted-foreground">
-          Click a name to put it in the query.
-        </p>
-        <ul>
-          {tabs.map((t) => (
-            <li key={t.view}>
-              <RowButton
-                onClick={() => put(t.view)}
-                title={`Put ${quoted(t.view)} in the query`}
-                className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm font-medium hover:bg-muted/50"
-              >
-                <Table2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
-                  {t.row_count.toLocaleString()}
-                </span>
-              </RowButton>
-              <ul className="mb-1">
-                {t.columns.map((c) => (
-                  <li key={c.name}>
-                    <RowButton
-                      onClick={() => put(c.name)}
-                      title={`Put ${quoted(c.name)} in the query`}
-                      className="flex w-full items-center gap-2 py-0.5 pr-3 pl-8 text-left font-mono text-xs hover:bg-muted/50"
-                    >
-                      <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{c.type}</span>
-                    </RowButton>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="shrink-0 border-b border-border">
           <div
             className="max-h-[40vh] overflow-y-auto scrollbar-thin"
+            onFocus={() => (focused.current = true)}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
@@ -726,6 +691,47 @@ function QueryPane({
           />
         )}
       </div>
+      {/* First on screen, last in the tab order: the keys reach the editor
+          before a long list of names. */}
+      <nav
+        aria-label="Tabs and columns"
+        className="order-first max-h-40 shrink-0 overflow-y-auto scrollbar-thin border-b border-border bg-muted/20 py-1 md:max-h-none md:w-60 md:border-r md:border-b-0"
+      >
+        <p className="px-3 pt-1 pb-1.5 text-xs text-muted-foreground">
+          Click a name to put it in the query.
+        </p>
+        <ul>
+          {tabs.map((t) => (
+            <li key={t.view}>
+              <RowButton
+                onClick={() => put(t.view)}
+                title={`Put ${quoted(t.view)} in the query`}
+                className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm font-medium hover:bg-muted/50"
+              >
+                <Table2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
+                  {t.row_count.toLocaleString()}
+                </span>
+              </RowButton>
+              <ul className="mb-1">
+                {t.columns.map((c) => (
+                  <li key={c.name}>
+                    <RowButton
+                      onClick={() => put(c.name)}
+                      title={`Put ${quoted(c.name)} in the query`}
+                      className="flex w-full items-center gap-2 py-0.5 pr-3 pl-8 text-left font-mono text-xs hover:bg-muted/50"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{c.type}</span>
+                    </RowButton>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </nav>
     </div>
   );
 }

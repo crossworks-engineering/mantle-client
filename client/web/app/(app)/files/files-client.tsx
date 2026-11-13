@@ -42,7 +42,6 @@ import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { FileEditor } from './file-editor';
 import { DataFilesView } from './file-data';
-import { readDbView } from './file-data-model';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
 import { useFileSearch } from './use-file-search';
 import { useWorkspaceJump, WorkspaceHitTag } from '@/components/workspaces/workspace-hit-tag';
@@ -738,7 +737,6 @@ function FilesView({
               <FileEditor
                 key={openFileId}
                 fileId={openFileId}
-                startWithData={readDbView(searchParams).on}
                 onClose={() => openFile(null)}
                 onSaved={refresh}
                 onLoaded={(file) => {

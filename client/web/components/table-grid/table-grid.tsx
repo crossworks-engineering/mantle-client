@@ -395,9 +395,11 @@ export function TableGrid({
     >
       <table className="w-full border-collapse text-sm">
         <thead
-          className={cn(
-            viewer && 'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--color-border)]',
-          )}
+          className={
+            viewer
+              ? 'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--color-border)]'
+              : undefined
+          }
         >
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id} className="border-b border-border">

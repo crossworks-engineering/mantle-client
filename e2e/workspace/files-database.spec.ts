@@ -75,9 +75,11 @@ test('the pager steps through the rows, and a sort asks the brain for every row'
   const text = page.getByTestId('db-page-text');
   await expect(text).toHaveText('Rows 1 to 100 of 1,234');
 
+  // Scrolled to the bottom of page one, the next page starts at its top.
+  await grid.evaluate((el) => (el.scrollTop = el.scrollHeight));
   await page.getByRole('button', { name: 'Next page' }).click();
   await expect(text).toHaveText('Rows 101 to 200 of 1,234');
-  await expect(grid.getByText('P-0101', { exact: true })).toBeVisible();
+  await expect(grid.getByText('P-0101', { exact: true })).toBeInViewport();
   expect(seen.sql.at(-1)).toContain('LIMIT 100 OFFSET 100');
 
   await page.getByRole('button', { name: 'Last page' }).click();
