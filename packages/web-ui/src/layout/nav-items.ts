@@ -17,6 +17,7 @@ import {
   SquareStack,
   Users,
   UsersRound,
+  Workflow,
 } from 'lucide-react';
 import {
   NAV_GROUPS as SHARED_NAV_GROUPS,
@@ -98,6 +99,13 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     group: 'Settings',
     after: '/settings/api-access',
     item: { name: 'Telegram', href: '/settings/telegram', icon: Send },
+  },
+  {
+    // Pipelines (pipelines phase 1): the readers that make a file's
+    // database, read only. Next to PDF passwords, the other file reading row.
+    group: 'Settings',
+    after: '/settings/pdf-passwords',
+    item: { name: 'Pipelines', href: '/settings/pipelines', icon: Workflow },
   },
 ];
 
