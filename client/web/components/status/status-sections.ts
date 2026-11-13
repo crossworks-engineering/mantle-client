@@ -90,8 +90,12 @@ export function sectionStat(id: SectionId, s: StatusData): string | null {
         ? `CPU ${pct(health.host.cpuLoadPct)} · memory ${pct(health.host.mem?.usedPct)} · disk ${pct(health.host.disk?.usedPct)}`
         : null;
     case 'brain':
-      return dash
-        ? `${dash.capacity.pctOfSplit}% of split · ${formatCount(dash.brain.nodesTotal)} nodes`
+      if (dash) {
+        return `${dash.capacity.pctOfSplit}% of split · ${formatCount(dash.brain.nodesTotal)} nodes`;
+      }
+      // Fleet Status: box_status carries the capacity, not the counts.
+      return s.remote && box?.capacity
+        ? `${Math.round(box.capacity.pctOfSplit)}% of split · ${formatCount(box.capacity.docs)} documents`
         : null;
     case 'spend': {
       if (box?.spend) {
@@ -118,6 +122,8 @@ export function sectionStat(id: SectionId, s: StatusData): string | null {
       return `${t.up} of ${t.on} running${t.down ? ` · ${t.down} down` : ''}`;
     }
     case 'providers': {
+      // Fleet Status: box_status carries no outages.
+      if (s.remote) return health ? 'Outages not reported' : null;
       if (s.alerts.length > 0)
         return `${s.alerts.length} outage${s.alerts.length === 1 ? '' : 's'}`;
       const e = health?.embedder;

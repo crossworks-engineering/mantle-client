@@ -137,6 +137,9 @@ export type MockFleet = {
   usersPage: number;
   /** A box whose answer is too large (truncated), by box id. */
   toolTruncated: Record<string, boolean>;
+  /** Fleet status: what box_status answers, by box id; absent: the tool
+   *  errors. */
+  boxStatus: Record<string, unknown>;
   /** The calls made and not handed out yet, by call id. */
   toolCalls: Record<string, ToolCall>;
   /** Each box's people list, its last read's reason and its ban-list
@@ -417,6 +420,7 @@ export const newMockFleet = (): MockFleet => ({
   memberRefusals: {},
   toolSent: [],
   toolDelay: {},
+  boxStatus: {},
   toolTruncated: {},
   usersPage: 150,
   toolCalls: {},
@@ -996,6 +1000,10 @@ function runTool(
         next: end < people.logins.length ? end : null,
       },
     };
+  }
+  if (name === 'box_status') {
+    const out = f.boxStatus[boxId];
+    return out ? { ok: true, reason: null, output: out } : { ok: false, reason: 'error' };
   }
   if (name === 'workspace_user_set') {
     const changes = (args.changes as Record<string, unknown>[] | undefined) ?? [];

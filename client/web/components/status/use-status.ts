@@ -24,6 +24,7 @@ import type {
   VectorCounts,
 } from '@mantle/client-types';
 import { useProviderAlertsState } from '@/components/needs-you/use-provider-alerts';
+import type { ProviderAlert } from '@/lib/provider-alerts';
 import { useServerVersion } from '@/lib/server-version';
 import {
   pushSample,
@@ -55,13 +56,13 @@ export type DashboardBundle = {
   capacity: BrainCapacity;
 };
 
-type UpdatesBundle = {
+export type UpdatesBundle = {
   check: UpdateCheck;
   available: boolean;
   status: UpdaterStatus | null;
 };
 
-type BackupsBundle = { config: BackupConfig; status: BackupStatus | null };
+export type BackupsBundle = { config: BackupConfig; status: BackupStatus | null };
 
 const HEALTH_MS = 10_000;
 const BOX_MS = 30_000;
@@ -122,63 +123,7 @@ export function useStatus() {
     if (h) setHistory((list) => pushSample(list, sampleOf(h)));
   }, [h]);
 
-  const derived = useMemo(() => {
-    const containers = box.data?.containers ?? null;
-    const sidecars = sidecarStates({
-      health: health.data ?? null,
-      services: services.data ?? null,
-      updaterUp: updates.data ? updates.data.available : null,
-      containers,
-    });
-    const processes = processStates(containers);
-    const contractMismatch =
-      typeof version.data?.contractVersion === 'number' &&
-      version.data.contractVersion !== CONTRACT_VERSION;
-    const issues = statusIssues({
-      health: health.data ?? null,
-      box: box.data?.box ?? null,
-      sidecars,
-      processes: containers ? processes : [],
-      capacityZone: dashboard.data?.capacity.zone ?? box.data?.box.capacity?.zone ?? null,
-      providerAlerts: alerts.alerts,
-      updateAvailable: updates.data?.check.updateAvailable ?? false,
-      backup: backups.data?.status ?? null,
-      backupsEnabled: backups.data ? backups.data.config.enabled : null,
-      contractMismatch,
-    });
-    const known: Record<SectionId, boolean> = {
-      overview: !!health.data,
-      compute: !!health.data,
-      brain: !!dashboard.data,
-      spend: !!dashboard.data || !!box.data,
-      queues: !!box.data || !!dashboard.data,
-      sidecars: !!health.data || !!services.data,
-      providers: alerts.loaded || !!health.data,
-      version: !!version.data,
-    };
-    // Overview is the headline: the worst of everything, not only its own.
-    const level = (s: SectionId): Level =>
-      s === 'overview'
-        ? sectionLevel(
-            issues.map((i) => ({ ...i, section: 'overview' as const })),
-            'overview',
-            known.overview,
-          )
-        : sectionLevel(issues, s, known[s]);
-    return { sidecars, processes, issues, level, contractMismatch };
-  }, [
-    health.data,
-    box.data,
-    services.data,
-    dashboard.data,
-    updates.data,
-    backups.data,
-    alerts.alerts,
-    alerts.loaded,
-    version.data,
-  ]);
-
-  return {
+  const parts: StatusParts = {
     health,
     box,
     services,
@@ -186,10 +131,106 @@ export function useStatus() {
     updates,
     backups,
     alerts: alerts.alerts,
+    alertsLoaded: alerts.loaded,
     version,
     history,
-    ...derived,
   };
+  // Keyed on the answers, not the query objects (new on every render).
+  const derived = useMemo(
+    () => deriveStatus(parts),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      health.data,
+      box.data,
+      services.data,
+      dashboard.data,
+      updates.data,
+      backups.data,
+      alerts.alerts,
+      alerts.loaded,
+      version.data,
+    ],
+  );
+  return { ...parts, ...derived };
 }
 
-export type StatusData = ReturnType<typeof useStatus>;
+/** One source of the board: what a react-query result gives, and what
+ *  Fleet Status builds for a box read through the Control Center. */
+export type Part<T> = {
+  data: T | undefined;
+  isError: boolean;
+  isPending: boolean;
+  isSuccess: boolean;
+};
+
+/** Everything the board reads, before the derive step. */
+export type StatusParts = {
+  health: Part<SystemHealth>;
+  box: Part<BoxStatusView>;
+  services: Part<ServicesView>;
+  dashboard: Part<DashboardBundle>;
+  updates: Part<UpdatesBundle>;
+  backups: Part<BackupsBundle>;
+  alerts: ProviderAlert[];
+  alertsLoaded: boolean;
+  version: { data: { version?: string; contractVersion?: number } | undefined };
+  history: VitalsSample[];
+  /** Fleet Status: another box's numbers, read once through the Control
+   *  Center (its box_status). The board then hides the links to this box's
+   *  own screens and says plainly what box_status does not carry. */
+  remote?: boolean;
+};
+
+/**
+ * The board's data from its sources: the sidecars, the processes, the
+ * issues and each section's level. Pure: the Status screen runs it on its
+ * live reads, Fleet Status on a box's one reading.
+ */
+export function deriveStatus(p: StatusParts) {
+  const { health, box, services, dashboard, updates, backups, version } = p;
+  const containers = box.data?.containers ?? null;
+  const sidecars = sidecarStates({
+    health: health.data ?? null,
+    services: services.data ?? null,
+    updaterUp: updates.data ? updates.data.available : null,
+    containers,
+  });
+  const processes = processStates(containers);
+  const contractMismatch =
+    typeof version.data?.contractVersion === 'number' &&
+    version.data.contractVersion !== CONTRACT_VERSION;
+  const issues = statusIssues({
+    health: health.data ?? null,
+    box: box.data?.box ?? null,
+    sidecars,
+    processes: containers ? processes : [],
+    capacityZone: dashboard.data?.capacity.zone ?? box.data?.box.capacity?.zone ?? null,
+    providerAlerts: p.alerts,
+    updateAvailable: updates.data?.check.updateAvailable ?? false,
+    backup: backups.data?.status ?? null,
+    backupsEnabled: backups.data ? backups.data.config.enabled : null,
+    contractMismatch,
+  });
+  const known: Record<SectionId, boolean> = {
+    overview: !!health.data,
+    compute: !!health.data,
+    brain: !!dashboard.data || (!!p.remote && !!box.data?.box.capacity),
+    spend: !!dashboard.data || !!box.data,
+    queues: !!box.data || !!dashboard.data,
+    sidecars: !!health.data || !!services.data,
+    providers: p.alertsLoaded || !!health.data,
+    version: !!version.data,
+  };
+  // Overview is the headline: the worst of everything, not only its own.
+  const level = (s: SectionId): Level =>
+    s === 'overview'
+      ? sectionLevel(
+          issues.map((i) => ({ ...i, section: 'overview' as const })),
+          'overview',
+          known.overview,
+        )
+      : sectionLevel(issues, s, known[s]);
+  return { sidecars, processes, issues, level, contractMismatch };
+}
+
+export type StatusData = StatusParts & ReturnType<typeof deriveStatus>;
