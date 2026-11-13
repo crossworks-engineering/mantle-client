@@ -70,6 +70,13 @@ describe('set an agent model on the fleet (phase 4)', () => {
     expect(MODEL_ID.test('has space')).toBe(false);
     expect(MODEL_ID.test('-lead')).toBe(false);
     expect(MODEL_ID.test('a'.repeat(201))).toBe(false);
+    expect(MODEL_ID.test('a'.repeat(200))).toBe(true);
+    // A "latest" alias and a preset: the lead sign is part of the id.
+    expect(MODEL_ID.test('~vendor/model-latest')).toBe(true);
+    expect(MODEL_ID.test('@preset/fast')).toBe(true);
+    expect(MODEL_ID.test('~')).toBe(false);
+    expect(MODEL_ID.test('~~vendor/model')).toBe(false);
+    expect(MODEL_ID.test('~' + 'a'.repeat(200))).toBe(false);
   });
 });
 
