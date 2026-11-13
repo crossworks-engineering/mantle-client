@@ -118,7 +118,7 @@ export function inviteReasonText(code: string | null | undefined): string {
     case 'gone':
       return 'The answer was lost (the Control Center restarted, or another read took it). Make a new invite: it replaces any open one.';
     case 'pending':
-      return 'The box did not answer in time. Look again later; a new invite replaces the old one.';
+      return 'The box did not answer in time, so the link was not shown. Make a new invite: it replaces any open one.';
     default:
       return toolReasonText(code ?? null);
   }
