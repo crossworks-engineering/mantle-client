@@ -38,7 +38,7 @@ test('a wide tab shows every column, scrolls sideways, and keeps its header on t
   );
 
   // Every column is in the grid: no "more" cut.
-  await expect(grid.getByRole('columnheader')).toHaveCount(40 + 2);
+  await expect(grid.getByRole('columnheader')).toHaveCount(40);
   await expect(page.getByRole('main').getByText(/\bmore\b/i)).toHaveCount(0);
   await expect(page.getByRole('main').getByRole('button', { name: /\bmore\b/i })).toHaveCount(0);
 
@@ -137,7 +137,7 @@ test('the query tab highlights SQL, runs on Ctrl or Cmd + Enter, and shows the r
   await page.keyboard.press('ControlOrMeta+Enter');
   const result = page.getByRole('region', { name: 'Query result' });
   await expect(result.getByText('P-0001', { exact: true })).toBeVisible();
-  await expect(result.getByRole('columnheader')).toHaveCount(2 + 2);
+  await expect(result.getByRole('columnheader')).toHaveCount(2);
   await expect(page.getByTestId('db-query-meta')).toHaveText('50 rows in 3 ms');
 
   // A name from the list goes in at the caret.

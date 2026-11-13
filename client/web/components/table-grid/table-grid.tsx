@@ -413,7 +413,7 @@ export function TableGrid({
                   {flexRender(header.column.columnDef.header, header.getContext())}
                 </th>
               ))}
-              <th className="w-10 px-1 py-1">
+              <th className="w-10 px-1 py-1" aria-hidden={viewer ? true : undefined}>
                 {!readOnly && (
                   <Button
                     size="icon"
