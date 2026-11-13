@@ -11,8 +11,9 @@ import type { FleetWriteAnswer, FleetWriteChange } from './fleet-writes';
 
 export const FLEET_MODELS_PATH = `${FLEET_PATH}/models`;
 
-/** A model id as the brain takes one (CONTROL_MODEL_ID in the mantle repo). */
-export const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
+/** A model id as the brain takes one (CONTROL_MODEL_ID in the mantle repo).
+ *  A leading `~` (a "latest" alias) or `@` (a preset) is part of the id. */
+export const MODEL_ID = /^(?=.{1,200}$)[~@]?[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
 /** The shipped agents the matrix names on any box, each once, sorted. A
  *  person's own assistant and a custom agent have no slug there. */
