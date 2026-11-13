@@ -39,8 +39,12 @@ test('a wide tab shows every column, scrolls sideways, and keeps its header on t
 
   // Every column is in the grid: no "more" cut.
   await expect(grid.getByRole('columnheader')).toHaveCount(40);
-  await expect(page.getByRole('main').getByText(/\bmore\b/i)).toHaveCount(0);
-  await expect(page.getByRole('main').getByRole('button', { name: /\bmore\b/i })).toHaveCount(0);
+  // (The file's own header keeps its "More" menu: the cut is about the rows.)
+  await expect(grid.getByText(/\bmore\b/i)).toHaveCount(0);
+  await expect(tabs(page).getByText(/\bmore\b/i)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /load more|show more|more columns/i })).toHaveCount(
+    0,
+  );
 
   // The last column is past the right edge until the grid scrolls sideways.
   const last = grid.getByRole('columnheader', { name: /Last remark/ });
