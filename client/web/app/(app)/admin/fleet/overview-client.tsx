@@ -59,7 +59,7 @@ function SelfSsoCard() {
       </div>
       <ListCardSnippet>
         {status
-          ? `${boxName(row)}: ${modeLabel(status.mode)}. Set it up for this box.`
+          ? `${boxName(row)}: ${modeLabel(status.mode)}`
           : query.isLoading
             ? `${boxName(row)}: reading…`
             : `${boxName(row)}: not read. Open it to read the status.`}

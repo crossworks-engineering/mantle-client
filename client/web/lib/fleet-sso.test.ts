@@ -515,17 +515,20 @@ describe('this box: the Control Center itself (target self)', () => {
     );
   });
 
-  it('readSelf asks the status of self alone, and keeps the last Test', async () => {
+  it('readSelf asks the status of self alone, and folds it into the view held after the answer', async () => {
     const asked: FleetSsoAsk[] = [];
     const prev = selfView(
       null,
       one(mine({ name: 'sso_test', output: { ok: true, test: 'ok', status: status() } })),
       NOW,
     );
+    let held = prev;
     const v = await readSelf(
-      prev,
+      () => held,
       async (body) => {
         asked.push(body);
+        // A save lands while the read is on its way: its stale Test stays stale.
+        held = prev && { ...prev, test: null };
         return {
           answers: [mine({ output: { ok: true, status: status() } })],
           pending: [],
@@ -535,7 +538,18 @@ describe('this box: the Control Center itself (target self)', () => {
       () => LATER,
     );
     expect(asked).toEqual([{ do: 'status', boxIds: ['self'] }]);
-    expect(v).toMatchObject({ at: LATER, test: { code: 'ok' } });
+    expect(v).toMatchObject({ at: LATER, test: null });
+    // With nothing landing, the read keeps the last Test.
+    const kept = await readSelf(
+      () => prev,
+      async () => ({
+        answers: [mine({ output: { ok: true, status: status() } })],
+        pending: [],
+        gone: [],
+      }),
+      () => LATER,
+    );
+    expect(kept).toMatchObject({ test: { code: 'ok' } });
   });
 
   it('the warning before required names this box, your own session and the .env of this box', () => {

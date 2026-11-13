@@ -646,7 +646,8 @@ export const FLEET_SSO_SELF_KEY = [...FLEET_SSO_KEY, SELF];
 /**
  * This box's view after its answers. The Control Center keeps no view of
  * its own box, so the page holds it, as the Control Center holds a fleet
- * box's: a new status replaces the old, a Test's code is kept, and a save
+ * box's (mantle packages/db control-center.ts nextSsoView: keep the two
+ * alike): a new status replaces the old, a Test's code is kept, and a save
  * that went through makes the last Test stale (unless it ran its own). A
  * reload drops it, so Turn on asks a new Test. No last save or raise: the
  * answer shows at once on the pane.
@@ -699,11 +700,13 @@ export function selfRow(name: string, fallbackUrl: string, view: FleetSsoView | 
 }
 
 /** This box's status, read live (one ask), folded into the view the page
- *  holds so a read keeps the last Test. */
+ *  holds so a read keeps the last Test. `held` is read after the answer, so
+ *  a save that lands while the read is on its way is not undone. */
 export async function readSelf(
-  prev: FleetSsoView | null,
+  held: () => FleetSsoView | null,
   send: SsoSend = defaultSend,
   now: () => string = () => new Date().toISOString(),
 ): Promise<FleetSsoView | null> {
-  return selfView(prev, await askSso({ do: 'status', boxIds: [SELF] }, send), now());
+  const all = await askSso({ do: 'status', boxIds: [SELF] }, send);
+  return selfView(held(), all, now());
 }

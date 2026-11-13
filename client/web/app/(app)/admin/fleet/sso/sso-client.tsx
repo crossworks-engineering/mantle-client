@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, RefreshCw, Server } from 'lucide-react';
 import type { Shell } from '@mantle/client-types';
 import { ApiError, apiFetch } from '@mantle/web-ui/api-fetch';
+import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
 import { Button } from '@mantle/web-ui/ui/button';
 import { CopyButton } from '@mantle/web-ui/ui/copy-button';
 import {
@@ -850,7 +851,21 @@ function useSelfName(): string {
   });
   const named = shell.data?.siteName?.trim();
   if (named) return named;
-  return typeof window === 'undefined' ? 'This box' : window.location.host;
+  return hostOf(selfOrigin()) || 'This box';
+}
+
+/** This box's origin: the API base (the desktop app's renderer is on
+ *  another host), else the page's own. */
+function selfOrigin(): string {
+  return runtimeApiBase() || (typeof window === 'undefined' ? '' : window.location.origin);
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
 }
 
 /** This box's sign-in, read live (the Control Center keeps no view of it):
@@ -861,12 +876,11 @@ export function useSelfSso() {
   const query = useQuery({
     queryKey: FLEET_SSO_SELF_KEY,
     queryFn: () =>
-      readSelf(queryClient.getQueryData<FleetSsoView | null>(FLEET_SSO_SELF_KEY) ?? null),
+      readSelf(() => queryClient.getQueryData<FleetSsoView | null>(FLEET_SSO_SELF_KEY) ?? null),
     staleTime: 30_000,
     retry: 1,
   });
-  const origin = typeof window === 'undefined' ? '' : window.location.origin;
-  return { row: selfRow(name, origin, query.data ?? null), query };
+  return { row: selfRow(name, selfOrigin(), query.data ?? null), query };
 }
 
 function SelfCard({ selected, onOpen }: { selected: boolean; onOpen: () => void }) {
@@ -934,8 +948,8 @@ function FleetSso() {
   const [refreshing, setRefreshing] = useState(false);
   const rows = query.data ?? [];
   const selected = rows.find((r) => r.id === param) ?? null;
-  // This box: asked for, or the only box there is.
-  const selfOpen = param === SELF || (!selected && rows.length === 0);
+  // This box: asked for, or the only box there is (once the list is read).
+  const selfOpen = param === SELF || (!selected && !query.isLoading && rows.length === 0);
 
   const refreshAll = async () => {
     setRefreshing(true);
