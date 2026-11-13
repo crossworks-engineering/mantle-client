@@ -41,10 +41,14 @@ describe('the view a tree opens on', () => {
     );
   });
 
-  it('nothing but a click on a view, or a folder hit, changes the view', () => {
-    // Two callers in all: the chips and openFolderHit. A selection, a
-    // refetch and a cleared search never touch it.
-    expect(tree.match(/setView\(/g)).toHaveLength(2);
+  it('nothing but a click on a view, a folder hit or Collapse all changes the view', () => {
+    // Three callers in all: the chips, openFolderHit, and Collapse all (back
+    // to Folders, shut). A selection, a refetch and a cleared search never
+    // touch it.
+    expect(tree.match(/setView\(/g)).toHaveLength(3);
     expect(tree).toContain('setView(v as View);');
+    expect(tree).toContain(
+      "onClick={() => { setView('tree'); setFilter({}); collapseAllFolders();",
+    );
   });
 });

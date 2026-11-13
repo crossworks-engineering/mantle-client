@@ -1458,7 +1458,8 @@ export function ItemTree({
                     long tree becomes its top level, to find something fast.
                     From Recent, Most used, A to Z or a tag filter it goes
                     back to the Folders view, shut (the search hides this
-                    row). No "Expand all": each folder's children load on
+                    row); as with the Folders tab, the page's own row, when
+                    it is a top-level one, is then scrolled to. No "Expand all": each folder's children load on
                     their own, so it would ask the brain once per folder. */}
                 <Button
                   variant="outline"
