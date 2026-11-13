@@ -109,6 +109,40 @@ test('the read fails: the reason and Read status are shown by the mode', async (
   await expect(mode.getByText('This box cannot reach the box over HTTPS.')).toBeVisible();
 });
 
+test('the Microsoft side walks Entra with the values of this box', async ({ page }) => {
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  const ms = main.locator('section').filter({
+    has: page.getByRole('heading', { name: 'Microsoft side' }),
+  });
+  // Setup mode: the steps are open, with the box's own redirect URI to copy.
+  await expect(ms.getByText('https://box-a.example.invalid/api/auth/oidc/callback')).toBeVisible();
+  await expect(ms.getByText('Mantle box-a.example.invalid').first()).toBeVisible();
+  await expect(ms.getByRole('button', { name: 'Copy: Redirect URI (Web)' })).toBeVisible();
+  await expect(ms).toContainText('Copy the Value. Not the Secret ID.');
+  await expect(ms).toContainText('Then Test. Then Turn on (optional).');
+  await ms.scrollIntoViewIfNeeded();
+  await shot(page, 'fleet-sso-microsoft-side');
+  await ms.screenshot(SHOTS ? { path: join(SHOTS, 'fleet-sso-microsoft-side-part.png') } : {});
+});
+
+test('once sign-in is on, the Microsoft steps fold away', async ({ page }) => {
+  api.fleet!.ssoStatus[FLEET_BOX.id]!.mode = 'optional';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  const ms = main.locator('section').filter({
+    has: page.getByRole('heading', { name: 'Microsoft side' }),
+  });
+  const fold = ms.getByText('Sign-in is on. Show the Microsoft steps again', { exact: false });
+  await expect(fold).toBeVisible();
+  const uri = ms.getByText('https://box-a.example.invalid/api/auth/oidc/callback');
+  await expect(uri).toBeHidden();
+  await fold.click();
+  await expect(uri).toBeVisible();
+});
+
 test('a save asks the password, sends only the filled fields, and never shows the secret', async ({
   page,
 }) => {

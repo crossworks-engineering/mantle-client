@@ -42,6 +42,9 @@ import { boxName } from '@/lib/fleet';
 import {
   answerText,
   askMany,
+  ENTRA_FOLDED,
+  entraOpen,
+  entraSteps,
   askSso,
   FLEET_SSO_KEY,
   formRules,
@@ -439,6 +442,49 @@ function ModePart({
   );
 }
 
+/** The click path in the Entra admin center, with this box's own values to
+ *  copy. Open in off and setup; folded once sign-in is on. */
+function MicrosoftPart({ row, status }: { row: FleetSsoRow; status: FleetSsoStatus }) {
+  if (!status.redirectUri) return null;
+  const list = (
+    <ol className="list-decimal space-y-4 pl-5 text-sm">
+      {entraSteps(row, status.redirectUri).map((step) => (
+        <li key={step.title} className="space-y-1.5 pl-1">
+          <p className="font-medium">{step.title}</p>
+          {step.text.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+          {step.values.length > 0 && (
+            <Facts
+              rows={step.values.map((v) => ({
+                label: v.label,
+                value: (
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 break-all font-mono text-[13px]">{v.value}</span>
+                    <CopyButton value={v.value} ariaLabel={`Copy: ${v.label}`} />
+                  </span>
+                ),
+              }))}
+            />
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+  return (
+    <Part title="Microsoft side">
+      {entraOpen(status.mode) ? (
+        list
+      ) : (
+        <details>
+          <summary className="cursor-pointer text-sm text-muted-foreground">{ENTRA_FOLDED}</summary>
+          <div className="pt-3">{list}</div>
+        </details>
+      )}
+    </Part>
+  );
+}
+
 // --- one box --------------------------------------------------------------------------
 
 type Notice = { tone: 'ok' | 'warn' | 'bad'; text: string };
@@ -648,6 +694,8 @@ function OneBox({ row }: { row: FleetSsoRow }) {
           </p>
         )}
       </Part>
+
+      {status && <MicrosoftPart row={row} status={status} />}
 
       <Part title="Stage the sign-in">
         {stageText(status) && <p className="text-sm text-muted-foreground">{stageText(status)}</p>}

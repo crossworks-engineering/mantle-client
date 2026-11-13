@@ -531,3 +531,94 @@ export async function settleSso(
   }
   return { answers, pending, gone };
 }
+
+// --- the Microsoft side ----------------------------------------------------------------
+
+/** One step of the click path in the Entra admin center. `values` are what
+ *  the person types or picks there, each with a copy button. */
+export type EntraStep = {
+  title: string;
+  text: string[];
+  values: { label: string; value: string }[];
+};
+
+/** The name of the box's app in Entra: Mantle and the box host. */
+export function entraAppName(url: string): string {
+  try {
+    return `Mantle ${new URL(url).host}`;
+  } catch {
+    return `Mantle ${url}`;
+  }
+}
+
+/** Whether the Microsoft steps show open: in off and setup, where the app
+ *  is still made. In optional and required they fold away. */
+export function entraOpen(mode: SsoMode): boolean {
+  return mode === 'off' || mode === 'setup';
+}
+
+export const ENTRA_FOLDED =
+  'Sign-in is on. Show the Microsoft steps again, for example for a new secret.';
+
+/**
+ * The click path in the Entra admin center for one box, from mantle
+ * docs/oidc-entra.md ("In the Entra admin center"), with this box's own
+ * values. Menu names are Microsoft's; they change often.
+ */
+export function entraSteps(box: { url: string }, redirectUri: string): EntraStep[] {
+  const app = entraAppName(box.url);
+  return [
+    {
+      title: 'Entra ID > App registrations > New registration',
+      text: [
+        'Make one app for this box.',
+        'Supported account types: Single tenant only.',
+        'Redirect URI: pick the platform Web, and paste the address below.',
+      ],
+      values: [
+        { label: 'Name', value: app },
+        { label: 'Redirect URI (Web)', value: redirectUri },
+      ],
+    },
+    {
+      title: "On the app's Overview",
+      text: [
+        'Copy the Directory (tenant) ID. It goes in Tenant ID on this page.',
+        'Copy the Application (client) ID. It goes in Client ID on this page.',
+      ],
+      values: [],
+    },
+    {
+      title: 'Certificates & secrets > Client secrets > New client secret',
+      text: [
+        'Copy the Value. Not the Secret ID. Microsoft shows the Value only once.',
+        'The Value goes in Client secret on this page.',
+        'The secret has an end date. Put that date in a calendar: sign-in stops on that day.',
+      ],
+      values: [],
+    },
+    {
+      title: 'Token configuration > Add optional claim',
+      text: ['Token type: ID. Claim: auth_time.'],
+      values: [{ label: 'Claim', value: 'auth_time' }],
+    },
+    {
+      title: 'Entra ID > Enterprise apps > All applications',
+      text: [
+        'Open the app of this box. Entra made it at the registration.',
+        'Properties: set Assignment required? to Yes.',
+        'Users and groups > Add user/group: add the people or groups who may sign in to this box. Entra refuses a person who is not assigned.',
+      ],
+      values: [{ label: 'App', value: app }],
+    },
+    {
+      title: 'On this page',
+      text: [
+        'Open setup, if the mode is still off.',
+        'Under Stage the sign-in, paste the tenant ID, the client ID and the secret Value. Save.',
+        'Then Test. Then Turn on (optional).',
+      ],
+      values: [],
+    },
+  ];
+}

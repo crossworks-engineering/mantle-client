@@ -3,6 +3,10 @@ import {
   answerText,
   askMany,
   blockedText,
+  ENTRA_FOLDED,
+  entraAppName,
+  entraOpen,
+  entraSteps,
   modeBody,
   nextStep,
   requiredWarning,
@@ -359,5 +363,52 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
     }
     // No status: the Sign-in mode part says what to do.
     expect(stageText(null)).toBeNull();
+  });
+  it('walks the Microsoft side with the values of this box', () => {
+    const uri = 'https://box-a.example.invalid/api/auth/oidc/callback';
+    expect(entraAppName('https://box-a.example.invalid')).toBe('Mantle box-a.example.invalid');
+    expect(entraAppName('https://box-a.example.invalid:8443/x')).toBe(
+      'Mantle box-a.example.invalid:8443',
+    );
+    expect(entraAppName('not a url')).toBe('Mantle not a url');
+    const steps = entraSteps({ url: 'https://box-a.example.invalid' }, uri);
+    const all = steps.flatMap((s) => [s.title, ...s.text]).join(' ');
+    const values = steps.flatMap((s) => s.values.map((v) => v.value));
+    // The doc's menus, in its order.
+    expect(steps.map((s) => s.title)).toEqual([
+      'Entra ID > App registrations > New registration',
+      "On the app's Overview",
+      'Certificates & secrets > Client secrets > New client secret',
+      'Token configuration > Add optional claim',
+      'Entra ID > Enterprise apps > All applications',
+      'On this page',
+    ]);
+    // The box's own values, each one to copy.
+    expect(values).toEqual([
+      'Mantle box-a.example.invalid',
+      uri,
+      'auth_time',
+      'Mantle box-a.example.invalid',
+    ]);
+    expect(all).toContain('Single tenant only');
+    expect(all).toContain('platform Web');
+    expect(all).toContain('Assignment required? to Yes');
+    expect(all).toContain('Add user/group');
+    // Where each Microsoft value goes on this page.
+    expect(all).toContain('Directory (tenant) ID. It goes in Tenant ID');
+    expect(all).toContain('Application (client) ID. It goes in Client ID');
+    expect(all).toContain('Copy the Value. Not the Secret ID.');
+    expect(all).toContain('calendar');
+    expect(all).toMatch(/Then Test\. Then Turn on \(optional\)\.$/);
+    // No terminal: no script and no .env.
+    expect(all).not.toMatch(/scripts\/|\.sh|\.env/);
+  });
+
+  it('shows the Microsoft steps open in off and setup, folded once sign-in is on', () => {
+    expect(entraOpen('off')).toBe(true);
+    expect(entraOpen('setup')).toBe(true);
+    expect(entraOpen('optional')).toBe(false);
+    expect(entraOpen('required')).toBe(false);
+    expect(ENTRA_FOLDED).toContain('new secret');
   });
 });
