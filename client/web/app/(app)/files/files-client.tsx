@@ -42,6 +42,7 @@ import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { FileEditor } from './file-editor';
 import { DataFilesView } from './file-data';
+import { readDbView } from './file-data-model';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
 import { useFileSearch } from './use-file-search';
 import { useWorkspaceJump, WorkspaceHitTag } from '@/components/workspaces/workspace-hit-tag';
@@ -339,8 +340,9 @@ function FilesView({
     const sp = new URLSearchParams(searchParams.toString());
     if (fileId) sp.set('file', fileId);
     else sp.delete('file');
-    // `view=data` is for the one file a Data files row opens.
+    // `view=data` (and its `dbtab`) is for the one file a Data files row opens.
     sp.delete('view');
+    sp.delete('dbtab');
     router.push(`/files?${sp.toString()}`);
   };
 
@@ -736,7 +738,7 @@ function FilesView({
               <FileEditor
                 key={openFileId}
                 fileId={openFileId}
-                startWithData={searchParams.get('view') === 'data'}
+                startWithData={readDbView(searchParams).on}
                 onClose={() => openFile(null)}
                 onSaved={refresh}
                 onLoaded={(file) => {

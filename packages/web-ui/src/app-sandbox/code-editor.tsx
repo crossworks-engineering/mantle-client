@@ -11,7 +11,7 @@
  * Tab-to-indent + the parent's Format/Save is the whole feature. Pass
  * `readOnly` to render the same highlighted surface without the textarea.
  */
-import { useDeferredValue, useMemo } from 'react';
+import { useDeferredValue, useMemo, type Ref } from 'react';
 import { cn } from '../lib/utils';
 import { highlightToReact } from './highlight';
 
@@ -26,12 +26,18 @@ export function CodeEditor({
   onChange,
   readOnly = false,
   className,
+  ariaLabel,
+  textareaRef,
 }: {
   path: string;
   value: string;
   onChange?: (next: string) => void;
   readOnly?: boolean;
   className?: string;
+  /** The text field's name for a screen reader. */
+  ariaLabel?: string;
+  /** The text field itself, for a caller that puts text at the caret. */
+  textareaRef?: Ref<HTMLTextAreaElement>;
 }) {
   // Highlighting a whole file (up to 256 KB) on every key press made typing
   // lag on big files (apps audit P9). The textarea shows the live text; the
@@ -66,6 +72,8 @@ export function CodeEditor({
       </pre>
       {!readOnly && (
         <textarea
+          ref={textareaRef}
+          aria-label={ariaLabel}
           value={value}
           onChange={(e) => onChange?.(e.target.value)}
           onKeyDown={onKeyDown}
