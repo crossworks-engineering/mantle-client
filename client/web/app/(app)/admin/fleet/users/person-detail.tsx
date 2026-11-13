@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { ChevronRight, Copy, Lock, ShieldBan, ShieldCheck, UserRound } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
@@ -80,12 +80,14 @@ function Toggle({
   children: ReactNode;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="2xs"
       aria-expanded={open}
       aria-controls={open ? controls : undefined}
       onClick={onClick}
-      className="mr-1.5 inline-flex items-center gap-1 rounded-sm text-left font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      className="-ml-2 mr-1 gap-1 text-sm font-medium"
     >
       <ChevronRight
         className={cn(
@@ -95,7 +97,7 @@ function Toggle({
         aria-hidden
       />
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -221,6 +223,8 @@ export function PersonDetail({
   const peopleById = useMemo(() => new Map(peopleBoxes.map((b) => [b.id, b])), [peopleBoxes]);
   const [staged, setStaged] = useState<Map<string, MemberChange>>(() => new Map());
   const [view, setView] = useState<'box' | 'workspace'>('box');
+  /** The ids an open row's toggle points at (aria-controls). */
+  const uid = useId();
   const byBox = useMemo(() => boxWorkspaces(grid), [grid]);
   const byWorkspace = useMemo(() => workspaceBoxes(grid), [grid]);
   const [openBoxes, setOpenBoxes] = useState(() =>
@@ -422,10 +426,11 @@ export function PersonDetail({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {person.logins.map((l) => {
+                {person.logins.map((l, i) => {
                   const st = loginState(l);
                   const key = colKey(l.boxId, l.loginId);
-                  const column = grid.columns.find((c) => c.key === key)!;
+                  // The grid's columns are the logins, one to one, in this order.
+                  const column = grid.columns[i]!;
                   const isOpen = l.full && openBoxes.has(key);
                   const lines = byBox.get(key) ?? [];
                   return (
@@ -435,7 +440,7 @@ export function PersonDetail({
                           {l.full ? (
                             <Toggle
                               open={isOpen}
-                              controls={`box-${key}`}
+                              controls={`${uid}box${i}`}
                               onClick={() => setOpenBoxes((o) => flip(o, key))}
                             >
                               {column.label}
@@ -464,14 +469,14 @@ export function PersonDetail({
                           <TableCell colSpan={5} className="whitespace-normal p-0">
                             {lines.length === 0 ? (
                               <p
-                                id={`box-${key}`}
+                                id={`${uid}box${i}`}
                                 className="px-3 py-2 pl-8 text-sm text-muted-foreground"
                               >
                                 No workspaces on this box.
                               </p>
                             ) : (
                               <ul
-                                id={`box-${key}`}
+                                id={`${uid}box${i}`}
                                 aria-label={`Workspaces on ${column.label}`}
                                 className="divide-y divide-border bg-muted/20"
                               >
@@ -518,7 +523,7 @@ export function PersonDetail({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {grid.rows.map((row) => {
+                {grid.rows.map((row, i) => {
                   const lines = byWorkspace.get(row.key) ?? [];
                   const isOpen = openRows.has(row.key);
                   const inIt = lines.filter(
@@ -530,7 +535,7 @@ export function PersonDetail({
                         <TableCell className="font-medium whitespace-normal">
                           <Toggle
                             open={isOpen}
-                            controls={`ws-${row.key}`}
+                            controls={`${uid}ws${i}`}
                             onClick={() => setOpenRows((o) => flip(o, row.key))}
                           >
                             {row.label}
@@ -546,7 +551,7 @@ export function PersonDetail({
                         <TableRow className="hover:bg-transparent">
                           <TableCell colSpan={3} className="whitespace-normal p-0">
                             <ul
-                              id={`ws-${row.key}`}
+                              id={`${uid}ws${i}`}
                               aria-label={`Boxes with ${row.label}`}
                               className="divide-y divide-border bg-muted/20"
                             >

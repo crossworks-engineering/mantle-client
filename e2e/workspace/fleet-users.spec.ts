@@ -47,8 +47,8 @@ const setCall = (boxId: string, changes: Record<string, string>[]) => ({
 const people = (page: Page) => page.getByRole('main').getByRole('list', { name: 'People' });
 const card = (page: Page, text: string) =>
   people(page).getByRole('listitem').filter({ hasText: text });
-/** The person's boxes, each row opening to its workspaces (two boxes or
- *  fewer start open). */
+/** The person's boxes, each row opening to its workspaces (three boxes
+ *  or fewer start open). */
 const grid = (page: Page) => page.getByRole('main').getByRole('table', { name: 'Boxes' });
 
 /** A person's first login (by box name), as box:login: the address names
