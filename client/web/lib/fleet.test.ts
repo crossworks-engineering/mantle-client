@@ -8,6 +8,7 @@ import {
   fleetKeyProviders,
   fleetKeysOffered,
   fleetOffered,
+  ipLine,
   keyBoxText,
   keyUpdatePending,
   liftLabel,
@@ -24,6 +25,20 @@ describe('boxName', () => {
     expect(boxName({ url: 'https://box.example.com', label: 'Box 3' })).toBe('Box 3');
     expect(boxName({ url: 'https://box.example.com', label: null })).toBe('box.example.com');
     expect(boxName({ url: 'not a url', label: null })).toBe('not a url');
+  });
+});
+
+describe('ipLine', () => {
+  it('shows the first IP and +N, with all of them in the title', () => {
+    expect(ipLine(['192.0.2.10'])).toEqual({ text: '192.0.2.10', title: '192.0.2.10' });
+    expect(ipLine(['192.0.2.10', '192.0.2.11', '2001:db8::10'])).toEqual({
+      text: '192.0.2.10 +2',
+      title: '192.0.2.10, 192.0.2.11, 2001:db8::10',
+    });
+  });
+  it('shows nothing with no IP, or from a brain before the field', () => {
+    expect(ipLine([])).toBeNull();
+    expect(ipLine(undefined)).toBeNull();
   });
 });
 

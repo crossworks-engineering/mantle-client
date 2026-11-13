@@ -11,6 +11,7 @@ type Box = {
   id: string;
   url: string;
   label: string | null;
+  ips?: string[];
   addedBy: string | null;
   createdAt: string;
   lastRunAt: string | null;
@@ -23,6 +24,7 @@ export const FLEET_BOX: Box = {
   id: 'f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1',
   url: 'https://box-a.example.invalid',
   label: 'Box A',
+  ips: ['192.0.2.10', '192.0.2.11', '2001:db8::10'],
   addedBy: ADMIN,
   createdAt: AT,
   lastRunAt: AT,
@@ -36,6 +38,7 @@ export const FLEET_BOX_B: Box = {
   id: 'f2f2f2f2-f2f2-4f2f-8f2f-f2f2f2f2f2f2',
   url: 'https://box-b.example.invalid',
   label: null,
+  ips: [],
   lastOkAt: null,
   lastReason: 'sig',
   loginCount: null,
@@ -883,6 +886,7 @@ export function fleetAnswer(
       id: uuid(),
       url,
       label: (body.label as string | null) ?? null,
+      ips: [],
       lastRunAt: null,
       lastOkAt: null,
       loginCount: null,

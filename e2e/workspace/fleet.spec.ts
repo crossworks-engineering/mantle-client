@@ -151,6 +151,10 @@ test('Linked boxes: each box as a card, link one more, remove one', async ({ pag
   await expect(main.getByRole('heading', { name: 'Box A' })).toBeVisible();
   await expect(main.getByText('https://box-a.example.invalid').first()).toBeVisible();
   await expect(main.getByText('4 logins', { exact: true })).toBeVisible();
+  // The IP the Control Center resolves, under the address: the first and +N, all in the title.
+  await expect(main.getByTitle('192.0.2.10, 192.0.2.11, 2001:db8::10').first()).toHaveText(
+    '192.0.2.10 +2',
+  );
 
   // Box B: its code and its plain words.
   await main.getByRole('button', { name: new RegExp(BOX_B) }).click();
