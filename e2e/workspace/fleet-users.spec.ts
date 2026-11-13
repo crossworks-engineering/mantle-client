@@ -2,7 +2,16 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
-import { FLEET_BOX, FLEET_BOX_B, newMockFleet, PEOPLE, withMatrix, withPeople } from './mock-fleet';
+import {
+  FLEET_BOX,
+  FLEET_BOX_B,
+  newMockFleet,
+  PEOPLE,
+  SSO_PASSWORD,
+  withMatrix,
+  withPeople,
+} from './mock-fleet';
+import { inviteState } from './mock-fleet-invite';
 import { CC_SCOPE, scopedNav } from './shell-nav';
 
 /**
@@ -47,8 +56,9 @@ const setCall = (boxId: string, changes: Record<string, string>[]) => ({
 const people = (page: Page) => page.getByRole('main').getByRole('list', { name: 'People' });
 const card = (page: Page, text: string) =>
   people(page).getByRole('listitem').filter({ hasText: text });
-const grid = (page: Page) =>
-  page.getByRole('main').getByRole('table', { name: 'Workspaces, box by box' });
+/** The person's boxes, each row opening to its workspaces (three boxes
+ *  or fewer start open). */
+const grid = (page: Page) => page.getByRole('main').getByRole('table', { name: 'Boxes' });
 
 /** A person's first login (by box name), as box:login: the address names
  *  it, never the email. */
@@ -62,6 +72,51 @@ async function open(page: Page, email: string) {
   await page.goto(`${USERS}?person=${encodeURIComponent(FIRST_LOGIN[email]!)}`);
   await expect(grid(page)).toBeVisible();
   await expect(page.getByRole('main').getByText(email).first()).toBeVisible();
+}
+
+/** Made-up extra boxes: Ann on each, with the same three workspaces (the
+ *  first box on the list has one more, Field, and Ann in Projects). */
+const extraId = (i: number, kind: string) =>
+  `${kind}0000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+function withBoxes(total: number) {
+  const f = api.fleet!;
+  const at = new Date().toISOString();
+  for (let i = 3; i <= total; i++) {
+    const id = extraId(i, 'e');
+    f.boxes.push({
+      ...FLEET_BOX,
+      id,
+      url: `https://box-${i}.example.invalid`,
+      label: `Box ${String(i).padStart(2, '0')}`,
+    });
+    f.people[id] = {
+      peopleReason: null,
+      logins: null,
+      people: {
+        schema: 1,
+        at,
+        workspaces: [
+          { id: extraId(i, 'c'), name: 'Admin', admin: true },
+          { id: extraId(i, 'd'), name: 'Projects', admin: false },
+          { id: extraId(i, '9'), name: 'Ops', admin: false },
+        ],
+        logins: [
+          {
+            id: extraId(i, '8'),
+            email: 'ann@example.com',
+            name: 'Ann Admin',
+            role: 'member',
+            owner: false,
+            disabled: false,
+            archived: false,
+            lastSignInAt: at,
+            createdAt: at,
+            workspaces: [{ id: extraId(i, '9'), moderator: i % 2 === 0 }],
+          },
+        ],
+      },
+    };
+  }
 }
 
 async function pick(page: Page, trigger: ReturnType<Page['getByRole']>, option: string) {
@@ -323,4 +378,263 @@ test('dark: the list and a person', async ({ page }) => {
   await signIn(page, 'admin');
   await open(page, 'ann@example.com');
   await shot(page, 'fleet-users-person-dark');
+});
+
+/** No part of the person's pane scrolls sideways: the pane itself and
+ *  every box inside it that could. */
+async function noSideScroll(page: Page) {
+  const pane = page
+    .getByRole('main')
+    .getByRole('heading', { name: 'Ann Admin' })
+    .locator('xpath=ancestor::div[contains(@class,"min-h-full")][1]');
+  const wide = await pane.evaluate((el) => {
+    const all = [el.parentElement!, el, ...Array.from(el.querySelectorAll<HTMLElement>('*'))];
+    return all
+      .filter((e) => {
+        const x = getComputedStyle(e).overflowX;
+        return e === el.parentElement || x === 'auto' || x === 'scroll';
+      })
+      .filter((e) => e.scrollWidth > e.clientWidth + 1)
+      .map((e) => `${e.tagName}.${e.className} ${e.scrollWidth}>${e.clientWidth}`);
+  });
+  expect(wide).toEqual([]);
+}
+
+const boxRow = (page: Page, box: string) =>
+  grid(page)
+    .getByRole('row')
+    .filter({ has: page.getByRole('button', { name: box, exact: true }) });
+
+test('a person on 8 boxes fits the pane: open a box, stage, send', async ({ page }) => {
+  withBoxes(8);
+  await signIn(page, 'admin');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${USERS}?person=${encodeURIComponent(FIRST_LOGIN['ann@example.com']!)}`);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'Ann Admin' })).toBeVisible();
+  await expect(main.getByText('Logins (8 boxes)')).toBeVisible();
+  // More than three boxes: every row starts closed.
+  const box3 = main.getByRole('button', { name: 'Box 03', exact: true });
+  await expect(box3).toHaveAttribute('aria-expanded', 'false');
+  await expect(grid(page).getByRole('combobox')).toHaveCount(0);
+  await noSideScroll(page);
+  await shot(page, `fleet-users-8-boxes-${process.env.E2E_SHOT_TAG || 'after'}`);
+
+  await box3.click();
+  await expect(box3).toHaveAttribute('aria-expanded', 'true');
+  const list = main.getByRole('list', { name: 'Workspaces on Box 03' });
+  await expect(list.getByRole('listitem')).toHaveCount(3);
+  await pick(page, list.getByRole('combobox', { name: 'Role in Projects on Box 03' }), 'User');
+  await noSideScroll(page);
+  await shot(page, 'fleet-users-8-boxes-open');
+  // Closed again, the row still says what it holds.
+  await box3.click();
+  await expect(list).toHaveCount(0);
+  await expect(boxRow(page, 'Box 03').getByText('1 staged')).toBeVisible();
+
+  await main.getByRole('button', { name: 'Send 1 change' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog.getByText('ann@example.com in Projects as User on Box 03')).toBeVisible();
+  expect(writes()).toEqual([]);
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect.poll(() => writes().length).toBe(1);
+  expect(writes()[0]).toEqual(
+    setCall(extraId(3, 'e'), [
+      { loginId: extraId(3, '8'), workspaceId: extraId(3, 'd'), role: 'user' },
+    ]),
+  );
+  const changes = main
+    .getByRole('heading', { name: 'Workspace changes' })
+    .locator('..')
+    .locator('..');
+  await expect(changes.getByText('Added as a user.')).toBeVisible();
+  await expect(boxRow(page, 'Box 03').getByText('1 staged')).toHaveCount(0);
+  // Phone width: nothing scrolls sideways either.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await box3.click();
+  await expect(main.getByRole('list', { name: 'Workspaces on Box 03' })).toBeVisible();
+  await noSideScroll(page);
+  await shot(page, 'fleet-users-8-boxes-phone');
+});
+
+test('by workspace: one workspace across 8 boxes, staged once for both views', async ({ page }) => {
+  withBoxes(8);
+  await signIn(page, 'admin');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${USERS}?person=${encodeURIComponent(FIRST_LOGIN['ann@example.com']!)}`);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'Ann Admin' })).toBeVisible();
+  await main.getByRole('radio', { name: 'By workspace' }).click();
+  const table = main.getByRole('table', { name: 'Workspaces' });
+  const ops = table.getByRole('button', { name: 'Ops', exact: true });
+  await expect(ops).toHaveAttribute('aria-expanded', 'false');
+  await ops.click();
+  const list = main.getByRole('list', { name: 'Boxes with Ops' });
+  await expect(list.getByRole('listitem')).toHaveCount(8);
+  await pick(page, list.getByRole('combobox', { name: 'Role in Ops on Box 05' }), 'Moderator');
+  await noSideScroll(page);
+  await shot(page, 'fleet-users-8-boxes-by-workspace');
+  await ops.click();
+  await expect(
+    table
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: 'Ops', exact: true }) })
+      .getByText('1 staged'),
+  ).toBeVisible();
+  // The same change shows on its box in the other view.
+  await main.getByRole('radio', { name: 'By box' }).click();
+  await expect(boxRow(page, 'Box 05').getByText('1 staged')).toBeVisible();
+  await main.getByRole('button', { name: 'Send 1 change' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Send', exact: true }).click();
+  await expect.poll(() => writes().length).toBe(1);
+  expect(writes()[0]).toEqual(
+    setCall(extraId(5, 'e'), [
+      { loginId: extraId(5, '8'), workspaceId: extraId(5, '9'), role: 'moderator' },
+    ]),
+  );
+});
+
+test('a person on 20 boxes still fits the pane', async ({ page }) => {
+  withBoxes(20);
+  await signIn(page, 'admin');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${USERS}?person=${encodeURIComponent(FIRST_LOGIN['ann@example.com']!)}`);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Logins (20 boxes)')).toBeVisible();
+  await main.getByRole('button', { name: 'Box 20', exact: true }).click();
+  await expect(main.getByRole('list', { name: 'Workspaces on Box 20' })).toBeVisible();
+  await noSideScroll(page);
+  // The card names six boxes, then how many more.
+  await expect(card(page, 'ann@example.com').getByText('+14 more')).toBeVisible();
+  await shot(page, 'fleet-users-20-boxes');
+});
+
+test('a person on 3 boxes sees every box open at the start', async ({ page }) => {
+  withBoxes(3);
+  await signIn(page, 'admin');
+  await page.goto(`${USERS}?person=${encodeURIComponent(FIRST_LOGIN['ann@example.com']!)}`);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Logins (3 boxes)')).toBeVisible();
+  for (const box of ['Box 03', 'Box A', BOX_B]) {
+    await expect(main.getByRole('button', { name: box, exact: true })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  }
+  await noSideScroll(page);
+});
+
+// --- add a person to a box -----------------------------------------------------------
+
+/** A ninth box with no Ann on it (workspaces, no logins). */
+function withEmptyBox(i: number) {
+  const f = api.fleet!;
+  const id = extraId(i, 'e');
+  f.boxes.push({
+    ...FLEET_BOX,
+    id,
+    url: `https://box-${i}.example.invalid`,
+    label: `Box ${String(i).padStart(2, '0')}`,
+  });
+  f.people[id] = {
+    peopleReason: null,
+    logins: null,
+    people: {
+      schema: 1,
+      at: new Date().toISOString(),
+      workspaces: [{ id: extraId(i, 'c'), name: 'Admin', admin: true }],
+      logins: [],
+    },
+  };
+  return id;
+}
+
+test('add a person on 8 boxes to the ninth: the link once, then Invited, not joined yet', async ({
+  page,
+}) => {
+  withBoxes(8);
+  const ninth = withEmptyBox(9);
+  await signIn(page, 'admin');
+  await open(page, 'ann@example.com');
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Add to a box' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add to a box' });
+  await expect(dialog.getByText('ann@example.com')).toBeVisible();
+  // The eight boxes she is on are not offered, with the reason.
+  await expect(
+    dialog.getByRole('list', { name: 'Not available' }).getByRole('listitem'),
+  ).toHaveCount(8);
+  await expect(dialog.getByText(/replaces the open one/)).toBeVisible();
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), 'Box 09');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await shot(page, 'fleet-users-add-dialog');
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  const link = dialog.getByRole('textbox', { name: 'Invite link' });
+  await expect(link).toHaveValue(/^https:\/\/box-9\.example\.invalid\/invite#code=/);
+  await expect(dialog.getByText(/^Shown once; valid 72 hours\./)).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Copy the invite link' })).toBeVisible();
+  await shot(page, 'fleet-users-add-link');
+  // The ask: the box, the email; the password never stays in the mock's record.
+  const s = inviteState(api.fleet!);
+  expect(s.sent).toEqual([{ do: 'invite', boxId: ninth, email: 'ann@example.com' }]);
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toBeHidden();
+  // The person shows the invite, never the link.
+  const invites = main.getByRole('list', { name: 'Invites' });
+  await expect(invites).toContainText('Box 09: Invited, not joined yet');
+  await expect(main.getByText(/#code=/)).toHaveCount(0);
+  await shot(page, 'fleet-users-invited');
+  // Opened again, the dialog has no link: it was shown once.
+  await main.getByRole('button', { name: 'Add to a box' }).click();
+  await expect(page.getByRole('dialog').getByRole('textbox', { name: 'Invite link' })).toHaveCount(
+    0,
+  );
+});
+
+test('add a person: a typed email; a refused box says why; an older box is then not offered', async ({
+  page,
+}) => {
+  const s = inviteState(api.fleet!);
+  s.refusals[FLEET_BOX_B.id] = 'scope';
+  s.refusals[FLEET_BOX.id] = 'bad-call';
+  await signIn(page, 'admin');
+  await page.goto(USERS);
+  await expect(people(page).getByRole('listitem').first()).toBeVisible();
+  await page.getByRole('main').getByRole('button', { name: 'Add a person' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a person' });
+  await dialog.getByLabel('Email').fill('not an email');
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), BOX_B);
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText(/like name@example\.com/)).toBeVisible();
+  expect(s.sent).toEqual([]);
+  await dialog.getByLabel('Email').fill('new.person@example.com');
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText('The box made no invite')).toBeVisible();
+  await expect(dialog.getByText(/MANTLE_CONTROL_CENTER_SCOPE=none/)).toBeVisible();
+  await shot(page, 'fleet-users-add-refused');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  // Box A runs an older release: it answers bad-call, and is then not offered.
+  await page.getByRole('main').getByRole('button', { name: 'Add a person' }).click();
+  await dialog.getByLabel('Email').fill('new.person@example.com');
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), 'Box A');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText(/older release\. Update the box/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('main').getByRole('button', { name: 'Add a person' }).click();
+  await dialog.getByLabel('Email').fill('new.person@example.com');
+  await expect(
+    dialog.getByRole('list', { name: 'Not available' }).getByText(/Box A:.*older release/),
+  ).toBeVisible();
+  // A wrong password, and a banned email: said in the dialog.
+  s.banned.push('banned.person@example.com');
+  await dialog.getByLabel('Email').fill('banned.person@example.com');
+  await pick(page, dialog.getByRole('combobox', { name: 'Box' }), BOX_B);
+  await dialog.getByLabel('Your password').fill('not it');
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText(/password is not correct/)).toBeVisible();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Send invite' }).click();
+  await expect(dialog.getByText('A fleet ban names this email. Lift the ban first.')).toBeVisible();
 });

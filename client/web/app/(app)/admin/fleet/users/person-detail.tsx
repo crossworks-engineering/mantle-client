@@ -1,7 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Copy, Lock, ShieldBan, ShieldCheck, UserRound } from 'lucide-react';
+import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import {
+  ChevronRight,
+  Copy,
+  Lock,
+  ShieldBan,
+  ShieldCheck,
+  UserPlus,
+  UserRound,
+} from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
   Select,
@@ -18,11 +26,20 @@ import {
   TableHeader,
   TableRow,
 } from '@mantle/web-ui/ui/table';
+import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime, timeAgo } from '@mantle/web-ui/lib/format-datetime';
 import { banKeysText, type FleetBan } from '@/lib/fleet';
+import { markText, type InviteMark } from '@/lib/fleet-invite';
 import {
+  boxWorkspaces,
   cellChoices,
+  changeKey,
+  colKey,
+  openAtStart,
+  stagedPerColumn,
+  stagedPerRow,
+  workspaceBoxes,
   cellStatus,
   copyPlan,
   describeChange,
@@ -37,6 +54,7 @@ import {
   stateWord,
   type FleetPeopleBox,
   type GridCell,
+  type GridRow,
   type MemberAnswer,
   type MemberChange,
   type MemberState,
@@ -50,8 +68,73 @@ import type { MembersSent } from './use-people';
 const otherKeys = (b: FleetBan, email: string) =>
   banKeysText({ ...b, emails: b.emails.filter((e) => e.toLowerCase() !== email) });
 
-const cellKey = (c: { boxId: string; loginId: string; workspaceId: string }) =>
-  `${c.boxId}:${c.loginId}:${c.workspaceId}`;
+/** A set with one key in or out: a row opened or closed. */
+const flip = (set: Set<string>, key: string) => {
+  const next = new Set(set);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+};
+
+/** The button that opens a row: a real button, which says if it is open. */
+function Toggle({
+  open,
+  controls,
+  onClick,
+  children,
+}: {
+  open: boolean;
+  controls: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="2xs"
+      aria-expanded={open}
+      aria-controls={open ? controls : undefined}
+      onClick={onClick}
+      className="-ml-2 mr-1 gap-1 text-sm font-medium"
+    >
+      <ChevronRight
+        className={cn(
+          'size-4 shrink-0 text-muted-foreground transition-transform',
+          open && 'rotate-90',
+        )}
+        aria-hidden
+      />
+      {children}
+    </Button>
+  );
+}
+
+/** How many changes a closed row holds, so a fold never hides work. */
+function StagedPill({ n }: { n: number }) {
+  return n > 0 ? <Pill tone="wait">{n} staged</Pill> : null;
+}
+
+/** A workspace's name, with the Admin and "same name twice" marks. */
+function RowName({ row }: { row: GridRow }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {row.label}
+      {row.admin && <Pill>Admin</Pill>}
+      {row.ambiguous && <Pill tone="warn">Same name twice</Pill>}
+    </span>
+  );
+}
+
+/** One line of an open row: a name, then its role select. */
+function Line({ name, children }: { name: ReactNode; children: ReactNode }) {
+  return (
+    <li className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2 pl-8 pr-3 text-sm">
+      <span className="min-w-0 pt-1 break-words">{name}</span>
+      {children}
+    </li>
+  );
+}
 
 /** One cell of the grid: a role select, or why it cannot be changed. */
 function Cell({
@@ -134,8 +217,16 @@ export function PersonDetail({
   onSend,
   onBan,
   onLift,
+  invites,
+  canAdd,
+  onAdd,
 }: {
   person: Person;
+  /** This screen's open invites for this person's email. */
+  invites: InviteMark[];
+  /** A box can take this person (a current list, no login there). */
+  canAdd: boolean;
+  onAdd: () => void;
   peopleBoxes: FleetPeopleBox[];
   /** This session's answers to workspace changes. */
   answers: MemberAnswer[];
@@ -148,6 +239,15 @@ export function PersonDetail({
   const grid = useMemo(() => membershipGrid(person, peopleBoxes), [person, peopleBoxes]);
   const peopleById = useMemo(() => new Map(peopleBoxes.map((b) => [b.id, b])), [peopleBoxes]);
   const [staged, setStaged] = useState<Map<string, MemberChange>>(() => new Map());
+  const [view, setView] = useState<'box' | 'workspace'>('box');
+  /** The ids an open row's toggle points at (aria-controls). */
+  const uid = useId();
+  const byBox = useMemo(() => boxWorkspaces(grid), [grid]);
+  const byWorkspace = useMemo(() => workspaceBoxes(grid), [grid]);
+  const [openBoxes, setOpenBoxes] = useState(() =>
+    openAtStart(grid.columns.filter((c) => c.full).map((c) => c.key)),
+  );
+  const [openRows, setOpenRows] = useState(() => openAtStart(grid.rows.map((r) => r.key)));
   const [left, setLeft] = useState(0);
   const [confirm, setConfirm] = useState<{ title: string; changes: MemberChange[] } | null>(null);
   const full = grid.columns.filter((c) => c.full && !c.owner);
@@ -162,7 +262,7 @@ export function PersonDetail({
   const stage = (cell: Extract<GridCell, { kind: 'cell' }>, s: MemberState | undefined) => {
     setStaged((m) => {
       const next = new Map(m);
-      const k = cellKey(cell);
+      const k = changeKey(cell);
       if (s === undefined) next.delete(k);
       else
         next.set(k, {
@@ -183,13 +283,13 @@ export function PersonDetail({
     // ones; a change its box never ran joins them again, to send again.
     // Never a replace: a copy keeps what the grid had staged.
     setConfirm(null);
-    const sentKeys = new Set(changes.map(cellKey));
+    const sentKeys = new Set(changes.map(changeKey));
     setStaged((m) => new Map([...m].filter(([k]) => !sentKeys.has(k))));
     const sent = await onSend(changes);
     if (!sent) return;
     setStaged((m) => {
       const next = new Map(m);
-      for (const c of sent.left) next.set(cellKey(c), c);
+      for (const c of sent.left) next.set(changeKey(c), c);
       return next;
     });
     setLeft(sent.left.length);
@@ -201,7 +301,7 @@ export function PersonDetail({
   useEffect(() => {
     const cells = new Map<string, Extract<GridCell, { kind: 'cell' }>>();
     for (const r of grid.rows) {
-      for (const c of Object.values(r.cells)) if (c.kind === 'cell') cells.set(cellKey(c), c);
+      for (const c of Object.values(r.cells)) if (c.kind === 'cell') cells.set(changeKey(c), c);
     }
     const bad = [...staged.entries()].filter(([k, c]) => {
       const cell = cells.get(k);
@@ -215,6 +315,8 @@ export function PersonDetail({
   }, [grid, staged]);
 
   const stagedList = [...staged.values()];
+  const perBox = stagedPerColumn(stagedList);
+  const perRow = stagedPerRow(grid, stagedList);
   /** A members send is on its way: no other send starts until it ends. */
   const busy = sending.length > 0;
   const stale = confirm ? staleNotes(confirm.changes, peopleBoxes) : [];
@@ -237,13 +339,29 @@ export function PersonDetail({
       }
       actions={
         banned ? undefined : (
-          <Button size="sm" variant="outline" onClick={onBan}>
-            <ShieldBan /> Ban
-          </Button>
+          <>
+            <Button size="sm" variant="outline" disabled={!canAdd} onClick={onAdd}>
+              <UserPlus /> Add to a box
+            </Button>
+            <Button size="sm" variant="outline" onClick={onBan}>
+              <ShieldBan /> Ban
+            </Button>
+          </>
         )
       }
     >
       {person.name && <p className="-mt-2 text-sm text-muted-foreground">{person.email}</p>}
+
+      {invites.length > 0 && (
+        <ul className="space-y-1" aria-label="Invites">
+          {invites.map((m) => (
+            <li key={m.boxId} className="flex items-center gap-2 text-sm">
+              <Pill tone="wait">Invited</Pill>
+              <span>{markText(m, peopleBoxes)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {banned && (
         <Callout tone="bad" title="Banned on every linked box">
@@ -271,53 +389,11 @@ export function PersonDetail({
       )}
 
       <Part
-        title={`Logins (${person.logins.length === 1 ? '1 box' : `${person.logins.length} boxes`})`}
-      >
-        <div className="overflow-x-auto rounded-lg border border-border scrollbar-thin">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Box</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Last sign-in</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead className="text-right">Workspaces</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {person.logins.map((l) => {
-                const st = loginState(l);
-                return (
-                  <TableRow key={`${l.boxId}-${l.loginId}`}>
-                    <TableCell className="font-medium">{l.box}</TableCell>
-                    <TableCell>{l.full ? roleWord(l.role) : '?'}</TableCell>
-                    <TableCell
-                      title={l.lastSignInAt ? formatDateTime(l.lastSignInAt) : undefined}
-                      className="text-muted-foreground"
-                    >
-                      {!l.full ? '?' : l.lastSignInAt ? timeAgo(l.lastSignInAt) : 'Never'}
-                    </TableCell>
-                    <TableCell>
-                      <Pill tone={st.tone}>{st.label}</Pill>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {l.full ? l.workspaces.length : '?'}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-        {reasons.map(({ l, why }) => (
-          <p key={`${l.boxId}-${l.loginId}`} className="text-xs text-warning-ink">
-            {l.box}: {why}
-          </p>
-        ))}
-      </Part>
-
-      <Part
-        title="Workspaces, box by box"
+        title={
+          view === 'box'
+            ? `Logins (${person.logins.length === 1 ? '1 box' : `${person.logins.length} boxes`})`
+            : `Workspaces (${grid.rows.length})`
+        }
         action={
           stagedList.length > 0 ? (
             <div className="flex items-center gap-2">
@@ -343,6 +419,21 @@ export function PersonDetail({
           ) : undefined
         }
       >
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={view}
+          onValueChange={(v) => v && setView(v as 'box' | 'workspace')}
+          aria-label="View"
+        >
+          <ToggleGroupItem value="box" className="px-3">
+            By box
+          </ToggleGroupItem>
+          <ToggleGroupItem value="workspace" className="px-3">
+            By workspace
+          </ToggleGroupItem>
+        </ToggleGroup>
         {dropped > 0 && (
           <Callout tone="warn" title="Some staged changes no longer apply">
             {dropped === 1 ? '1 staged change was' : `${dropped} staged changes were`} dropped: the
@@ -355,67 +446,192 @@ export function PersonDetail({
             call (see each change below). They are kept here: send them again.
           </Callout>
         )}
-        {grid.rows.length === 0 ? (
+        {view === 'box' ? (
+          <div className="@container rounded-lg border border-border">
+            <Table aria-label="Boxes">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Box</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead className="hidden @md:table-cell">Last sign-in</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead className="hidden text-right @md:table-cell">Workspaces</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {person.logins.map((l, i) => {
+                  const st = loginState(l);
+                  const key = colKey(l.boxId, l.loginId);
+                  // The grid's columns are the logins, one to one, in this order.
+                  const column = grid.columns[i]!;
+                  const isOpen = l.full && openBoxes.has(key);
+                  const lines = byBox.get(key) ?? [];
+                  return (
+                    <Fragment key={key}>
+                      <TableRow>
+                        <TableCell className="font-medium">
+                          {l.full ? (
+                            <Toggle
+                              open={isOpen}
+                              controls={`${uid}box${i}`}
+                              onClick={() => setOpenBoxes((o) => flip(o, key))}
+                            >
+                              {column.label}
+                            </Toggle>
+                          ) : (
+                            <span className="pl-5">{column.label}</span>
+                          )}
+                          <StagedPill n={perBox.get(key) ?? 0} />
+                        </TableCell>
+                        <TableCell>{l.full ? roleWord(l.role) : '?'}</TableCell>
+                        <TableCell
+                          title={l.lastSignInAt ? formatDateTime(l.lastSignInAt) : undefined}
+                          className="hidden text-muted-foreground @md:table-cell"
+                        >
+                          {!l.full ? '?' : l.lastSignInAt ? timeAgo(l.lastSignInAt) : 'Never'}
+                        </TableCell>
+                        <TableCell>
+                          <Pill tone={st.tone}>{st.label}</Pill>
+                        </TableCell>
+                        <TableCell className="hidden text-right tabular-nums @md:table-cell">
+                          {l.full ? l.workspaces.length : '?'}
+                        </TableCell>
+                      </TableRow>
+                      {isOpen && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={5} className="whitespace-normal p-0">
+                            {lines.length === 0 ? (
+                              <p
+                                id={`${uid}box${i}`}
+                                className="px-3 py-2 pl-8 text-sm text-muted-foreground"
+                              >
+                                No workspaces on this box.
+                              </p>
+                            ) : (
+                              <ul
+                                id={`${uid}box${i}`}
+                                aria-label={`Workspaces on ${column.label}`}
+                                className="divide-y divide-border bg-muted/20"
+                              >
+                                {lines.map(({ row, cell }) => (
+                                  <Line key={row.key} name={<RowName row={row} />}>
+                                    <Cell
+                                      label={`${row.label} on ${column.label}`}
+                                      cell={cell}
+                                      status={cellStatus(
+                                        answers,
+                                        sending,
+                                        cell.boxId,
+                                        cell.loginId,
+                                        cell.workspaceId,
+                                      )}
+                                      staged={staged.get(changeKey(cell))?.role}
+                                      onStage={(s) => stage(cell, s)}
+                                    />
+                                  </Line>
+                                ))}
+                              </ul>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        ) : grid.rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No workspaces to show: none of this person&apos;s boxes sent its people list yet.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border scrollbar-thin">
-            <Table aria-label="Workspaces, box by box">
+          <div className="rounded-lg border border-border">
+            <Table aria-label="Workspaces">
               <TableHeader>
                 <TableRow>
                   <TableHead>Workspace</TableHead>
-                  {grid.columns.map((c) => (
-                    <TableHead key={c.key}>{c.label}</TableHead>
-                  ))}
+                  <TableHead className="text-right">Boxes</TableHead>
+                  <TableHead className="text-right">In it on</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {grid.rows.map((row) => (
-                  <TableRow key={row.key}>
-                    <TableCell className="font-medium">
-                      <span className="flex items-center gap-1.5">
-                        {row.label}
-                        {row.admin && <Pill>Admin</Pill>}
-                        {row.ambiguous && <Pill tone="warn">Same name twice</Pill>}
-                      </span>
-                    </TableCell>
-                    {grid.columns.map((c) => {
-                      const cell = row.cells[c.key]!;
-                      if (!c.full) {
-                        return (
-                          <TableCell key={c.key} className="text-xs text-muted-foreground">
-                            Not known
-                          </TableCell>
-                        );
-                      }
-                      const status =
-                        cell.kind === 'cell'
-                          ? cellStatus(answers, sending, c.boxId, cell.loginId, cell.workspaceId)
-                          : null;
-                      return (
-                        <TableCell key={c.key} className="align-top">
-                          <Cell
-                            label={`${row.label} on ${c.label}`}
-                            cell={cell}
-                            status={status}
-                            staged={
-                              cell.kind === 'cell' ? staged.get(cellKey(cell))?.role : undefined
-                            }
-                            onStage={(s) => cell.kind === 'cell' && stage(cell, s)}
-                          />
+                {grid.rows.map((row, i) => {
+                  const lines = byWorkspace.get(row.key) ?? [];
+                  const isOpen = openRows.has(row.key);
+                  const inIt = lines.filter(
+                    ({ cell }) => cell.kind === 'cell' && cell.state !== 'none',
+                  ).length;
+                  return (
+                    <Fragment key={row.key}>
+                      <TableRow>
+                        <TableCell className="font-medium whitespace-normal">
+                          <Toggle
+                            open={isOpen}
+                            controls={`${uid}ws${i}`}
+                            onClick={() => setOpenRows((o) => flip(o, row.key))}
+                          >
+                            {row.label}
+                          </Toggle>
+                          {row.admin && <Pill>Admin</Pill>}
+                          {row.ambiguous && <Pill tone="warn">Same name twice</Pill>}
+                          <StagedPill n={perRow.get(row.key) ?? 0} />
                         </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))}
+                        <TableCell className="text-right tabular-nums">{lines.length}</TableCell>
+                        <TableCell className="text-right tabular-nums">{inIt}</TableCell>
+                      </TableRow>
+                      {isOpen && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={3} className="whitespace-normal p-0">
+                            <ul
+                              id={`${uid}ws${i}`}
+                              aria-label={`Boxes with ${row.label}`}
+                              className="divide-y divide-border bg-muted/20"
+                            >
+                              {lines.map(({ column, cell }) => (
+                                <Line key={column.key} name={column.label}>
+                                  <Cell
+                                    label={`${row.label} on ${column.label}`}
+                                    cell={cell}
+                                    status={
+                                      cell.kind === 'cell'
+                                        ? cellStatus(
+                                            answers,
+                                            sending,
+                                            cell.boxId,
+                                            cell.loginId,
+                                            cell.workspaceId,
+                                          )
+                                        : null
+                                    }
+                                    staged={
+                                      cell.kind === 'cell'
+                                        ? staged.get(changeKey(cell))?.role
+                                        : undefined
+                                    }
+                                    onStage={(s) => cell.kind === 'cell' && stage(cell, s)}
+                                  />
+                                </Line>
+                              ))}
+                            </ul>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         )}
+        {reasons.map(({ l, why }) => (
+          <p key={`${l.boxId}-${l.loginId}`} className="text-xs text-warning-ink">
+            {l.box}: {why}
+          </p>
+        ))}
         <p className="text-xs text-muted-foreground">
-          Pick a role in any cell, then send the changes together. The Admin workspace and the box
-          owner are changed on the box itself.
+          Open a {view === 'box' ? 'box' : 'workspace'} and pick a role, then send the changes
+          together. The Admin workspace and the box owner are changed on the box itself.
         </p>
       </Part>
 
@@ -461,7 +677,7 @@ export function PersonDetail({
               ) : (
                 <ul className="space-y-1">
                   {plan.changes.map((c) => (
-                    <li key={cellKey(c)}>{describeChange(c, peopleBoxes)}</li>
+                    <li key={changeKey(c)}>{describeChange(c, peopleBoxes)}</li>
                   ))}
                 </ul>
               )}
@@ -539,7 +755,7 @@ export function PersonDetail({
         ))}
         <span className="mt-2 block space-y-1">
           {confirm?.changes.map((c) => (
-            <span key={cellKey(c)} className="block text-foreground">
+            <span key={changeKey(c)} className="block text-foreground">
               {describeChange(c, peopleBoxes)}
             </span>
           ))}

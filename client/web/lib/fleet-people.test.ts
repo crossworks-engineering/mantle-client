@@ -3,7 +3,9 @@ import type { FleetBan } from './fleet';
 import {
   agoText,
   assignableWorkspaces,
+  boxWorkspaces,
   bulkPlan,
+  changeKey,
   cellChoices,
   boxLevel,
   cellStatus,
@@ -18,6 +20,10 @@ import {
   memberAnswerText,
   memberHistory,
   normName,
+  openAtStart,
+  stagedPerColumn,
+  stagedPerRow,
+  workspaceBoxes,
   wsLabel,
   parsePeople,
   peopleBoxes,
@@ -802,5 +808,94 @@ describe('fleet people', () => {
     const timed = await readAllUsers(['a'], slow, 200, 180_000, () => clock);
     expect(timed![0]).toMatchObject({ outcome: 'unknown', reason: 'truncated' });
     expect(clock).toBeLessThanOrEqual(5 * 60_000);
+  });
+});
+
+describe('the grid read down the page', () => {
+  const ann = () => groupPeople(boxes).find((p) => p.email === 'ann@example.com')!;
+
+  it('lists each box with its own workspaces, in row order', () => {
+    const g = membershipGrid(ann(), boxes);
+    const by = boxWorkspaces(g);
+    expect([...by.keys()]).toEqual(['a:a1', 'b:b1', 'c:c1']);
+    expect(by.get('a:a1')!.map((l) => l.row.name)).toEqual([
+      'Admin',
+      'Only on A',
+      'Ops',
+      'Projects',
+    ]);
+    // B has no "Only on A": left out, never a "no such workspace" line.
+    expect(by.get('b:b1')!.map((l) => l.row.name)).toEqual(['Admin', 'Ops', 'Projects']);
+    expect(by.get('b:b1')!.map((l) => l.cell.workspaceId)).toEqual(['b-admin', 'b-ops', 'b-proj']);
+    // The box with no people list has no lines.
+    expect(by.get('c:c1')).toEqual([]);
+    // Each line is the grid's own cell: the same object, so the same change.
+    const proj = g.rows.find((r) => r.name === 'Projects')!;
+    expect(by.get('a:a1')!.find((l) => l.row === proj)!.cell).toBe(proj.cells['a:a1']);
+  });
+
+  it('lists each workspace with the boxes that have it', () => {
+    const g = membershipGrid(ann(), boxes);
+    const by = workspaceBoxes(g);
+    const keys = (name: string) =>
+      by.get(g.rows.find((r) => r.name === name)!.key)!.map((l) => l.column.key);
+    expect(keys('Projects')).toEqual(['a:a1', 'b:b1']);
+    expect(keys('Only on A')).toEqual(['a:a1']);
+  });
+
+  it('keeps a name used twice on one box apart in both views', () => {
+    const dupA: FleetPeopleBox = {
+      ...boxA,
+      people: {
+        ...boxA.people!,
+        workspaces: [...boxA.people!.workspaces, { id: 'a-ops2', name: '  OPS ', admin: false }],
+      },
+    };
+    const set = [dupA, boxB];
+    const g = membershipGrid(
+      groupPeople(set).find((p) => p.email === 'ann@example.com')!,
+      set,
+    );
+    // By box: the two Ops of A each once, and no "same name twice" line.
+    const a = boxWorkspaces(g).get('a:a1')!;
+    expect(a.map((l) => l.cell.workspaceId).filter((id) => id.startsWith('a-ops'))).toHaveLength(2);
+    expect(a.every((l) => l.cell.kind === 'cell')).toBe(true);
+    // By workspace: the shared Ops row says so for A and offers B.
+    const shared = g.rows.find((r) => !r.ambiguous && normName(r.name) === 'ops')!;
+    expect(
+      workspaceBoxes(g)
+        .get(shared.key)!
+        .map((l) => [l.column.key, l.cell.kind]),
+    ).toEqual([
+      ['a:a1', 'ambiguous'],
+      ['b:b1', 'cell'],
+    ]);
+  });
+
+  it('counts the staged changes per box and per workspace', () => {
+    const g = membershipGrid(ann(), boxes);
+    const changes = [
+      { boxId: 'a', loginId: 'a1', workspaceId: 'a-ops', role: 'user' as const },
+      { boxId: 'a', loginId: 'a1', workspaceId: 'a-proj', role: 'none' as const },
+      { boxId: 'b', loginId: 'b1', workspaceId: 'b-proj', role: 'user' as const },
+    ];
+    expect(stagedPerColumn(changes)).toEqual(
+      new Map([
+        ['a:a1', 2],
+        ['b:b1', 1],
+      ]),
+    );
+    const rows = stagedPerRow(g, changes);
+    const key = (name: string) => g.rows.find((r) => r.name === name)!.key;
+    expect(rows.get(key('Projects'))).toBe(2);
+    expect(rows.get(key('Ops'))).toBe(1);
+    expect(rows.has(key('Admin'))).toBe(false);
+    expect(changeKey(changes[0]!)).toBe('a:a1:a-ops');
+  });
+
+  it('opens every row for three or fewer, none for more', () => {
+    expect(openAtStart([])).toEqual(new Set());
+    expect(openAtStart(['a', 'b', 'c'])).toEqual(new Set(['a', 'b', 'c']));
+    expect(openAtStart(['a', 'b', 'c', 'd'])).toEqual(new Set());
   });
 });

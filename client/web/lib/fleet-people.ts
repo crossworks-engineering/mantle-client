@@ -540,6 +540,83 @@ export function cellChoices(cell: Extract<GridCell, { kind: 'cell' }>): MemberSt
   return cell.state === 'none' ? ['none'] : [cell.state, 'none'];
 }
 
+// --- the grid, read down the page ---------------------------------------------------
+
+type Grid = ReturnType<typeof membershipGrid>;
+
+/** The key of one cell's change: box, login, workspace. */
+export const changeKey = (c: { boxId: string; loginId: string; workspaceId: string }) =>
+  `${c.boxId}:${c.loginId}:${c.workspaceId}`;
+
+/**
+ * The grid box by box: for each column (a login on a box), the workspaces
+ * of that box, in the grid's row order. A missing cell is left out (no such
+ * workspace there). So is the shared row's "same name twice" cell: each of
+ * those workspaces has its own row, which is kept.
+ */
+export function boxWorkspaces(
+  grid: Grid,
+): Map<string, { row: GridRow; cell: Extract<GridCell, { kind: 'cell' }> }[]> {
+  const out = new Map<string, { row: GridRow; cell: Extract<GridCell, { kind: 'cell' }> }[]>();
+  for (const c of grid.columns) {
+    const lines = [];
+    for (const row of grid.rows) {
+      const cell = row.cells[c.key];
+      if (cell?.kind === 'cell') lines.push({ row, cell });
+    }
+    out.set(c.key, lines);
+  }
+  return out;
+}
+
+/**
+ * The grid workspace by workspace: for each row, the boxes that have it, in
+ * the column order. A missing cell is left out, and so is a box that did not
+ * send its people list (its reason shows under the list).
+ */
+export function workspaceBoxes(grid: Grid): Map<string, { column: GridColumn; cell: GridCell }[]> {
+  const out = new Map<string, { column: GridColumn; cell: GridCell }[]>();
+  for (const row of grid.rows) {
+    const lines = [];
+    for (const column of grid.columns) {
+      const cell = row.cells[column.key];
+      if (column.full && cell && cell.kind !== 'missing') lines.push({ column, cell });
+    }
+    out.set(row.key, lines);
+  }
+  return out;
+}
+
+/** How many staged changes each column (colKey) holds. */
+export function stagedPerColumn(changes: readonly MemberChange[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const c of changes) {
+    const k = colKey(c.boxId, c.loginId);
+    out.set(k, (out.get(k) ?? 0) + 1);
+  }
+  return out;
+}
+
+/** How many staged changes each row (a workspace) holds. */
+export function stagedPerRow(grid: Grid, changes: readonly MemberChange[]): Map<string, number> {
+  const keys = new Set(changes.map(changeKey));
+  const out = new Map<string, number>();
+  for (const row of grid.rows) {
+    let n = 0;
+    for (const cell of Object.values(row.cells)) {
+      if (cell.kind === 'cell' && keys.has(changeKey(cell))) n++;
+    }
+    if (n > 0) out.set(row.key, n);
+  }
+  return out;
+}
+
+/** The rows open at the start: all of them for three or fewer, else none. */
+export const OPEN_ALL_UP_TO = 3;
+export function openAtStart(keys: readonly string[]): Set<string> {
+  return new Set(keys.length <= OPEN_ALL_UP_TO ? keys : []);
+}
+
 // --- copy one box's workspaces to another ------------------------------------------
 
 export type CopySkip = {
@@ -1014,8 +1091,6 @@ export function staleNotes(
     .filter((b) => ids.has(b.id) && b.people && b.peopleReason)
     .map((b) => `${boxName(b)}: ${peopleReasonText(b, now)}`);
 }
-
-const changeKey = (c: MemberChange) => `${c.boxId}:${c.loginId}:${c.workspaceId}`;
 
 /** The changes in flight with `more` added (a send that starts). */
 export function withSending(list: readonly MemberChange[], more: readonly MemberChange[]) {
