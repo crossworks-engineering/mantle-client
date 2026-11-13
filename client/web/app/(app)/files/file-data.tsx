@@ -48,7 +48,6 @@ import {
 } from '@mantle/web-ui/ui/select';
 import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { cn } from '@mantle/web-ui/lib/utils';
-import { TableGrid } from '@/components/table-grid/table-grid';
 import { TabBar, tabClass } from '@/components/table-grid/tab-bar';
 import { fmtSize } from './files-shared';
 import {
@@ -66,6 +65,21 @@ import {
   withDbView,
   type Sort,
 } from './file-data-model';
+
+/** The Tables grid, loaded only when a database view opens: it carries
+ *  TanStack Table and the grid's cell editors, too much for the Files screen
+ *  to load up front. */
+const TableGrid = dynamic(
+  () => import('@/components/table-grid/table-grid').then((m) => m.TableGrid),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden />
+      </div>
+    ),
+  },
+);
 
 /** The SQL editor (the Apps code editor, highlighted by the lowlight the
  *  client already ships), loaded only when the Query tab opens. */
