@@ -30,8 +30,8 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { play } from '@/lib/sounds/play';
-import { FileDataView, hasDataView } from './file-data';
-import { readDbView, withDbView } from './file-data-model';
+import { FileDataView } from './file-data';
+import { hasDataView, readDbView, withDbView } from './file-data-model';
 
 type FileRow = {
   id: string;
@@ -46,6 +46,9 @@ type FileRow = {
   indexingApplied: 'full' | 'metadata' | null;
   createdAt: string;
   updatedAt: string;
+  /** Whether Files shows its Data view (hasDataView). Only the GET answers
+   *  carry it, not the PATCH ones; a brain before pipelines sends none. */
+  dataView?: boolean;
 };
 
 type Mode = 'edit' | 'preview' | 'split';
@@ -147,7 +150,12 @@ export function FileEditor({
       const { file } = await apiSend<{ file: FileRow }>(`/api/files/files/${fileId}`, 'PATCH', {
         rename: renameDraft.trim(),
       });
-      setState({ kind: 'loaded', file, content: draft });
+      // The PATCH answer has no dataView: keep the one the GET gave.
+      setState((prev) =>
+        prev.kind === 'loaded'
+          ? { kind: 'loaded', file: { ...prev.file, ...file }, content: draft }
+          : prev,
+      );
       setRenaming(false);
       toast.success('Renamed');
       onSaved();
@@ -186,7 +194,9 @@ export function FileEditor({
         'PATCH',
         { indexing: next },
       );
-      setState((prev) => (prev.kind === 'loaded' ? { ...prev, file: updated } : prev));
+      setState((prev) =>
+        prev.kind === 'loaded' ? { ...prev, file: { ...prev.file, ...updated } } : prev,
+      );
       toast.success(
         next === 'metadata' ? 'Name only: its content leaves the index' : 'Content indexing queued',
       );
@@ -205,8 +215,8 @@ export function FileEditor({
   const note = readOnlyNote(access);
   // Without text editing the view is the preview only.
   const view: Mode = canEdit ? mode : 'preview';
-  // A spreadsheet, CSV, plan or drawing has a database to look at.
-  const dataView = hasDataView(file.extension);
+  // The brain says whether the file has a database to look at.
+  const dataView = hasDataView(file);
   const saveButton =
     file.isText && canEdit && !(dataView && showData) ? (
       <Button size="sm" onClick={save} disabled={!dirty || saving}>

@@ -122,3 +122,44 @@ export function withDbView(params: URLSearchParams, next: DbView): string {
 
 /** Where a file's last query is kept for this browser session. */
 export const queryKey = (fileId: string) => `mantle:file-sql:${fileId}`;
+
+/**
+ * Whether Files shows a file's Data view. The brain decides it (`dataView` on
+ * a file row of GET /api/files/files and /api/files/files/:id, by the same
+ * rule as `file_sql`), so `true` and `false` are its answer.
+ *
+ * `undefined` is a brain before pipelines phase 1, which sends no `dataView`:
+ * there the old extension list answers, so a newer desktop client keeps the
+ * Data view on an older box. Remove the list, and the `undefined` case, once
+ * the fleet is on the phase 1 server.
+ */
+const DATA_EXTS_BEFORE_PIPELINES = new Set([
+  'xlsx',
+  'xls',
+  'csv',
+  'xml',
+  'dwg',
+  'dxf',
+  'dgn',
+  'dwf',
+]);
+
+export function hasDataView(file: { extension: string; dataView?: boolean }): boolean {
+  if (file.dataView !== undefined) return file.dataView;
+  return DATA_EXTS_BEFORE_PIPELINES.has(file.extension.toLowerCase());
+}
+
+/**
+ * The stamp of a file's database, in the describe answer of
+ * POST /api/files/files/:id/database. LOCAL COPY of @mantle/client-types
+ * dto/file-databases.ts `FileDatabaseReadBy` until the contract pin moves
+ * past the release that ships it. `pipeline` is the pipeline's id (a member
+ * cannot read the Admin-only list of names).
+ */
+export type FileDatabaseReadBy = { pipeline: string; version: string };
+
+/** "Read by sheet 1.0.0", or null for a database made before stamps (null)
+ *  or a brain that sends no stamp (undefined): then nothing shows. */
+export function readByText(readBy: FileDatabaseReadBy | null | undefined): string | null {
+  return readBy ? `Read by ${readBy.pipeline} ${readBy.version}` : null;
+}

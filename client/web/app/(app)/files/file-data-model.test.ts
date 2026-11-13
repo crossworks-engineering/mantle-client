@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   columnType,
+  hasDataView,
   insertName,
   pageCount,
   pageSql,
   pageText,
   queryKey,
   quoted,
+  readByText,
   readDbView,
   toGridDoc,
   withDbView,
@@ -124,4 +126,32 @@ describe('the database view in the URL', () => {
 it('quotes a name and keys a query per file', () => {
   expect(quoted('a"b')).toBe('"a""b"');
   expect(queryKey('f1')).toBe('mantle:file-sql:f1');
+});
+
+describe('hasDataView: the brain decides, the old list only for a brain before pipelines', () => {
+  it("true and false are the brain's answer, whatever the extension", () => {
+    expect(hasDataView({ extension: 'pdf', dataView: true })).toBe(true);
+    expect(hasDataView({ extension: 'csv', dataView: false })).toBe(false);
+    expect(hasDataView({ extension: 'txt', dataView: true })).toBe(true);
+  });
+
+  it('undefined (an older brain) keeps the old extension list', () => {
+    for (const ext of ['xlsx', 'XLS', 'csv', 'xml', 'dwg', 'dxf', 'dgn', 'dwf']) {
+      expect(hasDataView({ extension: ext }), ext).toBe(true);
+    }
+    for (const ext of ['pdf', 'txt', 'md', 'png']) {
+      expect(hasDataView({ extension: ext }), ext).toBe(false);
+    }
+  });
+});
+
+describe('readByText', () => {
+  it("names the pipeline's id and version", () => {
+    expect(readByText({ pipeline: 'sheet', version: '1.0.0' })).toBe('Read by sheet 1.0.0');
+  });
+
+  it('says nothing for a database made before stamps, or a brain that sends no stamp', () => {
+    expect(readByText(null)).toBeNull();
+    expect(readByText(undefined)).toBeNull();
+  });
 });

@@ -60,9 +60,11 @@ import {
   pageText,
   queryKey,
   quoted,
+  readByText,
   readDbView,
   toGridDoc,
   withDbView,
+  type FileDatabaseReadBy,
   type Sort,
 } from './file-data-model';
 
@@ -88,14 +90,6 @@ const CodeEditor = dynamic(
   { ssr: false, loading: () => <div className="min-h-28 bg-card" aria-hidden /> },
 );
 
-/** The file types that get a database when they are read into the brain. */
-const DATA_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwg', 'dxf', 'dgn', 'dwf']);
-
-/** Whether a file of this extension can have a database. */
-export function hasDataView(extension: string): boolean {
-  return DATA_EXTS.has(extension.toLowerCase());
-}
-
 type Tab = {
   name: string;
   view: string;
@@ -112,6 +106,8 @@ type Answer =
       description?: string;
       tabs: Tab[];
       hint: string;
+      /** Absent from a brain before pipelines phase 1. */
+      readBy?: FileDatabaseReadBy | null;
     }
   | {
       kind: 'rows';
@@ -206,6 +202,7 @@ function SourceBar({
   onOpenFile,
   tabCount,
   description,
+  readBy,
 }: {
   fileId: string;
   filename: string;
@@ -213,6 +210,7 @@ function SourceBar({
   onOpenFile: () => void;
   tabCount: number | null;
   description?: string;
+  readBy: string | null;
 }) {
   const d = describeFile('', filename);
   const Icon = d.icon;
@@ -238,6 +236,7 @@ function SourceBar({
         className="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground"
         title="Apps read this database with file_sql and the file id."
       >
+        {readBy && <span>{readBy}.</span>}
         {tabCount != null && (
           <span>
             {tabCount} tab{tabCount === 1 ? '' : 's'}, read only.
@@ -350,6 +349,7 @@ export function FileDataView({
         onOpenFile={onOpenFile}
         tabCount={answer?.kind === 'describe' ? tabs.length : null}
         description={answer?.kind === 'describe' ? answer.description : undefined}
+        readBy={answer?.kind === 'describe' ? readByText(answer.readBy) : null}
       />
       {body}
     </div>
