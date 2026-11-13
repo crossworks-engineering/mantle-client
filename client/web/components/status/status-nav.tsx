@@ -23,10 +23,13 @@ export function StatusNav({
   status,
   active,
   onPick,
+  emptyText = 'Loading',
 }: {
   status: StatusData;
   active: SectionId;
   onPick: (id: SectionId) => void;
+  /** What a card says while its section has no reading. */
+  emptyText?: string;
 }) {
   return (
     <nav aria-label="Status sections" className="h-full overflow-y-auto p-3 scrollbar-thin">
@@ -57,7 +60,7 @@ export function StatusNav({
                         (level === 'warn' || level === 'crit') && LEVEL_INK[level],
                       )}
                     >
-                      {stat ?? 'Loading'}
+                      {stat ?? emptyText}
                     </ListCardMeta>
                   </div>
                 </div>

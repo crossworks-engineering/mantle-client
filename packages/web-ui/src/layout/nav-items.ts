@@ -129,6 +129,7 @@ export const ADDED_NAV_GROUPS: ReadonlyArray<{ after: string; group: NavGroup }>
       items: [
         { name: 'Overview', href: CC, icon: Radar },
         { name: 'Linked boxes', href: `${CC}/boxes`, icon: Server },
+        { name: 'Fleet status', href: `${CC}/status`, icon: Activity },
         { name: 'Fleet users', href: `${CC}/users`, icon: Users },
         { name: 'Fleet matrix', href: `${CC}/matrix`, icon: Grid3x3 },
         { name: 'Bans', href: `${CC}/bans`, icon: ShieldBan },

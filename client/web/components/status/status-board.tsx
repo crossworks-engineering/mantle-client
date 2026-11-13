@@ -28,6 +28,7 @@ import {
   sidecarTally,
   type Level,
   type ProcessState,
+  type BoxStatus,
   type SectionId,
   type SidecarState,
 } from '@/lib/status';
@@ -87,34 +88,40 @@ function description(id: SectionId): string {
 export function StatusBoard({
   status,
   onJump,
+  only,
 }: {
   status: StatusData;
   onJump: (id: SectionId) => void;
+  /** Fleet Status: the one section to show. Absent: every section. */
+  only?: SectionId;
 }) {
+  const show = (id: SectionId) => !only || only === id;
   return (
     <div className="@container/status space-y-10 p-6">
-      <Overview status={status} onJump={onJump} />
-      <Compute status={status} />
-      <Brain status={status} />
-      <Spend status={status} />
-      <Queues status={status} />
-      <Sidecars status={status} />
-      <Providers status={status} />
-      <Version status={status} />
-      <footer className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-4 text-sm">
-        <Link href="/debug" className="text-primary-ink underline-offset-2 hover:underline">
-          Operator view
-        </Link>
-        <Link href="/traces" className="text-primary-ink underline-offset-2 hover:underline">
-          Traces
-        </Link>
-        <Link
-          href="/debug/integrity"
-          className="text-primary-ink underline-offset-2 hover:underline"
-        >
-          Integrity checks
-        </Link>
-      </footer>
+      {show('overview') && <Overview status={status} onJump={onJump} />}
+      {show('compute') && <Compute status={status} />}
+      {show('brain') && <Brain status={status} />}
+      {show('spend') && <Spend status={status} />}
+      {show('queues') && <Queues status={status} />}
+      {show('sidecars') && <Sidecars status={status} />}
+      {show('providers') && <Providers status={status} />}
+      {show('version') && <Version status={status} />}
+      {!status.remote && (
+        <footer className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-4 text-sm">
+          <Link href="/debug" className="text-primary-ink underline-offset-2 hover:underline">
+            Operator view
+          </Link>
+          <Link href="/traces" className="text-primary-ink underline-offset-2 hover:underline">
+            Traces
+          </Link>
+          <Link
+            href="/debug/integrity"
+            className="text-primary-ink underline-offset-2 hover:underline"
+          >
+            Integrity checks
+          </Link>
+        </footer>
+      )}
     </div>
   );
 }
@@ -133,8 +140,9 @@ function Overview({ status, onJump }: { status: StatusData; onJump: (id: Section
   const h = health.data?.host;
   const box = status.box.data?.box;
   const t = sidecarTally(status.sidecars);
-  const cpuHist = status.history.map((s) => s.cpu);
-  const memHist = status.history.map((s) => s.mem);
+  // Fleet Status reads a box once: no history to draw.
+  const cpuHist = status.remote ? [] : status.history.map((s) => s.cpu);
+  const memHist = status.remote ? [] : status.history.map((s) => s.mem);
   const spend7 = status.dashboard.data?.spend30.slice(-14).map((d) => d.costMicroUsd / 1e6) ?? [];
 
   return (
@@ -180,7 +188,7 @@ function Overview({ status, onJump }: { status: StatusData; onJump: (id: Section
                 {health.isError
                   ? 'The last reading failed; showing the one before'
                   : health.data
-                    ? `Live, updated ${new Date(health.data.ts).toLocaleTimeString()}`
+                    ? `${status.remote ? 'Read' : 'Live, updated'} ${new Date(health.data.ts).toLocaleTimeString()}`
                     : 'Waiting for the first reading'}
                 {box && <span>· up {formatUptime(box.process.uptimeSec)}</span>}
               </p>
@@ -348,7 +356,7 @@ function Compute({ status }: { status: StatusData }) {
   }
   const { host, postgres } = data;
   const box = status.box.data?.box;
-  const hist = status.history;
+  const hist = status.remote ? null : status.history;
   return (
     <StatusSection
       id="compute"
@@ -363,7 +371,7 @@ function Compute({ status }: { status: StatusData }) {
             label="CPU"
             pct={host.cpuLoadPct}
             caption={`${host.cpuCores} cores · load ${host.loadAvg.map((l) => l.toFixed(2)).join(' / ')}`}
-            history={hist.map((s) => s.cpu)}
+            history={hist && hist.map((s) => s.cpu)}
             color="var(--chart-1)"
           />
           <GaugeWithHistory
@@ -372,7 +380,7 @@ function Compute({ status }: { status: StatusData }) {
             caption={
               host.mem ? `${bytes(host.mem.usedBytes)} of ${bytes(host.mem.totalBytes)}` : 'n/a'
             }
-            history={hist.map((s) => s.mem)}
+            history={hist && hist.map((s) => s.mem)}
             color="var(--chart-2)"
           />
           <GaugeWithHistory
@@ -383,7 +391,7 @@ function Compute({ status }: { status: StatusData }) {
                 ? `${bytes(host.disk.totalBytes - host.disk.usedBytes)} free of ${bytes(host.disk.totalBytes)}`
                 : 'n/a'
             }
-            history={hist.map((s) => s.disk)}
+            history={hist && hist.map((s) => s.disk)}
             color="var(--chart-4)"
           />
         </CardContent>
@@ -448,19 +456,22 @@ function GaugeWithHistory({
   label: string;
   pct: number | null;
   caption: string;
-  history: (number | null)[];
+  /** Null: no history (Fleet Status reads a box once). */
+  history: (number | null)[] | null;
   color: string;
 }) {
   return (
     <div className="flex min-w-0 flex-col items-center gap-2">
       <Gauge pct={value} level={pctLevel(value)} label={label} caption={caption} />
-      <div className="w-full max-w-56 space-y-0.5">
-        <Sparkline data={history} max={100} color={color} label={`${label}, last ten minutes`} />
-        <div className="flex justify-between text-[11px] text-muted-foreground">
-          <span>10 min ago</span>
-          <span>now</span>
+      {history && (
+        <div className="w-full max-w-56 space-y-0.5">
+          <Sparkline data={history} max={100} color={color} label={`${label}, last ten minutes`} />
+          <div className="flex justify-between text-[11px] text-muted-foreground">
+            <span>10 min ago</span>
+            <span>now</span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -501,7 +512,9 @@ function Brain({ status }: { status: StatusData }) {
       level={level}
       levelText={levelWord(level)}
     >
-      {!d ? (
+      {!d && status.remote ? (
+        <RemoteBrain capacity={status.box.data?.box.capacity ?? null} />
+      ) : !d ? (
         status.dashboard.isError ? (
           <Unavailable text="The brain numbers did not load." />
         ) : (
@@ -537,9 +550,11 @@ function Spend({ status }: { status: StatusData }) {
       level={level}
       levelText={levelWord(level)}
       action={
-        <Button asChild variant="outline" size="sm">
-          <Link href="/debug/spend">By model and agent</Link>
-        </Button>
+        status.remote ? undefined : (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/debug/spend">By model and agent</Link>
+          </Button>
+        )
       }
     >
       {spend && (
@@ -566,7 +581,13 @@ function Spend({ status }: { status: StatusData }) {
           </CardContent>
         </Card>
       )}
-      {d ? <SpendChart data={d.spend30} /> : <Skeleton className="h-72 w-full rounded-xl" />}
+      {d ? (
+        <SpendChart data={d.spend30} />
+      ) : status.remote ? (
+        <Unavailable text={NOT_CARRIED('Spend by day')} />
+      ) : (
+        <Skeleton className="h-72 w-full rounded-xl" />
+      )}
     </StatusSection>
   );
 }
@@ -587,9 +608,11 @@ function Queues({ status }: { status: StatusData }) {
       level={level}
       levelText={levelWord(level)}
       action={
-        <Button asChild variant="outline" size="sm">
-          <Link href="/runners">Runner queue</Link>
-        </Button>
+        status.remote ? undefined : (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/runners">Runner queue</Link>
+          </Button>
+        )
       }
     >
       <div className="grid grid-cols-1 gap-4 @3xl/status:grid-cols-2">
@@ -639,11 +662,15 @@ function Queues({ status }: { status: StatusData }) {
             </div>
           </CardContent>
         </Card>
-        <Processes
-          processes={status.processes}
-          known={!!box?.containers}
-          checkedAt={box?.containersCheckedAt ?? null}
-        />
+        {status.remote ? (
+          <Unavailable text={NOT_CARRIED('Brain processes')} />
+        ) : (
+          <Processes
+            processes={status.processes}
+            known={!!box?.containers}
+            checkedAt={box?.containersCheckedAt ?? null}
+          />
+        )}
       </div>
       {d && (
         <OpsPanels
@@ -758,15 +785,21 @@ function Sidecars({ status }: { status: StatusData }) {
     <StatusSection
       id="sidecars"
       title={title('sidecars')}
-      description={`${t.up} of ${t.on} switched-on sidecars answer. Switch the optional ones on Services.`}
+      description={
+        status.remote
+          ? `${t.up} of ${t.on} sidecars answer.`
+          : `${t.up} of ${t.on} switched-on sidecars answer. Switch the optional ones on Services.`
+      }
       level={level}
       levelText={levelWord(level)}
       action={
-        <Button asChild variant="outline" size="sm">
-          <Link href="/settings/services">
-            <Power aria-hidden /> Services
-          </Link>
-        </Button>
+        status.remote ? undefined : (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/settings/services">
+              <Power aria-hidden /> Services
+            </Link>
+          </Button>
+        )
       }
     >
       {reason && (
@@ -774,13 +807,28 @@ function Sidecars({ status }: { status: StatusData }) {
           {reason}
         </p>
       )}
-      <SidecarGroup title="Switchable" sidecars={switchable} />
-      <SidecarGroup title="Always on" sidecars={always} />
+      {status.remote ? (
+        <SidecarGroup title="Sidecars" sidecars={status.sidecars} remote />
+      ) : (
+        <>
+          <SidecarGroup title="Switchable" sidecars={switchable} />
+          <SidecarGroup title="Always on" sidecars={always} />
+        </>
+      )}
     </StatusSection>
   );
 }
 
-function SidecarGroup({ title: heading, sidecars }: { title: string; sidecars: SidecarState[] }) {
+function SidecarGroup({
+  title: heading,
+  sidecars,
+  remote = false,
+}: {
+  title: string;
+  sidecars: SidecarState[];
+  /** Fleet Status: box_status does not say which sidecars have a switch. */
+  remote?: boolean;
+}) {
   if (sidecars.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -790,7 +838,7 @@ function SidecarGroup({ title: heading, sidecars }: { title: string; sidecars: S
       <ul className="grid grid-cols-1 gap-3 @xl/status:grid-cols-2 @4xl/status:grid-cols-3">
         {sidecars.map((s) => (
           <li key={s.id}>
-            <SidecarCard s={s} />
+            <SidecarCard s={s} remote={remote} />
           </li>
         ))}
       </ul>
@@ -798,7 +846,7 @@ function SidecarGroup({ title: heading, sidecars }: { title: string; sidecars: S
   );
 }
 
-function SidecarCard({ s }: { s: SidecarState }) {
+function SidecarCard({ s, remote = false }: { s: SidecarState; remote?: boolean }) {
   return (
     <div
       className={cn(
@@ -835,7 +883,7 @@ function SidecarCard({ s }: { s: SidecarState }) {
             <Power className="size-3.5" aria-hidden />
             {s.level === 'idle' ? 'Switch on' : 'Switch'}
           </Link>
-        ) : (
+        ) : remote ? null : (
           <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
             <CheckCircle2 className="size-3.5" aria-hidden /> Always on
           </span>
@@ -859,12 +907,14 @@ function Providers({ status }: { status: StatusData }) {
       level={level}
       levelText={levelWord(level)}
       action={
-        <Button asChild variant="outline" size="sm">
-          <Link href="/settings/embedding">Embedding</Link>
-        </Button>
+        status.remote ? undefined : (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/settings/embedding">Embedding</Link>
+          </Button>
+        )
       }
     >
-      <ProviderAlertCard showLink />
+      {!status.remote && <ProviderAlertCard showLink />}
       <div className="grid grid-cols-1 gap-4 @3xl/status:grid-cols-2">
         <Card className="bg-card/70">
           <CardHeader>
@@ -911,7 +961,9 @@ function Providers({ status }: { status: StatusData }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {status.alerts.length === 0 ? (
+            {status.remote ? (
+              <p className="text-muted-foreground">{NOT_CARRIED('Outages')}</p>
+            ) : status.alerts.length === 0 ? (
               <p className="flex items-center gap-2 text-muted-foreground">
                 <CheckCircle2 className={cn('size-4', LEVEL_INK.ok)} aria-hidden />
                 No open outages.
@@ -966,115 +1018,156 @@ function Version({ status }: { status: StatusData }) {
       level={level}
       levelText={levelWord(level)}
     >
-      <div className="grid grid-cols-1 gap-4 @3xl/status:grid-cols-3">
-        <BuildCard />
-        <Card className="bg-card/70">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-2 text-base">
-              Updates
-              {u && (
-                <LevelPill level={u.check.updateAvailable ? 'warn' : 'ok'}>
-                  {u.check.updateAvailable ? 'Available' : 'Up to date'}
-                </LevelPill>
+      {status.remote ? (
+        <RemoteVersion version={status.version.data?.version ?? null} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 @3xl/status:grid-cols-3">
+          <BuildCard />
+          <Card className="bg-card/70">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-2 text-base">
+                Updates
+                {u && (
+                  <LevelPill level={u.check.updateAvailable ? 'warn' : 'ok'}>
+                    {u.check.updateAvailable ? 'Available' : 'Up to date'}
+                  </LevelPill>
+                )}
+              </CardTitle>
+              <CardDescription>
+                {u ? `Checked ${ago(u.check.checkedAt)}` : 'Checking for a newer release'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {u ? (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">This box</span>
+                    <span className="font-mono tabular-nums">v{u.check.currentVersion}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Newest release</span>
+                    <span className="font-mono tabular-nums">
+                      {u.check.latest ? u.check.latest.tag : 'n/a'}
+                    </span>
+                  </div>
+                  {runningUpdate && (
+                    <p className="flex items-center gap-2 text-info-ink">
+                      <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+                      Updating to {runningUpdate.target}
+                    </p>
+                  )}
+                  {!u.available && (
+                    <p className="text-xs text-muted-foreground">
+                      No updater sidecar: this box updates from the server.
+                    </p>
+                  )}
+                  <Button asChild variant="outline" size="sm" className="w-full">
+                    <Link href="/settings/updates">Open Updates</Link>
+                  </Button>
+                </>
+              ) : (
+                <Skeleton className="h-24" />
               )}
-            </CardTitle>
-            <CardDescription>
-              {u ? `Checked ${ago(u.check.checkedAt)}` : 'Checking for a newer release'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {u ? (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">This box</span>
-                  <span className="font-mono tabular-nums">v{u.check.currentVersion}</span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Newest release</span>
-                  <span className="font-mono tabular-nums">
-                    {u.check.latest ? u.check.latest.tag : 'n/a'}
-                  </span>
-                </div>
-                {runningUpdate && (
-                  <p className="flex items-center gap-2 text-info-ink">
-                    <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-                    Updating to {runningUpdate.target}
-                  </p>
-                )}
-                {!u.available && (
-                  <p className="text-xs text-muted-foreground">
-                    No updater sidecar: this box updates from the server.
-                  </p>
-                )}
-                <Button asChild variant="outline" size="sm" className="w-full">
-                  <Link href="/settings/updates">Open Updates</Link>
-                </Button>
-              </>
-            ) : (
-              <Skeleton className="h-24" />
-            )}
-          </CardContent>
-        </Card>
-        <Card className="bg-card/70">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-2 text-base">
-              Backups
-              <LevelPill level={lastBackupLevel}>
-                {lastBackupLevel === 'idle'
-                  ? 'Off'
-                  : lastBackupLevel === 'crit'
-                    ? 'Failed'
-                    : lastBackupLevel === 'warn'
-                      ? 'None yet'
-                      : lastBackupLevel === 'ok'
-                        ? 'Good'
-                        : 'Loading'}
-              </LevelPill>
-            </CardTitle>
-            <CardDescription>
-              {b?.config.enabled
-                ? `Every ${b.config.frequency === 'weekly' ? 'week' : 'day'} at ${String(b.config.hour).padStart(2, '0')}:00, keeping ${b.config.keep}`
-                : b
-                  ? 'Scheduled backups are off'
-                  : 'Reading the backup schedule'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {b ? (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <Clock className="size-3.5" aria-hidden /> Last run
-                  </span>
-                  <span>{ago(b.status?.lastRunAt)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <CheckCircle2 className="size-3.5" aria-hidden /> Last good
-                  </span>
-                  <span>
-                    {ago(b.status?.lastSuccessAt ?? (b.status?.ok ? b.status.lastRunAt : null))}
-                  </span>
-                </div>
-                {b.status?.bytes != null && (
+            </CardContent>
+          </Card>
+          <Card className="bg-card/70">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-2 text-base">
+                Backups
+                <LevelPill level={lastBackupLevel}>
+                  {lastBackupLevel === 'idle'
+                    ? 'Off'
+                    : lastBackupLevel === 'crit'
+                      ? 'Failed'
+                      : lastBackupLevel === 'warn'
+                        ? 'None yet'
+                        : lastBackupLevel === 'ok'
+                          ? 'Good'
+                          : 'Loading'}
+                </LevelPill>
+              </CardTitle>
+              <CardDescription>
+                {b?.config.enabled
+                  ? `Every ${b.config.frequency === 'weekly' ? 'week' : 'day'} at ${String(b.config.hour).padStart(2, '0')}:00, keeping ${b.config.keep}`
+                  : b
+                    ? 'Scheduled backups are off'
+                    : 'Reading the backup schedule'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {b ? (
+                <>
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <HardDrive className="size-3.5" aria-hidden /> Size
+                      <Clock className="size-3.5" aria-hidden /> Last run
                     </span>
-                    <span className="tabular-nums">{bytes(b.status.bytes)}</span>
+                    <span>{ago(b.status?.lastRunAt)}</span>
                   </div>
-                )}
-                <Button asChild variant="outline" size="sm" className="w-full">
-                  <Link href="/settings/backups">Open Backups</Link>
-                </Button>
-              </>
-            ) : (
-              <Skeleton className="h-24" />
-            )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <CheckCircle2 className="size-3.5" aria-hidden /> Last good
+                    </span>
+                    <span>
+                      {ago(b.status?.lastSuccessAt ?? (b.status?.ok ? b.status.lastRunAt : null))}
+                    </span>
+                  </div>
+                  {b.status?.bytes != null && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <HardDrive className="size-3.5" aria-hidden /> Size
+                      </span>
+                      <span className="tabular-nums">{bytes(b.status.bytes)}</span>
+                    </div>
+                  )}
+                  <Button asChild variant="outline" size="sm" className="w-full">
+                    <Link href="/settings/backups">Open Backups</Link>
+                  </Button>
+                </>
+              ) : (
+                <Skeleton className="h-24" />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </StatusSection>
+  );
+}
+
+/** What Fleet Status says where box_status carries no numbers. */
+const NOT_CARRIED = (what: string) => `${what}: not in the box status the Control Center reads.`;
+
+/** Fleet Status: the brain's capacity, the one brain number box_status
+ *  carries. */
+function RemoteBrain({ capacity }: { capacity: BoxStatus['capacity'] }) {
+  return (
+    <div className="space-y-4">
+      {capacity && (
+        <Card className="bg-card/70">
+          <CardContent className="grid grid-cols-2 gap-4 p-5 @2xl/status:grid-cols-4">
+            <Figure label="Of the split" value={`${Math.round(capacity.pctOfSplit)}%`} />
+            <Figure label="Zone" value={capacity.zone} />
+            <Figure label="Documents" value={formatCount(capacity.docs)} />
+            <Figure label="Search vectors" value={formatCount(capacity.chunkVectors)} />
           </CardContent>
         </Card>
-      </div>
-    </StatusSection>
+      )}
+      <Unavailable text={NOT_CARRIED('Nodes, facts and ingest by day')} />
+    </div>
+  );
+}
+
+/** Fleet Status: the release the box runs. */
+function RemoteVersion({ version }: { version: string | null }) {
+  return (
+    <div className="space-y-4">
+      <Card className="bg-card/70">
+        <CardContent className="p-5">
+          <Figure label="Release" value={version ? `v${version}` : 'n/a'} />
+        </CardContent>
+      </Card>
+      <Unavailable text={NOT_CARRIED('Updates and backups')} />
+    </div>
   );
 }
 
