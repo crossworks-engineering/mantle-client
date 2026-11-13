@@ -280,6 +280,9 @@ export type MockWorkspaceApi = {
   lessons: boolean;
   /** The files tree holds the nested FILE_FOLDERS (Collapse all). */
   fileFolders: boolean;
+  /** With `fileFolders`, this many empty folders after them at the top
+   *  level (default 0), so the tree is long enough to scroll. */
+  fileShelves: number;
   /** A page's stored document by page id (GET /api/pages/:id `doc`). A
    *  page with none answers no `doc`, as before. */
   pageDocs: Record<string, unknown>;
@@ -415,6 +418,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     screenshots: [],
     lessons: false,
     fileFolders: false,
+    fileShelves: 0,
     pageDocs: {},
     agentUi: {},
     uiAnswers: [],
@@ -654,19 +658,34 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
           return (json(res, 200, { ...tree(kind, items, url), folders: [lessons], ...echo }), true);
         }
       }
-      if (kind === 'files' && state.fileFolders) {
-        const at = url.searchParams.get('folder');
-        const here = (Object.keys(FILE_FOLDERS) as FileFolderKey[]).find(
-          (k) => FILE_FOLDERS[k].id === at,
-        );
+      const at = url.searchParams.get('folder');
+      const here = (Object.keys(FILE_FOLDERS) as FileFolderKey[]).find(
+        (k) => FILE_FOLDERS[k].id === at,
+      );
+      // A folder of FILE_FOLDERS, or the top level; any other folder id falls
+      // through to the plain answer below.
+      if (kind === 'files' && state.fileFolders && (here || !at)) {
         const kids = (Object.keys(FILE_FOLDERS) as FileFolderKey[])
           .filter((k) => FILE_FOLDERS[k].parent === (here ?? null))
           .map(fileTreeFolder);
+        // Empty folders after them at the top level, so the tree can scroll.
+        const shelves = here
+          ? []
+          : Array.from({ length: state.fileShelves }, (_, i) => {
+              const n = String(i + 1).padStart(2, '0');
+              return {
+                ...fileTreeFolder('archive'),
+                id: `f0f0f1${n}-0000-4000-8000-000000000000`,
+                path: `files.shelf_${n}`,
+                name: `Shelf ${n}`,
+                folderCount: 0,
+              };
+            });
         return (
           json(res, 200, {
             ...tree(kind, here ? [] : items, url),
             folder: here ? fileTreeFolder(here) : null,
-            folders: kids,
+            folders: [...kids, ...shelves],
             ...(here ? {} : echo),
           }),
           true

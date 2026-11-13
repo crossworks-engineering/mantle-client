@@ -34,6 +34,9 @@ const collapseAll = (page: Page) => page.getByRole('button', { name: 'Collapse a
 test('Collapse all shuts every folder, a reload keeps it shut, one folder opens again', async ({
   page,
 }) => {
+  // Thirty empty folders after Archive: the tree is long enough to scroll,
+  // shut or open.
+  api.fileShelves = 30;
   await signIn(page, 'admin');
   await page.goto('/files');
   await expect(folderRow(page, projects.name)).toBeVisible();
@@ -48,6 +51,9 @@ test('Collapse all shuts every folder, a reload keeps it shut, one folder opens 
     .click();
   await expect(folderRow(page, drawings.name)).toBeVisible();
   await test.info().attach('before', { body: await page.screenshot(), contentType: 'image/png' });
+  // Scrolled down, away from the top.
+  await tree(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect.poll(() => tree(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
 
   await collapseAll(page).click();
   await expect(folderRow(page, alpha.name)).toHaveCount(0);
@@ -55,8 +61,19 @@ test('Collapse all shuts every folder, a reload keeps it shut, one folder opens 
   await expect(folderRow(page, projects.name)).toBeVisible();
   await expect(folderRow(page, archive.name)).toBeVisible();
   await expect(tree(page).getByRole('button', { name: `Unfold ${projects.name}` })).toBeVisible();
+  // Back at the top, though the shut tree still scrolls.
   await expect(tree(page)).toHaveJSProperty('scrollTop', 0);
+  expect(await tree(page).evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   await test.info().attach('after', { body: await page.screenshot(), contentType: 'image/png' });
+
+  // Alpha was shut too, not only hidden under Projects.
+  await tree(page)
+    .getByRole('button', { name: `Unfold ${projects.name}` })
+    .click();
+  await expect(folderRow(page, alpha.name)).toBeVisible();
+  await expect(folderRow(page, drawings.name)).toHaveCount(0);
+  await collapseAll(page).click();
+  await expect(folderRow(page, alpha.name)).toHaveCount(0);
 
   await page.reload();
   await expect(folderRow(page, projects.name)).toBeVisible();
@@ -110,14 +127,19 @@ test('the folder on screen stays on screen and is not unfolded again; keys work'
   await expect(folderRow(page, alpha.name)).toHaveCount(0);
 });
 
-test('Collapse all is off outside the Folders view', async ({ page }) => {
+test('from another view, Collapse all goes back to Folders, shut', async ({ page }) => {
   await signIn(page, 'admin');
   await page.goto('/files');
-  await expect(collapseAll(page)).toBeEnabled();
-  await page
-    .getByRole('radiogroup', { name: 'How to list files' })
-    .getByRole('radio', { name: 'Recent' })
+  await tree(page)
+    .getByRole('button', { name: `Unfold ${projects.name}` })
     .click();
-  await expect(collapseAll(page)).toBeDisabled();
-  await expect(collapseAll(page)).toHaveAttribute('title', /in the Folders view/);
+  await expect(folderRow(page, alpha.name)).toBeVisible();
+  const tabs = page.getByRole('radiogroup', { name: 'How to list files' });
+  await tabs.getByRole('radio', { name: 'Recent' }).click();
+  await expect(tabs.getByRole('radio', { name: 'Recent' })).toBeChecked();
+
+  await collapseAll(page).click();
+  await expect(tabs.getByRole('radio', { name: 'Folders' })).toBeChecked();
+  await expect(folderRow(page, projects.name)).toBeVisible();
+  await expect(folderRow(page, alpha.name)).toHaveCount(0);
 });

@@ -173,6 +173,9 @@ import { useCompactTabs } from './view-tabs';
 
 type View = 'tree' | 'recent' | 'used' | 'az';
 // The icon stands in for the label when the panel is too narrow for words.
+// The tab group's floor (`min-w-[calc(7rem+8px)]` below) is four of these
+// icons: 1rem each, `px-1.5` and a 1px border on each side. Keep the two in
+// step.
 const VIEWS: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: 'tree', label: 'Folders', icon: FolderTree },
   { id: 'recent', label: 'Recent', icon: History },
@@ -1452,22 +1455,19 @@ export function ItemTree({
                   right, rather than squeeze the tabs. */}
               <div className="ml-auto flex items-center gap-1.5">
                 {/* Every folder shut, at every depth, and back to the top: a
-                  long tree becomes its top level, to find something fast.
-                  Only the Folders view has folders to shut; a tag filter
-                  lists items flat (the search hides this row). No "Expand
-                  all": each folder's children load on their own, so it would
-                  ask the brain once per folder. */}
+                    long tree becomes its top level, to find something fast.
+                    From Recent, Most used, A to Z or a tag filter it goes
+                    back to the Folders view, shut (the search hides this
+                    row). No "Expand all": each folder's children load on
+                    their own, so it would ask the brain once per folder. */}
                 <Button
                   variant="outline"
                   size="icon-xs"
                   aria-label="Collapse all folders"
-                  title={
-                    view === 'tree' && !filtering
-                      ? 'Collapse all folders'
-                      : 'Collapse all folders: in the Folders view, with no filter'
-                  }
-                  disabled={view !== 'tree' || filtering}
+                  title="Collapse all folders"
                   onClick={() => {
+                    setView('tree');
+                    setFilter({});
                     collapseAllFolders();
                     scrollRoot.current?.scrollTo({ top: 0 });
                   }}
@@ -1528,7 +1528,7 @@ export function ItemTree({
                         </>
                       )}
                       {/* Tags are the owner's to filter by. Levels are gone (W5b):
-                        the workspace switcher narrows the lists instead. */}
+                          the workspace switcher narrows the lists instead. */}
                       {owner && (
                         <>
                           <DropdownMenuLabel>Tag</DropdownMenuLabel>
