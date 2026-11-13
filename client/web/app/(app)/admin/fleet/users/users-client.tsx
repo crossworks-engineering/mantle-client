@@ -68,6 +68,9 @@ import { BulkPane } from './bulk-pane';
 import { PersonDetail } from './person-detail';
 import { useBanWrite, useMembersWrite, usePeople } from './use-people';
 
+/** A card names this many boxes, then says how many more. */
+const CARD_BOXES = 6;
+
 const isFilter = (v: string | null): v is PeopleFilter => PEOPLE_FILTERS.some((f) => f.id === v);
 
 function PersonCard({
@@ -111,7 +114,7 @@ function PersonCard({
               : 'A box runs a release before Fleet users'}
           </ListCardMeta>
           <ListCardTags>
-            {person.logins.map((l) => (
+            {person.logins.slice(0, CARD_BOXES).map((l) => (
               <span
                 key={`${l.boxId}-${l.loginId}`}
                 className={cn(
@@ -126,6 +129,17 @@ function PersonCard({
                 {l.role === 'admin' && ` · ${roleWord(l.role)}`}
               </span>
             ))}
+            {person.logins.length > CARD_BOXES && (
+              <span
+                className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] leading-4 text-muted-foreground"
+                title={person.logins
+                  .slice(CARD_BOXES)
+                  .map((l) => l.box)
+                  .join(', ')}
+              >
+                +{person.logins.length - CARD_BOXES} more
+              </span>
+            )}
           </ListCardTags>
         </RowButton>
       </div>
