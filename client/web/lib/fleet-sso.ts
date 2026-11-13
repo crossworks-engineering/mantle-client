@@ -701,7 +701,8 @@ export function selfRow(name: string, fallbackUrl: string, view: FleetSsoView | 
 
 /** This box's status, read live (one ask), folded into the view the page
  *  holds so a read keeps the last Test. `held` is read after the answer, so
- *  a save that lands while the read is on its way is not undone. */
+ *  a save that lands while the read is on its way keeps its cleared Test
+ *  (the status may be one read old until the next read). */
 export async function readSelf(
   held: () => FleetSsoView | null,
   send: SsoSend = defaultSend,
