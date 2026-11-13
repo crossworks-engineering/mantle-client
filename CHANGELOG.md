@@ -12,6 +12,15 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.25: Fleet status, sign-in for this box, add a person
+
+- **Added:** Fleet status on a Control Center: the Status screen of each linked box and of this box. Boxes on the left, the status sections next to them, the cards of the chosen section on the right. The box and the section are in the address.
+- **Added:** Fleet sign-in: the page reads the status when it opens, the mode part always shows a button or the reason, and a new part "Microsoft side" gives the click path in the Entra admin center with this box's own values and copy buttons.
+- **Added:** Fleet sign-in lists "This box" first, so the Control Center box sets up its own company sign-in with the same buttons. A card on the Fleet overview shows its mode.
+- **Added:** Fleet users: "Add a person" asks a box for a member invite and shows the link once. The person sets their own password.
+- **Changed:** Fleet users: the person view lists boxes down the page; a box row opens to its workspaces, with a "By box / By workspace" switch. A person on many boxes fits with no sideways scroll.
+- **Added:** each linked box shows the IP its address resolves to, under the address.
+
 ## v0.9.24: Fleet sign-in on the Control Center
 
 - **Added:** on a Control Center, a Fleet sign-in page: per linked box, its company sign-in mode, tenant ID, client ID, whether a secret is set (never the value), the last Test and the link counts. A Control Center Admin enters the tenant ID, client ID and client secret, presses Test, and raises the mode one step at a time (setup, optional, required); the step to required shows a warning first. Each save asks for the person's own password. The mode never goes down from here: only the box `.env` can.
