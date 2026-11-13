@@ -156,6 +156,8 @@ export type MockFleet = {
   /** Every POST /api/fleet/sso body (the password and secret included, so
    *  a spec can check what was sent). */
   ssoSent: Record<string, unknown>[];
+  /** Every ask for this box (the target `self`), kept apart from ssoSent. */
+  ssoSelfSent: Record<string, unknown>[];
 };
 
 type SsoStatus = {
@@ -194,6 +196,22 @@ export function withSso(f: MockFleet): MockFleet {
     missing: [],
     linked: 0,
     active: 0,
+  };
+  // This box, the Control Center itself: off, nothing set yet.
+  f.ssoStatus.self = {
+    mode: 'off',
+    modeFrom: 'none',
+    tenant: null,
+    issuer: '',
+    issuerFrom: 'none',
+    clientId: '',
+    clientIdFrom: 'none',
+    secret: 'none',
+    secretSetAt: null,
+    redirectUri: '',
+    missing: [],
+    linked: null,
+    active: null,
   };
   return f;
 }
@@ -425,6 +443,7 @@ export const newMockFleet = (): MockFleet => ({
   ssoStatus: {},
   ssoView: {},
   ssoSent: [],
+  ssoSelfSent: [],
 });
 
 /** The ids of the Fleet users data: logins and workspaces on each box. */
@@ -1017,7 +1036,9 @@ function runTool(
 /** POST /api/fleet/sso: every ask is answered at once (nothing pending). */
 function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: number; body: unknown } {
   if (!f.ssoOn) return { status: 404, body: { error: 'not found' } };
-  f.ssoSent.push(body);
+  const self = body.boxId === 'self' || (Array.isArray(body.boxIds) && body.boxIds[0] === 'self');
+  if (self) f.ssoSelfSent.push(body);
+  else f.ssoSent.push(body);
   if (body.do === 'list') {
     return {
       status: 200,

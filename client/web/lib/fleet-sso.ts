@@ -12,6 +12,10 @@
  *    one step (off, setup, optional, required), never down; the box holds
  *    the rule, and a mode line in its .env always wins;
  *  - `{ do: 'answers', callIds }`: the calls still pending (1 to 100).
+ * The Control Center's own box is the target `self` (`boxIds: ['self']`,
+ * `boxId: 'self'`): the route runs the box's own code at once, so its one
+ * answer comes back with no pending ids, and the Control Center keeps no
+ * view of it: the page holds it (selfView).
  * The route waits up to 25 s, then hands back the ids still pending. The
  * Control Center saves each answer into the box's view, so the list is read
  * again after the answers come.
@@ -297,16 +301,25 @@ export function modeBody(
 }
 
 /** What the warning before "Make required" says: what required does, the
- *  numbers, and the way back. */
-export function requiredWarning(status: Pick<FleetSsoStatus, 'linked' | 'active'>): string[] {
+ *  numbers, and the way back. `self`: the box is this Control Center, the
+ *  one the person is signed in to, so their own session ends too unless they
+ *  are the original account (an Admin cannot be marked outside). */
+export function requiredWarning(
+  status: Pick<FleetSsoStatus, 'linked' | 'active'>,
+  self = false,
+): string[] {
   const linked = status.linked ?? 0;
   const active = status.active ?? 0;
   const unlinked = Math.max(active - linked, 0);
   return [
-    'Every password session on the box ends, except those of the original account and of honoured outside marks, which keep their passwords.',
+    self
+      ? 'This is the box you are signed in to. Every password session on it ends, yours too, unless you are the original account. Only the original account and honoured outside marks keep their passwords: keep the original account at hand.'
+      : 'Every password session on the box ends, except those of the original account and of honoured outside marks, which keep their passwords.',
     'Linked logins then sign in with the company account only.',
     `Unlinked logins sign in with their password once and must link. Now: ${linked} of ${active} active logins are linked, ${unlinked} are not.`,
-    'The Control Center cannot lower the mode. The way back is optional in the box .env (scripts/sso-env.sh <box> --mode optional).',
+    self
+      ? 'Nothing on this page can lower the mode. The way back is optional in the .env of this box (scripts/sso-env.sh <box> --mode optional).'
+      : 'The Control Center cannot lower the mode. The way back is optional in the box .env (scripts/sso-env.sh <box> --mode optional).',
   ];
 }
 
@@ -621,4 +634,76 @@ export function entraSteps(box: { url: string }, redirectUri: string): EntraStep
       values: [],
     },
   ];
+}
+
+// --- this box: the Control Center itself -------------------------------------------------
+
+/** The route's target for the Control Center's own box. */
+export const SELF = 'self';
+/** Under the sign-in key: a Fleet refresh reads this box's status again too. */
+export const FLEET_SSO_SELF_KEY = [...FLEET_SSO_KEY, SELF];
+
+/**
+ * This box's view after its answers. The Control Center keeps no view of
+ * its own box, so the page holds it, as the Control Center holds a fleet
+ * box's: a new status replaces the old, a Test's code is kept, and a save
+ * that went through makes the last Test stale (unless it ran its own). A
+ * reload drops it, so Turn on asks a new Test. No last save or raise: the
+ * answer shows at once on the pane.
+ */
+export function selfView(
+  prev: FleetSsoView | null,
+  all: FleetSsoAnswers,
+  now: string,
+): FleetSsoView | null {
+  let view = prev;
+  for (const a of all.answers) {
+    if (a.boxId !== SELF) continue;
+    const r = readAnswer(a);
+    const status = a.output?.status ?? null;
+    view = {
+      at: now,
+      reason: status ? null : (r.reason ?? 'refused'),
+      status: status ?? view?.status ?? null,
+      test: r.test
+        ? { code: r.test, at: now, by: a.by }
+        : a.name === 'sso_set' && r.ok
+          ? null
+          : (view?.test ?? null),
+      set: null,
+      mode: null,
+    };
+  }
+  return view;
+}
+
+/** This box as a row of the list: its own name, its address (the redirect
+ *  URI's origin once a status names it, else `fallbackUrl`), and the view
+ *  the page holds. */
+export function selfRow(name: string, fallbackUrl: string, view: FleetSsoView | null): FleetSsoRow {
+  let url = fallbackUrl;
+  try {
+    if (view?.status?.redirectUri) url = new URL(view.status.redirectUri).origin;
+  } catch {
+    // A status with no usable redirect URI keeps the fallback.
+  }
+  return {
+    id: SELF,
+    url,
+    label: name,
+    lastOkAt: null,
+    lastReason: null,
+    version: null,
+    ssoView: view,
+  };
+}
+
+/** This box's status, read live (one ask), folded into the view the page
+ *  holds so a read keeps the last Test. */
+export async function readSelf(
+  prev: FleetSsoView | null,
+  send: SsoSend = defaultSend,
+  now: () => string = () => new Date().toISOString(),
+): Promise<FleetSsoView | null> {
+  return selfView(prev, await askSso({ do: 'status', boxIds: [SELF] }, send), now());
 }

@@ -10,7 +10,9 @@ import {
   modeBody,
   nextStep,
   requiredWarning,
+  FLEET_SSO_KEY,
   FLEET_SSO_PATH,
+  FLEET_SSO_SELF_KEY,
   formRules,
   fromLabel,
   hasChange,
@@ -20,7 +22,11 @@ import {
   needsReadAll,
   parseAnswers,
   readAnswer,
+  readSelf,
   secretText,
+  SELF,
+  selfRow,
+  selfView,
   setBody,
   settleSso,
   SSO_STATUS_MAX_AGE_MS,
@@ -410,5 +416,138 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
     expect(entraOpen('optional')).toBe(false);
     expect(entraOpen('required')).toBe(false);
     expect(ENTRA_FOLDED).toContain('new secret');
+  });
+});
+
+describe('this box: the Control Center itself (target self)', () => {
+  const NOW = '2026-11-13T09:00:00.000Z';
+  const LATER = '2026-11-13T09:05:00.000Z';
+  const mine = (more: Partial<FleetSsoAnswer>) => answer({ boxId: SELF, ok: true, ...more });
+  const one = (a: FleetSsoAnswer) => ({ answers: [a], pending: [], gone: [] });
+
+  it('is the target self, and its key sits under the sign-in key', () => {
+    expect(SELF).toBe('self');
+    expect(FLEET_SSO_SELF_KEY).toEqual([...FLEET_SSO_KEY, 'self']);
+  });
+
+  it('a status read makes the view; a Test keeps its code; a later read keeps the Test', () => {
+    const v1 = selfView(null, one(mine({ output: { ok: true, status: status() } })), NOW);
+    expect(v1).toEqual({
+      at: NOW,
+      reason: null,
+      status: status(),
+      test: null,
+      set: null,
+      mode: null,
+    });
+    const v2 = selfView(
+      v1,
+      one(mine({ name: 'sso_test', output: { ok: true, test: 'ok', status: status() } })),
+      LATER,
+    );
+    expect(v2!.test).toEqual({ code: 'ok', at: LATER, by: 'it@example.com' });
+    const v3 = selfView(
+      v2,
+      one(mine({ output: { ok: true, status: status({ mode: 'optional' }) } })),
+      LATER,
+    );
+    expect(v3!.test?.code).toBe('ok');
+    expect(v3!.status?.mode).toBe('optional');
+  });
+
+  it('a save that went through makes the Test stale, unless it ran its own', () => {
+    const tested = selfView(
+      null,
+      one(mine({ name: 'sso_test', output: { ok: true, test: 'ok', status: status() } })),
+      NOW,
+    );
+    const saved = selfView(
+      tested,
+      one(mine({ name: 'sso_set', output: { ok: true, status: status() } })),
+      LATER,
+    );
+    expect(saved!.test).toBeNull();
+    const savedLive = selfView(
+      tested,
+      one(mine({ name: 'sso_set', output: { ok: true, test: 'ok', status: status() } })),
+      LATER,
+    );
+    expect(savedLive!.test?.code).toBe('ok');
+    // A refused save keeps the last Test.
+    const refused = selfView(
+      tested,
+      one(
+        mine({ name: 'sso_set', ok: false, reason: 'mode', output: { ok: false, reason: 'mode' } }),
+      ),
+      LATER,
+    );
+    expect(refused!.test?.code).toBe('ok');
+    expect(refused!.status).toEqual(status());
+    expect(refused!.reason).toBe('mode');
+  });
+
+  it("reads only this box's answers", () => {
+    expect(selfView(null, one(answer({ output: { ok: true, status: status() } })), NOW)).toBeNull();
+  });
+
+  it('is a row with its own name, its address from the redirect URI, and no version', () => {
+    const r = selfRow('Control', 'https://fallback.example.invalid', null);
+    expect(r).toEqual({
+      id: 'self',
+      url: 'https://fallback.example.invalid',
+      label: 'Control',
+      lastOkAt: null,
+      lastReason: null,
+      version: null,
+      ssoView: null,
+    });
+    const view = selfView(null, one(mine({ output: { ok: true, status: status() } })), NOW);
+    expect(selfRow('Control', 'https://fallback.example.invalid', view).url).toBe(
+      'https://box.example.invalid',
+    );
+    const bare = selfView(
+      null,
+      one(mine({ output: { ok: true, status: status({ redirectUri: '' }) } })),
+      NOW,
+    );
+    expect(selfRow('Control', 'https://fallback.example.invalid', bare).url).toBe(
+      'https://fallback.example.invalid',
+    );
+  });
+
+  it('readSelf asks the status of self alone, and keeps the last Test', async () => {
+    const asked: FleetSsoAsk[] = [];
+    const prev = selfView(
+      null,
+      one(mine({ name: 'sso_test', output: { ok: true, test: 'ok', status: status() } })),
+      NOW,
+    );
+    const v = await readSelf(
+      prev,
+      async (body) => {
+        asked.push(body);
+        return {
+          answers: [mine({ output: { ok: true, status: status() } })],
+          pending: [],
+          gone: [],
+        };
+      },
+      () => LATER,
+    );
+    expect(asked).toEqual([{ do: 'status', boxIds: ['self'] }]);
+    expect(v).toMatchObject({ at: LATER, test: { code: 'ok' } });
+  });
+
+  it('the warning before required names this box, your own session and the .env of this box', () => {
+    const lines = requiredWarning({ linked: 1, active: 3 }, true);
+    expect(lines[0]).toContain('This is the box you are signed in to.');
+    expect(lines[0]).toContain('yours too, unless you are the original account');
+    expect(lines[2]).toContain('1 of 3 active logins are linked, 2 are not.');
+    expect(lines[3]).toContain('the .env of this box');
+    expect(lines[3]).toContain('--mode optional');
+    // A fleet box keeps its own words.
+    expect(requiredWarning({ linked: 1, active: 3 })[0]).toContain(
+      'Every password session on the box ends',
+    );
   });
 });

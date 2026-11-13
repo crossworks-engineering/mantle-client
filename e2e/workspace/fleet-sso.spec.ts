@@ -257,3 +257,119 @@ test('a Control Center before Fleet sign-in says so', async ({ page }) => {
     page.getByRole('main').getByText('This Control Center runs a release before Fleet sign-in.'),
   ).toBeVisible();
 });
+
+// --- this box: the Control Center itself (the target `self`) ----------------------------
+
+const selfSent = (what: string) => api.fleet!.ssoSelfSent.filter((b) => b.do === what);
+const SELF_URI = 'https://cc.example.invalid/api/auth/oidc/callback';
+
+test('this box is the first entry: off to setup, stage, Test, Turn on, with its own values', async ({
+  page,
+}) => {
+  await signIn(page, 'admin');
+  await page.goto(SSO);
+  const main = page.getByRole('main');
+  // The first card of the list is this box, read live on open.
+  const first = main.getByRole('button').filter({ hasText: 'This box' }).first();
+  await expect(first).toContainText('Off');
+  expect(selfSent('status')).toEqual([{ do: 'status', boxIds: ['self'] }]);
+  await first.click();
+  await expect(page).toHaveURL(/[?&]box=self\b/);
+  const openSetup = main.getByRole('button', { name: 'Open setup' });
+  await expect(openSetup).toBeEnabled();
+  await shot(page, 'fleet-sso-self-off');
+
+  // The box's own redirect URI, once setup has it (the route names it).
+  api.fleet!.ssoStatus.self!.redirectUri = SELF_URI;
+  await openSetup.click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Raise mode' }).click();
+  await expect(main.getByText('Raised to Setup.', { exact: true })).toBeVisible();
+  expect(selfSent('mode')).toEqual([
+    { do: 'mode', boxId: 'self', mode: 'setup', password: SSO_PASSWORD },
+  ]);
+  const ms = main.locator('section').filter({
+    has: page.getByRole('heading', { name: 'Microsoft side' }),
+  });
+  await expect(ms.getByText(SELF_URI)).toBeVisible();
+  await expect(ms.getByText('Mantle cc.example.invalid').first()).toBeVisible();
+
+  // Stage the values with the password; the secret is never shown.
+  const turnOn = main.getByRole('button', { name: 'Turn on (optional)' });
+  await expect(turnOn).toBeDisabled();
+  await main.getByLabel('Tenant ID').fill('11111111-2222-4333-8444-555555555555');
+  await main.getByLabel('Client secret').fill('the-self-secret');
+  await main.getByRole('button', { name: 'Save', exact: true }).click();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(main.getByText('Saved.', { exact: false }).first()).toBeVisible();
+  expect(selfSent('set')).toEqual([
+    {
+      do: 'set',
+      boxId: 'self',
+      tenant: '11111111-2222-4333-8444-555555555555',
+      secret: 'the-self-secret',
+      password: SSO_PASSWORD,
+    },
+  ]);
+  await expect(page.getByText('the-self-secret')).toHaveCount(0);
+
+  // Turn on waits for a Test that passed.
+  await expect(turnOn).toBeDisabled();
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await expect(turnOn).toBeEnabled();
+  expect(selfSent('test')).toEqual([{ do: 'test', boxIds: ['self'] }]);
+  // A reload keeps no Test for this box: Turn on asks a new one.
+  await page.reload();
+  await expect(main.getByRole('button', { name: 'Turn on (optional)' })).toBeDisabled();
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await expect(turnOn).toBeEnabled();
+  await turnOn.click();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Raise mode' }).click();
+  await expect(main.getByText('Raised to Optional.', { exact: true })).toBeVisible();
+  // No fleet box was asked anything on the way.
+  expect(sent('mode')).toEqual([]);
+  expect(sent('set')).toEqual([]);
+  expect(sent('test')).toEqual([]);
+  await shot(page, 'fleet-sso-self-optional');
+});
+
+test('the warning before required says it is the box you are signed in to', async ({ page }) => {
+  Object.assign(api.fleet!.ssoStatus.self!, {
+    mode: 'optional',
+    modeFrom: 'row',
+    redirectUri: SELF_URI,
+    linked: 1,
+    active: 3,
+  });
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=self`);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Make required' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('This is the box you are signed in to.');
+  await expect(dialog).toContainText('yours too, unless you are the original account');
+  await expect(dialog).toContainText('1 of 3 active logins are linked, 2 are not.');
+  await expect(dialog).toContainText('the .env of this box');
+  await shot(page, 'fleet-sso-self-required-warning');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  expect(selfSent('mode')).toEqual([]);
+});
+
+test('the Overview card shows the mode of this box and opens its entry', async ({ page }) => {
+  api.fleet!.ssoStatus.self!.mode = 'setup';
+  api.fleet!.ssoStatus.self!.modeFrom = 'row';
+  await signIn(page, 'admin');
+  await page.goto('/admin/fleet');
+  const card = page.getByRole('main').getByRole('button').filter({ hasText: 'Company sign-in' });
+  await expect(card).toContainText('Setup');
+  await shot(page, 'fleet-overview-self-sso');
+  await card.click();
+  await expect(page).toHaveURL(/\/admin\/fleet\/sso\?box=self\b/);
+  await expect(
+    page.getByRole('main').getByRole('button', { name: 'Turn on (optional)' }),
+  ).toBeVisible();
+});
