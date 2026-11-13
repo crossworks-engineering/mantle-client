@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
-import { DATA_FILE, routeFileDb, type FileDbMock } from './mock-file-db';
+import { DATA_FILE, routeFileDb, type FileDbMock, type FileDbOptions } from './mock-file-db';
 
 /**
  * A file's read-only database in Files (file-data.tsx): the whole content
@@ -17,8 +17,8 @@ test.afterEach(async () => {
   await api.close();
 });
 
-async function openData(page: Page, view = 'data'): Promise<FileDbMock> {
-  const seen = await routeFileDb(page);
+async function openData(page: Page, view = 'data', opts?: FileDbOptions): Promise<FileDbMock> {
+  const seen = await routeFileDb(page, opts);
   await signIn(page, 'member');
   await page.goto(`/files?path=${DATA_FILE.parentPath}&file=${DATA_FILE.id}&view=${view}`);
   return seen;
@@ -173,4 +173,42 @@ test('a bad query shows the brain’s error in place', async ({ page }) => {
   const alert = page.getByRole('alert').filter({ hasText: 'The query did not run.' });
   await expect(alert).toContainText('no such column: bogus');
   await expect(page.getByRole('region', { name: 'Query result' })).toHaveCount(0);
+});
+
+test('the top row says which pipeline read the database, and nothing before stamps', async ({
+  page,
+}) => {
+  await openData(page, 'data', {
+    row: { dataView: true },
+    readBy: { pipeline: 'sheet', version: '1.0.0' },
+  });
+  await expect(page.getByText('Read by sheet 1.0.0.', { exact: true })).toBeVisible();
+  await expect(page.getByText('3 tabs, read only.')).toBeVisible();
+
+  // A database made before stamps: no line, not an empty label.
+  await page.unrouteAll({ behavior: 'wait' });
+  await routeFileDb(page, { row: { dataView: true }, readBy: null });
+  await page.reload();
+  await expect(page.getByText('3 tabs, read only.')).toBeVisible();
+  await expect(page.getByText(/^Read by/)).toHaveCount(0);
+});
+
+test('the brain decides the Data view: a PDF it marks has one, a CSV it does not has none', async ({
+  page,
+}) => {
+  const data = () => page.getByRole('button', { name: 'Data', exact: true });
+  const loaded = () => page.getByRole('button', { name: 'About this file' });
+  await routeFileDb(page, {
+    row: { dataView: true, extension: 'pdf', mimeType: 'application/pdf' },
+  });
+  await signIn(page, 'member');
+  await page.goto(`/files?path=${DATA_FILE.parentPath}&file=${DATA_FILE.id}`);
+  await expect(loaded()).toBeVisible();
+  await expect(data()).toBeVisible();
+
+  await page.unrouteAll({ behavior: 'wait' });
+  await routeFileDb(page, { row: { dataView: false } });
+  await page.reload();
+  await expect(loaded()).toBeVisible();
+  await expect(data()).toHaveCount(0);
 });

@@ -134,6 +134,10 @@ else is a plain 404.
 - `tree-tabs.spec.ts`: the tree's view tabs (Folders, Recent, Most used,
   A to Z) fold to icons, each named by its label, when the list is dragged
   narrow, and never overlap, at the smallest, default and largest font size.
+- `pipelines.spec.ts`: Settings > Pipelines, read only: the list from a fixed
+  answer with its counts and On, one GET and no write; a dash for a count the
+  brain did not make and the partial note; one calm line on a brain before
+  pipelines (404).
 
 CI runs them on every push and pull request (the `e2e-workspace` job in
 `.github/workflows/verify.yml`), with no brain and nothing configured.

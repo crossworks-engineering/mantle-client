@@ -62,8 +62,16 @@ function cell(tab: (typeof TABS)[number], row: number, col: number): unknown {
 /** The SQL each request carried, in order. */
 export type FileDbMock = { sql: string[] };
 
+/** What a spec may change in the mock: the row's own fields (its
+ *  `dataView`, its extension) and the stamp of its database (`readBy`).
+ *  Left out, the brain is one before pipelines: no `dataView`, no `readBy`. */
+export type FileDbOptions = {
+  row?: Record<string, unknown>;
+  readBy?: { pipeline: string; version: string } | null;
+};
+
 /** Answer the data file's list row, detail and database in the browser. */
-export async function routeFileDb(page: Page): Promise<FileDbMock> {
+export async function routeFileDb(page: Page, opts: FileDbOptions = {}): Promise<FileDbMock> {
   const seen: FileDbMock = { sql: [] };
   const now = new Date().toISOString();
   const row = {
@@ -81,6 +89,7 @@ export async function routeFileDb(page: Page): Promise<FileDbMock> {
     updatedAt: now,
     mayEdit: false,
     mayManage: false,
+    ...opts.row,
   };
   await page.route(
     (u) => u.pathname === '/api/files/files',
@@ -119,6 +128,7 @@ export async function routeFileDb(page: Page): Promise<FileDbMock> {
             description: 'Made-up survey points for a test.',
             tabs: TABS,
             hint: 'Query a view.',
+            ...('readBy' in opts ? { readBy: opts.readBy } : {}),
           },
         });
       }

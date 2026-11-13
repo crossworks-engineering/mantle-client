@@ -16,6 +16,7 @@ export const ADMIN_ROWS = [
   'Skills',
   'Peers',
   'Backups',
+  'Pipelines',
   'Audit log',
   'Runs',
   'Journal',

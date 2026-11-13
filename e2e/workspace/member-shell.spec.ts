@@ -176,7 +176,7 @@ test("the member's live updates: its own stream, never the owner's", async ({ pa
 
 test('a typed admin screen says the member cannot manage it', async ({ page }) => {
   await signIn(page, 'member');
-  for (const path of ['/settings/users', '/runs']) {
+  for (const path of ['/settings/users', '/settings/pipelines', '/runs']) {
     await page.goto(path);
     await expect(page.getByText('You cannot manage this part of the brain.'), path).toBeVisible();
   }
