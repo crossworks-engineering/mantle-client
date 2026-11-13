@@ -348,6 +348,15 @@ export function pickedAfterMove(
   return new Map(items.filter((i) => left.has(i.id)).map((i) => [i.id, i]));
 }
 
+/** The open-folder set after "Collapse all": every folder shut, at every
+ *  depth, the one holding the selected item too. The page keeps showing what
+ *  it showed; the tree does not unfold to it again until the page goes
+ *  somewhere new. Nothing open gives the same set back, so nothing redraws
+ *  and nothing is written. */
+export function collapseAllOpen(open: ReadonlySet<string>): ReadonlySet<string> {
+  return open.size === 0 ? open : new Set<string>();
+}
+
 /** Where a folder, item or search hit lives, as one line. */
 export function crumbLine(crumbs: readonly TreeCrumb[]): string {
   return crumbs.map((c) => c.name).join(' / ');
