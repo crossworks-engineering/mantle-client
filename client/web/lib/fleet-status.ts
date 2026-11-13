@@ -255,7 +255,14 @@ export function remoteStatus(view: BoxStatusView | null): StatusData {
     history: [],
     remote: true,
   };
-  return { ...parts, ...deriveStatus(parts) };
+  const derived = deriveStatus(parts);
+  // A sidecar box_status says nothing of (the updater, a local embedder)
+  // is left out, so it is not counted as on and not answering.
+  return {
+    ...parts,
+    ...derived,
+    sidecars: derived.sidecars.filter((s) => s.level !== 'unknown'),
+  };
 }
 
 /** The small health mark beside a box's name, and its words. */
@@ -290,6 +297,9 @@ export function boxReasonShort(reason: string): string {
 /** A failed read in full words, for the detail. The admin channel's own
  *  words (lib/fleet-tool.ts), but for a box that has closed the channel. */
 export function boxReasonText(reason: string): string {
+  if (reason === 'timeout') {
+    return `The Control Center did not answer within ${BOX_READ_TIMEOUT_MS / 1000} seconds.`;
+  }
   if (reason === 'scope') {
     return 'This box refuses calls from the Control Center (MANTLE_CONTROL_CENTER_SCOPE=none in its .env). It shows no status here.';
   }

@@ -140,8 +140,9 @@ function Overview({ status, onJump }: { status: StatusData; onJump: (id: Section
   const h = health.data?.host;
   const box = status.box.data?.box;
   const t = sidecarTally(status.sidecars);
-  const cpuHist = status.history.map((s) => s.cpu);
-  const memHist = status.history.map((s) => s.mem);
+  // Fleet Status reads a box once: no history to draw.
+  const cpuHist = status.remote ? [] : status.history.map((s) => s.cpu);
+  const memHist = status.remote ? [] : status.history.map((s) => s.mem);
   const spend7 = status.dashboard.data?.spend30.slice(-14).map((d) => d.costMicroUsd / 1e6) ?? [];
 
   return (
@@ -661,11 +662,15 @@ function Queues({ status }: { status: StatusData }) {
             </div>
           </CardContent>
         </Card>
-        <Processes
-          processes={status.processes}
-          known={!!box?.containers}
-          checkedAt={box?.containersCheckedAt ?? null}
-        />
+        {status.remote ? (
+          <Unavailable text={NOT_CARRIED('Brain processes')} />
+        ) : (
+          <Processes
+            processes={status.processes}
+            known={!!box?.containers}
+            checkedAt={box?.containersCheckedAt ?? null}
+          />
+        )}
       </div>
       {d && (
         <OpsPanels
@@ -802,13 +807,28 @@ function Sidecars({ status }: { status: StatusData }) {
           {reason}
         </p>
       )}
-      <SidecarGroup title="Switchable" sidecars={switchable} />
-      <SidecarGroup title="Always on" sidecars={always} />
+      {status.remote ? (
+        <SidecarGroup title="Sidecars" sidecars={status.sidecars} remote />
+      ) : (
+        <>
+          <SidecarGroup title="Switchable" sidecars={switchable} />
+          <SidecarGroup title="Always on" sidecars={always} />
+        </>
+      )}
     </StatusSection>
   );
 }
 
-function SidecarGroup({ title: heading, sidecars }: { title: string; sidecars: SidecarState[] }) {
+function SidecarGroup({
+  title: heading,
+  sidecars,
+  remote = false,
+}: {
+  title: string;
+  sidecars: SidecarState[];
+  /** Fleet Status: box_status does not say which sidecars have a switch. */
+  remote?: boolean;
+}) {
   if (sidecars.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -818,7 +838,7 @@ function SidecarGroup({ title: heading, sidecars }: { title: string; sidecars: S
       <ul className="grid grid-cols-1 gap-3 @xl/status:grid-cols-2 @4xl/status:grid-cols-3">
         {sidecars.map((s) => (
           <li key={s.id}>
-            <SidecarCard s={s} />
+            <SidecarCard s={s} remote={remote} />
           </li>
         ))}
       </ul>
@@ -826,7 +846,7 @@ function SidecarGroup({ title: heading, sidecars }: { title: string; sidecars: S
   );
 }
 
-function SidecarCard({ s }: { s: SidecarState }) {
+function SidecarCard({ s, remote = false }: { s: SidecarState; remote?: boolean }) {
   return (
     <div
       className={cn(
@@ -863,7 +883,7 @@ function SidecarCard({ s }: { s: SidecarState }) {
             <Power className="size-3.5" aria-hidden />
             {s.level === 'idle' ? 'Switch on' : 'Switch'}
           </Link>
-        ) : (
+        ) : remote ? null : (
           <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
             <CheckCircle2 className="size-3.5" aria-hidden /> Always on
           </span>

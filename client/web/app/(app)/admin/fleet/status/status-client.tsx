@@ -159,6 +159,7 @@ function Status({ data }: { data: FleetOverview }) {
             <Button
               size="sm"
               variant="outline"
+              disabled={rows.some((r) => !reads[r.id] || reads[r.id]!.state === 'loading')}
               onClick={() => read(rows.map((r) => r.id))}
               aria-label="Refresh every box"
             >
@@ -216,7 +217,13 @@ function Status({ data }: { data: FleetOverview }) {
                   status={status}
                   active={section}
                   onPick={setSection}
-                  emptyText={current?.state === 'failed' ? 'No reading' : 'Loading'}
+                  emptyText={
+                    current?.state === 'ok'
+                      ? 'Not reported'
+                      : current?.state === 'failed'
+                        ? 'No reading'
+                        : 'Loading'
+                  }
                 />
               }
               detail={

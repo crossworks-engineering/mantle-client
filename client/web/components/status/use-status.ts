@@ -218,7 +218,8 @@ export function deriveStatus(p: StatusParts) {
     spend: !!dashboard.data || !!box.data,
     queues: !!box.data || !!dashboard.data,
     sidecars: !!health.data || !!services.data,
-    providers: p.alertsLoaded || !!health.data,
+    // Fleet Status: box_status carries no outages, so the section is not known.
+    providers: !p.remote && (p.alertsLoaded || !!health.data),
     version: !!version.data,
   };
   // Overview is the headline: the worst of everything, not only its own.

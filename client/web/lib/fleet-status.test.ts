@@ -140,6 +140,9 @@ describe('remoteStatus', () => {
     expect(sectionStat('version', s)).toBe('v0.602.0');
     expect(sectionStat('brain', s)).toBe('4% of split · 500 documents');
     expect(sectionStat('providers', s)).toBe('Outages not reported');
+    expect(s.level('providers')).toBe('unknown');
+    // Only the sidecars box_status speaks of are counted.
+    expect(s.sidecars.every((c) => c.level !== 'unknown')).toBe(true);
   });
 
   it('marks a full disk as a problem, as the Status screen does', () => {
@@ -205,6 +208,7 @@ describe('the reason words', () => {
     expect(boxReasonShort('unreachable')).toBe('No answer');
     expect(boxReasonText('scope')).toContain('MANTLE_CONTROL_CENTER_SCOPE=none');
     expect(boxReasonText('pending')).toBe('The box did not answer in time.');
+    expect(boxReasonText('timeout')).toBe('The Control Center did not answer within 30 seconds.');
     expect(boxReasonText('tool')).toContain('box_status');
     expect(boxReasonText('unreachable')).toBe('This box cannot reach the box over HTTPS.');
   });
