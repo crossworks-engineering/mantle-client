@@ -4,6 +4,7 @@ import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { AccessSlot } from '@/components/share/access-slot';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
 import { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   Database,
   Download,
@@ -30,6 +31,7 @@ import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { play } from '@/lib/sounds/play';
 import { FileDataView, hasDataView } from './file-data';
+import { readDbView, withDbView } from './file-data-model';
 
 type FileRow = {
   id: string;
@@ -53,7 +55,6 @@ export function FileEditor({
   onClose,
   onSaved,
   onLoaded,
-  startWithData = false,
 }: {
   fileId: string;
   onClose: () => void;
@@ -61,8 +62,6 @@ export function FileEditor({
   /** The file's detail, once loaded: the files screen opens its folder when
    *  the link named only the file (a /n link). */
   onLoaded?: (file: { parentPath: string }) => void;
-  /** Open on the file's database (a link from Data files). */
-  startWithData?: boolean;
 }) {
   const toAsset = useAssetUrl();
   const toast = useToast();
@@ -80,7 +79,16 @@ export function FileEditor({
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
   // The file's read-only database instead of its preview (file-data.tsx).
-  const [showData, setShowData] = useState(startWithData);
+  // The URL alone says so (view=data or view=query, and dbtab), so a link,
+  // a Data files row or a reload opens it; back to the file clears it.
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const showData = readDbView(params).on;
+  const showDataView = (on: boolean) => {
+    const next = withDbView(params, on ? { on: true, query: false, tab: null } : { on: false });
+    router.replace(`${pathname}?${next}`, { scroll: false });
+  };
   // Files opens on this file next time (lib/last-opened.ts).
   useRememberLastOpened('files', state.kind === 'loaded' ? fileId : null);
 
@@ -211,7 +219,7 @@ export function FileEditor({
       size="sm"
       variant="outline"
       aria-pressed={showData}
-      onClick={() => setShowData((on) => !on)}
+      onClick={() => showDataView(!showData)}
       title={showData ? 'Back to the file' : "See this file's database: its tabs and rows"}
     >
       <Database />
@@ -365,7 +373,7 @@ export function FileEditor({
           fileId={file.id}
           filename={file.filename}
           folder={file.parentPath}
-          onOpenFile={() => setShowData(false)}
+          onOpenFile={() => showDataView(false)}
         />
       ) : file.isText && !canEdit && !isMarkdown ? (
         <pre className="flex-1 overflow-auto scrollbar-thin whitespace-pre-wrap p-4 font-mono text-sm">

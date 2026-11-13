@@ -45,6 +45,8 @@ export function languageFor(path: string): string {
     case 'md':
     case 'markdown':
       return 'markdown';
+    case 'sql':
+      return 'sql';
     default:
       return '';
   }

@@ -222,6 +222,7 @@ export function TableGrid({
   tabs,
   activeTabId,
   readOnly = false,
+  viewer,
 }: {
   doc: TableDoc;
   onChange: (next: TableDoc) => void;
@@ -237,8 +238,27 @@ export function TableGrid({
   /** App-bound tables: every edit affordance goes away (the server refuses
    *  grid mutations anyway), leaving display + client-side sorting. */
   readOnly?: boolean;
+  /** A read-only data viewer (a file's database in Files), with `readOnly`:
+   *  the header row stays on top, the left column numbers the rows from
+   *  `firstRowNumber`, a long cell is cut (all of it on hover), and the
+   *  scroll area takes the focus under `label`. With `onSortingChange` the
+   *  caller sorts (all rows, on the server) and the grid only shows it.
+   *  Tables leaves it out and looks and works as before. */
+  viewer?: {
+    label: string;
+    firstRowNumber: number;
+    sorting?: SortingState;
+    onSortingChange?: (next: SortingState) => void;
+  };
 }) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [ownSorting, setOwnSorting] = useState<SortingState>([]);
+  const sorting = viewer?.onSortingChange ? (viewer.sorting ?? []) : ownSorting;
+  const setSorting = (u: SortingState | ((old: SortingState) => SortingState)) => {
+    const next = typeof u === 'function' ? u(sorting) : u;
+    if (viewer?.onSortingChange) viewer.onSortingChange(next);
+    else setOwnSorting(next);
+  };
+  const capped = !!viewer;
 
   // Live doc + onChange via refs so the column defs can stay referentially
   // STABLE across cell edits. Rebuilding `columns` on every keystroke makes
@@ -312,6 +332,7 @@ export function TableGrid({
         <EditableCell
           col={col}
           readOnly={readOnly}
+          capped={capped}
           tableId={tableId}
           value={info.getValue() as CellValue}
           rawValue={(info.row.original.cells[col.id] ?? null) as CellValue}
@@ -327,7 +348,7 @@ export function TableGrid({
       ),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structureKey, tableId, readOnly]);
+  }, [structureKey, tableId, readOnly, capped]);
 
   const table = useTable<GridFeatures, Row>({
     features: GRID_FEATURES,
@@ -335,6 +356,7 @@ export function TableGrid({
     columns,
     state: { sorting },
     onSortingChange: setSorting,
+    manualSorting: !!viewer?.onSortingChange,
     getRowId: (row) => row.id,
   });
 
@@ -362,9 +384,23 @@ export function TableGrid({
   const colSpanAll = doc.columns.length + 2;
 
   return (
-    <div ref={scrollRef} className="h-full overflow-auto scrollbar-thin">
+    <div
+      ref={scrollRef}
+      className={cn(
+        'h-full overflow-auto scrollbar-thin',
+        viewer &&
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+      )}
+      {...(viewer ? { tabIndex: 0, role: 'region', 'aria-label': viewer.label } : {})}
+    >
       <table className="w-full border-collapse text-sm">
-        <thead>
+        <thead
+          className={
+            viewer
+              ? 'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--color-border)]'
+              : undefined
+          }
+        >
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id} className="border-b border-border">
               <th
@@ -379,7 +415,7 @@ export function TableGrid({
                   {flexRender(header.column.columnDef.header, header.getContext())}
                 </th>
               ))}
-              <th className="w-10 px-1 py-1">
+              <th className="w-10 px-1 py-1" aria-hidden={viewer ? true : undefined}>
                 {!readOnly && (
                   <Button
                     size="icon"
@@ -416,6 +452,9 @@ export function TableGrid({
                 className="group border-b border-border hover:bg-muted/40"
               >
                 <td className="px-2 py-1 text-center align-middle text-xs text-muted-foreground">
+                  {viewer && (
+                    <span className="tabular-nums">{viewer.firstRowNumber + vr.index}</span>
+                  )}
                   {!readOnly && (
                     <RowButton
                       className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive-ink"
@@ -446,7 +485,7 @@ export function TableGrid({
                 colSpan={doc.columns.length + 2}
                 className="px-3 py-6 text-center text-sm text-muted-foreground"
               >
-                No rows yet.
+                {viewer ? 'No rows.' : 'No rows yet.'}
               </td>
             </tr>
           )}
@@ -951,6 +990,7 @@ function EditableCell({
   onApplyOption,
   tableId,
   readOnly = false,
+  capped = false,
 }: {
   col: Column;
   value: CellValue; // resolved (formula columns computed)
@@ -960,6 +1000,8 @@ function EditableCell({
   onApplyOption: (p: { value: CellValue; newOption?: string }) => void;
   tableId?: string;
   readOnly?: boolean;
+  /** Cut a long read-only value at a fixed width (the viewer's). */
+  capped?: boolean;
 }) {
   if (readOnly) {
     if (col.type === 'checkbox') {
@@ -971,7 +1013,10 @@ function EditableCell({
     }
     const text = displayValue(value, col);
     return (
-      <span className="block truncate px-2 py-1.5 text-sm" title={text || undefined}>
+      <span
+        className={cn('block truncate px-2 py-1.5 text-sm', capped && 'max-w-96')}
+        title={text || undefined}
+      >
         {text || <span className="text-muted-foreground">—</span>}
       </span>
     );

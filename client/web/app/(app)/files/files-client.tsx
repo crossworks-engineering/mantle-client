@@ -339,8 +339,9 @@ function FilesView({
     const sp = new URLSearchParams(searchParams.toString());
     if (fileId) sp.set('file', fileId);
     else sp.delete('file');
-    // `view=data` is for the one file a Data files row opens.
+    // `view=data` (and its `dbtab`) is for the one file a Data files row opens.
     sp.delete('view');
+    sp.delete('dbtab');
     router.push(`/files?${sp.toString()}`);
   };
 
@@ -736,7 +737,6 @@ function FilesView({
               <FileEditor
                 key={openFileId}
                 fileId={openFileId}
-                startWithData={searchParams.get('view') === 'data'}
                 onClose={() => openFile(null)}
                 onSaved={refresh}
                 onLoaded={(file) => {
