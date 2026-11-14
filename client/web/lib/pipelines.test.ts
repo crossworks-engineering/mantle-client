@@ -5,10 +5,14 @@ import {
   countText,
   hasState,
   keepCounts,
+  neverRan,
   olderText,
   readsText,
+  rereadLabel,
   setBody,
+  statsOf,
   takesFile,
+  versionLines,
   wordOf,
   type PipelineList,
   type PipelineRow,
@@ -122,5 +126,52 @@ describe("the screen is the settings area's", () => {
     expect(mayOpenPath([], '/settings/pipelines')).toBe(false);
     expect(mayOpenPath(['connectors', 'users'], '/settings/pipelines')).toBe(false);
     expect(mayOpenPath(['settings'], '/settings/pipelines')).toBe(true);
+  });
+});
+
+describe('Settings > Pipelines, the M8 fields', () => {
+  const stats = {
+    description: 'Reads a PDF drawing.',
+    versions: [
+      { version: '1.1.0', files: 1 },
+      { version: '1.0.0', files: 40 },
+      { version: null, files: 3 },
+    ],
+    runs: 7,
+    lastRunAt: '2026-11-02T09:30:00.000Z',
+  };
+
+  it('a row with no versions is a server before M8: no fields', () => {
+    expect(statsOf(ROW)).toBeNull();
+    expect(statsOf({ ...ROW, ...stats })).toEqual(stats);
+  });
+
+  it('current is the row version; every other is older; null is before versions', () => {
+    expect(versionLines('1.1.0', stats.versions)).toEqual([
+      '1 file read with 1.1.0 (current)',
+      '40 files read with 1.0.0 (older)',
+      '3 files read before versions were recorded',
+    ]);
+    expect(versionLines('2.0.0', stats.versions)[0]).toBe('1 file read with 1.1.0 (older)');
+  });
+
+  it('never ran: no count above 0 and no last run', () => {
+    expect(neverRan({ runs: 0, lastRunAt: null })).toBe(true);
+    expect(neverRan({ runs: null, lastRunAt: null })).toBe(true);
+    expect(neverRan({ runs: 2, lastRunAt: stats.lastRunAt })).toBe(false);
+  });
+
+  it('the re-read label only with older files above 0', () => {
+    expect(rereadLabel(null)).toBeNull();
+    expect(rereadLabel(0)).toBeNull();
+    expect(rereadLabel(1)).toBe('Read the 1 older file again');
+    expect(rereadLabel(1200)).toBe('Read the 1,200 older files again');
+  });
+
+  it('a Save keeps the list versions and runs: the set answer has none', () => {
+    const saved = { ...ROW, ...stats, files: null, older: null, versions: [], runs: null };
+    const kept = keepCounts(saved, { ...ROW, ...stats });
+    expect(kept.files).toBe(4);
+    expect(statsOf(kept)).toEqual(stats);
   });
 });

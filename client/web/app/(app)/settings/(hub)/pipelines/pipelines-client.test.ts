@@ -10,16 +10,19 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@mantle/web-ui/ui/toast';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { markRereadRouteGone, resetRereadRouteGone } from '@/lib/pipeline-run';
 import {
   ATTACHED_NONE,
   COUNTS_PARTIAL,
   NOTHING_WRITTEN,
+  NO_RUN_YET,
   PIPELINES_PATH,
   READER_EVERYWHERE,
   TEST_BUSY,
   type PipelineList,
   type PipelineRow,
+  type PipelineStats,
   type PipelineTestResult,
 } from '@/lib/pipelines';
 import { WORKSPACES_KEY } from '@/lib/workspaces';
@@ -281,5 +284,82 @@ describe('Settings > Pipelines, a phase 2 brain', () => {
     );
     expect(html).toContain(TEST_BUSY);
     expect(html).not.toMatch(/failed/i);
+  });
+});
+
+/** The fields of an M8 server on the reader (made up): a current version, an
+ *  older one, and files read before versions were recorded. */
+const STATS: PipelineStats = {
+  description: 'Reads a CAD drawing into its texts, lines and symbols.',
+  versions: [
+    { version: '1.1.0', files: 120 },
+    { version: '1.0.0', files: 40 },
+    { version: null, files: 3 },
+  ],
+  runs: 1234,
+  lastRunAt: '2026-11-02T09:30:00.000Z',
+};
+const M8: PipelineRow = { ...READER, version: '1.1.0', files: 163, older: 43, ...STATS };
+
+describe('Settings > Pipelines, an M8 server: description, runs, versions', () => {
+  afterEach(() => resetRereadRouteGone());
+
+  it('the description shows under the name in the list, cut to one line', () => {
+    const list: PipelineList = { ...LIST, pipelines: [M8, AFTER] };
+    const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
+    expect(text(html)).toContain(STATS.description);
+    expect(html).toMatch(/class="[^"]*truncate[^"]*" title="Reads a CAD drawing/);
+  });
+
+  it('the Overview shows the whole description, the runs and one line per version', () => {
+    const t = text(render(createElement(PipelineDetail, { row: M8 })));
+    for (const want of [
+      STATS.description,
+      'Runs: 1,234. Last run: ',
+      '120 files read with 1.1.0 (current)',
+      '40 files read with 1.0.0 (older)',
+      '3 files read before versions were recorded',
+      '43 files were read by an older version or with other options',
+      'Read the 43 older files again',
+    ]) {
+      expect(t, want).toContain(want);
+    }
+    expect(t).not.toContain(NO_RUN_YET);
+  });
+
+  it('a pipeline that never ran says so', () => {
+    for (const runs of [0, null]) {
+      const row = { ...M8, runs, lastRunAt: null };
+      const t = text(render(createElement(PipelineDetail, { row })));
+      expect(t).toContain(NO_RUN_YET);
+      expect(t).not.toContain('Runs:');
+    }
+  });
+
+  it('the re-read button shows only with older files above 0', () => {
+    const none = text(render(createElement(PipelineDetail, { row: { ...M8, older: 0 } })));
+    expect(none).not.toContain('older files again');
+    const uncounted = text(render(createElement(PipelineDetail, { row: { ...M8, older: null } })));
+    expect(uncounted).not.toContain('older files again');
+    const one = text(render(createElement(PipelineDetail, { row: { ...M8, older: 1 } })));
+    expect(one).toContain('Read the 1 older file again');
+  });
+
+  it('a 404 of the re-read route hides the button for the session', () => {
+    markRereadRouteGone();
+    const t = text(render(createElement(PipelineDetail, { row: M8 })));
+    expect(t).not.toContain('older files again');
+    // The numbers stay: only the button goes.
+    expect(t).toContain('40 files read with 1.0.0 (older)');
+  });
+
+  it('a row with no versions (a server before M8) shows none of the new parts', () => {
+    const t = text(render(createElement(PipelineDetail, { row: { ...READER, older: 5 } })));
+    for (const not of [NO_RUN_YET, 'Runs:', 'files read', 'older files again']) {
+      expect(t, not).not.toContain(not);
+    }
+    const list: PipelineList = { ...LIST, pipelines: [READER] };
+    const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
+    expect(html).not.toContain('truncate');
   });
 });

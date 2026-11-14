@@ -22,27 +22,38 @@ import {
 } from '@mantle/web-ui/ui/table';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { TagInput } from '@/components/tag-input';
 import { useWorkspaces } from '@/components/workspaces/workspace-queries';
 import { fileHitsOnly, searchUrl } from '@/app/(app)/files/use-file-search';
 import type { FileSearchHit } from '@/app/(app)/files/files-shared';
+import { RunDialog, useRereadRouteGone } from '@/app/(app)/files/run-pipeline-dialog';
+import { RUN_LIMIT, postReread, rereadRefusedText } from '@/lib/pipeline-run';
 import {
   ATTACHED_NONE,
   NOTHING_WRITTEN,
+  NO_RUN_YET,
   PIPELINES_PATH,
   READER_EVERYWHERE,
   cellText,
+  countText,
   keepCounts,
+  neverRan,
+  olderText,
   optionValues,
   pipelinePath,
   readsText,
+  rereadLabel,
   setBody,
+  statsOf,
   takesFile,
   testStatusText,
+  versionLines,
   wordOf,
   type PipelineList,
   type PipelineOption,
   type PipelineRow,
+  type PipelineStats,
   type PipelineTestResult,
 } from '@/lib/pipelines';
 
@@ -90,8 +101,9 @@ export function PipelineDetail({ row }: { row: PipelineRow }) {
 
 function Overview({ row }: { row: PipelineRow }) {
   const writes = row.kind === 'after' ? row.tabs : row.shapes;
+  const stats = statsOf(row);
   return (
-    <Part title={row.name}>
+    <Part title={row.name} hint={stats?.description || undefined}>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt className="text-muted-foreground">Kind</dt>
         <dd>{row.kind === 'after' ? `After a reader, on ${row.after ?? '-'}` : 'Reader'}</dd>
@@ -102,7 +114,54 @@ function Overview({ row }: { row: PipelineRow }) {
         <dt className="text-muted-foreground">{row.kind === 'after' ? 'Tabs' : 'Shapes'}</dt>
         <dd>{writes.length > 0 ? writes.join(', ') : '-'}</dd>
       </dl>
+      {stats && <RunsAndVersions row={row} stats={stats} />}
     </Part>
+  );
+}
+
+/** M8: the runs, the files by version, and the re-read of the older ones.
+ *  "current" is the row's own version; "older" is the server's number. */
+function RunsAndVersions({ row, stats }: { row: PipelineRow; stats: PipelineStats }) {
+  const queryClient = useQueryClient();
+  const gone = useRereadRouteGone();
+  const [reread, setReread] = useState(false);
+  const lines = versionLines(row.version, stats.versions);
+  const older = olderText(row.older);
+  const label = gone ? null : rereadLabel(row.older);
+  return (
+    <div className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
+      <p>
+        {neverRan(stats)
+          ? NO_RUN_YET
+          : `Runs: ${countText(stats.runs)}. Last run: ${
+              stats.lastRunAt ? formatDateTime(stats.lastRunAt) : '-'
+            }.`}
+      </p>
+      {lines.length > 0 && (
+        <ul className="space-y-0.5 text-muted-foreground" aria-label="Files by version">
+          {lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
+      {older && <p className="text-warning-ink">{older}</p>}
+      {label && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setReread(true)}>
+            {label}
+          </Button>
+        </div>
+      )}
+      <RunDialog
+        openKey={reread ? row.id : null}
+        title="Read the older files again"
+        description={`${row.name}: the files read by an older version or with other options, at most ${RUN_LIMIT} at a time.`}
+        post={(body) => postReread(row.id, body, apiSend)}
+        onOpenChange={(o) => !o && setReread(false)}
+        onRan={() => void queryClient.invalidateQueries({ queryKey: [PIPELINES_PATH] })}
+        refused={rereadRefusedText}
+      />
+    </div>
   );
 }
 
