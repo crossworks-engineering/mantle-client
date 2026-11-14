@@ -1,18 +1,37 @@
 /**
- * Settings > Pipelines: the readers that make a file's database (mantle
- * docs/pipelines.md). The brain answers GET /api/pipelines for an Admin with
- * the settings area; another login gets 403, and a brain before pipelines
- * gives 404. In phase 1 the list is read only: no button writes, and every
- * pipeline is on. Pure helpers only: no DOM here.
+ * Settings > Pipelines: the readers that make a file's database, and the
+ * `after` pipelines that add tabs to it (mantle docs/pipelines.md). The brain
+ * answers GET /api/pipelines for an Admin with the settings area; another
+ * login gets 403, and a brain before pipelines gives 404. A phase 1 brain
+ * gives rows with no `kind`: the screen shows them read only. A phase 2
+ * brain takes PATCH /api/pipelines/:id (options, workspaces) and
+ * POST /api/pipelines/:id/test. Pure helpers only: no DOM here.
  */
 
 /**
- * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineRow` and
- * `PipelineList` (mantle, pipelines phase 1). Declared here until the
- * contract pin moves past the release that ships them; then import them and
- * delete these.
+ * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineOptionSpec`
+ * (mantle branch feat/pipelines-2). Delete when the contract pin moves past
+ * the release that ships it.
  */
-export type PipelineRow = {
+export type PipelineOptionSpec =
+  | { type: 'number'; label: string; help?: string; default: number; min: number; max: number }
+  | { type: 'bool'; label: string; help?: string; default: boolean }
+  | {
+      type: 'words';
+      label: string;
+      help?: string;
+      default: readonly string[];
+      maxItems: number;
+      maxChars: number;
+    };
+
+/**
+ * LOCAL COPY of the phase 1 fields of @mantle/client-types dto/pipelines.ts
+ * `PipelineRow` (mantle, pipelines phase 1). A phase 1 brain gives only
+ * these. Delete when the contract pin moves past the release that ships
+ * `PipelineRow`.
+ */
+export type PipelineRowV1 = {
   id: string;
   name: string;
   version: string;
@@ -26,18 +45,71 @@ export type PipelineRow = {
   tools: string[];
   /** Files with a database of this pipeline; null when not counted. */
   files: number | null;
-  /** Of those, read at an older version or before stamps. */
+  /** Of those, read at an older version, before stamps, or with other options. */
   older: number | null;
 };
 
+/**
+ * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineRow` (mantle
+ * branch feat/pipelines-2): the phase 1 fields and the state of phase 2.
+ * Delete when the contract pin moves past the release that ships it.
+ */
+export type PipelineRow = PipelineRowV1 & {
+  kind: 'reader' | 'after';
+  /** 'all' (a reader), or the ids of the workspaces it is attached to. */
+  workspaces: 'all' | string[];
+  /** For an `after` pipeline: the shape it reads. Null for a reader. */
+  after: string | null;
+  /** The tabs an `after` pipeline writes. */
+  tabs: string[];
+  options: PipelineOption[];
+};
+
+export type PipelineOption = { name: string; spec: PipelineOptionSpec; value: unknown };
+
+/**
+ * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineList`. Its
+ * rows are phase 1 rows until `hasState` says they carry `kind`.
+ */
 export type PipelineList = {
   api: number;
-  pipelines: PipelineRow[];
+  pipelines: PipelineRowV1[];
   /** The scan stopped at its cap: the counts are of the first files only. */
   countsPartial: boolean;
 };
 
+/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineSetBody`
+ *  (mantle branch feat/pipelines-2). Delete when the pin moves. */
+export type PipelineSetBody = {
+  options?: Record<string, unknown>;
+  workspaces?: string[];
+};
+
+/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineTestBody`
+ *  (mantle branch feat/pipelines-2-m4). Delete when the pin moves. */
+export type PipelineTestBody = {
+  fileId: string;
+  options?: Record<string, unknown>;
+};
+
+/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineTestResult`
+ *  (mantle branch feat/pipelines-2-m4). Delete when the pin moves. */
+export type PipelineTestResult = {
+  status: 'ok' | 'not_mine' | 'unsure' | 'failed' | 'busy';
+  pipeline: string;
+  version: string;
+  ms: number;
+  tabs: { name: string; rows: number; columns: string[]; first: unknown[][] }[];
+  shapes: string[];
+  warnings: string[];
+  writes: string[];
+  word: 'no-database' | 'no-match' | 'too-large' | 'unreadable' | 'no-rows' | null;
+};
+
 export const PIPELINES_PATH = '/api/pipelines';
+
+/** One pipeline's route: PATCH sets it, `/test` tests it. */
+export const pipelinePath = (id: string) => `${PIPELINES_PATH}/${encodeURIComponent(id)}`;
 
 /** What a brain before pipelines (404) gets instead of the list. */
 export const PIPELINES_TOO_OLD = 'This box does not list its pipelines yet.';
@@ -45,8 +117,27 @@ export const PIPELINES_TOO_OLD = 'This box does not list its pipelines yet.';
 /** What the screen says when the counts stopped at the brain's cap. */
 export const COUNTS_PARTIAL = 'The counts are partial: the box stopped counting at its limit.';
 
-/** The state of a pipeline. Phase 1 has no switch, so it is always on. */
+/** The state of a pipeline on a phase 1 brain: it has no switch, so it is on. */
 export const PIPELINE_STATE = 'On';
+
+/** A reader is used in every workspace: no ticks. */
+export const READER_EVERYWHERE = 'Used in every workspace.';
+
+/** An `after` pipeline with no tick. */
+export const ATTACHED_NONE = 'Attached to no workspace. It does nothing.';
+
+/** Under every test result. */
+export const NOTHING_WRITTEN = 'Nothing was written.';
+
+/** A test the parser had no slot for. It is no failure. */
+export const TEST_BUSY = 'The reader is busy. Try again.';
+
+/** The rows of a phase 2 brain, or null for a phase 1 brain (a row with no
+ *  `kind`): that one gets the read-only list. */
+export function hasState(list: PipelineList): PipelineRow[] | null {
+  const rows = list.pipelines;
+  return rows.every((r) => 'kind' in r) ? (rows as PipelineRow[]) : null;
+}
 
 /** A count as the screen shows it: a dash when the brain did not count. */
 export function countText(n: number | null): string {
@@ -58,11 +149,98 @@ export function readsText(reads: readonly string[]): string {
   return reads.map((e) => `.${e}`).join(', ');
 }
 
-/** "N files were read by an older version", or null when there are none
- *  (or the brain did not count them). */
+/** "N files were read by an older version or with other options", or null
+ *  when there are none (or the brain did not count them). */
 export function olderText(older: number | null): string | null {
   if (older === null || older === 0) return null;
   return older === 1
-    ? '1 file was read by an older version'
-    : `${countText(older)} files were read by an older version`;
+    ? '1 file was read by an older version or with other options'
+    : `${countText(older)} files were read by an older version or with other options`;
+}
+
+/** Where a phase 2 pipeline is used, as the list's State cell says it. */
+export function attachText(row: PipelineRow): string {
+  if (row.workspaces === 'all') return 'Every workspace';
+  const n = row.workspaces.length;
+  if (n === 0) return 'No workspace';
+  return n === 1 ? '1 workspace' : `${n} workspaces`;
+}
+
+/** The form's first values: the value in force of each option. */
+export function optionValues(row: PipelineRow): Record<string, unknown> {
+  return Object.fromEntries(row.options.map((o) => [o.name, o.value]));
+}
+
+const same = (a: unknown, b: unknown) =>
+  Array.isArray(a) && Array.isArray(b)
+    ? a.length === b.length && a.every((x, i) => x === b[i])
+    : a === b;
+
+/** The options the form changed, by name: what Save sends. Empty when none. */
+export function changedOptions(
+  row: PipelineRow,
+  form: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const o of row.options) {
+    if (o.name in form && !same(form[o.name], o.value)) out[o.name] = form[o.name];
+  }
+  return out;
+}
+
+/** The body of a Save: the changed options, and the ticks when they moved.
+ *  Null when nothing changed. A reader never sends `workspaces`. */
+export function setBody(
+  row: PipelineRow,
+  form: Readonly<Record<string, unknown>>,
+  ticks: readonly string[] | null,
+): PipelineSetBody | null {
+  const body: PipelineSetBody = {};
+  const options = changedOptions(row, form);
+  if (Object.keys(options).length > 0) body.options = options;
+  if (ticks && row.workspaces !== 'all') {
+    const was = [...row.workspaces].sort();
+    const now = [...ticks].sort();
+    if (!same(was, now)) body.workspaces = [...ticks];
+  }
+  return Object.keys(body).length > 0 ? body : null;
+}
+
+/** The row a Save answers, with the list's counts kept: the PATCH answer
+ *  has `files` and `older` null. */
+export function keepCounts(saved: PipelineRow, was: PipelineRowV1): PipelineRow {
+  return { ...saved, files: was.files, older: was.older };
+}
+
+/** A word of a `words` option as the form keeps it: upper case, as the
+ *  brain stores it. */
+export const wordOf = (raw: string) => raw.trim().toUpperCase();
+
+/** The status line of a test. */
+export function testStatusText(r: PipelineTestResult): string {
+  switch (r.status) {
+    case 'ok':
+      return 'Read';
+    case 'not_mine':
+      return 'This pipeline does not take this file';
+    case 'unsure':
+      return 'The rules left this PDF unsure; no model was asked';
+    case 'failed':
+      return 'Failed';
+    case 'busy':
+      return TEST_BUSY;
+  }
+}
+
+/** Does this pipeline take a file of this name? By its extension, as the
+ *  brain matches it; the test picker lists these files only. */
+export function takesFile(row: PipelineRowV1, name: string): boolean {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 && row.reads.includes(name.slice(dot + 1).toLowerCase());
+}
+
+/** A cell of a test's first rows, as text. */
+export function cellText(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
 }
