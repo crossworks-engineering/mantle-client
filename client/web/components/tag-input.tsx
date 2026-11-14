@@ -10,7 +10,8 @@ import { tagColorClass } from '@mantle/web-ui/tag-pill';
  * Tag editor: type a tag and commit it to a colored pill with comma or
  * Enter; Backspace on an empty field removes the last pill; pasting a
  * comma-separated string adds them all. Controlled via `value`/`onChange`
- * (an array of normalized lowercase tags).
+ * (an array of normalized lowercase tags; `normalize` gives another form,
+ * as the upper case words of a pipeline option).
  */
 export function TagInput({
   value,
@@ -20,6 +21,8 @@ export function TagInput({
   max = 20,
   maxLength = 40,
   className,
+  normalize = (raw: string) => raw.trim().toLowerCase(),
+  label = 'Tags',
 }: {
   value: string[];
   onChange: (tags: string[]) => void;
@@ -30,12 +33,16 @@ export function TagInput({
   /** Merged onto the root — page/draw headers use it for a borderless,
    *  right-aligned inline variant. */
   className?: string;
+  /** How a typed tag is kept; lower case by default. */
+  normalize?: (raw: string) => string;
+  /** The entry's accessible name; "Tags" by default. */
+  label?: string;
 }) {
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addTag = (raw: string) => {
-    const t = raw.trim().toLowerCase().slice(0, maxLength);
+    const t = normalize(raw).slice(0, maxLength);
     setDraft('');
     if (!t || value.includes(t) || value.length >= max) return;
     onChange([...value, t]);
@@ -97,7 +104,7 @@ export function TagInput({
       <input
         ref={inputRef}
         id={id}
-        aria-label="Tags"
+        aria-label={label}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
