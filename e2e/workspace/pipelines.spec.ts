@@ -354,3 +354,102 @@ test('phase 2: an after pipeline with no tick does nothing; ticks and words are 
     body: { fileId: 'file-1', options: { prefixes: ['FV', 'PT', 'LT'] } },
   });
 });
+
+/** An M8 brain: LIST2 with a description, the runs and the files by version
+ *  on each row (made up). CAD drawing is at 1.1.0 with 43 older files. */
+const LIST3 = {
+  ...LIST2,
+  pipelines: LIST2.pipelines.map((p) =>
+    p.id === 'drawing-cad'
+      ? {
+          ...p,
+          version: '1.1.0',
+          description: 'Reads a CAD drawing into its texts, lines and symbols.',
+          files: 163,
+          older: 43,
+          versions: [
+            { version: '1.1.0', files: 120 },
+            { version: '1.0.0', files: 40 },
+            { version: null, files: 3 },
+          ],
+          runs: 1234,
+          lastRunAt: '2026-11-02T09:30:00.000Z',
+        }
+      : { ...p, description: `Reads a ${p.name} file.`, versions: [], runs: 0, lastRunAt: null },
+  ),
+};
+
+test('M8: the description, the runs, the files by version, and the re-read of the older files', async ({
+  page,
+}) => {
+  let gets = 0;
+  const sent: unknown[] = [];
+  await page.route(
+    (u) => u.pathname.startsWith('/api/pipelines'),
+    async (route: Route) => {
+      const req = route.request();
+      if (req.method() === 'GET') {
+        gets++;
+        return route.fulfill({ json: LIST3 });
+      }
+      expect(new URL(req.url()).pathname).toBe('/api/pipelines/drawing-cad/reread');
+      const body = req.postDataJSON() as { apply?: boolean; after?: string };
+      sent.push(body);
+      const choices = [{ pipeline: 'drawing-cad', name: 'CAD drawing', files: 43, refused: null }];
+      return route.fulfill({
+        json: {
+          apply: body.apply === true,
+          busy: false,
+          choices,
+          queued: body.apply ? (body.after ? 3 : 40) : 0,
+          skipped: {},
+          next: body.apply && !body.after ? 'n-40' : null,
+        },
+      });
+    },
+  );
+  await page.route(
+    (u) => u.pathname === '/api/workspaces',
+    (route) => route.fulfill({ json: { workspaces: WS } }),
+  );
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines');
+  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
+  const row = table.getByRole('row').filter({ hasText: 'CAD drawing' });
+  await expect(row).toContainText('Reads a CAD drawing into its texts, lines and symbols.');
+  await row.getByRole('button', { name: 'CAD drawing' }).click();
+
+  const overview = page.getByRole('region', { name: 'CAD drawing' });
+  await expect(overview).toContainText('Reads a CAD drawing into its texts, lines and symbols.');
+  await expect(overview).toContainText('Runs: 1,234. Last run: ');
+  await expect(overview).toContainText('120 files read with 1.1.0 (current)');
+  await expect(overview).toContainText('40 files read with 1.0.0 (older)');
+  await expect(overview).toContainText('3 files read before versions were recorded');
+  await expect(overview).toContainText(
+    '43 files were read by an older version or with other options',
+  );
+
+  // It asks first: the dry run, with the one choice picked.
+  const before = gets;
+  await overview.getByRole('button', { name: 'Read the 43 older files again' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('CAD drawing: 43 files');
+  expect(sent).toEqual([{}]);
+  await dialog.getByRole('button', { name: 'Run pipeline' }).click();
+  await expect(dialog).toContainText('40 files are queued.');
+  expect(sent[1]).toEqual({ apply: true });
+  // After a run, the list is read again.
+  await expect.poll(() => gets).toBeGreaterThan(before);
+  await dialog.getByRole('button', { name: 'Run the next 100' }).click();
+  await expect(dialog).toContainText('3 files are queued.');
+  expect(sent[2]).toEqual({ apply: true, after: 'n-40' });
+  await expect(dialog.getByRole('button', { name: 'Run the next 100' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close' }).first().click();
+  await expect(dialog).toHaveCount(0);
+
+  // A pipeline that never ran, with no older file: no button.
+  await table.getByRole('button', { name: 'Microsoft Project plan' }).click();
+  const sheet = page.getByRole('region', { name: 'Microsoft Project plan' });
+  await expect(sheet).toContainText('No run yet.');
+  await expect(sheet.getByRole('button', { name: /older files? again/ })).toHaveCount(0);
+});
