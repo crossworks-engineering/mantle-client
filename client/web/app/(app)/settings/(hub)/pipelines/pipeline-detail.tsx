@@ -35,9 +35,13 @@ import {
   NO_RUN_YET,
   PIPELINES_PATH,
   READER_EVERYWHERE,
+  canChange,
   cellText,
+  claimsText,
   countText,
   keepCounts,
+  kindText,
+  nameLines,
   neverRan,
   olderText,
   optionValues,
@@ -83,9 +87,15 @@ function Part({
 /**
  * One pipeline: what it is, its options and workspaces (one Save, which
  * sends only what changed), and a test on one file. The form is made from
- * each option's `spec`; the screen knows no option by name.
+ * each option's `spec`; the screen knows no option by name. A row that
+ * `canChange` says no to (a router, an unknown kind) shows what it is only.
  */
 export function PipelineDetail({ row }: { row: PipelineRow }) {
+  if (!canChange(row)) return <Overview row={row} />;
+  return <ChangeableDetail row={row} />;
+}
+
+function ChangeableDetail({ row }: { row: PipelineRow }) {
   const [form, setForm] = useState(() => optionValues(row));
   const [ticks, setTicks] = useState<string[] | null>(() =>
     row.workspaces === 'all' ? null : [...row.workspaces],
@@ -100,20 +110,45 @@ export function PipelineDetail({ row }: { row: PipelineRow }) {
 }
 
 function Overview({ row }: { row: PipelineRow }) {
-  const writes = row.kind === 'after' ? row.tabs : row.shapes;
+  const router = row.kind === 'router';
+  const writes = (row.kind === 'after' ? row.tabs : row.shapes) ?? [];
+  const names = nameLines(row);
+  const claims = claimsText(row);
   const stats = statsOf(row);
   return (
     <Part title={row.name} hint={stats?.description || undefined}>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt className="text-muted-foreground">Kind</dt>
-        <dd>{row.kind === 'after' ? `After a reader, on ${row.after ?? '-'}` : 'Reader'}</dd>
-        <dt className="text-muted-foreground">Reads</dt>
-        <dd>{readsText(row.reads)}</dd>
+        <dd>{kindText(row)}</dd>
+        <dt className="text-muted-foreground">{router ? 'File types' : 'Reads'}</dt>
+        <dd>{readsText(row.reads ?? [])}</dd>
         <dt className="text-muted-foreground">Version</dt>
         <dd className="font-mono text-xs leading-5">{row.version}</dd>
-        <dt className="text-muted-foreground">{row.kind === 'after' ? 'Tabs' : 'Shapes'}</dt>
-        <dd>{writes.length > 0 ? writes.join(', ') : '-'}</dd>
+        {router ? (
+          <>
+            <dt className="text-muted-foreground">Can name</dt>
+            <dd>
+              {names.length > 0 ? (
+                <ul aria-label="Kinds it can name" className="space-y-0.5">
+                  {names.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
+              ) : (
+                '-'
+              )}
+            </dd>
+            <dt className="text-muted-foreground">May ask</dt>
+            <dd>{row.workers?.length ? row.workers.join(', ') : '-'}</dd>
+          </>
+        ) : (
+          <>
+            <dt className="text-muted-foreground">{row.kind === 'after' ? 'Tabs' : 'Shapes'}</dt>
+            <dd>{writes.length > 0 ? writes.join(', ') : '-'}</dd>
+          </>
+        )}
       </dl>
+      {claims && <p className="mt-4 text-sm">{claims}</p>}
       {stats && <RunsAndVersions row={row} stats={stats} />}
     </Part>
   );
@@ -127,7 +162,7 @@ function RunsAndVersions({ row, stats }: { row: PipelineRow; stats: PipelineStat
   const [reread, setReread] = useState(false);
   const lines = versionLines(row.version, stats.versions);
   const older = olderText(row.older);
-  const label = gone ? null : rereadLabel(row.older);
+  const label = gone || !canChange(row) ? null : rereadLabel(row.older);
   return (
     <div className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
       <p>
@@ -152,15 +187,17 @@ function RunsAndVersions({ row, stats }: { row: PipelineRow; stats: PipelineStat
           </Button>
         </div>
       )}
-      <RunDialog
-        openKey={reread ? row.id : null}
-        title="Read the older files again"
-        description={`${row.name}: the files read by an older version or with other options, at most ${RUN_LIMIT} at a time.`}
-        post={(body) => postReread(row.id, body, apiSend)}
-        onOpenChange={(o) => !o && setReread(false)}
-        onRan={() => void queryClient.invalidateQueries({ queryKey: [PIPELINES_PATH] })}
-        refused={rereadRefusedText}
-      />
+      {canChange(row) && (
+        <RunDialog
+          openKey={reread ? row.id : null}
+          title="Read the older files again"
+          description={`${row.name}: the files read by an older version or with other options, at most ${RUN_LIMIT} at a time.`}
+          post={(body) => postReread(row.id, body, apiSend)}
+          onOpenChange={(o) => !o && setReread(false)}
+          onRan={() => void queryClient.invalidateQueries({ queryKey: [PIPELINES_PATH] })}
+          refused={rereadRefusedText}
+        />
+      )}
     </div>
   );
 }

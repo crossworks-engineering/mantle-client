@@ -109,7 +109,11 @@ const AFTER: PipelineRow = {
   options: [],
 };
 
-const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+const text = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, ' ');
 
 function render(node: ReactNode, workspaces: unknown[] = []): string {
   const client = new QueryClient();
@@ -361,5 +365,109 @@ describe('Settings > Pipelines, an M8 server: description, runs, versions', () =
     const list: PipelineList = { ...LIST, pipelines: [READER] };
     const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
     expect(html).not.toContain('truncate');
+  });
+});
+
+/** A router row as the server gives it (mantle feat/router-2r; made up). */
+const ROUTER: PipelineRow & PipelineStats = {
+  ...M8,
+  id: 'pdf-router',
+  name: 'PDF router',
+  kind: 'router',
+  version: '1.0.0',
+  description: 'Names the kind of a PDF.',
+  reads: ['pdf'],
+  shapes: [],
+  workers: ['decider'],
+  options: [],
+  files: null,
+  older: null,
+  versions: [],
+  runs: 12,
+  lastRunAt: '2026-11-02T09:30:00.000Z',
+  names: [
+    { kind: 'pid', decider: false },
+    { kind: 'table', decider: true },
+  ],
+  claims: [],
+};
+
+describe('Settings > Pipelines, a router and kinds the client does not know', () => {
+  it('the list: a router row reads as a router, with no file count', () => {
+    const list: PipelineList = { ...LIST, pipelines: [M8, ROUTER] };
+    const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
+    const t = text(html);
+    expect(t).toContain('PDF router');
+    expect(t).toContain('Names the kind of a PDF.');
+    expect(t).toContain(' Router ');
+    expect(t).toContain('.pdf');
+    // Its name still opens its detail.
+    expect(html.match(/<button/g)).toHaveLength(2);
+    // The router's Files cell is empty, not a dash; the reader's count stays.
+    expect(t).not.toContain(' - ');
+    expect(t).toContain('163');
+  });
+
+  it('the detail of a router: what it names and asks, its runs, and nothing to change', () => {
+    const html = render(createElement(PipelineDetail, { row: ROUTER }));
+    const t = text(html);
+    for (const want of [
+      'Router',
+      'File types',
+      '.pdf',
+      'pid',
+      "table (only by the decider's answer)",
+      'May ask decider',
+      'Runs: 12. Last run: ',
+    ]) {
+      expect(t, want).toContain(want);
+    }
+    expect(t).not.toContain("pid (only by the decider's answer)");
+    for (const not of [
+      'Options and workspaces',
+      'This pipeline has no options.',
+      READER_EVERYWHERE,
+      'Save pipeline',
+      'Run test',
+      'older files again',
+    ]) {
+      expect(t, not).not.toContain(not);
+    }
+    expect(html).not.toMatch(/<button|<input|<form/);
+  });
+
+  it('a reader with claims says so in one line; with none it says nothing', () => {
+    const claims = text(
+      render(createElement(PipelineDetail, { row: { ...M8, claims: ['pid', 'scan'] } })),
+    );
+    expect(claims).toContain(
+      'Reads a file only when the router names one of these kinds: pid, scan.',
+    );
+    for (const row of [{ ...M8, claims: [] }, M8]) {
+      const t = text(render(createElement(PipelineDetail, { row })));
+      expect(t).not.toContain('the router names');
+    }
+  });
+
+  it('an unknown kind is a plain, read-only row and detail', () => {
+    // A future kind with none of the phase 2 parts: nothing may fail.
+    const { options: _o, workspaces: _w, tabs: _t, ...bare } = READER;
+    const odd = { ...bare, id: 'sorter-1', name: 'Sorter', kind: 'sorter' } as PipelineRow;
+    const list: PipelineList = { ...LIST, pipelines: [odd] };
+    const row = text(
+      renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} })),
+    );
+    expect(row).toContain('Sorter');
+    const html = render(createElement(PipelineDetail, { row: odd }));
+    expect(text(html)).toContain('Kind Sorter');
+    expect(html).not.toMatch(/<button|<input|<form/);
+  });
+
+  it('an older server (no router, no claims) shows the reader as before', () => {
+    const t = text(render(createElement(PipelineDetail, { row: READER })));
+    expect(t).toContain('Kind Reader');
+    expect(t).toContain('Options and workspaces');
+    expect(t).toContain('Run test');
+    expect(t).not.toContain('the router names');
   });
 });

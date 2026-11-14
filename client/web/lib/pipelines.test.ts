@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { mayOpenPath } from './workspaces';
 import {
+  canChange,
   changedOptions,
+  claimsText,
   countText,
   hasState,
   keepCounts,
+  kindText,
+  nameLines,
   neverRan,
   olderText,
   readsText,
@@ -12,6 +16,7 @@ import {
   setBody,
   statsOf,
   takesFile,
+  usedInText,
   versionLines,
   wordOf,
   type PipelineList,
@@ -173,5 +178,61 @@ describe('Settings > Pipelines, the M8 fields', () => {
     const kept = keepCounts(saved, { ...ROW, ...stats });
     expect(kept.files).toBe(4);
     expect(statsOf(kept)).toEqual(stats);
+  });
+});
+
+/** A router row as the server gives it (mantle feat/router-2r; made-up
+ *  counts): no files, no options, no workspaces of its own. */
+const ROUTER: PipelineRow = {
+  ...ROW,
+  id: 'pdf-router',
+  name: 'PDF router',
+  kind: 'router',
+  reads: ['pdf'],
+  shapes: [],
+  workers: ['decider'],
+  options: [],
+  files: null,
+  older: null,
+  names: [
+    { kind: 'pid', decider: false },
+    { kind: 'pfd', decider: true },
+  ],
+  claims: [],
+};
+
+describe('Settings > Pipelines, the router and the kinds', () => {
+  it('one rule: a reader and an after pipeline can change; a router and an unknown kind cannot', () => {
+    expect(canChange(ROW)).toBe(true);
+    expect(canChange(AFTER)).toBe(true);
+    expect(canChange(ROUTER)).toBe(false);
+    expect(canChange({ ...ROW, kind: 'sorter' })).toBe(false);
+  });
+
+  it('the kind word, and the Used in cell', () => {
+    expect(kindText(ROW)).toBe('Reader');
+    expect(kindText(AFTER)).toBe('After a reader, on -');
+    expect(kindText(ROUTER)).toBe('Router');
+    expect(kindText({ ...ROW, kind: 'sorter' })).toBe('Sorter');
+    expect(usedInText(ROW)).toBe('Every workspace');
+    expect(usedInText(ROUTER)).toBe('Router');
+    expect(usedInText({ ...ROW, kind: 'sorter', workspaces: [] })).toBe('Sorter');
+  });
+
+  it("the kinds a router can name, the decider's marked", () => {
+    expect(nameLines(ROUTER)).toEqual(['pid', "pfd (only by the decider's answer)"]);
+  });
+
+  it('the kinds a reader claims, in one line; none says nothing', () => {
+    expect(claimsText({ ...ROW, claims: ['pid', 'scan'] })).toBe(
+      'Reads a file only when the router names one of these kinds: pid, scan.',
+    );
+    expect(claimsText({ ...ROW, claims: [] })).toBeNull();
+  });
+
+  it('an older server sends no names and no claims: nothing shows', () => {
+    const { names: _n, claims: _c, ...old } = ROUTER;
+    expect(nameLines(old)).toEqual([]);
+    expect(claimsText(ROW)).toBeNull();
   });
 });

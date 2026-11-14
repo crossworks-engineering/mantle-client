@@ -20,12 +20,13 @@ import {
   PIPELINE_STATE,
   PIPELINES_PATH,
   PIPELINES_TOO_OLD,
-  attachText,
+  canChange,
   countText,
   hasState,
   olderText,
   readsText,
   statsOf,
+  usedInText,
   type PipelineList,
   type PipelineRow,
 } from '@/lib/pipelines';
@@ -85,7 +86,8 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
 /**
  * The list itself, from one answer. A phase 1 row is read only (State "On",
  * nothing to press); a phase 2 row's name opens its detail, and State says
- * where it is used. Exported for its render test.
+ * where it is used (a router, or a kind this client does not know: its kind
+ * word, and no file count). Exported for its render test.
  */
 export function PipelinesList({
   list,
@@ -124,6 +126,8 @@ export function PipelinesList({
             const row = byId.get(p.id);
             const description = statsOf(p)?.description;
             const isOpen = openId === p.id;
+            // A read-only kind (a router) has no files of its own: no count.
+            const files = row && !canChange(row) && p.files === null ? '' : countText(p.files);
             return (
               <TableRow key={p.id} data-state={isOpen ? 'selected' : undefined}>
                 <TableCell>
@@ -154,15 +158,17 @@ export function PipelinesList({
                   <span
                     className={cn(
                       'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                      row && row.workspaces !== 'all' && row.workspaces.length === 0
+                      row &&
+                        (!canChange(row) ||
+                          (row.workspaces !== 'all' && row.workspaces.length === 0))
                         ? 'bg-muted text-muted-foreground'
                         : 'bg-success/15 text-success-ink',
                     )}
                   >
-                    {row ? attachText(row) : PIPELINE_STATE}
+                    {row ? usedInText(row) : PIPELINE_STATE}
                   </span>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{countText(p.files)}</TableCell>
+                <TableCell className="text-right tabular-nums">{files}</TableCell>
               </TableRow>
             );
           })}

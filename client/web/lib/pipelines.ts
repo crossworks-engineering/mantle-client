@@ -5,7 +5,9 @@
  * login gets 403, and a brain before pipelines gives 404. A phase 1 brain
  * gives rows with no `kind`: the screen shows them read only. A phase 2
  * brain takes PATCH /api/pipelines/:id (options, workspaces) and
- * POST /api/pipelines/:id/test. Pure helpers only: no DOM here.
+ * POST /api/pipelines/:id/test. A router row (`kind: 'router'`) names the
+ * kind of a file; it is read only, as is a kind word this client does not
+ * know (`canChange`). Pure helpers only: no DOM here.
  */
 
 /**
@@ -55,7 +57,8 @@ export type PipelineRowV1 = {
  * Delete when the contract pin moves past the release that ships it.
  */
 export type PipelineRow = PipelineRowV1 & {
-  kind: 'reader' | 'after';
+  /** A later server may add a word: `canChange` is the one rule for it. */
+  kind: PipelineKind | (string & {});
   /** 'all' (a reader), or the ids of the workspaces it is attached to. */
   workspaces: 'all' | string[];
   /** For an `after` pipeline: the shape it reads. Null for a reader. */
@@ -63,7 +66,19 @@ export type PipelineRow = PipelineRowV1 & {
   /** The tabs an `after` pipeline writes. */
   tabs: string[];
   options: PipelineOption[];
+  /** A router: the kinds it can name (mantle branch feat/router-2r). An
+   *  older server sends none: read it through `nameLines`. */
+  names?: PipelineName[];
+  /** A reader: the kinds it claims from a router; [] for most. An older
+   *  server sends none: read it through `claimsText`. */
+  claims?: string[];
 };
+
+/** The kind words this client knows. */
+export type PipelineKind = 'reader' | 'after' | 'router';
+
+/** A kind a router can name. `decider`: named only by the decider's answer. */
+export type PipelineName = { kind: string; decider?: boolean };
 
 export type PipelineOption = { name: string; spec: PipelineOptionSpec; value: unknown };
 
@@ -201,6 +216,46 @@ export function rereadLabel(older: number | null): string | null {
 export function hasState(list: PipelineList): PipelineRow[] | null {
   const rows = list.pipelines;
   return rows.every((r) => 'kind' in r) ? (rows as PipelineRow[]) : null;
+}
+
+/**
+ * The one rule of what a row can do: a reader and an `after` pipeline have
+ * options, workspaces, a test and a re-read. A router, and a kind word this
+ * client does not know, are read only: the screen shows them and offers
+ * nothing to press but the name.
+ */
+export function canChange(row: PipelineRow): boolean {
+  return row.kind === 'reader' || row.kind === 'after';
+}
+
+/** The kind of a row in one word or line, as the detail says it. An
+ *  unknown word is shown as the server gives it. */
+export function kindText(row: PipelineRow): string {
+  if (row.kind === 'after') return `After a reader, on ${row.after ?? '-'}`;
+  if (row.kind === 'reader') return 'Reader';
+  if (row.kind === 'router') return 'Router';
+  return row.kind ? row.kind[0]!.toUpperCase() + row.kind.slice(1) : '-';
+}
+
+/** The list's "Used in" cell: where it is used, or the kind word of a row
+ *  that is used by no workspace setting (a router, an unknown kind). */
+export function usedInText(row: PipelineRow): string {
+  return canChange(row) ? attachText(row) : kindText(row);
+}
+
+/** The kinds a router can name, one line each. Empty when the server sent
+ *  none. */
+export function nameLines(row: PipelineRow): string[] {
+  const names = Array.isArray(row.names) ? row.names : [];
+  return names.map((n) => (n.decider ? `${n.kind} (only by the decider's answer)` : n.kind));
+}
+
+/** One line of the kinds a reader claims, or null when it claims none (or
+ *  the server sent none). */
+export function claimsText(row: PipelineRow): string | null {
+  const claims = Array.isArray(row.claims) ? row.claims : [];
+  if (claims.length === 0) return null;
+  return `Reads a file only when the router names one of these kinds: ${claims.join(', ')}.`;
 }
 
 /** A count as the screen shows it: a dash when the brain did not count. */
