@@ -2,7 +2,10 @@
  * The Run button of Files: run a built-in pipeline on one file or a folder
  * (mantle docs/pipelines.md, "Run on demand"). The brain answers
  * POST /api/files/files/:id/run and POST /api/files/folders/:id/run with a
- * `PipelineRunAnswer`; an older brain has no such route (404).
+ * `PipelineRunAnswer`; an older brain has no such route (404). The re-read
+ * of a pipeline's older files (Settings > Pipelines,
+ * POST /api/pipelines/:id/reread) gives the same answer, with one choice,
+ * and runs in the same dialog.
  *
  * Two checks, and no third. (1) The dialog always asks first: a body with
  * `apply` comes only from `applyBody` or `nextBody`, and each needs a dry run
@@ -149,31 +152,42 @@ export function skipLines(result: PipelineRunAnswer): string[] {
 }
 
 /**
- * An older brain has no run route: after its first 404 the Run entry hides
- * for the rest of the session. One flag, and who listens to it.
+ * An older brain has no run route (nor re-read route): after its first 404
+ * the entry hides for the rest of the session. One flag per route, and who
+ * listens to it.
  */
-let runGone = false;
-const listeners = new Set<() => void>();
-
-export function runRouteGone(): boolean {
-  return runGone;
+function sessionFlag() {
+  let on = false;
+  const listeners = new Set<() => void>();
+  return {
+    get: (): boolean => on,
+    mark: (): void => {
+      if (on) return;
+      on = true;
+      for (const l of listeners) l();
+    },
+    subscribe: (l: () => void): (() => void) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    /** Tests only: a fresh session. */
+    reset: (): void => {
+      on = false;
+    },
+  };
 }
 
-export function markRunRouteGone(): void {
-  if (runGone) return;
-  runGone = true;
-  for (const l of listeners) l();
-}
+const runGone = sessionFlag();
+export const runRouteGone = runGone.get;
+export const markRunRouteGone = runGone.mark;
+export const subscribeRunRouteGone = runGone.subscribe;
+export const resetRunRouteGone = runGone.reset;
 
-export function subscribeRunRouteGone(l: () => void): () => void {
-  listeners.add(l);
-  return () => listeners.delete(l);
-}
-
-/** Tests only: a fresh session. */
-export function resetRunRouteGone(): void {
-  runGone = false;
-}
+const rereadGone = sessionFlag();
+export const rereadRouteGone = rereadGone.get;
+export const markRereadRouteGone = rereadGone.mark;
+export const subscribeRereadRouteGone = rereadGone.subscribe;
+export const resetRereadRouteGone = rereadGone.reset;
 
 /** Whether the Run entry shows: the item's own edit right, and a brain that
  *  has the route (`gone`: runRouteGone). No other rule. */
@@ -181,7 +195,7 @@ export function showRunEntry(mayEdit: boolean, gone: boolean): boolean {
   return mayEdit && !gone;
 }
 
-type Send = (path: string, method: 'POST', body: PipelineRunBody) => Promise<unknown>;
+type Send = (path: string, method: 'POST', body: object) => Promise<unknown>;
 
 /** One call of the run route. A 404 marks the route gone, then throws on. */
 export async function postRun(
@@ -195,4 +209,49 @@ export async function postRun(
     if ((err as { status?: unknown } | null)?.status === 404) markRunRouteGone();
     throw err;
   }
+}
+
+/**
+ * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineRereadBody`
+ * (mantle branch feat/pipelines-2-m8): read the older files of one pipeline
+ * again. With no `apply`, the dry run. Its answer is a `PipelineRunAnswer`
+ * with one choice, whose `files` are the older files of this page. Delete
+ * when the contract pin moves past the release that ships it.
+ */
+export type PipelineRereadBody = { apply?: boolean; limit?: number; after?: string };
+
+export function rereadPath(pipelineId: string): string {
+  return `/api/pipelines/${encodeURIComponent(pipelineId)}/reread`;
+}
+
+/** A run body as the re-read route takes it: the route names the pipeline,
+ *  so `pipeline` is left out. The dialog's bodies still come only from
+ *  DRY_RUN_BODY, applyBody and nextBody. */
+export function rereadBody(body: PipelineRunBody): PipelineRereadBody {
+  const out: PipelineRereadBody = {};
+  if (body.apply !== undefined) out.apply = body.apply;
+  if (body.limit !== undefined) out.limit = body.limit;
+  if (body.after !== undefined) out.after = body.after;
+  return out;
+}
+
+/** One call of the re-read route. A 404 marks the route gone, then throws on. */
+export async function postReread(
+  pipelineId: string,
+  body: PipelineRunBody,
+  send: Send,
+): Promise<PipelineRunAnswer> {
+  try {
+    return (await send(rereadPath(pipelineId), 'POST', rereadBody(body))) as PipelineRunAnswer;
+  } catch (err) {
+    if ((err as { status?: unknown } | null)?.status === 404) markRereadRouteGone();
+    throw err;
+  }
+}
+
+/** Why the re-read refuses a choice, in plain words. */
+export function rereadRefusedText(word: string): string {
+  return word === 'pdf'
+    ? 'A PDF drawing is not read again this way: its database holds rows an AI read paid for, and a read with no model would lose them.'
+    : refusedText(word);
 }
