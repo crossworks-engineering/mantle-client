@@ -453,3 +453,90 @@ test('M8: the description, the runs, the files by version, and the re-read of th
   await expect(sheet).toContainText('No run yet.');
   await expect(sheet.getByRole('button', { name: /older files? again/ })).toHaveCount(0);
 });
+
+/** A router brain: LIST3 with the router row and the PDF reader's claims, as
+ *  the server gives them (mantle feat/router-2r; made-up counts). */
+const LIST4 = {
+  ...LIST3,
+  pipelines: [
+    ...LIST3.pipelines.map((p) =>
+      p.id === 'drawing-pdf' ? { ...p, claims: ['pid', 'scan'] } : { ...p, claims: [] },
+    ),
+    {
+      id: 'pdf-router',
+      name: 'PDF router',
+      description: 'Names the kind of a PDF.',
+      version: '1.0.0',
+      source: 'builtin',
+      start: 'upload',
+      kind: 'router',
+      reads: ['pdf'],
+      names: [
+        { kind: 'pid', decider: false },
+        { kind: 'table', decider: true },
+      ],
+      claims: [],
+      weight: 'light',
+      shapes: [],
+      workers: ['decider'],
+      tools: [],
+      workspaces: 'all',
+      after: null,
+      tabs: [],
+      options: [],
+      files: null,
+      older: null,
+      versions: [],
+      runs: 12,
+      lastRunAt: '2026-11-02T09:30:00.000Z',
+    },
+  ],
+};
+
+test('a router: its row and its detail are read only; a reader shows the kinds it claims', async ({
+  page,
+}) => {
+  const seen = await routePipelines(page, LIST4);
+  await page.route(
+    (u) => u.pathname === '/api/workspaces',
+    (route) => route.fulfill({ json: { workspaces: WS } }),
+  );
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines');
+  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
+  const row = table.getByRole('row').filter({ hasText: 'PDF router' });
+  await expect(row).toContainText('Names the kind of a PDF.');
+  await expect(row).toContainText('.pdf');
+  await expect(row.getByText('Router', { exact: true })).toBeVisible();
+  await expect(row.getByText('Every workspace')).toHaveCount(0);
+  await expect(row.getByRole('cell', { name: '-', exact: true })).toHaveCount(0);
+  await row.getByRole('button', { name: 'PDF router' }).click();
+
+  const overview = page.getByRole('region', { name: 'PDF router' });
+  await expect(overview).toContainText('Router');
+  await expect(overview).toContainText('Runs: 12. Last run: ');
+  await expect(overview).toContainText('May ask');
+  await expect(overview).toContainText('decider');
+  const names = overview.getByRole('list', { name: 'Kinds it can name' });
+  await expect(names.getByRole('listitem')).toHaveText([
+    'pid',
+    "table (only by the decider's answer)",
+  ]);
+  await expect(overview.getByRole('button')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Options and workspaces' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Test' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save pipeline' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Run test' })).toHaveCount(0);
+
+  // The PDF reader names the kinds it claims, in one line.
+  await table.getByRole('button', { name: 'PDF drawing' }).click();
+  await expect(page.getByRole('region', { name: 'PDF drawing' })).toContainText(
+    'Reads a file only when the router names one of these kinds: pid, scan.',
+  );
+  // A reader with no claims says nothing of the router.
+  await table.getByRole('button', { name: 'Spreadsheet' }).click();
+  await expect(page.getByRole('region', { name: 'Spreadsheet' })).not.toContainText(
+    'the router names',
+  );
+  expect(seen.every((m) => m === 'GET')).toBe(true);
+});
