@@ -25,6 +25,7 @@ import {
   hasState,
   olderText,
   readsText,
+  statsOf,
   type PipelineList,
   type PipelineRow,
 } from '@/lib/pipelines';
@@ -121,6 +122,7 @@ export function PipelinesList({
           {list.pipelines.map((p) => {
             const older = olderText(p.older);
             const row = byId.get(p.id);
+            const description = statsOf(p)?.description;
             const isOpen = openId === p.id;
             return (
               <TableRow key={p.id} data-state={isOpen ? 'selected' : undefined}>
@@ -135,6 +137,14 @@ export function PipelinesList({
                     </RowButton>
                   ) : (
                     <div className="font-medium">{p.name}</div>
+                  )}
+                  {description && (
+                    <div
+                      className="max-w-md truncate text-xs text-muted-foreground"
+                      title={description}
+                    >
+                      {description}
+                    </div>
                   )}
                   {older && <div className="text-xs text-warning-ink">{older}</div>}
                 </TableCell>

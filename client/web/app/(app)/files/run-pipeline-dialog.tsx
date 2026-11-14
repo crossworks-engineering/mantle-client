@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Run a pipeline on a file or a folder (lib/pipeline-run.ts). One dialog: it
+ * Run a pipeline on a file or a folder (lib/pipeline-run.ts), or read a
+ * pipeline's older files again (Settings > Pipelines). One dialog: it
  * opens with the dry run, shows the choices of the answer with their counts,
  * and runs the one the person picks. The receipt says queued, not done.
  */
@@ -34,9 +35,12 @@ import {
   postRun,
   refusedText,
   resultLine,
+  rereadRouteGone,
   runRouteGone,
   skipLines,
+  subscribeRereadRouteGone,
   subscribeRunRouteGone,
+  type PipelineRunAnswer,
   type PipelineRunBody,
   type RunStep,
   type RunTarget,
@@ -47,6 +51,13 @@ export function useRunRouteGone(): boolean {
   return useSyncExternalStore(subscribeRunRouteGone, runRouteGone, () => false);
 }
 
+/** Whether the re-read route is gone for this session (a 404). The flag is
+ *  the module's on both sides, so a render test can read it too. */
+export function useRereadRouteGone(): boolean {
+  return useSyncExternalStore(subscribeRereadRouteGone, rereadRouteGone, rereadRouteGone);
+}
+
+/** Run a pipeline on a file or a folder of Files. */
 export function RunPipelineDialog({
   target,
   onOpenChange,
@@ -54,17 +65,59 @@ export function RunPipelineDialog({
   target: RunTarget | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  return (
+    <RunDialog
+      openKey={target}
+      title="Run a pipeline"
+      description={
+        target
+          ? `On ${target.kind === 'file' ? 'the file' : 'the files in the folder'} ${target.name}${
+              target.kind === 'folder' ? ' and below' : ''
+            }.`
+          : ''
+      }
+      post={(body) => postRun(target!, body, apiSend)}
+      onOpenChange={onOpenChange}
+    />
+  );
+}
+
+/**
+ * The one Run dialog, fed by one route (`post`): the run of Files, or the
+ * re-read of Settings > Pipelines. Each open (a new `openKey`) asks first
+ * with the dry run; Run and "Run the next" send only the bodies of
+ * applyBody and nextBody. A 404 closes it (the caller's `post` marks the
+ * route gone). `onRan` is told after each run.
+ */
+export function RunDialog({
+  openKey,
+  title,
+  description,
+  post,
+  onOpenChange,
+  onRan,
+  refused,
+}: {
+  openKey: unknown;
+  title: string;
+  description: string;
+  post: (body: PipelineRunBody) => Promise<PipelineRunAnswer>;
+  onOpenChange: (open: boolean) => void;
+  onRan?: () => void;
+  refused?: (word: string) => string;
+}) {
+  const open = openKey !== null && openKey !== undefined;
   const [step, setStep] = useState<RunStep>({ step: 'asking' });
   const [pick, setPick] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   // Every open asks first: the dry run.
   useEffect(() => {
-    if (!target) return;
+    if (!open) return;
     let cancelled = false;
     setStep({ step: 'asking' });
     setPick(null);
-    postRun(target, DRY_RUN_BODY, apiSend)
+    post(DRY_RUN_BODY)
       .then((dry) => {
         if (cancelled) return;
         setStep({ step: 'shown', dry });
@@ -78,19 +131,20 @@ export function RunPipelineDialog({
     return () => {
       cancelled = true;
     };
-    // Once per open target: the screens pass a fresh onOpenChange each render.
+    // Once per open key: the screens pass a fresh post and onOpenChange each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target]);
+  }, [openKey]);
 
-  if (!target) return null;
+  if (!open) return null;
 
   const send = async (body: PipelineRunBody | null, pipeline: string) => {
     if (!body || pending || (step.step !== 'shown' && step.step !== 'done')) return;
     const dry = step.dry;
     setPending(true);
     try {
-      const result = await postRun(target, body, apiSend);
+      const result = await post(body);
       setStep({ step: 'done', dry, pipeline, result });
+      onRan?.();
     } catch (err) {
       setStep({ step: 'error', message: err instanceof ApiError ? err.message : String(err) });
     } finally {
@@ -99,14 +153,11 @@ export function RunPipelineDialog({
   };
 
   return (
-    <Dialog open={!!target} onOpenChange={(open) => !open && onOpenChange(false)}>
+    <Dialog open={open} onOpenChange={(o) => !o && onOpenChange(false)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Run a pipeline</DialogTitle>
-          <DialogDescription>
-            On {target.kind === 'file' ? 'the file' : 'the files in the folder'} {target.name}
-            {target.kind === 'folder' ? ' and below' : ''}.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <RunPipelineView
           step={step}
@@ -116,6 +167,7 @@ export function RunPipelineDialog({
           onRun={() => pick && void send(applyBody(step, pick), pick)}
           onNext={() => step.step === 'done' && void send(nextBody(step), step.pipeline)}
           onClose={() => onOpenChange(false)}
+          refused={refused}
         />
       </DialogContent>
     </Dialog>
@@ -131,6 +183,7 @@ export function RunPipelineView({
   onRun,
   onNext,
   onClose,
+  refused = refusedText,
 }: {
   step: RunStep;
   pick: string | null;
@@ -139,6 +192,8 @@ export function RunPipelineView({
   onRun: () => void;
   onNext: () => void;
   onClose: () => void;
+  /** A refusal word in plain words: the run's, or the re-read's. */
+  refused?: (word: string) => string;
 }) {
   if (step.step === 'asking') {
     return (
@@ -217,9 +272,7 @@ export function RunPipelineView({
                 <span className="font-medium">{c.name}</span>
                 <span className="text-muted-foreground">: {filesText(c.files)}</span>
                 {c.refused !== null && (
-                  <span className="block text-xs text-muted-foreground">
-                    {refusedText(c.refused)}
-                  </span>
+                  <span className="block text-xs text-muted-foreground">{refused(c.refused)}</span>
                 )}
               </Label>
             </div>

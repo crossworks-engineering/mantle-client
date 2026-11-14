@@ -16,7 +16,12 @@ import {
   applyBody,
   firstPick,
   nextBody,
+  postReread,
   postRun,
+  rereadBody,
+  rereadRefusedText,
+  rereadRouteGone,
+  resetRereadRouteGone,
   resetRunRouteGone,
   resultLine,
   runPath,
@@ -58,7 +63,7 @@ const text = (html: string) =>
     .replace(/<[^>]+>/g, ' ')
     .replace(/&#x27;/g, "'")
     .replace(/\s+/g, ' ');
-const view = (step: RunStep, pick: string | null = null) =>
+const view = (step: RunStep, pick: string | null = null, refused?: (word: string) => string) =>
   renderToStaticMarkup(
     createElement(RunPipelineView, {
       step,
@@ -68,10 +73,14 @@ const view = (step: RunStep, pick: string | null = null) =>
       onRun: noop,
       onNext: noop,
       onClose: noop,
+      refused,
     }),
   );
 
-afterEach(() => resetRunRouteGone());
+afterEach(() => {
+  resetRunRouteGone();
+  resetRereadRouteGone();
+});
 
 describe('the Run dialog', () => {
   it('renders a fixed dry run: each choice of the answer with its count', () => {
@@ -182,5 +191,84 @@ describe('the Run dialog', () => {
     expect(runRouteGone()).toBe(false);
     // The entry follows the item's own edit right and nothing else.
     expect(showRunEntry(false, false)).toBe(false);
+  });
+});
+
+/** A fixed dry run of POST /api/pipelines/:id/reread: one choice, the older
+ *  files of this page (made up). */
+const REREAD: PipelineRunAnswer = {
+  apply: false,
+  busy: false,
+  choices: [{ pipeline: 'drawing-cad', name: 'CAD drawing', files: 43, refused: null }],
+  queued: 0,
+  skipped: {},
+  next: null,
+};
+
+describe('the re-read of the older files, in the same dialog', () => {
+  it('renders the dry run with its count, the one choice preselected', () => {
+    const pick = firstPick(REREAD);
+    expect(pick).toBe('drawing-cad');
+    const html = view({ step: 'shown', dry: REREAD }, pick, rereadRefusedText);
+    const t = text(html);
+    expect(t).toContain('CAD drawing');
+    expect(t).toContain(': 43 files');
+    expect(html).toMatch(/role="radio"[^>]*aria-checked="true"/);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Run pipeline/);
+  });
+
+  it('asks first, then Run sends apply to the re-read route, with no pipeline in the body', async () => {
+    const sent: { path: string; body: unknown }[] = [];
+    const send = async (path: string, _m: 'POST', body: object) => {
+      sent.push({ path, body });
+      return REREAD;
+    };
+    await postReread('drawing-cad', DRY_RUN_BODY, send);
+    const shown: RunStep = { step: 'shown', dry: REREAD };
+    expect(applyBody({ step: 'asking' }, 'drawing-cad')).toBeNull();
+    await postReread('drawing-cad', applyBody(shown, 'drawing-cad')!, send);
+    const done: RunStep = {
+      step: 'done',
+      dry: REREAD,
+      pipeline: 'drawing-cad',
+      result: { ...REREAD, apply: true, queued: 43, next: 'n-100' },
+    };
+    await postReread('drawing-cad', nextBody(done)!, send);
+    expect(sent).toEqual([
+      { path: '/api/pipelines/drawing-cad/reread', body: {} },
+      { path: '/api/pipelines/drawing-cad/reread', body: { apply: true } },
+      { path: '/api/pipelines/drawing-cad/reread', body: { apply: true, after: 'n-100' } },
+    ]);
+    expect(text(view(done))).toContain(RUN_NEXT_LABEL);
+    expect(rereadBody({ pipeline: 'x', limit: 5 })).toEqual({ limit: 5 });
+  });
+
+  it('a refused PDF drawing shows no Run button and says why in plain words', () => {
+    const pdf: PipelineRunAnswer = {
+      ...REREAD,
+      choices: [{ pipeline: 'drawing-pdf', name: 'PDF drawing', files: 8, refused: 'pdf' }],
+    };
+    expect(firstPick(pdf)).toBeNull();
+    const t = text(view({ step: 'shown', dry: pdf }, null, rereadRefusedText));
+    expect(t).toContain(
+      'A PDF drawing is not read again this way: its database holds rows an AI read paid for',
+    );
+    expect(t).not.toContain('Run pipeline');
+    expect(applyBody({ step: 'shown', dry: pdf }, 'drawing-pdf')).toBeNull();
+  });
+
+  it('a busy dry run shows the busy line and no Run button', () => {
+    const t = text(view({ step: 'shown', dry: { ...REREAD, busy: true } }, 'drawing-cad'));
+    expect(t).toContain(RUN_BUSY);
+    expect(t).not.toContain('Run pipeline');
+  });
+
+  it('a 404 marks the re-read route gone for the session, and not the run route', async () => {
+    const gone = async () => {
+      throw Object.assign(new Error('Not found'), { status: 404 });
+    };
+    await expect(postReread('drawing-cad', DRY_RUN_BODY, gone)).rejects.toThrow();
+    expect(rereadRouteGone()).toBe(true);
+    expect(runRouteGone()).toBe(false);
   });
 });

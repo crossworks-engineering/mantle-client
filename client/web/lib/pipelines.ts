@@ -68,6 +68,31 @@ export type PipelineRow = PipelineRowV1 & {
 export type PipelineOption = { name: string; spec: PipelineOptionSpec; value: unknown };
 
 /**
+ * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineVersionCount`
+ * (mantle branch feat/pipelines-2-m8). `version` null: read before versions
+ * were recorded. Delete when the contract pin moves past the release that
+ * ships it.
+ */
+export type PipelineVersionCount = { version: string | null; files: number };
+
+/**
+ * LOCAL COPY of the fields M8 adds to @mantle/client-types dto/pipelines.ts
+ * `PipelineRow` (mantle branch feat/pipelines-2-m8). A server before M8
+ * sends none of them: read them through `statsOf`. Delete when the contract
+ * pin moves past the release that ships them.
+ */
+export type PipelineStats = {
+  /** What it reads and what it writes, in one or two plain sentences. */
+  description: string;
+  /** `files` by the version in their stamp, highest first; null last. */
+  versions: PipelineVersionCount[];
+  /** Its writes into a file's database on this box; null when not read. */
+  runs: number | null;
+  /** When it last wrote, as an ISO time; null before its first run. */
+  lastRunAt: string | null;
+};
+
+/**
  * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineList`. Its
  * rows are phase 1 rows until `hasState` says they carry `kind`.
  */
@@ -131,6 +156,45 @@ export const NOTHING_WRITTEN = 'Nothing was written.';
 
 /** A test the parser had no slot for. It is no failure. */
 export const TEST_BUSY = 'The reader is busy. Try again.';
+
+/** The M8 fields of a row, or null for a server before M8 (a row with no
+ *  `versions`): that one shows none of them. */
+export function statsOf(row: PipelineRowV1): PipelineStats | null {
+  const r = row as PipelineRowV1 & Partial<PipelineStats>;
+  if (!Array.isArray(r.versions)) return null;
+  return {
+    description: typeof r.description === 'string' ? r.description : '',
+    versions: r.versions,
+    runs: r.runs ?? null,
+    lastRunAt: r.lastRunAt ?? null,
+  };
+}
+
+/** One line for each version count. "current" is the row's own `version`;
+ *  every other line is "older". The client holds no version rule. */
+export function versionLines(version: string, versions: readonly PipelineVersionCount[]): string[] {
+  return versions.map((v) => {
+    const files = v.files === 1 ? '1 file' : `${countText(v.files)} files`;
+    if (v.version === null) return `${files} read before versions were recorded`;
+    return `${files} read with ${v.version} (${v.version === version ? 'current' : 'older'})`;
+  });
+}
+
+/** What the screen says of a pipeline that never ran. */
+export const NO_RUN_YET = 'No run yet.';
+
+/** True when the pipeline never ran: no count above 0 and no last run. */
+export function neverRan(stats: Pick<PipelineStats, 'runs' | 'lastRunAt'>): boolean {
+  return !stats.runs && stats.lastRunAt === null;
+}
+
+/** The label of the re-read button, or null when there is nothing older. */
+export function rereadLabel(older: number | null): string | null {
+  if (older === null || older <= 0) return null;
+  return older === 1
+    ? 'Read the 1 older file again'
+    : `Read the ${countText(older)} older files again`;
+}
 
 /** The rows of a phase 2 brain, or null for a phase 1 brain (a row with no
  *  `kind`): that one gets the read-only list. */
@@ -207,9 +271,15 @@ export function setBody(
 }
 
 /** The row a Save answers, with the list's counts kept: the PATCH answer
- *  has `files` and `older` null. */
+ *  has `files` and `older` null, and (M8) no versions and no runs. */
 export function keepCounts(saved: PipelineRow, was: PipelineRowV1): PipelineRow {
-  return { ...saved, files: was.files, older: was.older };
+  const stats = statsOf(was);
+  return {
+    ...saved,
+    files: was.files,
+    older: was.older,
+    ...(stats ? { versions: stats.versions, runs: stats.runs, lastRunAt: stats.lastRunAt } : {}),
+  };
 }
 
 /** A word of a `words` option as the form keeps it: upper case, as the
