@@ -12,6 +12,17 @@ changelog, not this file.
 Entries begin at v0.7.0. Earlier history lives in git and in the mantle
 repo's `CHANGELOG.md`.
 
+## v0.9.26: Pipelines screen, Run a pipeline, file database viewer, collapse all folders
+
+- **Added:** Settings has a Pipelines screen for an Admin: the pipelines that make or extend a file's database, each with its description, its version, the file types it reads, its file counts and how many times it ran. On a box that does not list its pipelines yet, the screen says so.
+- **Added:** the detail of a pipeline: its options (for the PDF drawing reader, the title block box), the workspaces it is attached to, and a Test panel that runs it on one file and shows the first rows. A test writes nothing.
+- **Added:** the detail lists the versions the files were read at. When files were read at an older version or with older options, the button "Read the N older files again" reads them again, with a dry run first. No model is asked.
+- **Added:** Files has "Run a pipeline" on a file and on a folder: a dry run shows which pipelines can run and on how many files, then the run is queued.
+- **Changed:** the Data view of a file fills the content area: every column shows, with a side scroll; the grid is the Tables grid, read only, with pages and a sort on all rows; the query box is a SQL editor with highlighting and a list of the tabs and columns.
+- **Changed:** Files shows the Data view where the brain says a file has one, so a PDF drawing has its Data view. The view names the pipeline that read the file ("Read by ...").
+- **Added:** every item tree has a "Collapse all folders" button.
+- **Fixed:** Fleet models: a model id that starts with `~` or `@` can be copied to another box.
+
 ## v0.9.25: Fleet status, sign-in for this box, add a person
 
 - **Added:** Fleet status on a Control Center: the Status screen of each linked box and of this box. Boxes on the left, the status sections next to them, the cards of the chosen section on the right. The box and the section are in the address.
