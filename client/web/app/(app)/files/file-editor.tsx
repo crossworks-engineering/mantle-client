@@ -13,6 +13,7 @@ import {
   History,
   Loader2,
   PencilLine,
+  Play,
   Save,
   SplitSquareHorizontal,
   X,
@@ -32,6 +33,8 @@ import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { play } from '@/lib/sounds/play';
 import { FileDataView } from './file-data';
 import { hasDataView, readDbView, withDbView } from './file-data-model';
+import { RunPipelineDialog, useRunRouteGone } from './run-pipeline-dialog';
+import { showRunEntry, type RunTarget } from '@/lib/pipeline-run';
 
 type FileRow = {
   id: string;
@@ -81,6 +84,10 @@ export function FileEditor({
   const [mode, setMode] = useState<Mode>('split');
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
+  // Run a pipeline on this file (run-pipeline-dialog.tsx); hidden for the
+  // session once the brain answers its route 404.
+  const [runTarget, setRunTarget] = useState<RunTarget | null>(null);
+  const runGone = useRunRouteGone();
   // The file's read-only database instead of its preview (file-data.tsx).
   // The URL alone says so (view=data or view=query, and dbtab), so a link,
   // a Data files row or a reload opens it; back to the file clears it.
@@ -325,6 +332,16 @@ export function FileEditor({
                 },
               ]
             : []),
+          ...(showRunEntry(canEdit, runGone)
+            ? [
+                {
+                  key: 'run',
+                  label: 'Run a pipeline on this file',
+                  icon: <Play />,
+                  onSelect: () => setRunTarget({ kind: 'file', id: file.id, name: file.filename }),
+                },
+              ]
+            : []),
           ...(isAdminUser
             ? [
                 {
@@ -376,6 +393,7 @@ export function FileEditor({
         }}
         infoLabel="About this file"
       />
+      <RunPipelineDialog target={runTarget} onOpenChange={(o) => !o && setRunTarget(null)} />
 
       {/* Body */}
       {dataView && showData ? (
