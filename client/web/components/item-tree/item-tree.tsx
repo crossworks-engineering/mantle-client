@@ -276,6 +276,7 @@ export function ItemTree({
   onOpenItem,
   onOpenFolder,
   itemActions,
+  folderActions,
   onChanged,
   onUnsupported,
   newItemInFolder,
@@ -306,6 +307,9 @@ export function ItemTree({
   onOpenFolder?: (folder: TreeFolder | null) => void;
   /** Extra entries at the foot of an item's menu (Rename, Delete). */
   itemActions?: (item: TreeItem, where: ItemWhere) => ReactNode;
+  /** Extra entries in a folder's menu, above Move (a screen's own act on
+   *  the folder: Run in Files). */
+  folderActions?: (folder: TreeFolder) => ReactNode;
   /** After any write the tree made. */
   onChanged?: () => void;
   /** A tree call answered 404: the brain does not serve this kind. */
@@ -862,6 +866,7 @@ export function ItemTree({
                 Access…
               </DropdownMenuItem>
             )}
+            {folderActions?.(folder)}
             <DropdownMenuSeparator />
             {folderManaged(folder) && (
               <DropdownMenuItem onSelect={() => setMoveTarget({ type: 'folder', folder })}>

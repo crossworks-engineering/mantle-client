@@ -32,6 +32,7 @@ import {
   LayoutGrid,
   List,
   Pencil,
+  Play,
   Plus,
   Search,
   Trash2,
@@ -47,6 +48,8 @@ import { useFileSearch } from './use-file-search';
 import { useWorkspaceJump, WorkspaceHitTag } from '@/components/workspaces/workspace-hit-tag';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { CreateFileDialog, CreateFolderDialog, RenameDialog } from './files-dialogs';
+import { RunPipelineDialog, useRunRouteGone } from './run-pipeline-dialog';
+import { showRunEntry } from '@/lib/pipeline-run';
 import {
   droppedTree,
   folderUploadNotice,
@@ -278,6 +281,8 @@ function FilesView({
   // ride along with the kind that needs them.
   const [dialog, setDialog] = useState<FilesDialog>(null);
   const closeDialog = (kind: FilesDialogKind) => setDialog((d) => dismissDialog(d, kind));
+  // The Run entry of the tree's menus hides for the session after a 404.
+  const runGone = useRunRouteGone();
   // Narrowed once here rather than at each of its six reads below.
   const cascade = dialog?.kind === 'cascade' ? dialog : null;
 
@@ -615,6 +620,19 @@ function FilesView({
                 }}
                 itemActions={(item) => (
                   <>
+                    {showRunEntry(itemAccess(item).edit, runGone) ? (
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          setDialog({
+                            kind: 'run',
+                            target: { kind: 'file', id: item.id, name: item.title },
+                          })
+                        }
+                      >
+                        <Play />
+                        Run a pipeline…
+                      </DropdownMenuItem>
+                    ) : null}
                     {itemAccess(item).edit ? (
                       <DropdownMenuItem
                         onSelect={() =>
@@ -644,6 +662,21 @@ function FilesView({
                     ) : null}
                   </>
                 )}
+                folderActions={(f) =>
+                  showRunEntry(itemAccess(f).edit, runGone) ? (
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        setDialog({
+                          kind: 'run',
+                          target: { kind: 'folder', id: f.id, name: f.name },
+                        })
+                      }
+                    >
+                      <Play />
+                      Run a pipeline…
+                    </DropdownMenuItem>
+                  ) : null
+                }
                 onChanged={refresh}
                 onUnsupported={() => setTreeGone(true)}
               />
@@ -1488,6 +1521,12 @@ function FilesView({
           refresh();
           openFile(id);
         }}
+      />
+
+      {/* ── Run a pipeline on a tree file or folder ───────────────── */}
+      <RunPipelineDialog
+        target={dialog?.kind === 'run' ? dialog.target : null}
+        onOpenChange={(open) => !open && closeDialog('run')}
       />
 
       {/* ── Rename file / folder dialog ───────────────────────────── */}

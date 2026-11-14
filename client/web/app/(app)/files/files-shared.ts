@@ -8,6 +8,7 @@
 import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 import type { HitWorkspaceField } from '@mantle/client-types';
 import { isItemWorkspaceRefusal } from '@/lib/item-access';
+import type { RunTarget } from '@/lib/pipeline-run';
 
 export const FILES_ROOT = 'files';
 
@@ -401,6 +402,8 @@ export type FilesDialog =
   | { kind: 'bulkDelete'; ids?: string[] }
   | { kind: 'cascade'; ids: string[]; counts: DerivedCounts }
   | { kind: 'rename'; target: RenameTarget }
+  /** Run a pipeline on a tree file or folder (run-pipeline-dialog.tsx). */
+  | { kind: 'run'; target: RunTarget }
   | null;
 
 export type FilesDialogKind = NonNullable<FilesDialog>['kind'];
