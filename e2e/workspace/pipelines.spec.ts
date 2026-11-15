@@ -117,7 +117,8 @@ test('a box before pipelines (404) gets one calm line, not an error', async ({ p
 });
 
 /** A phase 2 brain's answer: the same rows with their state (made-up
- *  options), and one `after` pipeline attached to no workspace. */
+ *  options), on in every workspace, and one `after` pipeline that is off in
+ *  South site (WS[1] below). */
 const LIST2 = {
   ...LIST,
   pipelines: [
@@ -125,6 +126,7 @@ const LIST2 = {
       ...p,
       kind: 'reader',
       workspaces: 'all',
+      offIn: [] as string[],
       after: null,
       tabs: [],
       options:
@@ -155,7 +157,8 @@ const LIST2 = {
       shapes: [],
       workers: [],
       tools: [],
-      workspaces: [],
+      workspaces: 'all',
+      offIn: ['00000001-0000-4000-8000-000000000000'],
       after: 'texts-v1',
       tabs: ['Site tags'],
       options: [
@@ -232,7 +235,9 @@ async function routePhase2(page: Page): Promise<Sent[]> {
           ...row,
           files: null,
           older: null,
-          workspaces: body.workspaces ?? row.workspaces,
+          // The server refuses `workspaces` since the off list: the
+          // screen never sends it (the tests check the bodies).
+          offIn: body.offIn ?? row.offIn,
           options: row.options.map((o) =>
             o.name in opts
               ? {
@@ -280,7 +285,7 @@ async function routePhase2(page: Page): Promise<Sent[]> {
   return sent;
 }
 
-test('phase 2: a reader shows no ticks, and Save sends the changed option only', async ({
+test('phase 2: a reader is on in every workspace, Save sends the changed option only, then its off list', async ({
   page,
 }) => {
   const sent = await routePhase2(page);
@@ -291,8 +296,12 @@ test('phase 2: a reader shows no ticks, and Save sends the changed option only',
   await table.getByRole('button', { name: 'PDF drawing' }).click();
 
   const settings = page.getByRole('region', { name: 'Options and workspaces' });
-  await expect(settings.getByText('Used in every workspace.')).toBeVisible();
-  await expect(settings.getByRole('checkbox')).toHaveCount(0);
+  await expect(settings.getByText('On in every workspace')).toBeVisible();
+  const switches = settings.getByRole('switch', { name: /^Toggle / });
+  await expect(switches).toHaveCount(2);
+  for (const ws of WS) {
+    await expect(settings.getByRole('switch', { name: `Toggle ${ws.name}` })).toBeChecked();
+  }
   const save = settings.getByRole('button', { name: 'Save pipeline' });
   await expect(save).toBeDisabled();
 
@@ -307,9 +316,17 @@ test('phase 2: a reader shows no ticks, and Save sends the changed option only',
   await expect(save).toBeDisabled();
   // The counts stay those of the list: the PATCH answer has none.
   await expect(table.getByRole('row').filter({ hasText: 'Spreadsheet' })).toContainText('1');
+
+  // A reader too can be switched off in a workspace.
+  await settings.getByRole('switch', { name: 'Toggle North site' }).click();
+  await expect(settings.getByText('Off in 1 workspace')).toBeVisible();
+  await save.click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]!.body).toEqual({ offIn: [WS[0]!.id] });
+  await expect(table.getByRole('row').filter({ hasText: 'PDF drawing' })).toContainText('Off in 1');
 });
 
-test('phase 2: an after pipeline with no tick does nothing; ticks and words are saved', async ({
+test('phase 2: an after pipeline shows its off count; switches and words are saved as offIn', async ({
   page,
 }) => {
   const sent = await routePhase2(page);
@@ -317,14 +334,20 @@ test('phase 2: an after pipeline with no tick does nothing; ticks and words are 
   await page.goto('/settings/pipelines');
   const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
   const row = table.getByRole('row').filter({ hasText: 'Site tags' });
-  await expect(row).toContainText('No workspace');
+  await expect(row).toContainText('Off in 1');
   await expect(row).toContainText('2 files were read by an older version or with other options');
   await row.getByRole('button', { name: 'Site tags' }).click();
 
   const settings = page.getByRole('region', { name: 'Options and workspaces' });
-  await expect(settings.getByText('Attached to no workspace. It does nothing.')).toBeVisible();
-  await settings.getByRole('checkbox', { name: 'North site' }).click();
-  await expect(settings.getByText('Attached to no workspace. It does nothing.')).toHaveCount(0);
+  await expect(settings.getByText('Off in 1 workspace')).toBeVisible();
+  const north = settings.getByRole('switch', { name: 'Toggle North site' });
+  const south = settings.getByRole('switch', { name: 'Toggle South site' });
+  await expect(north).toBeChecked();
+  await expect(south).not.toBeChecked();
+  await south.click();
+  await expect(settings.getByText('On in every workspace')).toBeVisible();
+  await north.click();
+  await expect(settings.getByText('Off in 1 workspace')).toBeVisible();
   const words = settings.getByRole('textbox', { name: 'Tag prefixes' });
   await words.fill('fv');
   await words.press('Enter');
@@ -332,11 +355,13 @@ test('phase 2: an after pipeline with no tick does nothing; ticks and words are 
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0]!.body).toEqual({
     options: { prefixes: ['PT', 'FV'] },
-    workspaces: [WS[0]!.id],
+    offIn: [WS[0]!.id],
   });
   // What the brain kept: sorted, upper case.
   await expect(settings.getByRole('button', { name: 'Remove FV' })).toBeVisible();
-  await expect(row).toContainText('1 workspace');
+  await expect(row).toContainText('Off in 1');
+  await expect(north).not.toBeChecked();
+  await expect(south).toBeChecked();
 
   // The test sends the form's options, saved or not, and writes nothing.
   await words.fill('lt');
@@ -481,6 +506,7 @@ const LIST4 = {
       workers: ['decider'],
       tools: [],
       workspaces: 'all',
+      offIn: [],
       after: null,
       tabs: [],
       options: [],
@@ -509,6 +535,7 @@ test('a router: its row and its detail are read only; a reader shows the kinds i
   await expect(row).toContainText('.pdf');
   await expect(row.getByText('Router', { exact: true })).toBeVisible();
   await expect(row.getByText('Every workspace')).toHaveCount(0);
+  await expect(row.getByText(/Off in/)).toHaveCount(0);
   await expect(row.getByRole('cell', { name: '-', exact: true })).toHaveCount(0);
   await row.getByRole('button', { name: 'PDF router' }).click();
 
@@ -523,6 +550,8 @@ test('a router: its row and its detail are read only; a reader shows the kinds i
     "table (only by the decider's answer)",
   ]);
   await expect(overview.getByRole('button')).toHaveCount(0);
+  await expect(overview).toContainText('A router is used wherever its readers are.');
+  await expect(overview.getByRole('switch')).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Options and workspaces' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Test' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save pipeline' })).toHaveCount(0);
