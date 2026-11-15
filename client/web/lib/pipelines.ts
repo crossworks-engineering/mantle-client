@@ -11,6 +11,8 @@
  * know (`canChange`). Pure helpers only: no DOM here.
  */
 
+import { matchesQuery } from './tool-search';
+
 /**
  * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineOptionSpec`
  * (mantle branch feat/pipelines-2). Delete when the contract pin moves past
@@ -405,6 +407,28 @@ export function testStatusText(r: PipelineTestResult): string {
 export function takesFile(row: PipelineRowV1, name: string): boolean {
   const dot = name.lastIndexOf('.');
   return dot > 0 && row.reads.includes(name.slice(dot + 1).toLowerCase());
+}
+
+/**
+ * The search of the list: the name, the id, the role word ("reader" finds
+ * the readers, "transformer" the `after` ones), the extensions and the
+ * description, case-insensitive; every word must hit. A phase 1 row has no
+ * role. The list arrives whole, so this filters the loaded rows.
+ */
+export function filterPipelines<T extends PipelineRowV1>(rows: readonly T[], query: string): T[] {
+  if (!query.trim()) return [...rows];
+  return rows.filter((r) =>
+    matchesQuery(
+      [
+        r.name,
+        r.id,
+        'kind' in r ? roleWord((r as { kind?: string }).kind) : null,
+        readsText(r.reads),
+        statsOf(r)?.description,
+      ],
+      query,
+    ),
+  );
 }
 
 /** A cell of a test's first rows, as text. */

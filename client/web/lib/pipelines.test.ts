@@ -5,6 +5,7 @@ import {
   changedOptions,
   claimsText,
   countText,
+  filterPipelines,
   hasState,
   keepCounts,
   kindText,
@@ -263,5 +264,49 @@ describe('Settings > Pipelines, the router and the kinds', () => {
     const { names: _n, claims: _c, ...old } = ROUTER;
     expect(nameLines(old)).toEqual([]);
     expect(claimsText(ROW)).toBeNull();
+  });
+});
+
+describe('filterPipelines: the search of the list', () => {
+  const rows: PipelineRow[] = [
+    { ...ROW, description: 'Reads a PDF drawing into its texts.', versions: [] } as PipelineRow,
+    { ...AFTER, name: 'Site tags', reads: ['dwg'] },
+    ROUTER,
+  ];
+  const ids = (q: string) => filterPipelines(rows, q).map((r) => r.id);
+
+  it('an empty search keeps every row, in the order given', () => {
+    expect(ids('')).toEqual(['drawing-pdf', 'site-tags', ROUTER.id]);
+    expect(ids('   ')).toEqual(['drawing-pdf', 'site-tags', ROUTER.id]);
+  });
+
+  it('matches the name and the id, any case', () => {
+    expect(ids('site TAGS')).toEqual(['site-tags']);
+    expect(ids('drawing-pdf')).toEqual(['drawing-pdf']);
+  });
+
+  it('matches the role word a person reads, not only the data word', () => {
+    expect(ids('reader')).toEqual(['drawing-pdf']);
+    expect(ids('Transformer')).toEqual(['site-tags']);
+    expect(ids('router')).toContain(ROUTER.id);
+    expect(ids('router')).not.toContain('site-tags');
+  });
+
+  it('matches an extension, with or without its dot, and the description', () => {
+    expect(ids('.dwg')).toEqual(['site-tags']);
+    expect(ids('dwg')).toEqual(['site-tags']);
+    expect(ids('into its texts')).toEqual(['drawing-pdf']);
+  });
+
+  it('every word must hit; a miss is empty', () => {
+    expect(ids('reader pdf')).toEqual(['drawing-pdf']);
+    expect(ids('reader dwg')).toEqual([]);
+    expect(ids('nothing like this')).toEqual([]);
+  });
+
+  it('a phase 1 row (no kind) has no role to match', () => {
+    const { kind: _k, ...v1 } = ROW;
+    expect(filterPipelines([v1], 'reader')).toEqual([]);
+    expect(filterPipelines([v1], 'pdf')).toHaveLength(1);
   });
 });

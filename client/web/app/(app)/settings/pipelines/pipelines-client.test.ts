@@ -1,16 +1,18 @@
 /**
- * Settings > Pipelines renders the brain's list from one answer. A phase 1
- * brain (rows with no `kind`): every pipeline with its version, what it
- * reads, On, and its counts, read only. A phase 2 brain: a row opens its
- * detail, whose form is made from each option's spec; a reader and an
- * `after` pipeline show every workspace with a switch, on unless the off
- * list holds it; a test result shows its tabs and that nothing was written.
+ * Settings > Pipelines renders the brain's list from one answer, as cards
+ * with the open one's detail beside them. A phase 1 brain (rows with no
+ * `kind`): every pipeline with its version, what it reads and its counts,
+ * and a plain read-only detail. A phase 2 brain: each card wears its role
+ * (Router, Reader, Transformer); the detail's form is made from each
+ * option's spec; a reader and an `after` pipeline show every workspace with
+ * a switch, on unless the off list holds it; a test result shows its tabs
+ * and that nothing was written.
  */
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@mantle/web-ui/ui/toast';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { markRereadRouteGone, resetRereadRouteGone } from '@/lib/pipeline-run';
 import {
   COUNTS_PARTIAL,
@@ -25,8 +27,24 @@ import {
   type PipelineTestResult,
 } from '@/lib/pipelines';
 import { WORKSPACES_KEY } from '@/lib/workspaces';
-import { PipelinesClient, PipelinesList } from './pipelines-client';
-import { PipelineDetail, TestResult } from './pipeline-detail';
+
+/** The URL's query: `?q=` is the search, `?selected=` the open card. */
+const url = vi.hoisted(() => ({ params: new URLSearchParams() }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/settings/pipelines',
+  useSearchParams: () => url.params,
+}));
+// The resizable scaffold is not this test's subject: both panes, in order.
+vi.mock('@mantle/web-ui/ui/master-detail', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    MasterDetail: ({ list, detail }: { list: ReactNode; detail: ReactNode }) =>
+      h('div', null, h('aside', null, list), h('main', null, detail)),
+  };
+});
+
+const { PipelinesClient, PipelinesScreen } = await import('./pipelines-client');
+const { PipelineDetail, TestResult } = await import('./pipeline-detail');
 
 /** A fixed answer of GET /api/pipelines, as a phase 1 brain gives it. */
 const LIST: PipelineList = {
@@ -128,28 +146,62 @@ function render(node: ReactNode, workspaces: unknown[] = []): string {
   );
 }
 
+/** The screen on `list`, with the URL's query `query` ("q=reader"). */
+function screen(list: PipelineList, query = '', workspaces: unknown[] = []): string {
+  url.params = new URLSearchParams(query);
+  return render(createElement(PipelinesScreen, { list }), workspaces);
+}
+/** The list pane and the detail pane of a screen's markup. */
+const panes = (html: string) => ({
+  list: html.slice(html.indexOf('<aside>'), html.indexOf('</aside>')),
+  detail: html.slice(html.indexOf('<main>'), html.indexOf('</main>')),
+});
+/** The cards of a list pane: one button each. */
+const cards = (list: string) => list.split('<button').slice(1);
+const titleOf = (card: string) => card.match(/class="text-sm font-medium truncate">([^<]*)/)?.[1];
+
+afterEach(() => {
+  url.params = new URLSearchParams();
+});
+
 describe('Settings > Pipelines, a phase 1 brain', () => {
-  it('lists every pipeline with its version, reads, state and files', () => {
-    const html = text(renderToStaticMarkup(createElement(PipelinesList, { list: LIST })));
+  it('a card per pipeline with its version, reads, files and the older line', () => {
+    const { list } = panes(screen(LIST));
+    expect(cards(list).map(titleOf)).toEqual(['Spreadsheet', 'CAD drawing']);
+    const t = text(list);
     for (const want of [
-      'Spreadsheet',
-      'CAD drawing',
       '.xlsx, .xls, .csv',
       '.dwg, .dxf, .dgn',
       '1.0.0',
+      '1 file',
+      '0 files',
       '1 file was read by an older version or with other options',
+      '2 pipelines',
     ]) {
-      expect(html, want).toContain(want);
+      expect(t, want).toContain(want);
     }
-    expect(html.match(/ On /g)).toHaveLength(2);
-    expect(html).not.toContain(COUNTS_PARTIAL);
+    expect(t).not.toContain(COUNTS_PARTIAL);
+    // A row with no kind has no role: no pill.
+    expect(list).not.toContain('data-role');
   });
 
-  it('a row with no kind is the read-only list: nothing to press', () => {
-    const html = renderToStaticMarkup(
-      createElement(PipelinesList, { list: LIST, onOpen: () => {} }),
-    );
-    expect(html).not.toMatch(/<button|role="switch"/);
+  it('the first card is open: a plain detail with its facts, nothing to change', () => {
+    const { list, detail } = panes(screen(LIST));
+    expect(cards(list)[0]).toContain('data-selected="true"');
+    expect(cards(list)[1]).not.toContain('data-selected');
+    const t = text(detail);
+    expect(detail).toMatch(/<h2[^>]*>.*Spreadsheet/);
+    for (const want of [
+      'A pipeline reads a file into its database when the file is uploaded.',
+      'Version 1.0.0',
+      'Reads .xlsx, .xls, .csv',
+      'Files 1',
+      'State On',
+      '1 file was read by an older version or with other options',
+    ]) {
+      expect(t, want).toContain(want);
+    }
+    expect(detail).not.toMatch(/<button|<input|<form|role="switch"/);
   });
 
   it('a count the brain did not make is a dash, and partial counts say so', () => {
@@ -158,10 +210,11 @@ describe('Settings > Pipelines, a phase 1 brain', () => {
       countsPartial: true,
       pipelines: [{ ...LIST.pipelines[0]!, files: null, older: null }],
     };
-    const html = text(renderToStaticMarkup(createElement(PipelinesList, { list })));
-    expect(html).toContain(' - ');
-    expect(html).not.toContain('older version');
-    expect(html).toContain(COUNTS_PARTIAL);
+    const html = panes(screen(list));
+    expect(text(html.list)).toContain('- files');
+    expect(text(html.detail)).toContain('Files -');
+    expect(text(html.list + html.detail)).not.toContain('older version');
+    expect(text(html.list)).toContain(COUNTS_PARTIAL);
   });
 
   it('the client shows the answer of GET /api/pipelines', () => {
@@ -175,13 +228,39 @@ describe('Settings > Pipelines, a phase 1 brain', () => {
 });
 
 describe('Settings > Pipelines, a phase 2 brain', () => {
-  it('a row opens its detail, and shows the off count only above 0', () => {
+  it('each card wears its role; the off count shows only above 0', () => {
     const list: PipelineList = { ...LIST, pipelines: [READER, AFTER] };
-    const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
-    expect(html.match(/<button/g)).toHaveLength(2);
-    expect(text(html)).toContain('Every workspace');
-    expect(text(html)).toContain('Off in 1');
-    expect(text(html)).not.toContain('Off in 0');
+    const all = cards(panes(screen(list)).list);
+    expect(all).toHaveLength(2);
+    expect(all[0]).toMatch(/data-role="reader"[^>]*>Reader</);
+    expect(all[1]).toMatch(/data-role="after"[^>]*>Transformer</);
+    expect(text(all[0]!)).not.toContain('Off in');
+    expect(text(all[1]!)).toContain('Off in 1');
+    expect(text(all.join(''))).not.toContain('Off in 0');
+  });
+
+  it('the search narrows the cards; "reader" finds the readers, and the count says so', () => {
+    const list: PipelineList = { ...LIST, pipelines: [READER, AFTER] };
+    const reader = panes(screen(list, 'q=reader')).list;
+    expect(cards(reader).map(titleOf)).toEqual(['CAD drawing']);
+    expect(text(reader)).toContain('1 of 2 pipelines');
+    const after = panes(screen(list, 'q=transformer')).list;
+    expect(cards(after).map(titleOf)).toEqual(['Site tags']);
+    const none = text(panes(screen(list, 'q=nothing%20like%20this')).list);
+    expect(none).toContain('No pipelines match');
+    expect(none).toContain('Clear');
+  });
+
+  it('?selected= opens that card; the detail header names it with its role', () => {
+    const list: PipelineList = { ...LIST, pipelines: [READER, AFTER] };
+    const { list: l, detail } = panes(screen(list, 'selected=site-tags'));
+    expect(cards(l)[1]).toContain('data-selected="true"');
+    expect(cards(l)[0]).not.toContain('data-selected');
+    expect(detail).toMatch(/<h2[^>]*>.*Site tags.*data-role="after"[^>]*>Transformer</);
+    expect(text(detail)).toContain('Role Transformer, on texts-v1');
+    // An id that is not in the list opens the first card.
+    const odd = panes(screen(list, 'selected=gone')).detail;
+    expect(odd).toMatch(/<h2[^>]*>.*CAD drawing/);
   });
 
   it('the detail renders each option type from its spec', () => {
@@ -330,11 +409,12 @@ const M8: PipelineRow = { ...READER, version: '1.1.0', files: 163, older: 43, ..
 describe('Settings > Pipelines, an M8 server: description, runs, versions', () => {
   afterEach(() => resetRereadRouteGone());
 
-  it('the description shows under the name in the list, cut to one line', () => {
+  it('the description shows on the card, cut to two lines', () => {
     const list: PipelineList = { ...LIST, pipelines: [M8, AFTER] };
-    const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
-    expect(text(html)).toContain(STATS.description);
-    expect(html).toMatch(/class="[^"]*truncate[^"]*" title="Reads a CAD drawing/);
+    const card = cards(panes(screen(list)).list)[0]!;
+    expect(card).toMatch(/class="[^"]*line-clamp-2[^"]*">Reads a CAD drawing/);
+    expect(text(card)).toContain('1.1.0 · .dwg, .dxf, .dgn · 163 files');
+    expect(text(card)).toContain('43 files were read by an older version or with other options');
   });
 
   it('the Overview shows the whole description, the runs and one line per version', () => {
@@ -385,8 +465,7 @@ describe('Settings > Pipelines, an M8 server: description, runs, versions', () =
       expect(t, not).not.toContain(not);
     }
     const list: PipelineList = { ...LIST, pipelines: [READER] };
-    const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
-    expect(html).not.toContain('truncate');
+    expect(cards(panes(screen(list)).list)[0]).not.toContain('line-clamp-2');
   });
 });
 
@@ -415,19 +494,29 @@ const ROUTER: PipelineRow & PipelineStats = {
 };
 
 describe('Settings > Pipelines, a router and kinds the client does not know', () => {
-  it('the list: a router row reads as a router, with no file count', () => {
+  it('the card: a router wears its role pill, with no file count and no off count', () => {
     const list: PipelineList = { ...LIST, pipelines: [M8, ROUTER] };
-    const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
-    const t = text(html);
+    const all = cards(panes(screen(list)).list);
+    // Its card still opens its detail.
+    expect(all).toHaveLength(2);
+    const router = all[1]!;
+    expect(router).toMatch(/data-role="router"[^>]*>Router</);
+    const t = text(router);
     expect(t).toContain('PDF router');
     expect(t).toContain('Names the kind of a PDF.');
-    expect(t).toContain(' Router ');
-    expect(t).toContain('.pdf');
-    // Its name still opens its detail.
-    expect(html.match(/<button/g)).toHaveLength(2);
-    // The router's Files cell is empty, not a dash; the reader's count stays.
-    expect(t).not.toContain(' - ');
-    expect(t).toContain('163');
+    expect(t).toContain('1.0.0 · .pdf');
+    expect(t).not.toContain('files');
+    expect(t).not.toContain('Off in');
+    // The reader's count stays.
+    expect(text(all[0]!)).toContain('163 files');
+  });
+
+  it('a click on the router card opens its read-only detail on the right', () => {
+    const list: PipelineList = { ...LIST, pipelines: [M8, ROUTER] };
+    const { detail } = panes(screen(list, 'selected=pdf-router'));
+    expect(detail).toMatch(/<h2[^>]*>.*PDF router.*data-role="router"/);
+    expect(text(detail)).toContain(ROUTER_WORKSPACES);
+    expect(detail).not.toMatch(/<button|<input|<form/);
   });
 
   it('the detail of a router: what it names and asks, its runs, and nothing to change', () => {
@@ -478,10 +567,9 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
     const { options: _o, workspaces: _w, offIn: _f, tabs: _t, ...bare } = READER;
     const odd = { ...bare, id: 'sorter-1', name: 'Sorter', kind: 'sorter' } as PipelineRow;
     const list: PipelineList = { ...LIST, pipelines: [odd] };
-    const row = text(
-      renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} })),
-    );
-    expect(row).toContain('Sorter');
+    const card = cards(panes(screen(list)).list)[0]!;
+    expect(text(card)).toContain('Sorter');
+    expect(card).toMatch(/data-role="sorter"[^>]*>Sorter</);
     const html = render(createElement(PipelineDetail, { row: odd }));
     expect(text(html)).toContain('Role Sorter');
     expect(html).not.toMatch(/<button|<input|<form/);
