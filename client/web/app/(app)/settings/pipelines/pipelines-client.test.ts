@@ -216,7 +216,9 @@ describe('Settings > Pipelines, a phase 1 brain', () => {
       pipelines: [{ ...LIST.pipelines[0]!, files: null, older: null }],
     };
     const html = panes(screen(list));
-    expect(text(html.list)).toContain('- files');
+    // The card shows the dash alone, as the detail does.
+    expect(text(html.list)).toContain('· -');
+    expect(text(html.list)).not.toContain('- files');
     expect(text(html.detail)).toContain('Files -');
     expect(text(html.list + html.detail)).not.toContain('older version');
     expect(text(html.list)).toContain(COUNTS_PARTIAL);

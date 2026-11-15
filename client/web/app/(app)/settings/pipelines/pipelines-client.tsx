@@ -15,7 +15,7 @@ import {
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { cn } from '@mantle/web-ui/lib/utils';
-import { HeaderInfoButton, ItemHeader } from '@/components/layout/item-header';
+import { HeaderInfoButton, HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { ListSearchBar, ListSearchEmpty, useListQuery } from '@/components/list-search';
 import {
   COUNTS_PARTIAL,
@@ -121,9 +121,10 @@ function RolePill({ kind, className }: { kind: string | undefined; className?: s
   );
 }
 
-/** "12 files"; nothing for a row that has no files of its own (a router). */
+/** "12 files"; a dash alone when the count is not known, as the detail
+ *  shows it; nothing for a row that has no files of its own (a router). */
 function filesText(p: PipelineRowV1, row: PipelineRow | undefined): string | null {
-  if (row && !canChange(row) && p.files === null) return null;
+  if (p.files === null) return row && !canChange(row) ? null : countText(null);
   return p.files === 1 ? '1 file' : `${countText(p.files)} files`;
 }
 
@@ -140,12 +141,15 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
     [list.pipelines, search.query],
   );
   // Deep link: ?selected=<id> preselects that pipeline (initial state only,
-  // as Peers does). A search that hides the open card leaves it open, as
-  // Tools does; with none picked, the first card shown is the open one.
+  // as Peers does); else the first one is open from the start, so a search
+  // never moves the open pipeline (and its unsaved edits), as Tools does.
+  // `shown[0]` only covers a picked row that has gone from the list.
   const searchParams = useSearchParams();
   const [pickedId, setPickedId] = useState<string | null>(() => {
     const want = searchParams.get('selected')?.trim();
-    return want && list.pipelines.some((p) => p.id === want) ? want : null;
+    return want && list.pipelines.some((p) => p.id === want)
+      ? want
+      : (list.pipelines[0]?.id ?? null);
   });
   const open = list.pipelines.find((p) => p.id === pickedId) ?? shown[0] ?? null;
 
@@ -227,9 +231,9 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
 /**
  * One pipeline's card: its role icon, name and role pill; the version, what
  * it reads and its files; "Off in N" and the older line when they hold; the
- * description. Exported for its render test.
+ * description.
  */
-export function PipelineCard({
+function PipelineCard({
   p,
   row,
   selected = false,
@@ -262,16 +266,7 @@ export function PipelineCard({
       {description && <ListCardSnippet>{description}</ListCardSnippet>}
       {(off || older) && (
         <div className="mt-1.5 flex items-center gap-2 text-xs">
-          {off && (
-            <span
-              className={cn(
-                'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4',
-                PLAIN_TONE,
-              )}
-            >
-              {off}
-            </span>
-          )}
+          {off && <HeaderPill>{off}</HeaderPill>}
           {older && <span className="min-w-0 truncate text-warning-ink">{older}</span>}
         </div>
       )}
@@ -279,9 +274,8 @@ export function PipelineCard({
   );
 }
 
-/** A phase 1 brain's row: its plain facts, read only. Exported for its
- *  render test. */
-export function PlainDetail({ p }: { p: PipelineRowV1 }) {
+/** A phase 1 brain's row: its plain facts, read only. */
+function PlainDetail({ p }: { p: PipelineRowV1 }) {
   const older = olderText(p.older);
   return (
     <section aria-label="Overview" className="space-y-4 text-sm">

@@ -141,7 +141,7 @@ test('null counts are a dash, and partial counts say so', async ({ page }) => {
   await signIn(page, 'admin');
   await page.goto('/settings/pipelines');
   const { list } = await panes(page);
-  await expect(list.getByText(/· - files$/)).toHaveCount(5);
+  await expect(list.getByText(/· -$/)).toHaveCount(5);
   await expect(list.getByText(/The counts are partial/)).toBeVisible();
 });
 
@@ -355,7 +355,8 @@ test('phase 2: a reader is on in every workspace, Save sends the changed option 
   });
   await expect(save).toBeDisabled();
   // The counts stay those of the list: the PATCH answer has none.
-  await expect(card(list, 'Spreadsheet')).toContainText('1 file');
+  await expect(card(list, 'PDF drawing')).toContainText('0 files');
+  await expect(card(list, 'PDF drawing')).not.toContainText(/· -/);
 
   // A reader too can be switched off in a workspace.
   await settings.getByRole('switch', { name: 'Toggle North site' }).click();
@@ -364,6 +365,34 @@ test('phase 2: a reader is on in every workspace, Save sends the changed option 
   await expect.poll(() => sent.length).toBe(2);
   expect(sent[1]!.body).toEqual({ offIn: [WS[0]!.id] });
   await expect(card(list, 'PDF drawing')).toContainText('Off in 1');
+});
+
+test('no click, an edit on the first card, a search that hides it: the detail and the edit stay', async ({
+  page,
+}) => {
+  // PDF drawing first, so the card open at the start has an option.
+  const pdf = LIST2.pipelines.find((p) => p.id === 'drawing-pdf')!;
+  const seen = await routePipelines(page, {
+    ...LIST2,
+    pipelines: [pdf, ...LIST2.pipelines.filter((p) => p !== pdf)],
+  });
+  await page.route(
+    (u) => u.pathname === '/api/workspaces',
+    (route) => route.fulfill({ json: { workspaces: WS } }),
+  );
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines');
+  const { list, detail } = await panes(page);
+  await expect(card(list, 'PDF drawing')).toHaveAttribute('data-selected', 'true');
+  const settings = page.getByRole('region', { name: 'Options and workspaces' });
+  await settings.getByLabel('Box width').fill('40');
+
+  await list.getByRole('textbox', { name: 'Search pipelines' }).fill('spreadsheet');
+  await expect(card(list, 'PDF drawing')).toHaveCount(0);
+  await expect(header(detail)).toHaveText('PDF drawingReader');
+  await expect(settings.getByLabel('Box width')).toHaveValue('40');
+  await expect(settings.getByRole('button', { name: 'Save pipeline' })).toBeEnabled();
+  expect(seen.every((m) => m === 'GET')).toBe(true);
 });
 
 test('phase 2: a Transformer shows its role and its off count; switches and words are saved as offIn', async ({
