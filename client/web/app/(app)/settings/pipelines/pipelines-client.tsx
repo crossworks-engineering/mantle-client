@@ -245,12 +245,12 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
                     <p className="break-all font-mono text-xs">{open.id}</p>
                     <p className="text-xs text-muted-foreground">{PIPELINE_LINE}</p>
                   </HeaderInfoButton>
-                  {isOwn(open) && <OwnHeaderButtons key={open.id} p={open} />}
+                  {isOwn(open) && <OwnHeaderButtons key={`own:${open.id}`} p={open} />}
                 </>
               }
             />
             <div className="space-y-6 p-6">
-              {problemOf(open) && <ProblemLine key={open.id} p={open} />}
+              {problemOf(open) && <ProblemLine key={`problem:${open.id}`} p={open} />}
               {byId.get(open.id) ? (
                 <PipelineDetail key={open.id} row={byId.get(open.id)!} />
               ) : (

@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
 import { scopedNav } from './shell-nav';
@@ -100,7 +102,7 @@ test('an admin opens Pipelines from Settings: the list, its counts, one GET and 
   await expect(page).toHaveURL((u) => u.pathname === '/settings/pipelines');
 
   const { list, detail } = await panes(page);
-  await expect(list.getByRole('button', { name: /^(?!Clear)/ })).toHaveCount(5);
+  await expect(list.getByRole('button', { name: /^(?!Clear$|Add$)/ })).toHaveCount(5);
   const sheet = card(list, 'Spreadsheet');
   await expect(sheet).toContainText('1.0.0');
   await expect(sheet).toContainText('.xlsx, .xls, .csv');
@@ -662,7 +664,7 @@ test('the cards: a role pill each, the first one open, a search that narrows the
   const { list, detail } = await panes(page);
 
   // Every card in the server's order, each with its role.
-  const all = list.getByRole('button', { name: /^(?!Clear)/ });
+  const all = list.getByRole('button', { name: /^(?!Clear$|Add$)/ });
   await expect(all).toHaveCount(7);
   await expect(list.getByText('7 pipelines')).toBeVisible();
   await expect(list.locator('[data-role="reader"]')).toHaveCount(5);
@@ -701,4 +703,347 @@ test('the cards: a role pill each, the first one open, a search that narrows the
   await expect(list.getByText('No pipelines match')).toBeVisible();
   await list.getByRole('button', { name: 'Clear' }).click();
   await expect(all).toHaveCount(7);
+});
+
+// ---------------------------------------------------------------------------
+// Own pipelines (P3-3): Add from a folder, the Own pill, Download, Remove,
+// a refusal's sentence, and a row whose files are not on disk. The brain is
+// a small in-browser one with state: the list, the install, the package,
+// the remove and the test (mantle feat/pipelines-p3-1, as built).
+
+/** The manifest of the made-up Bun template (mantle
+ *  docs/pipeline-template/bun/pipeline.json), as it is. */
+const TEMPLATE_MANIFEST = {
+  id: 'lx9-logger',
+  name: 'LX-9 data logger',
+  description: 'Reads an LX-9 logger export and writes its readings and its header as tabs.',
+  version: '1.0.0',
+  api: 1,
+  kit: 1,
+  runtime: 'bun',
+  entry: 'step.ts',
+  start: 'upload',
+  match: { ext: ['lx9'] },
+  produces: {},
+  needs: { weight: 'light', timeMs: 60000, tools: ['file_tabs_write'] },
+  options: {},
+};
+
+/** Write a package folder under the test's output, as a person has it on
+ *  disk: the template's manifest, a step, and one binary file. */
+function packageFolder(dir: string, manifest: Record<string, unknown>): string {
+  const files: Record<string, string | Buffer> = {
+    'pipeline.json': JSON.stringify(manifest, null, 2),
+    'step.ts': 'export async function step() {\n  return { status: "ok", calls: [] };\n}\n',
+    'bin/marker': Buffer.from([0xff, 0x00, 0xfe, 0x01]),
+  };
+  for (const [path, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), body);
+  }
+  return dir;
+}
+
+const NOT_ON_DISK =
+  'The files of this package are not on disk. Install it again with the same files.';
+const INSTALL_NOTE =
+  'This runs code on files of this box. You install it as you would a library. It reads new uploads from now on; for the files that are there, use pipeline_run on their folder.';
+
+type OwnState = {
+  files: Record<string, unknown>;
+  problem: string | null;
+};
+
+/** The row of an own package, as the brain lists it. */
+function ownRow(own: OwnState) {
+  const m = JSON.parse(own.files['pipeline.json'] as string) as typeof TEMPLATE_MANIFEST;
+  return {
+    id: m.id,
+    name: m.name,
+    description: m.description,
+    version: m.version,
+    source: 'own',
+    problem: own.problem,
+    start: 'upload',
+    kind: 'reader',
+    reads: m.match.ext,
+    names: [],
+    claims: [],
+    weight: 'light',
+    shapes: [],
+    workers: [],
+    tools: ['file_tabs_write'],
+    workspaces: 'all',
+    offIn: [],
+    after: null,
+    tabs: [],
+    options: [],
+    files: 0,
+    older: 0,
+    versions: [],
+    runs: 0,
+    lastRunAt: null,
+  };
+}
+
+/** A P3-1 brain with state. `own` holds the installed packages by id. A
+ *  manifest whose id is a built-in's is refused with the brain's sentence;
+ *  `noInstall` answers the install 405, as a brain before own pipelines. */
+async function routeOwn(
+  page: Page,
+  own: Map<string, OwnState>,
+  opts: { noInstall?: boolean } = {},
+): Promise<Sent[]> {
+  const sent: Sent[] = [];
+  const builtins = LIST2.pipelines.map((p) => ({ ...p, problem: null }));
+  await page.route(
+    (u) => u.pathname.startsWith('/api/pipelines'),
+    async (route: Route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      const method = req.method();
+      const body = req.postData() ? (req.postDataJSON() as Record<string, unknown>) : null;
+      sent.push({ method, path, body });
+      if (path === '/api/pipelines' && method === 'GET') {
+        const rows = [...own.values()].map(ownRow);
+        return route.fulfill({ json: { ...LIST2, pipelines: [...builtins, ...rows] } });
+      }
+      if (path === '/api/pipelines' && method === 'POST') {
+        if (opts.noInstall)
+          return route.fulfill({ status: 405, json: { error: 'method not allowed' } });
+        const files = (body!.files ?? {}) as Record<string, unknown>;
+        const m = JSON.parse(files['pipeline.json'] as string) as { id: string };
+        if (builtins.some((b) => b.id === m.id)) {
+          return route.fulfill({
+            status: 400,
+            json: { error: `The id ${m.id} is a built-in's. Give your pipeline another id.` },
+          });
+        }
+        const was = own.get(m.id);
+        own.set(m.id, { files, problem: null });
+        return route.fulfill({
+          json: {
+            row: ownRow(own.get(m.id)!),
+            note: was?.problem ? 'The files of version 1.0.0 are on disk again.' : INSTALL_NOTE,
+          },
+        });
+      }
+      const id = decodeURIComponent(path.split('/')[3] ?? '');
+      if (path.endsWith('/package') && method === 'GET') {
+        const o = own.get(id);
+        if (!o) return route.fulfill({ status: 400, json: { error: `${id} is a built-in.` } });
+        return route.fulfill({ json: { id, version: '1.0.0', files: o.files } });
+      }
+      if (path.endsWith('/test')) {
+        return route.fulfill({
+          json: {
+            status: 'ok',
+            pipeline: id,
+            version: '1.0.0',
+            ms: 12,
+            tabs: [
+              {
+                name: 'Readings',
+                rows: 2,
+                columns: ['TIME', 'TAG', 'VALUE'],
+                first: [['2026-01-04T08:00:00', 'PT-101', 412.5]],
+              },
+            ],
+            shapes: [],
+            warnings: [],
+            writes: ['file_tabs_write'],
+            word: null,
+          },
+        });
+      }
+      if (method === 'DELETE') {
+        own.delete(id);
+        return route.fulfill({
+          json: {
+            row: null,
+            note: `Removed ${id}. The databases it wrote stay; a new upload of its file types gets none.`,
+          },
+        });
+      }
+      return route.fulfill({ status: 404, json: { error: 'not found' } });
+    },
+  );
+  await page.route(
+    (u) => u.pathname === '/api/workspaces',
+    (route) => route.fulfill({ json: { workspaces: WS } }),
+  );
+  await page.route(
+    (u) => u.pathname === '/api/search',
+    (route) =>
+      route.fulfill({
+        json: {
+          results: [
+            {
+              id: 'file-lx9',
+              type: 'file',
+              title: 'Bench log.lx9',
+              path: '/Logs',
+              summary: null,
+              updatedAt: '2026-01-04T00:00:00.000Z',
+            },
+          ],
+        },
+      }),
+  );
+  return sent;
+}
+
+test('own: add the Bun template from a folder, see Reader and Own, test it, download it, remove it', async ({
+  page,
+}, info) => {
+  const own = new Map<string, OwnState>();
+  const sent = await routeOwn(page, own);
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines');
+  const { list, detail } = await panes(page);
+
+  // A built-in has no Download and no Remove.
+  await expect(header(detail)).toHaveText('SpreadsheetReader');
+  await expect(detail.getByRole('button', { name: 'Download package' })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: /^Remove / })).toHaveCount(0);
+
+  await list.getByRole('button', { name: 'Add', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a pipeline' });
+  await expect(dialog.getByRole('button', { name: 'Install' })).toBeDisabled();
+  await dialog
+    .getByTestId('pipeline-folder-input')
+    .setInputFiles(packageFolder(info.outputPath('bun'), TEMPLATE_MANIFEST));
+  const pkg = dialog.getByRole('region', { name: 'Package' });
+  await expect(pkg).toContainText('NameLX-9 data logger');
+  await expect(pkg).toContainText('Version1.0.0');
+  await expect(pkg).toContainText('Reads.lx9');
+  await expect(pkg).toContainText('RoleReader');
+  await expect(pkg).toContainText('3 files');
+  await expect(pkg).toContainText(
+    'This runs code on files of this box. You install it as you would a library.',
+  );
+  await expect(pkg).not.toContainText('Replaces');
+  await dialog.getByRole('button', { name: 'Install' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // The install: the package as the brain takes it, text as text and the
+  // binary file as base64; nothing else in the body.
+  const install = sent.find((s) => s.method === 'POST' && s.path === '/api/pipelines')!;
+  expect(Object.keys(install.body as object)).toEqual(['files']);
+  const files = (install.body as { files: Record<string, unknown> }).files;
+  expect(Object.keys(files).sort()).toEqual(['bin/marker', 'pipeline.json', 'step.ts']);
+  expect(JSON.parse(files['pipeline.json'] as string)).toEqual(TEMPLATE_MANIFEST);
+  expect(files['bin/marker']).toEqual({ base64: '/wD+AQ==' });
+
+  // The list is read again and the new card is open, with Reader and Own.
+  const lx9 = card(list, 'LX-9 data logger');
+  await expect(lx9).toHaveAttribute('data-selected', 'true');
+  await expect(lx9.locator('[data-role="reader"]')).toHaveText('Reader');
+  await expect(lx9).toContainText('Own');
+  await expect(header(detail)).toHaveText('LX-9 data loggerReaderOwn');
+
+  // Adding it again says what it replaces.
+  await list.getByRole('button', { name: 'Add', exact: true }).click();
+  await dialog
+    .getByTestId('pipeline-folder-input')
+    .setInputFiles(
+      packageFolder(info.outputPath('bun2'), { ...TEMPLATE_MANIFEST, version: '1.1.0' }),
+    );
+  await expect(dialog.getByRole('region', { name: 'Package' })).toContainText(
+    'Replaces version 1.0.0',
+  );
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  // The Test part, as it is.
+  const testPart = detail.getByRole('region', { name: 'Test' });
+  await testPart.getByRole('textbox', { name: 'File' }).fill('bench');
+  await testPart.getByRole('button', { name: /Bench log\.lx9/ }).click();
+  await testPart.getByRole('button', { name: 'Run test' }).click();
+  await expect(testPart.getByRole('table', { name: 'Readings' })).toContainText('PT-101');
+
+  // Download: the package, saved as <id>-<version>.json.
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    detail.getByRole('button', { name: 'Download package' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe('lx9-logger-1.0.0.json');
+  const saved = JSON.parse(readFileSync(await download.path(), 'utf8')) as Record<string, unknown>;
+  expect(saved).toEqual({ id: 'lx9-logger', version: '1.0.0', files });
+
+  // Remove: one confirm, which says the databases stay.
+  await detail.getByRole('button', { name: 'Remove LX-9 data logger' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm).toContainText('The databases this pipeline wrote stay');
+  await confirm.getByRole('button', { name: 'Remove' }).click();
+  await expect(card(list, 'LX-9 data logger')).toHaveCount(0);
+  expect(sent.filter((s) => s.method === 'DELETE').map((s) => s.path)).toEqual([
+    '/api/pipelines/lx9-logger',
+  ]);
+  await expect(header(detail)).toHaveText('SpreadsheetReader');
+});
+
+test("own: a refusal shows the brain's sentence, and the dialog stays open", async ({
+  page,
+}, info) => {
+  const sent = await routeOwn(page, new Map());
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines');
+  const { list } = await panes(page);
+  await list.getByRole('button', { name: 'Add', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a pipeline' });
+  await dialog
+    .getByTestId('pipeline-folder-input')
+    .setInputFiles(packageFolder(info.outputPath('clash'), { ...TEMPLATE_MANIFEST, id: 'sheet' }));
+  await dialog.getByRole('button', { name: 'Install' }).click();
+  await expect(dialog.getByRole('alert')).toHaveText(
+    "The id sheet is a built-in's. Give your pipeline another id.",
+  );
+  await expect(dialog).toBeVisible();
+  expect(sent.filter((s) => s.method === 'POST')).toHaveLength(1);
+});
+
+test('own: a brain before own pipelines answers the install 405, and the dialog says so', async ({
+  page,
+}, info) => {
+  await routeOwn(page, new Map(), { noInstall: true });
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines');
+  const { list } = await panes(page);
+  await list.getByRole('button', { name: 'Add', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a pipeline' });
+  await dialog
+    .getByTestId('pipeline-folder-input')
+    .setInputFiles(packageFolder(info.outputPath('old'), TEMPLATE_MANIFEST));
+  await dialog.getByRole('button', { name: 'Install' }).click();
+  await expect(dialog.getByRole('alert')).toHaveText('This box cannot add pipelines yet.');
+});
+
+test('own: a row whose files are not on disk shows its line; Write the files again sends the install', async ({
+  page,
+}) => {
+  const files = {
+    'pipeline.json': JSON.stringify(TEMPLATE_MANIFEST),
+    'step.ts': 'export async function step() {}\n',
+  };
+  const own = new Map<string, OwnState>([['lx9-logger', { files, problem: NOT_ON_DISK }]]);
+  const sent = await routeOwn(page, own);
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines?selected=lx9-logger');
+  const { list, detail } = await panes(page);
+  const lx9 = card(list, 'LX-9 data logger');
+  await expect(lx9.getByRole('img', { name: 'Does not run: see its detail' })).toBeVisible();
+  await expect(card(list, 'Spreadsheet').getByRole('img', { name: /Does not run/ })).toHaveCount(0);
+  const problem = detail.getByRole('region', { name: 'Problem' });
+  await expect(problem).toContainText(NOT_ON_DISK);
+  await problem.getByRole('button', { name: 'Write the files again' }).click();
+  await expect(page.getByText('The files of version 1.0.0 are on disk again.')).toBeVisible();
+  await expect(detail.getByRole('region', { name: 'Problem' })).toHaveCount(0);
+  await expect(lx9.getByRole('img', { name: /Does not run/ })).toHaveCount(0);
+  // The row's own package, sent to the install route as it is.
+  const writes = sent.filter((s) => s.method !== 'GET' || s.path.endsWith('/package'));
+  expect(writes.map((s) => `${s.method} ${s.path}`)).toEqual([
+    'GET /api/pipelines/lx9-logger/package',
+    'POST /api/pipelines',
+  ]);
+  expect(writes[1]!.body).toEqual({ files });
 });
