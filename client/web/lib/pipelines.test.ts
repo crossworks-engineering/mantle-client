@@ -23,6 +23,21 @@ import {
   usedInText,
   versionLines,
   wordOf,
+  CANNOT_ADD,
+  NOT_ON_DISK,
+  PACKAGE_FILES_MAX,
+  PACKAGE_MAX_BYTES,
+  addRefusedText,
+  base64Of,
+  canWriteAgain,
+  isOwn,
+  manifestFacts,
+  packageFileName,
+  packageFileOf,
+  problemOf,
+  readPackage,
+  replacesText,
+  type PickedFile,
   type PipelineList,
   type PipelineRow,
 } from './pipelines';
@@ -308,5 +323,117 @@ describe('filterPipelines: the search of the list', () => {
     const { kind: _k, ...v1 } = ROW;
     expect(filterPipelines([v1], 'reader')).toEqual([]);
     expect(filterPipelines([v1], 'pdf')).toHaveLength(1);
+  });
+});
+
+// Own pipelines: the folder read into the package, the caps, "replaces
+// version", the download file name, the problem text. Made-up package.
+
+const enc = (s: string) => new TextEncoder().encode(s);
+const MANIFEST = JSON.stringify({
+  id: 'lx9-logger',
+  name: 'LX-9 data logger',
+  version: '1.1.0',
+  match: { ext: ['lx9'] },
+});
+const folder = (files: Record<string, Uint8Array | null>): PickedFile[] =>
+  Object.entries(files).map(([path, bytes]) => ({ path: `bun/${path}`, bytes }));
+
+describe('own pipelines: the folder read into the package', () => {
+  it('drops the folder name; text is text, other bytes are base64; the manifest facts show', () => {
+    const bin = new Uint8Array([0xff, 0x00, 0xfe, 0x01]);
+    const read = readPackage(
+      folder({
+        'pipeline.json': enc(MANIFEST),
+        'step.ts': enc('export const step = 1;\n'),
+        'bin/tool': bin,
+      }),
+    );
+    expect(read.pkg.files).toEqual({
+      'pipeline.json': MANIFEST,
+      'step.ts': 'export const step = 1;\n',
+      'bin/tool': { base64: base64Of(bin) },
+    });
+    expect(base64Of(bin)).toBe('/wD+AQ==');
+    expect(read.count).toBe(3);
+    expect(read.problems).toEqual([]);
+    expect(read.manifest).toEqual({
+      id: 'lx9-logger',
+      name: 'LX-9 data logger',
+      version: '1.1.0',
+      reads: ['lx9'],
+      role: 'Reader',
+    });
+  });
+
+  it('a text file keeps its BOM, so its bytes are the same on the box', () => {
+    expect(packageFileOf(new Uint8Array([0xef, 0xbb, 0xbf, 0x61]))).toBe('﻿a');
+  });
+
+  it("a file that could not be read, and Finder's file, are said, never dropped silently", () => {
+    const read = readPackage(
+      folder({ 'pipeline.json': enc(MANIFEST), 'step.ts': null, '.DS_Store': enc('x') }),
+    );
+    expect(read.problems).toEqual(['A file could not be read: step.ts.']);
+    expect(read.leftOut).toEqual(['.DS_Store']);
+    expect(read.pkg.files).not.toHaveProperty('.DS_Store');
+  });
+
+  it('a folder over the caps is a problem before the send', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: PACKAGE_FILES_MAX + 1 }, (_, i) => [`f${i}.txt`, enc('a')]),
+    );
+    expect(readPackage(folder(many)).problems).toEqual([
+      `A package has at most 200 files; this folder has ${PACKAGE_FILES_MAX + 1}.`,
+    ]);
+    const big = readPackage(folder({ 'a.bin': new Uint8Array(PACKAGE_MAX_BYTES + 1) }));
+    expect(big.problems).toEqual(['A package is at most 5.0 MB of files; this folder has 5.0 MB.']);
+    expect(readPackage(folder({})).problems).toEqual(['The folder has no files.']);
+  });
+
+  it('no pipeline.json, or one that is not JSON: no facts, and the brain says why', () => {
+    expect(readPackage(folder({ 'step.ts': enc('x') })).manifest).toBeNull();
+    expect(manifestFacts('{ not json')).toBeNull();
+    expect(manifestFacts('[]')).toBeNull();
+    expect(manifestFacts('{"router":true}')?.role).toBe('Router');
+    expect(manifestFacts('{"match":{"after":"texts-v1"}}')?.role).toBe('Transformer');
+  });
+});
+
+describe('own pipelines: replaces, download name, problem, refusal', () => {
+  const own = { ...ROW, id: 'lx9-logger', source: 'own' as const, version: '1.0.0' };
+  it('an own row of the same id is replaced; a new id or a built-in id says nothing', () => {
+    expect(replacesText([own], { id: 'lx9-logger', version: '1.1.0' })).toBe(
+      'Replaces version 1.0.0',
+    );
+    expect(replacesText([own], { id: 'lx9-logger', version: '1.0.0' })).toBe(
+      'Version 1.0.0 is installed: the same files write its folder again.',
+    );
+    expect(replacesText([own], { id: 'other', version: '1.0.0' })).toBeNull();
+    expect(replacesText([ROW], { id: ROW.id, version: '2.0.0' })).toBeNull();
+  });
+
+  it('the download is saved as <id>-<version>.json', () => {
+    expect(packageFileName('lx9-logger', '1.0.0')).toBe('lx9-logger-1.0.0.json');
+    expect(packageFileName('lx9-logger', null)).toBe('lx9-logger.json');
+  });
+
+  it('the problem of a row; an older server sends none; only "not on disk" has its act', () => {
+    expect(problemOf(ROW)).toBeNull();
+    expect(problemOf({ ...own, problem: null } as typeof own)).toBeNull();
+    expect(problemOf({ ...own, problem: NOT_ON_DISK } as typeof own)).toBe(NOT_ON_DISK);
+    expect(canWriteAgain(NOT_ON_DISK)).toBe(true);
+    expect(canWriteAgain('A built-in now reads .lx9.')).toBe(false);
+    expect(isOwn(own)).toBe(true);
+    expect(isOwn(ROW)).toBe(false);
+  });
+
+  it("a refused install shows the brain's sentence; no install route says so plainly", () => {
+    const err = (message: string, status: number) => Object.assign(new Error(message), { status });
+    expect(addRefusedText(err('Version 1.2.0 is installed. Send a higher version.', 400))).toBe(
+      'Version 1.2.0 is installed. Send a higher version.',
+    );
+    expect(addRefusedText(err('not found', 404))).toBe(CANNOT_ADD);
+    expect(addRefusedText(err('method not allowed', 405))).toBe(CANNOT_ADD);
   });
 });

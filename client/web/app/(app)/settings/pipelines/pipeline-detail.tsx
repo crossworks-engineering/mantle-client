@@ -2,7 +2,18 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download, Trash2 } from 'lucide-react';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@mantle/web-ui/ui/alert-dialog';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
@@ -22,6 +33,7 @@ import {
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { HeaderIconButton } from '@/components/layout/item-header';
 import { TagInput } from '@/components/tag-input';
 import { ToggleList } from '@/components/toggle-list';
 import { useWorkspaces } from '@/components/workspaces/workspace-queries';
@@ -34,7 +46,9 @@ import {
   NO_RUN_YET,
   PIPELINES_PATH,
   ROUTER_WORKSPACES,
+  addRefusedText,
   canChange,
+  canWriteAgain,
   cellText,
   claimsText,
   countText,
@@ -47,7 +61,9 @@ import {
   offText,
   olderText,
   optionValues,
+  packageFileName,
   pipelinePath,
+  problemOf,
   readsText,
   rereadLabel,
   setBody,
@@ -56,9 +72,12 @@ import {
   testStatusText,
   versionLines,
   wordOf,
+  type PipelineInstallAnswer,
   type PipelineList,
   type PipelineOption,
+  type PipelinePackageAnswer,
   type PipelineRow,
+  type PipelineRowV1,
   type PipelineStats,
   type PipelineTestResult,
 } from '@/lib/pipelines';
@@ -533,5 +552,128 @@ export function TestResult({ result }: { result: PipelineTestResult }) {
       ))}
       <p className="text-sm text-muted-foreground">{NOTHING_WRITTEN}</p>
     </div>
+  );
+}
+
+/** The package of an own pipeline, as the brain keeps it. */
+const getPackage = (id: string) => apiFetch<PipelinePackageAnswer>(`${pipelinePath(id)}/package`);
+
+/**
+ * The header buttons of an own pipeline: Download package (its JSON, saved
+ * as `<id>-<version>.json`) and Remove, with the one confirm every remove
+ * has. A built-in shows neither.
+ */
+export function OwnHeaderButtons({ p }: { p: PipelineRowV1 }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [confirm, setConfirm] = useState(false);
+  const download = useMutation({
+    mutationFn: () => getPackage(p.id),
+    onSuccess: (pkg) => {
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' }),
+      );
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = packageFileName(pkg.id, pkg.version);
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    },
+    onError: (err) => toast.error(errText(err)),
+  });
+  const remove = useMutation({
+    mutationFn: () => apiSend<PipelineInstallAnswer>(pipelinePath(p.id), 'DELETE'),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: [PIPELINES_PATH] });
+      toast.success(`Removed ${p.name}`);
+    },
+    onError: (err) => toast.error(errText(err)),
+  });
+  return (
+    <>
+      <HeaderIconButton
+        label="Download package"
+        disabled={download.isPending}
+        onClick={() => download.mutate()}
+      >
+        <Download />
+      </HeaderIconButton>
+      <HeaderIconButton
+        label={`Remove ${p.name}`}
+        className="text-muted-foreground hover:text-destructive-ink"
+        disabled={remove.isPending}
+        onClick={() => setConfirm(true)}
+      >
+        <Trash2 />
+      </HeaderIconButton>
+      <AlertDialog open={confirm} onOpenChange={setConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {p.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              New uploads of its file types get no database. The databases this pipeline wrote stay,
+              as they are.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => remove.mutate()}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+/**
+ * Why an own pipeline does not run, at the top of its detail. The one
+ * problem with an act, the files not on disk, has "Write the files again":
+ * the row's own package, sent to the install route as it is.
+ */
+export function ProblemLine({ p }: { p: PipelineRowV1 }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const problem = problemOf(p);
+  const again = useMutation({
+    mutationFn: async () => {
+      const pkg = await getPackage(p.id);
+      return apiSend<PipelineInstallAnswer>(PIPELINES_PATH, 'POST', { files: pkg.files });
+    },
+    onSuccess: async (answer) => {
+      await queryClient.invalidateQueries({ queryKey: [PIPELINES_PATH] });
+      toast.success(answer.note);
+    },
+  });
+  if (!problem) return null;
+  return (
+    <section
+      aria-label="Problem"
+      className="space-y-3 rounded-xl border border-warning/50 bg-warning/10 p-4 text-sm"
+    >
+      <p className="text-warning-ink">{problem}</p>
+      {canWriteAgain(problem) && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={again.isPending}
+            onClick={() => again.mutate()}
+          >
+            {again.isPending && <Spinner size={14} label="Writing" />}
+            Write the files again
+          </Button>
+        </div>
+      )}
+      {again.isError && (
+        <p role="alert" className="text-destructive-ink">
+          {addRefusedText(again.error)}
+        </p>
+      )}
+    </section>
   );
 }

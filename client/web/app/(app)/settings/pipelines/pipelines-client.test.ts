@@ -17,6 +17,7 @@ import { markRereadRouteGone, resetRereadRouteGone } from '@/lib/pipeline-run';
 import {
   COUNTS_PARTIAL,
   NOTHING_WRITTEN,
+  NOT_ON_DISK,
   NO_RUN_YET,
   PIPELINES_PATH,
   ROUTER_WORKSPACES,
@@ -156,8 +157,13 @@ const panes = (html: string) => ({
   list: html.slice(html.indexOf('<aside>'), html.indexOf('</aside>')),
   detail: html.slice(html.indexOf('<main>'), html.indexOf('</main>')),
 });
-/** The cards of a list pane: one button each. */
-const cards = (list: string) => list.split('<button').slice(1);
+/** The cards of a list pane: one button each, after the list header's
+ *  Add button (P3-3). */
+const cards = (list: string) =>
+  list
+    .split('<button')
+    .slice(1)
+    .filter((b) => !/^[^>]*>\s*(<svg[\s\S]*?<\/svg>)?\s*Add<\/button>/.test(b));
 /** The detail's one button is the header's Info: "About this pipeline". */
 const onlyInfoButton = (detail: string) =>
   detail.split('<button').length === 2 && detail.includes('aria-label="About this pipeline"');
@@ -592,5 +598,72 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
     expect(t).toContain('Options and workspaces');
     expect(t).toContain('Run test');
     expect(t).not.toContain('the router names');
+  });
+});
+
+describe('Settings > Pipelines, own pipelines (P3-3)', () => {
+  /** An own Reader, as a P3-1 brain lists it (made up). */
+  const OWN: PipelineRow = {
+    ...READER,
+    id: 'lx9-logger',
+    name: 'LX-9 data logger',
+    source: 'own',
+    reads: ['lx9'],
+    options: [],
+    problem: null,
+  };
+
+  it('the list header has Add, on every brain', () => {
+    expect(text(panes(screen(LIST)).list)).toMatch(/^ Pipelines Add /);
+    expect(text(panes(screen({ ...LIST, pipelines: [READER, OWN] })).list)).toContain('Add');
+  });
+
+  it('an own card wears Own beside its role; a built-in does not', () => {
+    const all = cards(panes(screen({ ...LIST, pipelines: [READER, OWN] })).list);
+    expect(text(all[1]!)).toContain('Own');
+    expect(all[1]).toMatch(/data-role="reader"/);
+    expect(text(all[0]!)).not.toContain('Own');
+  });
+
+  it('the detail of an own row: Own, Download package and Remove in its header', () => {
+    const { detail } = panes(screen({ ...LIST, pipelines: [READER, OWN] }, 'selected=lx9-logger'));
+    const head = detail.slice(0, detail.indexOf('</h2>') + 600);
+    expect(text(head)).toContain('Own');
+    expect(detail).toContain('aria-label="Download package"');
+    expect(detail).toContain('aria-label="Remove LX-9 data logger"');
+    // The Test part stays as it is.
+    expect(detail).toContain('aria-label="Test"');
+    expect(detail).not.toContain('aria-label="Problem"');
+  });
+
+  it('a built-in shows no Download and no Remove', () => {
+    const { detail } = panes(screen({ ...LIST, pipelines: [READER, OWN] }));
+    // The header only: the word list's chips have their own Remove buttons.
+    const head = detail.slice(0, detail.indexOf('aria-label="Overview"'));
+    expect(head).toContain('aria-label="About this pipeline"');
+    expect(head).not.toContain('Download package');
+    expect(head).not.toContain('aria-label="Remove');
+  });
+
+  it('a row with files not on disk: a quiet mark on its card, its line, and Write the files again', () => {
+    const gone = { ...OWN, problem: NOT_ON_DISK };
+    const { list, detail } = panes(
+      screen({ ...LIST, pipelines: [READER, gone] }, 'selected=lx9-logger'),
+    );
+    expect(cards(list)[1]).toContain('aria-label="Does not run: see its detail"');
+    expect(cards(list)[0]).not.toContain('Does not run');
+    const t = text(detail);
+    expect(t).toContain(NOT_ON_DISK);
+    expect(t).toContain('Write the files again');
+  });
+
+  it('another problem shows its line and offers nothing else', () => {
+    const clash = {
+      ...OWN,
+      problem: 'A built-in now reads .lx9. Remove this one, or install it for another extension.',
+    };
+    const t = text(panes(screen({ ...LIST, pipelines: [clash] })).detail);
+    expect(t).toContain('A built-in now reads .lx9.');
+    expect(t).not.toContain('Write the files again');
   });
 });

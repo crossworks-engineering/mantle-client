@@ -82,6 +82,11 @@ export type PipelineRow = PipelineRowV1 & {
   /** A reader: the kinds it claims from a router; [] for most. An older
    *  server sends none: read it through `claimsText`. */
   claims?: string[];
+  /** LOCAL COPY of the field mantle pipelines P3-0 adds: why an own
+   *  pipeline does not run on this box, in one sentence; null when it runs,
+   *  always null for a built-in. An older server sends none: read it
+   *  through `problemOf`. Delete this note when the pin moves. */
+  problem?: string | null;
 };
 
 /** The kind words this client knows. */
@@ -144,7 +149,30 @@ export type PipelineSetBody = {
 export type PipelineTestBody = {
   fileId: string;
   options?: Record<string, unknown>;
+  /** LOCAL COPY (mantle pipelines P3-1): a draft package to test in place
+   *  of the installed one. This screen never sends it. */
+  files?: PipelinePackage['files'];
 };
+
+/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelinePackageFile`
+ *  (mantle branch feat/pipelines-p3-1): text as it is, or binary bytes as
+ *  base64. Delete when the pin moves past the release that ships it. */
+export type PipelinePackageFile = string | { base64: string };
+
+/** LOCAL COPY of `PipelinePackage` (mantle branch feat/pipelines-p3-1):
+ *  path -> file; `pipeline.json` is its manifest. It is also the body of
+ *  POST /api/pipelines (`PipelineInstallBody`). Delete when the pin moves. */
+export type PipelinePackage = { files: Record<string, PipelinePackageFile> };
+
+/** LOCAL COPY of `PipelineInstallAnswer` (mantle branch
+ *  feat/pipelines-p3-1): the answer of an install or a remove; `row` is
+ *  null after a remove. Delete when the pin moves. */
+export type PipelineInstallAnswer = { row: PipelineRow | null; note: string };
+
+/** The answer of GET /api/pipelines/:id/package (mantle branch
+ *  feat/pipelines-p3-1, `pipelinePackage`): the package with its id and
+ *  version. Delete when the pin moves past a release that types it. */
+export type PipelinePackageAnswer = { id: string; version: string | null } & PipelinePackage;
 
 /** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineTestResult`
  *  (mantle branch feat/pipelines-2-m4). Delete when the pin moves. */
@@ -435,4 +463,203 @@ export function filterPipelines<T extends PipelineRowV1>(rows: readonly T[], que
 export function cellText(v: unknown): string {
   if (v === null || v === undefined) return '';
   return typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+
+// ---------------------------------------------------------------------------
+// Own pipelines (mantle docs/pipelines.md, "Own pipelines"): an Admin adds a
+// package from a folder (POST /api/pipelines), downloads it
+// (GET /api/pipelines/:id/package) and removes it (DELETE
+// /api/pipelines/:id). The brain checks the package; the client reads the
+// folder, says the caps before the send, and never runs or renders a file.
+
+/** The manifest of a package, always text. */
+export const PIPELINE_MANIFEST_FILE = 'pipeline.json';
+
+/** The caps of one package, as the brain holds them (mantle
+ *  PIPELINE_PACKAGE_FILES_MAX and PIPELINE_PACKAGE_MAX_BYTES, all files as
+ *  bytes on disk). Said before the send; the brain checks them again. */
+export const PACKAGE_FILES_MAX = 200;
+export const PACKAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/** The one line of the Add dialog (text, not a confirm). */
+export const INSTALL_LINE =
+  'This runs code on files of this box. You install it as you would a library.';
+
+/** What an install says on a brain before own pipelines (404 or 405). */
+export const CANNOT_ADD = 'This box cannot add pipelines yet.';
+
+/** The brain's problem of an own row whose files are not on disk (mantle
+ *  NOT_ON_DISK): the one problem the screen offers a button for. */
+export const NOT_ON_DISK =
+  'The files of this package are not on disk. Install it again with the same files.';
+
+/** Finder's own file in a folder on a Mac: left out of a package, and said. */
+const FINDER_FILE = '.DS_Store';
+
+/** One file of a picked folder: its path as the browser gives it (the
+ *  folder's own name first), and its bytes, or null when it could not be
+ *  read. */
+export type PickedFile = { path: string; bytes: Uint8Array | null };
+
+/** What the dialog shows of `pipeline.json`. */
+export type ManifestFacts = {
+  id: string;
+  name: string;
+  version: string;
+  reads: string[];
+  /** The role word: Reader, Router, Transformer. */
+  role: string;
+};
+
+export type PackageRead = {
+  pkg: PipelinePackage;
+  /** The files in the package, and their bytes. */
+  count: number;
+  bytes: number;
+  /** Null when there is no `pipeline.json` or it is not JSON: the brain
+   *  says why when it is sent. */
+  manifest: ManifestFacts | null;
+  /** What stops the send, one sentence each. Empty: it can be sent. */
+  problems: string[];
+  /** The files left out, said in the dialog. */
+  leftOut: string[];
+};
+
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/** Bytes as base64, in chunks (a large file would overflow one call). */
+export function base64Of(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+/** A file as the package holds it: valid UTF-8 is text, as it is (a BOM
+ *  kept); anything else is `{ base64 }`. */
+export function packageFileOf(bytes: Uint8Array): PipelinePackageFile {
+  try {
+    return utf8.decode(bytes);
+  } catch {
+    return { base64: base64Of(bytes) };
+  }
+}
+
+/** A size as the dialog says it. */
+export function sizeText(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** The facts of a manifest's text, or null when it is not a JSON object. */
+export function manifestFacts(text: string): ManifestFacts | null {
+  let m: unknown;
+  try {
+    m = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
+  const o = m as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  const match = (o.match && typeof o.match === 'object' ? o.match : {}) as Record<string, unknown>;
+  const ext = Array.isArray(match.ext) ? match.ext.filter((e) => typeof e === 'string') : [];
+  return {
+    id: str(o.id),
+    name: str(o.name),
+    version: str(o.version),
+    reads: ext as string[],
+    role: roleWord(o.router === true ? 'router' : match.after ? 'after' : 'reader'),
+  };
+}
+
+/**
+ * A picked folder as a package: each path without the folder's own name;
+ * a text file as text, any other as base64. A file that could not be read,
+ * and a folder over the caps, are problems, said before the send.
+ */
+export function readPackage(picked: readonly PickedFile[]): PackageRead {
+  const files: Record<string, PipelinePackageFile> = {};
+  const problems: string[] = [];
+  const leftOut: string[] = [];
+  const unread: string[] = [];
+  let bytes = 0;
+  for (const f of picked) {
+    const path = f.path.includes('/') ? f.path.slice(f.path.indexOf('/') + 1) : f.path;
+    if (path === FINDER_FILE || path.endsWith(`/${FINDER_FILE}`)) {
+      leftOut.push(path);
+      continue;
+    }
+    if (f.bytes === null) {
+      unread.push(path);
+      continue;
+    }
+    bytes += f.bytes.length;
+    files[path] = packageFileOf(f.bytes);
+  }
+  const count = Object.keys(files).length + unread.length;
+  if (count === 0) problems.push('The folder has no files.');
+  if (unread.length > 0) {
+    problems.push(
+      `${unread.length === 1 ? 'A file' : `${unread.length} files`} could not be read: ${unread.join(', ')}.`,
+    );
+  }
+  if (count > PACKAGE_FILES_MAX) {
+    problems.push(`A package has at most ${PACKAGE_FILES_MAX} files; this folder has ${count}.`);
+  }
+  if (bytes > PACKAGE_MAX_BYTES) {
+    problems.push(
+      `A package is at most ${sizeText(PACKAGE_MAX_BYTES)} of files; this folder has ${sizeText(bytes)}.`,
+    );
+  }
+  const text = files[PIPELINE_MANIFEST_FILE];
+  return {
+    pkg: { files },
+    count,
+    bytes,
+    manifest: typeof text === 'string' ? manifestFacts(text) : null,
+    problems,
+    leftOut,
+  };
+}
+
+/** What an install does to the pipeline of the same id, or null for a new
+ *  id (a built-in's id is refused by the brain, with its sentence). */
+export function replacesText(
+  rows: readonly PipelineRowV1[],
+  manifest: Pick<ManifestFacts, 'id' | 'version'>,
+): string | null {
+  const row = rows.find((r) => r.id === manifest.id && r.source === 'own');
+  if (!row) return null;
+  return row.version === manifest.version
+    ? `Version ${row.version} is installed: the same files write its folder again.`
+    : `Replaces version ${row.version}`;
+}
+
+/** The file name a downloaded package is saved under. */
+export function packageFileName(id: string, version: string | null): string {
+  const safe = (s: string) => s.replace(/[^\w.-]+/g, '_');
+  return version ? `${safe(id)}-${safe(version)}.json` : `${safe(id)}.json`;
+}
+
+/** Is it an own pipeline (Download, Remove, the Own pill)? */
+export const isOwn = (row: PipelineRowV1) => row.source === 'own';
+
+/** The problem of a row, or null: it runs. An older server sends none. */
+export function problemOf(row: PipelineRowV1): string | null {
+  const p = (row as { problem?: unknown }).problem;
+  return typeof p === 'string' && p.trim() ? p : null;
+}
+
+/** Does the problem have its one act, "Write the files again"? */
+export const canWriteAgain = (problem: string | null) => problem === NOT_ON_DISK;
+
+/** The sentence of a refused install: the brain's own, or, on a brain
+ *  before own pipelines (no POST: 404 or 405), CANNOT_ADD. */
+export function addRefusedText(err: unknown): string {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (status === 404 || status === 405) return CANNOT_ADD;
+  return err instanceof Error ? err.message : String(err);
 }

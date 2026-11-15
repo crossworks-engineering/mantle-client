@@ -3,7 +3,16 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Bot, FileInput, Shuffle, Split, Workflow, type LucideIcon } from 'lucide-react';
+import {
+  Bot,
+  CircleAlert,
+  FileInput,
+  Plus,
+  Shuffle,
+  Split,
+  Workflow,
+  type LucideIcon,
+} from 'lucide-react';
 import { ApiError, apiFetch } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
@@ -26,8 +35,10 @@ import {
   countText,
   filterPipelines,
   hasState,
+  isOwn,
   offInOf,
   olderText,
+  problemOf,
   readsText,
   roleWord,
   statsOf,
@@ -36,7 +47,8 @@ import {
   type PipelineRow,
   type PipelineRowV1,
 } from '@/lib/pipelines';
-import { PipelineDetail } from './pipeline-detail';
+import { AddPipelineDialog } from './add-pipeline-dialog';
+import { OwnHeaderButtons, PipelineDetail, ProblemLine } from './pipeline-detail';
 
 const tooOld = (err: unknown) => err instanceof ApiError && err.status === 404;
 
@@ -152,6 +164,7 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
       : (list.pipelines[0]?.id ?? null);
   });
   const open = list.pipelines.find((p) => p.id === pickedId) ?? shown[0] ?? null;
+  const [adding, setAdding] = useState(false);
 
   return (
     <MasterDetail
@@ -160,6 +173,24 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
       // keeps it off 1200px line lengths (§8).
       list={
         <>
+          {/* Add sits in its own row above the search, as Tool groups has
+              New: the search row keeps its count. Shown on every brain; one
+              before own pipelines answers the install 404 or 405, and the
+              dialog says "This box cannot add pipelines yet." */}
+          <div className="flex items-center justify-between gap-2 border-b border-border p-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Pipelines
+            </h2>
+            <Button type="button" size="sm" onClick={() => setAdding(true)}>
+              <Plus /> Add
+            </Button>
+          </div>
+          <AddPipelineDialog
+            open={adding}
+            onOpenChange={setAdding}
+            rows={list.pipelines}
+            onAdded={(id) => setPickedId(id)}
+          />
           <ListSearchBar
             query={search.query}
             onQuery={search.setQuery}
@@ -202,15 +233,24 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
               sticky
               visual={<RoleIcon kind={kindOf(open)} />}
               title={open.name}
-              badges={<RolePill kind={kindOf(open)} />}
+              badges={
+                <>
+                  <RolePill kind={kindOf(open)} />
+                  {isOwn(open) && <HeaderPill>Own</HeaderPill>}
+                </>
+              }
               iconActions={
-                <HeaderInfoButton label="About this pipeline">
-                  <p className="break-all font-mono text-xs">{open.id}</p>
-                  <p className="text-xs text-muted-foreground">{PIPELINE_LINE}</p>
-                </HeaderInfoButton>
+                <>
+                  <HeaderInfoButton label="About this pipeline">
+                    <p className="break-all font-mono text-xs">{open.id}</p>
+                    <p className="text-xs text-muted-foreground">{PIPELINE_LINE}</p>
+                  </HeaderInfoButton>
+                  {isOwn(open) && <OwnHeaderButtons key={open.id} p={open} />}
+                </>
               }
             />
             <div className="space-y-6 p-6">
+              {problemOf(open) && <ProblemLine key={open.id} p={open} />}
               {byId.get(open.id) ? (
                 <PipelineDetail key={open.id} row={byId.get(open.id)!} />
               ) : (
@@ -250,12 +290,23 @@ function PipelineCard({
   const older = olderText(p.older);
   const off = row && canChange(row) && offInOf(row).length > 0 ? usedInText(row) : null;
   const description = statsOf(p)?.description;
+  const problem = problemOf(p);
   return (
     <ListCard selected={selected} onClick={onClick}>
       <div className="flex items-center gap-2">
         <RoleIcon kind={kind} />
         <ListCardTitle>{p.name}</ListCardTitle>
-        <RolePill kind={kind} className="ml-auto" />
+        {problem && (
+          <CircleAlert
+            className="size-3.5 shrink-0 text-warning-ink"
+            role="img"
+            aria-label="Does not run: see its detail"
+          />
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {isOwn(p) && <HeaderPill>Own</HeaderPill>}
+          <RolePill kind={kind} />
+        </span>
       </div>
       <ListCardMeta>
         <span className="font-mono">{p.version}</span>
