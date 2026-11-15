@@ -73,8 +73,9 @@ function card(list: Locator, name: string): Locator {
   return list.getByRole('button', { name: new RegExp(`^${esc(name)} `) });
 }
 
-/** The detail's header: the one h2 with the open pipeline's name. */
-const header = (detail: Locator) => detail.getByRole('heading', { level: 2 }).first();
+/** The detail's header: the h2 of its ItemHeader, the open pipeline's name. */
+const header = (detail: Locator) =>
+  detail.getByTestId('item-header').getByRole('heading', { level: 2 });
 
 /** Answer GET /api/pipelines with `body`, and keep every request to it. */
 async function routePipelines(page: Page, body: unknown): Promise<string[]> {
@@ -117,7 +118,9 @@ test('an admin opens Pipelines from Settings: the list, its counts, one GET and 
   const facts = detail.getByRole('region', { name: 'Overview' });
   await expect(facts).toContainText('A pipeline reads a file into its database');
   await expect(facts).toContainText('StateOn');
-  await expect(detail.getByRole('button')).toHaveCount(0);
+  // The one button is the header's Info; nothing to change under it.
+  await expect(detail.getByRole('button')).toHaveCount(1);
+  await expect(detail.getByRole('button', { name: 'About this pipeline' })).toBeVisible();
   await expect(detail.getByRole('switch')).toHaveCount(0);
   // Another card opens its own facts.
   await card(list, 'CAD drawing').click();

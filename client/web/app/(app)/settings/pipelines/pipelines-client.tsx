@@ -15,6 +15,7 @@ import {
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { HeaderInfoButton, ItemHeader } from '@/components/layout/item-header';
 import { ListSearchBar, ListSearchEmpty, useListQuery } from '@/components/list-search';
 import {
   COUNTS_PARTIAL,
@@ -192,13 +193,26 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
       }
       detail={
         open ? (
-          <div className="space-y-6 p-6">
-            <DetailHeader p={open} />
-            {byId.get(open.id) ? (
-              <PipelineDetail key={open.id} row={byId.get(open.id)!} />
-            ) : (
-              <PlainDetail p={open} />
-            )}
+          <div>
+            <ItemHeader
+              sticky
+              visual={<RoleIcon kind={kindOf(open)} />}
+              title={open.name}
+              badges={<RolePill kind={kindOf(open)} />}
+              iconActions={
+                <HeaderInfoButton label="About this pipeline">
+                  <p className="break-all font-mono text-xs">{open.id}</p>
+                  <p className="text-xs text-muted-foreground">{PIPELINE_LINE}</p>
+                </HeaderInfoButton>
+              }
+            />
+            <div className="space-y-6 p-6">
+              {byId.get(open.id) ? (
+                <PipelineDetail key={open.id} row={byId.get(open.id)!} />
+              ) : (
+                <PlainDetail p={open} />
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
@@ -262,20 +276,6 @@ export function PipelineCard({
         </div>
       )}
     </ListCard>
-  );
-}
-
-/** The detail's one header row: the role icon, the name, the role pill. */
-function DetailHeader({ p }: { p: PipelineRowV1 }) {
-  const kind = kindOf(p);
-  return (
-    <div className="flex items-center gap-3">
-      <h2 className="flex min-w-0 flex-1 items-center gap-2 text-xl font-semibold">
-        <RoleIcon kind={kind} />
-        <span className="truncate">{p.name}</span>
-        <RolePill kind={kind} />
-      </h2>
-    </div>
   );
 }
 

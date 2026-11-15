@@ -158,6 +158,9 @@ const panes = (html: string) => ({
 });
 /** The cards of a list pane: one button each. */
 const cards = (list: string) => list.split('<button').slice(1);
+/** The detail's one button is the header's Info: "About this pipeline". */
+const onlyInfoButton = (detail: string) =>
+  detail.split('<button').length === 2 && detail.includes('aria-label="About this pipeline"');
 const titleOf = (card: string) => card.match(/class="text-sm font-medium truncate">([^<]*)/)?.[1];
 
 afterEach(() => {
@@ -201,7 +204,9 @@ describe('Settings > Pipelines, a phase 1 brain', () => {
     ]) {
       expect(t, want).toContain(want);
     }
-    expect(detail).not.toMatch(/<button|<input|<form|role="switch"/);
+    // The header's one Info button, and nothing to change under it.
+    expect(onlyInfoButton(detail)).toBe(true);
+    expect(detail).not.toMatch(/<input|<form|role="switch"/);
   });
 
   it('a count the brain did not make is a dash, and partial counts say so', () => {
@@ -221,7 +226,10 @@ describe('Settings > Pipelines, a phase 1 brain', () => {
     const client = new QueryClient();
     client.setQueryData([PIPELINES_PATH], LIST);
     const html = renderToStaticMarkup(
-      createElement(QueryClientProvider, { client, children: createElement(PipelinesClient) }),
+      createElement(QueryClientProvider, {
+        client,
+        children: createElement(ToastProvider, { children: createElement(PipelinesClient) }),
+      }),
     );
     expect(text(html)).toContain('Spreadsheet');
   });
@@ -516,7 +524,8 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
     const { detail } = panes(screen(list, 'selected=pdf-router'));
     expect(detail).toMatch(/<h2[^>]*>.*PDF router.*data-role="router"/);
     expect(text(detail)).toContain(ROUTER_WORKSPACES);
-    expect(detail).not.toMatch(/<button|<input|<form/);
+    expect(onlyInfoButton(detail)).toBe(true);
+    expect(detail).not.toMatch(/<input|<form/);
   });
 
   it('the detail of a router: what it names and asks, its runs, and nothing to change', () => {
