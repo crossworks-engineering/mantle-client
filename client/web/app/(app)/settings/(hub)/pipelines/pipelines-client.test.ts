@@ -2,9 +2,9 @@
  * Settings > Pipelines renders the brain's list from one answer. A phase 1
  * brain (rows with no `kind`): every pipeline with its version, what it
  * reads, On, and its counts, read only. A phase 2 brain: a row opens its
- * detail, whose form is made from each option's spec; a reader shows no
- * ticks, an `after` pipeline with no tick says it does nothing; a test
- * result shows its tabs and that nothing was written.
+ * detail, whose form is made from each option's spec; a reader and an
+ * `after` pipeline show every workspace with a switch, on unless the off
+ * list holds it; a test result shows its tabs and that nothing was written.
  */
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -13,12 +13,11 @@ import { ToastProvider } from '@mantle/web-ui/ui/toast';
 import { afterEach, describe, expect, it } from 'vitest';
 import { markRereadRouteGone, resetRereadRouteGone } from '@/lib/pipeline-run';
 import {
-  ATTACHED_NONE,
   COUNTS_PARTIAL,
   NOTHING_WRITTEN,
   NO_RUN_YET,
   PIPELINES_PATH,
-  READER_EVERYWHERE,
+  ROUTER_WORKSPACES,
   TEST_BUSY,
   type PipelineList,
   type PipelineRow,
@@ -70,6 +69,7 @@ const READER: PipelineRow = {
   ...LIST.pipelines[1]!,
   kind: 'reader',
   workspaces: 'all',
+  offIn: [],
   after: null,
   tabs: [],
   options: [
@@ -97,13 +97,14 @@ const READER: PipelineRow = {
   ],
 };
 
-/** A phase 2 `after` pipeline attached to no workspace (made up). */
+/** A phase 2 `after` pipeline, off in one workspace (made up). */
 const AFTER: PipelineRow = {
   ...LIST.pipelines[1]!,
   id: 'site-tags',
   name: 'Site tags',
   kind: 'after',
-  workspaces: [],
+  workspaces: 'all',
+  offIn: ['w2'],
   after: 'texts-v1',
   tabs: ['Site tags'],
   options: [],
@@ -174,12 +175,13 @@ describe('Settings > Pipelines, a phase 1 brain', () => {
 });
 
 describe('Settings > Pipelines, a phase 2 brain', () => {
-  it('a row opens its detail, and says where it is used', () => {
+  it('a row opens its detail, and shows the off count only above 0', () => {
     const list: PipelineList = { ...LIST, pipelines: [READER, AFTER] };
     const html = renderToStaticMarkup(createElement(PipelinesList, { list, onOpen: () => {} }));
     expect(html.match(/<button/g)).toHaveLength(2);
     expect(text(html)).toContain('Every workspace');
-    expect(text(html)).toContain('No workspace');
+    expect(text(html)).toContain('Off in 1');
+    expect(text(html)).not.toContain('Off in 0');
   });
 
   it('the detail renders each option type from its spec', () => {
@@ -197,27 +199,45 @@ describe('Settings > Pipelines, a phase 2 brain', () => {
     expect(text(html)).toContain('At most 50 words of 8 characters.');
   });
 
-  it('a reader shows no ticks: it is used in every workspace', () => {
-    const ws = [{ id: 'w1', name: 'North site', archived: false }];
-    const html = render(createElement(PipelineDetail, { row: READER }), ws);
-    expect(text(html)).toContain(READER_EVERYWHERE);
+  const WS = [
+    { id: 'w1', name: 'North site', archived: false },
+    { id: 'w2', name: 'South site', archived: false },
+    { id: 'w3', name: 'Old site', archived: true },
+  ];
+  const wsSwitch = (html: string, name: string) =>
+    html.match(new RegExp(`aria-checked="(true|false)"[^>]*aria-label="Toggle ${name}"`))?.[1];
+
+  it('a reader gets a switch per workspace, every one on by default', () => {
+    const html = render(createElement(PipelineDetail, { row: READER }), WS);
+    expect(text(html)).toContain('On in every workspace');
+    expect(wsSwitch(html, 'North site')).toBe('true');
+    expect(wsSwitch(html, 'South site')).toBe('true');
+    // An archived workspace that is not off is not shown.
+    expect(text(html)).not.toContain('Old site');
     expect(html).not.toContain('role="checkbox"');
-    expect(text(html)).not.toContain('North site');
   });
 
-  it('an after pipeline gets a tick per workspace, and with none it does nothing', () => {
-    const ws = [
-      { id: 'w1', name: 'North site', archived: false },
-      { id: 'w2', name: 'South site', archived: false },
-    ];
-    const html = render(createElement(PipelineDetail, { row: AFTER }), ws);
-    expect(html.match(/role="checkbox"/g)).toHaveLength(2);
-    expect(text(html)).toContain(ATTACHED_NONE);
-    expect(text(html)).not.toContain(READER_EVERYWHERE);
+  it('an after pipeline: its off list turns those switches off, and the line counts them', () => {
+    const html = render(createElement(PipelineDetail, { row: AFTER }), WS);
+    expect(text(html)).toContain('Off in 1 workspace');
+    expect(wsSwitch(html, 'North site')).toBe('true');
+    expect(wsSwitch(html, 'South site')).toBe('false');
 
-    const on = render(createElement(PipelineDetail, { row: { ...AFTER, workspaces: ['w1'] } }), ws);
-    expect(text(on)).not.toContain(ATTACHED_NONE);
-    expect(on.match(/aria-checked="true"/g)).toHaveLength(1);
+    // An archived workspace in the off list stays visible, off.
+    const two = render(
+      createElement(PipelineDetail, { row: { ...AFTER, offIn: ['w2', 'w3'] } }),
+      WS,
+    );
+    expect(text(two)).toContain('Off in 2 workspaces');
+    expect(wsSwitch(two, 'Old site')).toBe('false');
+    expect(text(two)).toContain('Archived');
+  });
+
+  it('a row of an older server (no offIn) is on everywhere', () => {
+    const { offIn: _o, ...old } = AFTER;
+    const html = render(createElement(PipelineDetail, { row: old }), WS);
+    expect(text(html)).toContain('On in every workspace');
+    expect(wsSwitch(html, 'South site')).toBe('true');
   });
 
   it('the test part shows a fixed result, and that nothing was written', () => {
@@ -419,6 +439,7 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
       "table (only by the decider's answer)",
       'May ask decider',
       'Runs: 12. Last run: ',
+      ROUTER_WORKSPACES,
     ]) {
       expect(t, want).toContain(want);
     }
@@ -426,7 +447,8 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
     for (const not of [
       'Options and workspaces',
       'This pipeline has no options.',
-      READER_EVERYWHERE,
+      'On in every workspace',
+      'Toggle ',
       'Save pipeline',
       'Run test',
       'older files again',
@@ -451,7 +473,7 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
 
   it('an unknown kind is a plain, read-only row and detail', () => {
     // A future kind with none of the phase 2 parts: nothing may fail.
-    const { options: _o, workspaces: _w, tabs: _t, ...bare } = READER;
+    const { options: _o, workspaces: _w, offIn: _f, tabs: _t, ...bare } = READER;
     const odd = { ...bare, id: 'sorter-1', name: 'Sorter', kind: 'sorter' } as PipelineRow;
     const list: PipelineList = { ...LIST, pipelines: [odd] };
     const row = text(

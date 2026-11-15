@@ -4,7 +4,7 @@
  * answers GET /api/pipelines for an Admin with the settings area; another
  * login gets 403, and a brain before pipelines gives 404. A phase 1 brain
  * gives rows with no `kind`: the screen shows them read only. A phase 2
- * brain takes PATCH /api/pipelines/:id (options, workspaces) and
+ * brain takes PATCH /api/pipelines/:id (options, the off list) and
  * POST /api/pipelines/:id/test. A router row (`kind: 'router'`) names the
  * kind of a file; it is read only, as is a kind word this client does not
  * know (`canChange`). Pure helpers only: no DOM here.
@@ -59,8 +59,15 @@ export type PipelineRowV1 = {
 export type PipelineRow = PipelineRowV1 & {
   /** A later server may add a word: `canChange` is the one rule for it. */
   kind: PipelineKind | (string & {});
-  /** 'all' (a reader), or the ids of the workspaces it is attached to. */
+  /** Kept for older clients: always 'all' since the off list (mantle,
+   *  pipelines WO). Read `offInOf`, never this. */
   workspaces: 'all' | string[];
+  /** LOCAL COPY of the field mantle pipelines WO adds: the ids of the
+   *  workspaces the pipeline is off in; [] for a router, always. A server
+   *  before WO sends none: read it through `offInOf`. Make it required (and
+   *  delete this note) when the contract pin moves past the release that
+   *  ships it. */
+  offIn?: string[];
   /** For an `after` pipeline: the shape it reads. Null for a reader. */
   after: string | null;
   /** The tabs an `after` pipeline writes. */
@@ -122,7 +129,11 @@ export type PipelineList = {
  *  (mantle branch feat/pipelines-2). Delete when the pin moves. */
 export type PipelineSetBody = {
   options?: Record<string, unknown>;
+  /** Kept in the type; the server refuses it since WO. Never sent. */
   workspaces?: string[];
+  /** LOCAL COPY (mantle pipelines WO): replaces the off list; [] is on in
+   *  every workspace. A router refuses it. */
+  offIn?: string[];
 };
 
 /** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineTestBody`
@@ -160,11 +171,8 @@ export const COUNTS_PARTIAL = 'The counts are partial: the box stopped counting 
 /** The state of a pipeline on a phase 1 brain: it has no switch, so it is on. */
 export const PIPELINE_STATE = 'On';
 
-/** A reader is used in every workspace: no ticks. */
-export const READER_EVERYWHERE = 'Used in every workspace.';
-
-/** An `after` pipeline with no tick. */
-export const ATTACHED_NONE = 'Attached to no workspace. It does nothing.';
+/** A router has no off switch: it runs where its readers run. */
+export const ROUTER_WORKSPACES = 'A router is used wherever its readers are.';
 
 /** Under every test result. */
 export const NOTHING_WRITTEN = 'Nothing was written.';
@@ -220,7 +228,7 @@ export function hasState(list: PipelineList): PipelineRow[] | null {
 
 /**
  * The one rule of what a row can do: a reader and an `after` pipeline have
- * options, workspaces, a test and a re-read. A router, and a kind word this
+ * options, an off switch per workspace, a test and a re-read. A router, and a kind word this
  * client does not know, are read only: the screen shows them and offers
  * nothing to press but the name.
  */
@@ -237,10 +245,13 @@ export function kindText(row: PipelineRow): string {
   return row.kind ? row.kind[0]!.toUpperCase() + row.kind.slice(1) : '-';
 }
 
-/** The list's "Used in" cell: where it is used, or the kind word of a row
- *  that is used by no workspace setting (a router, an unknown kind). */
+/** The list's "Used in" cell: "Off in N" when it is off somewhere, else
+ *  every workspace; or the kind word of a row with no off switch (a router,
+ *  an unknown kind). */
 export function usedInText(row: PipelineRow): string {
-  return canChange(row) ? attachText(row) : kindText(row);
+  if (!canChange(row)) return kindText(row);
+  const n = offInOf(row).length;
+  return n > 0 ? `Off in ${n}` : 'Every workspace';
 }
 
 /** The kinds a router can name, one line each. Empty when the server sent
@@ -277,12 +288,27 @@ export function olderText(older: number | null): string | null {
     : `${countText(older)} files were read by an older version or with other options`;
 }
 
-/** Where a phase 2 pipeline is used, as the list's State cell says it. */
-export function attachText(row: PipelineRow): string {
-  if (row.workspaces === 'all') return 'Every workspace';
-  const n = row.workspaces.length;
-  if (n === 0) return 'No workspace';
-  return n === 1 ? '1 workspace' : `${n} workspaces`;
+/** The workspaces a pipeline is off in. A server before WO sends no
+ *  `offIn`: that is on everywhere. */
+export function offInOf(row: PipelineRow): string[] {
+  return Array.isArray(row.offIn) ? row.offIn : [];
+}
+
+/** The summary line of the workspaces part. */
+export function offText(n: number): string {
+  if (n === 0) return 'On in every workspace';
+  return n === 1 ? 'Off in 1 workspace' : `Off in ${countText(n)} workspaces`;
+}
+
+/** The off list after the switches of the shown workspaces moved: a shown
+ *  one is off when its switch is off; an id not shown (a deleted workspace,
+ *  or the list not loaded) stays as it was. */
+export function offFromOn(
+  off: readonly string[],
+  shown: readonly string[],
+  on: readonly string[],
+): string[] {
+  return [...off.filter((id) => !shown.includes(id)), ...shown.filter((id) => !on.includes(id))];
 }
 
 /** The form's first values: the value in force of each option. */
@@ -307,21 +333,18 @@ export function changedOptions(
   return out;
 }
 
-/** The body of a Save: the changed options, and the ticks when they moved.
- *  Null when nothing changed. A reader never sends `workspaces`. */
+/** The body of a Save: the changed options, and the off list when it
+ *  moved. Null when nothing changed. Never `workspaces`: the server refuses
+ *  it. */
 export function setBody(
   row: PipelineRow,
   form: Readonly<Record<string, unknown>>,
-  ticks: readonly string[] | null,
+  off: readonly string[],
 ): PipelineSetBody | null {
   const body: PipelineSetBody = {};
   const options = changedOptions(row, form);
   if (Object.keys(options).length > 0) body.options = options;
-  if (ticks && row.workspaces !== 'all') {
-    const was = [...row.workspaces].sort();
-    const now = [...ticks].sort();
-    if (!same(was, now)) body.workspaces = [...ticks];
-  }
+  if (!same([...offInOf(row)].sort(), [...off].sort())) body.offIn = [...off];
   return Object.keys(body).length > 0 ? body : null;
 }
 

@@ -28,6 +28,7 @@ import {
   runRouteGone,
   showRunEntry,
   skipLines,
+  skipText,
   type PipelineRunAnswer,
   type PipelineRunBody,
   type RunStep,
@@ -141,10 +142,11 @@ describe('the Run dialog', () => {
     expect(resultLine(RESULT)).toBe('3 files are queued. 3 were not taken.');
     expect(t).toContain('3 files are queued. 3 were not taken.');
     expect(skipLines(RESULT)).toEqual([
-      '2 are in a workspace the pipeline is not attached to',
+      '2 are in a workspace where the pipeline is off',
       '1 has no database yet',
     ]);
     expect(t).toContain('1 has no database yet');
+    expect(skipText('not-attached', 1)).toBe('1 is in a workspace where the pipeline is off');
     expect(t).toContain(RUN_QUEUED_NOTE);
     expect(t).not.toContain(RUN_NEXT_LABEL);
     expect(resultLine({ ...RESULT, queued: 1, skipped: { 'no-sha': 1 } })).toBe(

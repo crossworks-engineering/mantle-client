@@ -109,9 +109,11 @@ export function nextBody(step: RunStep): PipelineRunBody | null {
 const SKIP_WORDS: Record<PipelineRunSkip, { one: string; many: string }> = {
   'no-match': { one: 'does not fit this pipeline', many: 'do not fit this pipeline' },
   'no-database': { one: 'has no database yet', many: 'have no database yet' },
+  // The word stays (a published contract); it means "off in the file's
+  // workspace" since the server's off list (mantle, pipelines WO).
   'not-attached': {
-    one: 'is in a workspace the pipeline is not attached to',
-    many: 'are in a workspace the pipeline is not attached to',
+    one: 'is in a workspace where the pipeline is off',
+    many: 'are in a workspace where the pipeline is off',
   },
   'no-sha': { one: 'has no checksum', many: 'have no checksum' },
   private: { one: 'stays out of the brain', many: 'stay out of the brain' },

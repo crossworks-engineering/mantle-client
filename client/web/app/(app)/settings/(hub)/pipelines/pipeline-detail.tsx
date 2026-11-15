@@ -4,7 +4,6 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
-import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { Input } from '@mantle/web-ui/ui/input';
@@ -24,17 +23,17 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { TagInput } from '@/components/tag-input';
+import { ToggleList } from '@/components/toggle-list';
 import { useWorkspaces } from '@/components/workspaces/workspace-queries';
 import { fileHitsOnly, searchUrl } from '@/app/(app)/files/use-file-search';
 import type { FileSearchHit } from '@/app/(app)/files/files-shared';
 import { RunDialog, useRereadRouteGone } from '@/app/(app)/files/run-pipeline-dialog';
 import { RUN_LIMIT, postReread, rereadRefusedText } from '@/lib/pipeline-run';
 import {
-  ATTACHED_NONE,
   NOTHING_WRITTEN,
   NO_RUN_YET,
   PIPELINES_PATH,
-  READER_EVERYWHERE,
+  ROUTER_WORKSPACES,
   canChange,
   cellText,
   claimsText,
@@ -43,6 +42,9 @@ import {
   kindText,
   nameLines,
   neverRan,
+  offFromOn,
+  offInOf,
+  offText,
   olderText,
   optionValues,
   pipelinePath,
@@ -97,13 +99,11 @@ export function PipelineDetail({ row }: { row: PipelineRow }) {
 
 function ChangeableDetail({ row }: { row: PipelineRow }) {
   const [form, setForm] = useState(() => optionValues(row));
-  const [ticks, setTicks] = useState<string[] | null>(() =>
-    row.workspaces === 'all' ? null : [...row.workspaces],
-  );
+  const [off, setOff] = useState<string[]>(() => [...offInOf(row)]);
   return (
     <div className="space-y-6">
       <Overview row={row} />
-      <SettingsPart row={row} form={form} setForm={setForm} ticks={ticks} setTicks={setTicks} />
+      <SettingsPart row={row} form={form} setForm={setForm} off={off} setOff={setOff} />
       <TestPart row={row} form={form} />
     </div>
   );
@@ -149,6 +149,7 @@ function Overview({ row }: { row: PipelineRow }) {
         )}
       </dl>
       {claims && <p className="mt-4 text-sm">{claims}</p>}
+      {router && <p className="mt-4 text-sm text-muted-foreground">{ROUTER_WORKSPACES}</p>}
       {stats && <RunsAndVersions row={row} stats={stats} />}
     </Part>
   );
@@ -208,19 +209,19 @@ function SettingsPart({
   row,
   form,
   setForm,
-  ticks,
-  setTicks,
+  off,
+  setOff,
 }: {
   row: PipelineRow;
   form: Form;
   setForm: (f: Form) => void;
-  ticks: string[] | null;
-  setTicks: (t: string[] | null) => void;
+  off: string[];
+  setOff: (o: string[]) => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
-  const body = setBody(row, form, ticks);
+  const body = setBody(row, form, off);
   const save = useMutation({
     mutationFn: () => apiSend<PipelineRow>(pipelinePath(row.id), 'PATCH', body),
     onSuccess: (saved) => {
@@ -236,7 +237,7 @@ function SettingsPart({
       );
       // Show what the brain kept (a word list comes back upper case, sorted).
       setForm(optionValues(saved));
-      setTicks(saved.workspaces === 'all' ? null : [...saved.workspaces]);
+      setOff([...offInOf(saved)]);
       toast.success(`Saved ${saved.name}`);
     },
     onError: (err) => setError(errText(err)),
@@ -261,7 +262,7 @@ function SettingsPart({
               onChange={(v) => setForm({ ...form, [o.name]: v })}
             />
           ))}
-          <Workspaces row={row} ticks={ticks} setTicks={setTicks} />
+          <Workspaces off={off} setOff={setOff} />
           <FieldError id={`pipeline-${row.id}-error`}>{error}</FieldError>
           <div className="flex justify-end gap-2 border-t border-border pt-4">
             <SubmitButton pending={save.isPending} disabled={!body}>
@@ -346,56 +347,32 @@ function OptionField({
   );
 }
 
-/** A reader is used everywhere; an `after` pipeline gets a tick for each
- *  workspace. No tick: it does nothing. */
-function Workspaces({
-  row,
-  ticks,
-  setTicks,
-}: {
-  row: PipelineRow;
-  ticks: string[] | null;
-  setTicks: (t: string[]) => void;
-}) {
+/** Every workspace with its switch, on by default; a switch turned off puts
+ *  the workspace in the off list. An archived workspace shows only while it
+ *  is in the list, so it can be switched on again. */
+function Workspaces({ off, setOff }: { off: string[]; setOff: (o: string[]) => void }) {
   const workspaces = useWorkspaces();
-  if (row.workspaces === 'all' || ticks === null) {
-    return (
-      <div className="space-y-1">
-        <p className="text-sm font-medium">Workspaces</p>
-        <p className="text-sm text-muted-foreground">{READER_EVERYWHERE}</p>
-      </div>
-    );
-  }
-  const list = (workspaces.data ?? []).filter((w) => !w.archived || ticks.includes(w.id));
+  const shown = (workspaces.data ?? []).filter((w) => !w.archived || off.includes(w.id));
+  const ids = shown.map((w) => w.id);
   return (
-    <fieldset className="space-y-2">
-      <legend className="text-sm font-medium">Workspaces</legend>
+    <div className="space-y-2">
+      <p className="text-sm font-medium">Workspaces</p>
+      <p className="text-sm text-muted-foreground">{offText(off.length)}</p>
       {workspaces.isPending ? (
         <Spinner size={14} label="Loading workspaces" />
       ) : (
-        <ul className="space-y-2">
-          {list.map((w) => {
-            const id = `pipeline-${row.id}-ws-${w.id}`;
-            const on = ticks.includes(w.id);
-            return (
-              <li key={w.id} className="flex items-center gap-2">
-                <Checkbox
-                  id={id}
-                  checked={on}
-                  onCheckedChange={(c) =>
-                    setTicks(c === true ? [...ticks, w.id] : ticks.filter((x) => x !== w.id))
-                  }
-                />
-                <label htmlFor={id} className="text-sm">
-                  {w.name}
-                </label>
-              </li>
-            );
-          })}
-        </ul>
+        <ToggleList
+          items={shown.map((w) => ({
+            value: w.id,
+            label: w.name,
+            description: w.archived ? 'Archived' : null,
+          }))}
+          selected={ids.filter((id) => !off.includes(id))}
+          onChange={(on) => setOff(offFromOn(off, ids, on))}
+          searchable
+        />
       )}
-      {ticks.length === 0 && <p className="text-sm text-muted-foreground">{ATTACHED_NONE}</p>}
-    </fieldset>
+    </div>
   );
 }
 

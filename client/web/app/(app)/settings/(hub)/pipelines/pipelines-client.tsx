@@ -23,6 +23,7 @@ import {
   canChange,
   countText,
   hasState,
+  offInOf,
   olderText,
   readsText,
   statsOf,
@@ -38,8 +39,8 @@ const tooOld = (err: unknown) => err instanceof ApiError && err.status === 404;
  * Settings > Pipelines: one GET for the list. A brain before pipelines
  * answers 404 and gets one calm line, not an error. A phase 1 brain (rows
  * with no `kind`) gets the list read only; a phase 2 brain's row opens its
- * detail under the list, where an Admin sets its options and workspaces and
- * tests it on one file.
+ * detail under the list, where an Admin sets its options, switches it off
+ * in a workspace, and tests it on one file.
  */
 export function PipelinesClient() {
   const query = useQuery({
@@ -85,9 +86,9 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
 
 /**
  * The list itself, from one answer. A phase 1 row is read only (State "On",
- * nothing to press); a phase 2 row's name opens its detail, and State says
- * where it is used (a router, or a kind this client does not know: its kind
- * word, and no file count). Exported for its render test.
+ * nothing to press); a phase 2 row's name opens its detail, and Used in says
+ * "Off in N" when it is off somewhere (a router, or a kind this client does
+ * not know: its kind word, and no file count). Exported for its render test.
  */
 export function PipelinesList({
   list,
@@ -158,9 +159,7 @@ export function PipelinesList({
                   <span
                     className={cn(
                       'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                      row &&
-                        (!canChange(row) ||
-                          (row.workspaces !== 'all' && row.workspaces.length === 0))
+                      row && (!canChange(row) || offInOf(row).length > 0)
                         ? 'bg-muted text-muted-foreground'
                         : 'bg-success/15 text-success-ink',
                     )}

@@ -10,6 +10,9 @@ import {
   kindText,
   nameLines,
   neverRan,
+  offFromOn,
+  offInOf,
+  offText,
   olderText,
   readsText,
   rereadLabel,
@@ -38,6 +41,7 @@ const ROW: PipelineRow = {
   older: 1,
   kind: 'reader',
   workspaces: 'all',
+  offIn: [],
   after: null,
   tabs: [],
   options: [
@@ -55,7 +59,7 @@ const ROW: PipelineRow = {
   ],
 };
 
-const AFTER: PipelineRow = { ...ROW, id: 'site-tags', kind: 'after', workspaces: ['w1'] };
+const AFTER: PipelineRow = { ...ROW, id: 'site-tags', kind: 'after', offIn: ['w1'] };
 
 describe('Settings > Pipelines words', () => {
   it('a count the brain did not make is a dash', () => {
@@ -97,27 +101,48 @@ describe('a phase 1 brain is known by a row with no kind', () => {
 
 describe('Save sends the changed values only', () => {
   it('nothing changed: no body', () => {
-    expect(setBody(ROW, { width: 30, frames: false, words: ['AB'] }, null)).toBeNull();
+    expect(setBody(ROW, { width: 30, frames: false, words: ['AB'] }, [])).toBeNull();
   });
 
   it('only the changed option names', () => {
     expect(changedOptions(ROW, { width: 40, frames: false, words: ['AB'] })).toEqual({
       width: 40,
     });
-    expect(setBody(ROW, { width: 30, frames: true, words: ['AB', 'CD'] }, null)).toEqual({
+    expect(setBody(ROW, { width: 30, frames: true, words: ['AB', 'CD'] }, [])).toEqual({
       options: { frames: true, words: ['AB', 'CD'] },
     });
   });
 
-  it('a reader never sends workspaces; an after pipeline sends them when they moved', () => {
+  it('the off list goes as offIn when it moved, for a reader and an after pipeline; never workspaces', () => {
     const same = { width: 30, frames: false, words: ['AB'] };
-    expect(setBody(ROW, same, ['w1'])).toBeNull();
+    expect(setBody(ROW, same, ['w1'])).toEqual({ offIn: ['w1'] });
     expect(setBody(AFTER, same, ['w1'])).toBeNull();
-    expect(setBody(AFTER, same, [])).toEqual({ workspaces: [] });
-    expect(setBody(AFTER, { ...same, width: 6 }, ['w1', 'w2'])).toEqual({
+    expect(setBody(AFTER, same, [])).toEqual({ offIn: [] });
+    expect(setBody(AFTER, { ...same, width: 6 }, ['w2', 'w1'])).toEqual({
       options: { width: 6 },
-      workspaces: ['w1', 'w2'],
+      offIn: ['w2', 'w1'],
     });
+    // The order alone is no change.
+    expect(setBody({ ...AFTER, offIn: ['w1', 'w2'] }, same, ['w2', 'w1'])).toBeNull();
+    for (const off of [[], ['w1'], ['w1', 'w2']]) {
+      expect(setBody(AFTER, { ...same, width: 7 }, off)).not.toHaveProperty('workspaces');
+    }
+  });
+
+  it('an older server sends no offIn: on everywhere, and no crash', () => {
+    const { offIn: _o, ...old } = ROW;
+    expect(offInOf(old)).toEqual([]);
+    expect(usedInText(old)).toBe('Every workspace');
+    expect(setBody(old, { width: 30, frames: false, words: ['AB'] }, [])).toBeNull();
+  });
+
+  it('the summary line and the off list from the switches', () => {
+    expect(offText(0)).toBe('On in every workspace');
+    expect(offText(1)).toBe('Off in 1 workspace');
+    expect(offText(3)).toBe('Off in 3 workspaces');
+    // w2 switched off; w1 switched on again; x (not shown) stays off.
+    expect(offFromOn(['w1', 'x'], ['w1', 'w2', 'w3'], ['w1', 'w3'])).toEqual(['x', 'w2']);
+    expect(offFromOn([], ['w1'], ['w1'])).toEqual([]);
   });
 
   it('the saved row keeps the list counts (the PATCH answer has none)', () => {
@@ -215,6 +240,8 @@ describe('Settings > Pipelines, the router and the kinds', () => {
     expect(kindText(ROUTER)).toBe('Router');
     expect(kindText({ ...ROW, kind: 'sorter' })).toBe('Sorter');
     expect(usedInText(ROW)).toBe('Every workspace');
+    expect(usedInText(AFTER)).toBe('Off in 1');
+    expect(usedInText({ ...ROW, offIn: ['w1', 'w2'] })).toBe('Off in 2');
     expect(usedInText(ROUTER)).toBe('Router');
     expect(usedInText({ ...ROW, kind: 'sorter', workspaces: [] })).toBe('Sorter');
   });
