@@ -118,7 +118,7 @@ function Overview({ row }: { row: PipelineRow }) {
   return (
     <Part title={row.name} hint={stats?.description || undefined}>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-        <dt className="text-muted-foreground">Kind</dt>
+        <dt className="text-muted-foreground">Role</dt>
         <dd>{kindText(row)}</dd>
         <dt className="text-muted-foreground">{router ? 'File types' : 'Reads'}</dt>
         <dd>{readsText(row.reads ?? [])}</dd>

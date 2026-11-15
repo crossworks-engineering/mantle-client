@@ -217,8 +217,10 @@ describe('Settings > Pipelines, a phase 2 brain', () => {
     expect(html).not.toContain('role="checkbox"');
   });
 
-  it('an after pipeline: its off list turns those switches off, and the line counts them', () => {
+  it('a Transformer (`after`): its off list turns those switches off, and the line counts them', () => {
     const html = render(createElement(PipelineDetail, { row: AFTER }), WS);
+    expect(text(html)).toContain('Role Transformer, on texts-v1');
+    expect(text(html)).not.toContain('After a reader');
     expect(text(html)).toContain('Off in 1 workspace');
     expect(wsSwitch(html, 'North site')).toBe('true');
     expect(wsSwitch(html, 'South site')).toBe('false');
@@ -481,13 +483,13 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
     );
     expect(row).toContain('Sorter');
     const html = render(createElement(PipelineDetail, { row: odd }));
-    expect(text(html)).toContain('Kind Sorter');
+    expect(text(html)).toContain('Role Sorter');
     expect(html).not.toMatch(/<button|<input|<form/);
   });
 
   it('an older server (no router, no claims) shows the reader as before', () => {
     const t = text(render(createElement(PipelineDetail, { row: READER })));
-    expect(t).toContain('Kind Reader');
+    expect(t).toContain('Role Reader');
     expect(t).toContain('Options and workspaces');
     expect(t).toContain('Run test');
     expect(t).not.toContain('the router names');

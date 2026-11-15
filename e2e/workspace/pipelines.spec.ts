@@ -326,7 +326,7 @@ test('phase 2: a reader is on in every workspace, Save sends the changed option 
   await expect(table.getByRole('row').filter({ hasText: 'PDF drawing' })).toContainText('Off in 1');
 });
 
-test('phase 2: an after pipeline shows its off count; switches and words are saved as offIn', async ({
+test('phase 2: a Transformer shows its role and its off count; switches and words are saved as offIn', async ({
   page,
 }) => {
   const sent = await routePhase2(page);
@@ -337,6 +337,11 @@ test('phase 2: an after pipeline shows its off count; switches and words are sav
   await expect(row).toContainText('Off in 1');
   await expect(row).toContainText('2 files were read by an older version or with other options');
   await row.getByRole('button', { name: 'Site tags' }).click();
+
+  // The role a person reads: the data says `after`, the screen says Transformer.
+  const overview = page.getByRole('region', { name: 'Site tags' });
+  await expect(overview).toContainText('Transformer, on texts-v1');
+  await expect(overview).not.toContainText('After a reader');
 
   const settings = page.getByRole('region', { name: 'Options and workspaces' });
   await expect(settings.getByText('Off in 1 workspace')).toBeVisible();

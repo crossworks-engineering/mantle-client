@@ -1,6 +1,7 @@
 /**
  * Settings > Pipelines: the readers that make a file's database, and the
- * `after` pipelines that add tabs to it (mantle docs/pipelines.md). The brain
+ * Transformers (`after` in the data) that add tabs to it (mantle
+ * docs/pipelines.md). The brain
  * answers GET /api/pipelines for an Admin with the settings area; another
  * login gets 403, and a brain before pipelines gives 404. A phase 1 brain
  * gives rows with no `kind`: the screen shows them read only. A phase 2
@@ -236,13 +237,32 @@ export function canChange(row: PipelineRow): boolean {
   return row.kind === 'reader' || row.kind === 'after';
 }
 
-/** The kind of a row in one word or line, as the detail says it. An
- *  unknown word is shown as the server gives it. */
+/**
+ * The role names a person reads, in one place: Router, Reader, Transformer
+ * and Agent. The key is the server's `kind` word, and the data does not
+ * change: a Transformer is `after` there. No brain sends `agent` yet.
+ */
+export const ROLE_WORDS: Readonly<Record<string, string>> = {
+  router: 'Router',
+  reader: 'Reader',
+  after: 'Transformer',
+  agent: 'Agent',
+};
+
+/** The role of a row in one word. An unknown word is shown as the server
+ *  gives it, with a capital. */
+export function roleWord(kind: string | undefined): string {
+  if (!kind) return '-';
+  return Object.hasOwn(ROLE_WORDS, kind)
+    ? ROLE_WORDS[kind]!
+    : kind[0]!.toUpperCase() + kind.slice(1);
+}
+
+/** The role of a row as the detail says it: the role word, and for a
+ *  Transformer the shape it reads. */
 export function kindText(row: PipelineRow): string {
-  if (row.kind === 'after') return `After a reader, on ${row.after ?? '-'}`;
-  if (row.kind === 'reader') return 'Reader';
-  if (row.kind === 'router') return 'Router';
-  return row.kind ? row.kind[0]!.toUpperCase() + row.kind.slice(1) : '-';
+  const role = roleWord(row.kind);
+  return row.kind === 'after' ? `${role}, on ${row.after ?? '-'}` : role;
 }
 
 /** The list's "Used in" cell: "Off in N" when it is off somewhere, else

@@ -113,7 +113,7 @@ describe('Save sends the changed values only', () => {
     });
   });
 
-  it('the off list goes as offIn when it moved, for a reader and an after pipeline; never workspaces', () => {
+  it('the off list goes as offIn when it moved, for a reader and a Transformer (`after`); never workspaces', () => {
     const same = { width: 30, frames: false, words: ['AB'] };
     expect(setBody(ROW, same, ['w1'])).toEqual({ offIn: ['w1'] });
     expect(setBody(AFTER, same, ['w1'])).toBeNull();
@@ -227,16 +227,18 @@ const ROUTER: PipelineRow = {
 };
 
 describe('Settings > Pipelines, the router and the kinds', () => {
-  it('one rule: a reader and an after pipeline can change; a router and an unknown kind cannot', () => {
+  it('one rule: a reader and a Transformer (`after`) can change; a router and an unknown kind cannot', () => {
     expect(canChange(ROW)).toBe(true);
     expect(canChange(AFTER)).toBe(true);
     expect(canChange(ROUTER)).toBe(false);
     expect(canChange({ ...ROW, kind: 'sorter' })).toBe(false);
   });
 
-  it('the kind word, and the Used in cell', () => {
+  it('the role word, and the Used in cell', () => {
     expect(kindText(ROW)).toBe('Reader');
-    expect(kindText(AFTER)).toBe('After a reader, on -');
+    expect(kindText(AFTER)).toBe('Transformer, on -');
+    expect(kindText({ ...AFTER, after: 'texts-v1' })).toBe('Transformer, on texts-v1');
+    expect(kindText({ ...ROW, kind: 'agent' })).toBe('Agent');
     expect(kindText(ROUTER)).toBe('Router');
     expect(kindText({ ...ROW, kind: 'sorter' })).toBe('Sorter');
     expect(usedInText(ROW)).toBe('Every workspace');
