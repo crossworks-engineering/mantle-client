@@ -71,7 +71,7 @@ export function AddPipelineDialog({
     onSuccess: async (answer, r) => {
       const id = answer.row?.id ?? r.manifest?.id ?? '';
       await queryClient.invalidateQueries({ queryKey: [PIPELINES_PATH] });
-      toast.success(`Added ${answer.row?.name ?? id}`);
+      toast.success(answer.note);
       onAdded(id);
       close(false);
     },

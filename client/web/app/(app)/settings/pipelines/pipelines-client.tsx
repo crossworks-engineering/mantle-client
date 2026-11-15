@@ -252,7 +252,7 @@ export function PipelinesScreen({ list }: { list: PipelineList }) {
             <div className="space-y-6 p-6">
               {problemOf(open) && <ProblemLine key={`problem:${open.id}`} p={open} />}
               {byId.get(open.id) ? (
-                <PipelineDetail key={open.id} row={byId.get(open.id)!} />
+                <PipelineDetail key={`${open.id}@${open.version}`} row={byId.get(open.id)!} />
               ) : (
                 <PlainDetail p={open} />
               )}

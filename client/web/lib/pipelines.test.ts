@@ -370,6 +370,13 @@ describe('own pipelines: the folder read into the package', () => {
     expect(packageFileOf(new Uint8Array([0xef, 0xbb, 0xbf, 0x61]))).toBe('﻿a');
   });
 
+  it('a NUL byte goes as base64; CRLF stays text; an empty file is empty text', () => {
+    expect(packageFileOf(enc('ab\u0000c'))).toEqual({ base64: base64Of(enc('ab\u0000c')) });
+    expect(packageFileOf(new Uint8Array(4))).toEqual({ base64: 'AAAAAA==' });
+    expect(packageFileOf(enc('a\r\nb\r\n'))).toBe('a\r\nb\r\n');
+    expect(packageFileOf(new Uint8Array(0))).toBe('');
+  });
+
   it("a file that could not be read, and Finder's file, are said, never dropped silently", () => {
     const read = readPackage(
       folder({ 'pipeline.json': enc(MANIFEST), 'step.ts': null, '.DS_Store': enc('x') }),
@@ -387,7 +394,9 @@ describe('own pipelines: the folder read into the package', () => {
       `A package has at most 200 files; this folder has ${PACKAGE_FILES_MAX + 1}.`,
     ]);
     const big = readPackage(folder({ 'a.bin': new Uint8Array(PACKAGE_MAX_BYTES + 1) }));
-    expect(big.problems).toEqual(['A package is at most 5.0 MB of files; this folder has 5.0 MB.']);
+    expect(big.problems).toEqual([
+      'A package is at most 5.0 MB of files; this folder has 5.0 MB, 1 B over.',
+    ]);
     expect(readPackage(folder({})).problems).toEqual(['The folder has no files.']);
   });
 
@@ -402,12 +411,13 @@ describe('own pipelines: the folder read into the package', () => {
 
 describe('own pipelines: replaces, download name, problem, refusal', () => {
   const own = { ...ROW, id: 'lx9-logger', source: 'own' as const, version: '1.0.0' };
-  it('an own row of the same id is replaced; a new id or a built-in id says nothing', () => {
-    expect(replacesText([own], { id: 'lx9-logger', version: '1.1.0' })).toBe(
-      'Replaces version 1.0.0',
-    );
-    expect(replacesText([own], { id: 'lx9-logger', version: '1.0.0' })).toBe(
-      'Version 1.0.0 is installed: the same files write its folder again.',
+  it('an own row of the same id says it is installed; a new id or a built-in id says nothing', () => {
+    const line =
+      'Version 1.0.0 is installed: a higher version replaces it; the same version with the same files writes its folder again.';
+    expect(replacesText([own], { id: 'lx9-logger', version: '1.1.0' })).toBe(line);
+    expect(replacesText([own], { id: 'lx9-logger', version: '0.9.0' })).toBe(line);
+    expect(replacesText([{ ...own, version: '' }], { id: 'lx9-logger', version: '1.0.0' })).toBe(
+      'A version is installed: a higher version replaces it; the same version with the same files writes its folder again.',
     );
     expect(replacesText([own], { id: 'other', version: '1.0.0' })).toBeNull();
     expect(replacesText([ROW], { id: ROW.id, version: '2.0.0' })).toBeNull();

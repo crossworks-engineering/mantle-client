@@ -756,7 +756,9 @@ type OwnState = {
 
 /** The row of an own package, as the brain lists it. */
 function ownRow(own: OwnState) {
-  const m = JSON.parse(own.files['pipeline.json'] as string) as typeof TEMPLATE_MANIFEST;
+  const m = JSON.parse(own.files['pipeline.json'] as string) as typeof TEMPLATE_MANIFEST & {
+    options: Record<string, { default: unknown }>;
+  };
   return {
     id: m.id,
     name: m.name,
@@ -777,7 +779,11 @@ function ownRow(own: OwnState) {
     offIn: [],
     after: null,
     tabs: [],
-    options: [],
+    options: Object.entries(m.options).map(([name, spec]) => ({
+      name,
+      spec,
+      value: spec.default,
+    })),
     files: 0,
     older: 0,
     versions: [],
@@ -925,6 +931,8 @@ test('own: add the Bun template from a folder, see Reader and Own, test it, down
   await expect(pkg).not.toContainText('Replaces');
   await dialog.getByRole('button', { name: 'Install' }).click();
   await expect(dialog).toHaveCount(0);
+  // The toast is the brain's note: new uploads only, and what to do for the rest.
+  await expect(page.getByText(INSTALL_NOTE)).toBeVisible();
 
   // The install: the package as the brain takes it, text as text and the
   // binary file as base64; nothing else in the body.
@@ -942,7 +950,7 @@ test('own: add the Bun template from a folder, see Reader and Own, test it, down
   await expect(lx9).toContainText('Own');
   await expect(header(detail)).toHaveText('LX-9 data loggerReaderOwn');
 
-  // Adding it again says what it replaces.
+  // Adding it again says what is installed; the brain holds the version rule.
   await list.getByRole('button', { name: 'Add', exact: true }).click();
   await dialog
     .getByTestId('pipeline-folder-input')
@@ -950,7 +958,7 @@ test('own: add the Bun template from a folder, see Reader and Own, test it, down
       packageFolder(info.outputPath('bun2'), { ...TEMPLATE_MANIFEST, version: '1.1.0' }),
     );
   await expect(dialog.getByRole('region', { name: 'Package' })).toContainText(
-    'Replaces version 1.0.0',
+    'Version 1.0.0 is installed: a higher version replaces it',
   );
   await dialog.getByRole('button', { name: 'Cancel' }).click();
 
@@ -969,6 +977,22 @@ test('own: add the Bun template from a folder, see Reader and Own, test it, down
   expect(download.suggestedFilename()).toBe('lx9-logger-1.0.0.json');
   const saved = JSON.parse(readFileSync(await download.path(), 'utf8')) as Record<string, unknown>;
   expect(saved).toEqual({ id: 'lx9-logger', version: '1.0.0', files });
+
+  // A higher version with a new option, installed while its detail is open:
+  // the detail is new, so the option shows its value.
+  await list.getByRole('button', { name: 'Add', exact: true }).click();
+  await dialog.getByTestId('pipeline-folder-input').setInputFiles(
+    packageFolder(info.outputPath('bun3'), {
+      ...TEMPLATE_MANIFEST,
+      version: '1.1.0',
+      options: {
+        max_rows: { type: 'number', label: 'Max rows', default: 500, min: 1, max: 1000 },
+      },
+    }),
+  );
+  await dialog.getByRole('button', { name: 'Install' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(detail.getByLabel('Max rows')).toHaveValue('500');
 
   // Remove: one confirm, which says the databases stay.
   await detail.getByRole('button', { name: 'Remove LX-9 data logger' }).click();

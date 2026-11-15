@@ -536,14 +536,17 @@ export function base64Of(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-/** A file as the package holds it: valid UTF-8 is text, as it is (a BOM
- *  kept); anything else is `{ base64 }`. */
+/** A file as the package holds it: valid UTF-8 with no NUL is text, as it
+ *  is (a BOM and CRLF kept); anything else is `{ base64 }` (the brain
+ *  refuses a text file that holds a NUL). */
 export function packageFileOf(bytes: Uint8Array): PipelinePackageFile {
   try {
-    return utf8.decode(bytes);
+    const text = utf8.decode(bytes);
+    if (!text.includes('\u0000')) return text;
   } catch {
-    return { base64: base64Of(bytes) };
+    // Not UTF-8: base64, below.
   }
+  return { base64: base64Of(bytes) };
 }
 
 /** A size as the dialog says it. */
@@ -611,7 +614,7 @@ export function readPackage(picked: readonly PickedFile[]): PackageRead {
   }
   if (bytes > PACKAGE_MAX_BYTES) {
     problems.push(
-      `A package is at most ${sizeText(PACKAGE_MAX_BYTES)} of files; this folder has ${sizeText(bytes)}.`,
+      `A package is at most ${sizeText(PACKAGE_MAX_BYTES)} of files; this folder has ${sizeText(bytes)}, ${bytes - PACKAGE_MAX_BYTES} B over.`,
     );
   }
   const text = files[PIPELINE_MANIFEST_FILE];
@@ -625,17 +628,17 @@ export function readPackage(picked: readonly PickedFile[]): PackageRead {
   };
 }
 
-/** What an install does to the pipeline of the same id, or null for a new
- *  id (a built-in's id is refused by the brain, with its sentence). */
+/** What an install does to the own pipeline of the same id, or null for a
+ *  new id (a built-in's id is refused by the brain, with its sentence). No
+ *  version rule here: the brain refuses a lower version, or the same
+ *  version with other files, with its own sentence. */
 export function replacesText(
   rows: readonly PipelineRowV1[],
   manifest: Pick<ManifestFacts, 'id' | 'version'>,
 ): string | null {
   const row = rows.find((r) => r.id === manifest.id && r.source === 'own');
   if (!row) return null;
-  return row.version === manifest.version
-    ? `Version ${row.version} is installed: the same files write its folder again.`
-    : `Replaces version ${row.version}`;
+  return `${row.version ? `Version ${row.version}` : 'A version'} is installed: a higher version replaces it; the same version with the same files writes its folder again.`;
 }
 
 /** The file name a downloaded package is saved under. */
