@@ -1,11 +1,12 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-workspace-api';
 import { scopedNav } from './shell-nav';
 
 /**
- * Settings > Pipelines. Phase 1: the readers that make a file's database,
- * read only. Phase 2: a row opens its detail, Save sends a PATCH with the
- * changed values only, and a test runs on one file. The pipelines routes,
+ * Settings > Pipelines, a card per pipeline with the open one's detail on
+ * the right. Phase 1: the readers that make a file's database, read only.
+ * Phase 2: each card wears its role, a card opens its detail, Save sends a
+ * PATCH with the changed values only, and a test runs on one file. The pipelines routes,
  * /api/workspaces and the file search are fixed answers given in the
  * browser; the rest is the in-memory brain, which answers the list 404 like
  * a brain before pipelines.
@@ -53,6 +54,28 @@ test.afterEach(async () => {
   await api.close();
 });
 
+/** The two panes, once the scaffold has settled: `MasterDetail` swaps its
+ *  grid for panels once on mount, and the handle exists only after. */
+async function panes(page: Page) {
+  await page
+    .locator('[data-slot="resizable-panel-group"]:has([data-testid="list"])')
+    .last()
+    .locator(':scope > [data-slot="resizable-handle"]')
+    .first()
+    .waitFor();
+  return { list: page.getByTestId('list'), detail: page.getByTestId('detail') };
+}
+
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A pipeline's card in the list: a button whose name starts with its name. */
+function card(list: Locator, name: string): Locator {
+  return list.getByRole('button', { name: new RegExp(`^${esc(name)} `) });
+}
+
+/** The detail's header: the one h2 with the open pipeline's name. */
+const header = (detail: Locator) => detail.getByRole('heading', { level: 2 }).first();
+
 /** Answer GET /api/pipelines with `body`, and keep every request to it. */
 async function routePipelines(page: Page, body: unknown): Promise<string[]> {
   const seen: string[] = [];
@@ -75,19 +98,31 @@ test('an admin opens Pipelines from Settings: the list, its counts, one GET and 
   await nav.getByRole('link', { name: 'Pipelines', exact: true }).click();
   await expect(page).toHaveURL((u) => u.pathname === '/settings/pipelines');
 
-  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
-  await expect(table.getByRole('row')).toHaveCount(6);
-  const sheet = table.getByRole('row').filter({ hasText: 'Spreadsheet' });
+  const { list, detail } = await panes(page);
+  await expect(list.getByRole('button', { name: /^(?!Clear)/ })).toHaveCount(5);
+  const sheet = card(list, 'Spreadsheet');
   await expect(sheet).toContainText('1.0.0');
   await expect(sheet).toContainText('.xlsx, .xls, .csv');
-  await expect(sheet).toContainText('On');
+  await expect(sheet).toContainText('1 file');
   await expect(sheet).toContainText('1 file was read by an older version or with other options');
-  await expect(table.getByText(/read by an older version/)).toHaveCount(1);
-  await expect(table.getByText('On', { exact: true })).toHaveCount(5);
+  await expect(list.getByText(/read by an older version/)).toHaveCount(1);
+  await expect(list.getByText('5 pipelines')).toBeVisible();
   await expect(page.getByText(/counts are partial/)).toHaveCount(0);
-  // Read only: no switch and no button in the list.
-  await expect(table.getByRole('switch')).toHaveCount(0);
-  await expect(table.getByRole('button')).toHaveCount(0);
+  // A phase 1 row has no role: no pill, and no switch in the list.
+  await expect(list.locator('[data-role]')).toHaveCount(0);
+  await expect(list.getByRole('switch')).toHaveCount(0);
+  // The first card is open: its plain facts on the right, nothing to press.
+  await expect(sheet).toHaveAttribute('data-selected', 'true');
+  await expect(header(detail)).toHaveText('Spreadsheet');
+  const facts = detail.getByRole('region', { name: 'Overview' });
+  await expect(facts).toContainText('A pipeline reads a file into its database');
+  await expect(facts).toContainText('StateOn');
+  await expect(detail.getByRole('button')).toHaveCount(0);
+  await expect(detail.getByRole('switch')).toHaveCount(0);
+  // Another card opens its own facts.
+  await card(list, 'CAD drawing').click();
+  await expect(header(detail)).toHaveText('CAD drawing');
+  await expect(facts).toContainText('.dwg, .dxf, .dgn');
   await expect(page.getByText('You cannot manage this part of the brain.')).toHaveCount(0);
 
   expect(seen.length).toBeGreaterThan(0);
@@ -102,9 +137,9 @@ test('null counts are a dash, and partial counts say so', async ({ page }) => {
   });
   await signIn(page, 'admin');
   await page.goto('/settings/pipelines');
-  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
-  await expect(table.getByRole('cell', { name: '-', exact: true })).toHaveCount(5);
-  await expect(page.getByText(/The counts are partial/)).toBeVisible();
+  const { list } = await panes(page);
+  await expect(list.getByText(/· - files$/)).toHaveCount(5);
+  await expect(list.getByText(/The counts are partial/)).toBeVisible();
 });
 
 test('a box before pipelines (404) gets one calm line, not an error', async ({ page }) => {
@@ -113,7 +148,7 @@ test('a box before pipelines (404) gets one calm line, not an error', async ({ p
   await page.goto('/settings/pipelines');
   await expect(page.getByText('This box does not list its pipelines yet.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
-  await expect(page.getByRole('table', { name: 'Pipelines' })).toHaveCount(0);
+  await expect(page.getByTestId('list')).toHaveCount(0);
 });
 
 /** A phase 2 brain's answer: the same rows with their state (made-up
@@ -291,9 +326,11 @@ test('phase 2: a reader is on in every workspace, Save sends the changed option 
   const sent = await routePhase2(page);
   await signIn(page, 'admin');
   await page.goto('/settings/pipelines');
-  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
-  await expect(table.getByText('Every workspace')).toHaveCount(5);
-  await table.getByRole('button', { name: 'PDF drawing' }).click();
+  const { list, detail } = await panes(page);
+  // Only the Transformer is off somewhere.
+  await expect(list.getByText(/^Off in/)).toHaveCount(1);
+  await card(list, 'PDF drawing').click();
+  await expect(header(detail)).toHaveText('PDF drawingReader');
 
   const settings = page.getByRole('region', { name: 'Options and workspaces' });
   await expect(settings.getByText('On in every workspace')).toBeVisible();
@@ -315,7 +352,7 @@ test('phase 2: a reader is on in every workspace, Save sends the changed option 
   });
   await expect(save).toBeDisabled();
   // The counts stay those of the list: the PATCH answer has none.
-  await expect(table.getByRole('row').filter({ hasText: 'Spreadsheet' })).toContainText('1');
+  await expect(card(list, 'Spreadsheet')).toContainText('1 file');
 
   // A reader too can be switched off in a workspace.
   await settings.getByRole('switch', { name: 'Toggle North site' }).click();
@@ -323,7 +360,7 @@ test('phase 2: a reader is on in every workspace, Save sends the changed option 
   await save.click();
   await expect.poll(() => sent.length).toBe(2);
   expect(sent[1]!.body).toEqual({ offIn: [WS[0]!.id] });
-  await expect(table.getByRole('row').filter({ hasText: 'PDF drawing' })).toContainText('Off in 1');
+  await expect(card(list, 'PDF drawing')).toContainText('Off in 1');
 });
 
 test('phase 2: a Transformer shows its role and its off count; switches and words are saved as offIn', async ({
@@ -332,14 +369,16 @@ test('phase 2: a Transformer shows its role and its off count; switches and word
   const sent = await routePhase2(page);
   await signIn(page, 'admin');
   await page.goto('/settings/pipelines');
-  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
-  const row = table.getByRole('row').filter({ hasText: 'Site tags' });
+  const { list, detail } = await panes(page);
+  const row = card(list, 'Site tags');
   await expect(row).toContainText('Off in 1');
   await expect(row).toContainText('2 files were read by an older version or with other options');
-  await row.getByRole('button', { name: 'Site tags' }).click();
-
   // The role a person reads: the data says `after`, the screen says Transformer.
-  const overview = page.getByRole('region', { name: 'Site tags' });
+  await expect(row.locator('[data-role="after"]')).toHaveText('Transformer');
+  await row.click();
+  await expect(header(detail)).toHaveText('Site tagsTransformer');
+
+  const overview = page.getByRole('region', { name: 'Overview' });
   await expect(overview).toContainText('Transformer, on texts-v1');
   await expect(overview).not.toContainText('After a reader');
 
@@ -444,12 +483,13 @@ test('M8: the description, the runs, the files by version, and the re-read of th
   );
   await signIn(page, 'admin');
   await page.goto('/settings/pipelines');
-  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
-  const row = table.getByRole('row').filter({ hasText: 'CAD drawing' });
+  const { list, detail } = await panes(page);
+  const row = card(list, 'CAD drawing');
   await expect(row).toContainText('Reads a CAD drawing into its texts, lines and symbols.');
-  await row.getByRole('button', { name: 'CAD drawing' }).click();
+  await row.click();
+  await expect(header(detail)).toHaveText('CAD drawingReader');
 
-  const overview = page.getByRole('region', { name: 'CAD drawing' });
+  const overview = page.getByRole('region', { name: 'Overview' });
   await expect(overview).toContainText('Reads a CAD drawing into its texts, lines and symbols.');
   await expect(overview).toContainText('Runs: 1,234. Last run: ');
   await expect(overview).toContainText('120 files read with 1.1.0 (current)');
@@ -478,8 +518,9 @@ test('M8: the description, the runs, the files by version, and the re-read of th
   await expect(dialog).toHaveCount(0);
 
   // A pipeline that never ran, with no older file: no button.
-  await table.getByRole('button', { name: 'Microsoft Project plan' }).click();
-  const sheet = page.getByRole('region', { name: 'Microsoft Project plan' });
+  await card(list, 'Microsoft Project plan').click();
+  await expect(header(detail)).toHaveText('Microsoft Project planReader');
+  const sheet = page.getByRole('region', { name: 'Overview' });
   await expect(sheet).toContainText('No run yet.');
   await expect(sheet.getByRole('button', { name: /older files? again/ })).toHaveCount(0);
 });
@@ -534,17 +575,18 @@ test('a router: its row and its detail are read only; a reader shows the kinds i
   );
   await signIn(page, 'admin');
   await page.goto('/settings/pipelines');
-  const table = page.getByRole('main').getByRole('table', { name: 'Pipelines' });
-  const row = table.getByRole('row').filter({ hasText: 'PDF router' });
+  const { list, detail } = await panes(page);
+  const row = card(list, 'PDF router');
   await expect(row).toContainText('Names the kind of a PDF.');
   await expect(row).toContainText('.pdf');
-  await expect(row.getByText('Router', { exact: true })).toBeVisible();
-  await expect(row.getByText('Every workspace')).toHaveCount(0);
+  await expect(row.locator('[data-role="router"]')).toHaveText('Router');
   await expect(row.getByText(/Off in/)).toHaveCount(0);
-  await expect(row.getByRole('cell', { name: '-', exact: true })).toHaveCount(0);
-  await row.getByRole('button', { name: 'PDF router' }).click();
+  // A router has no files of its own: no count, not even a dash.
+  await expect(row).not.toContainText('files');
+  await row.click();
+  await expect(header(detail)).toHaveText('PDF routerRouter');
 
-  const overview = page.getByRole('region', { name: 'PDF router' });
+  const overview = page.getByRole('region', { name: 'Overview' });
   await expect(overview).toContainText('Router');
   await expect(overview).toContainText('Runs: 12. Last run: ');
   await expect(overview).toContainText('May ask');
@@ -563,14 +605,68 @@ test('a router: its row and its detail are read only; a reader shows the kinds i
   await expect(page.getByRole('button', { name: 'Run test' })).toHaveCount(0);
 
   // The PDF reader names the kinds it claims, in one line.
-  await table.getByRole('button', { name: 'PDF drawing' }).click();
-  await expect(page.getByRole('region', { name: 'PDF drawing' })).toContainText(
+  await card(list, 'PDF drawing').click();
+  await expect(header(detail)).toHaveText('PDF drawingReader');
+  await expect(overview).toContainText(
     'Reads a file only when the router names one of these kinds: pid, scan.',
   );
   // A reader with no claims says nothing of the router.
-  await table.getByRole('button', { name: 'Spreadsheet' }).click();
-  await expect(page.getByRole('region', { name: 'Spreadsheet' })).not.toContainText(
-    'the router names',
-  );
+  await card(list, 'Spreadsheet').click();
+  await expect(header(detail)).toHaveText('SpreadsheetReader');
+  await expect(overview).not.toContainText('the router names');
   expect(seen.every((m) => m === 'GET')).toBe(true);
+});
+
+test('the cards: a role pill each, the first one open, a search that narrows them by name or role', async ({
+  page,
+}) => {
+  await routePipelines(page, LIST4);
+  await page.route(
+    (u) => u.pathname === '/api/workspaces',
+    (route) => route.fulfill({ json: { workspaces: WS } }),
+  );
+  await signIn(page, 'admin');
+  await page.goto('/settings/pipelines');
+  const { list, detail } = await panes(page);
+
+  // Every card in the server's order, each with its role.
+  const all = list.getByRole('button', { name: /^(?!Clear)/ });
+  await expect(all).toHaveCount(7);
+  await expect(list.getByText('7 pipelines')).toBeVisible();
+  await expect(list.locator('[data-role="reader"]')).toHaveCount(5);
+  await expect(list.locator('[data-role="after"]')).toHaveText(['Transformer']);
+  await expect(list.locator('[data-role="router"]')).toHaveText(['Router']);
+
+  // The first card is open at the start.
+  await expect(card(list, 'Spreadsheet')).toHaveAttribute('data-selected', 'true');
+  await expect(header(detail)).toHaveText('SpreadsheetReader');
+
+  // A click shows that card's detail on the right.
+  await card(list, 'PDF router').click();
+  await expect(card(list, 'PDF router')).toHaveAttribute('data-selected', 'true');
+  await expect(card(list, 'Spreadsheet')).not.toHaveAttribute('data-selected', 'true');
+  await expect(header(detail)).toHaveText('PDF routerRouter');
+
+  // The role word finds the readers; the count says how many of all.
+  const search = list.getByRole('textbox', { name: 'Search pipelines' });
+  await search.fill('reader');
+  await expect(all).toHaveCount(5);
+  await expect(list.getByText('5 of 7 pipelines')).toBeVisible();
+  await expect(card(list, 'PDF router')).toHaveCount(0);
+  await expect(page).toHaveURL((u) => u.searchParams.get('q') === 'reader');
+  // The open card hidden by the search stays open, as on Tools.
+  await expect(header(detail)).toHaveText('PDF routerRouter');
+
+  await search.fill('transformer');
+  await expect(all).toHaveCount(1);
+  await expect(card(list, 'Site tags')).toBeVisible();
+
+  // An extension, and a miss with its way back.
+  await search.fill('.dgn');
+  await expect(all).toHaveCount(1);
+  await expect(card(list, 'CAD drawing')).toBeVisible();
+  await search.fill('nothing like this');
+  await expect(list.getByText('No pipelines match')).toBeVisible();
+  await list.getByRole('button', { name: 'Clear' }).click();
+  await expect(all).toHaveCount(7);
 });
