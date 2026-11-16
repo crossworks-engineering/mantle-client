@@ -11,182 +11,51 @@
  * know (`canChange`). Pure helpers only: no DOM here.
  */
 
+import type {
+  PipelineList as WireList,
+  PipelinePackage,
+  PipelinePackageFile,
+  PipelineProblemCode,
+  PipelineRow,
+  PipelineSetBody,
+  PipelineTestResult,
+  PipelineVersionCount,
+} from '@mantle/client-types';
 import { matchesQuery } from './tool-search';
 
-/**
- * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineOptionSpec`
- * (mantle branch feat/pipelines-2). Delete when the contract pin moves past
- * the release that ships it.
- */
-export type PipelineOptionSpec =
-  | { type: 'number'; label: string; help?: string; default: number; min: number; max: number }
-  | { type: 'bool'; label: string; help?: string; default: boolean }
-  | {
-      type: 'words';
-      label: string;
-      help?: string;
-      default: readonly string[];
-      maxItems: number;
-      maxChars: number;
-    };
+export type { PipelineInstallAnswer, PipelineRow, PipelineTestResult } from '@mantle/client-types';
 
-/**
- * LOCAL COPY of the phase 1 fields of @mantle/client-types dto/pipelines.ts
- * `PipelineRow` (mantle, pipelines phase 1). A phase 1 brain gives only
- * these. Delete when the contract pin moves past the release that ships
- * `PipelineRow`.
- */
-export type PipelineRowV1 = {
-  id: string;
-  name: string;
-  version: string;
-  source: 'builtin' | 'curated' | 'own';
-  start: 'upload' | 'demand';
-  /** The file extensions it reads. */
-  reads: string[];
-  weight: 'light' | 'heavy';
-  shapes: string[];
-  workers: string[];
-  tools: string[];
-  /** Files with a database of this pipeline; null when not counted. */
-  files: number | null;
-  /** Of those, read at an older version, before stamps, or with other options. */
-  older: number | null;
-};
+/** The fields of a row that a phase 1 brain gives, and the only ones it
+ *  gives. */
+export type PipelineRowV1 = Pick<
+  PipelineRow,
+  | 'id'
+  | 'name'
+  | 'version'
+  | 'source'
+  | 'start'
+  | 'reads'
+  | 'weight'
+  | 'shapes'
+  | 'workers'
+  | 'tools'
+  | 'files'
+  | 'older'
+>;
 
-/**
- * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineRow` (mantle
- * branch feat/pipelines-2): the phase 1 fields and the state of phase 2.
- * Delete when the contract pin moves past the release that ships it.
- */
-export type PipelineRow = PipelineRowV1 & {
-  /** A later server may add a word: `canChange` is the one rule for it. */
-  kind: PipelineKind | (string & {});
-  /** Kept for older clients: always 'all' since the off list (mantle,
-   *  pipelines WO). Read `offInOf`, never this. */
-  workspaces: 'all' | string[];
-  /** LOCAL COPY of the field mantle pipelines WO adds: the ids of the
-   *  workspaces the pipeline is off in; [] for a router, always. A server
-   *  before WO sends none: read it through `offInOf`. Make it required (and
-   *  delete this note) when the contract pin moves past the release that
-   *  ships it. */
-  offIn?: string[];
-  /** For an `after` pipeline: the shape it reads. Null for a reader. */
-  after: string | null;
-  /** The tabs an `after` pipeline writes. */
-  tabs: string[];
-  options: PipelineOption[];
-  /** A router: the kinds it can name (mantle branch feat/router-2r). An
-   *  older server sends none: read it through `nameLines`. */
-  names?: PipelineName[];
-  /** A reader: the kinds it claims from a router; [] for most. An older
-   *  server sends none: read it through `claimsText`. */
-  claims?: string[];
-  /** LOCAL COPY of the field mantle pipelines P3-0 adds: why an own
-   *  pipeline does not run on this box, in one sentence; null when it runs,
-   *  always null for a built-in. An older server sends none: read it
-   *  through `problemOf`. Delete this note when the pin moves. */
-  problem?: string | null;
-};
+/** The fields M8 added to a row. A server before M8 sends none of them:
+ *  read them through `statsOf`. */
+export type PipelineStats = Pick<PipelineRow, 'description' | 'versions' | 'runs' | 'lastRunAt'>;
 
-/** The kind words this client knows. */
-export type PipelineKind = 'reader' | 'after' | 'router';
+/** The list as any brain answers it: its rows are phase 1 rows until
+ *  `hasState` says they carry `kind`. */
+export type PipelineList = Omit<WireList, 'pipelines'> & { pipelines: PipelineRowV1[] };
 
-/** A kind a router can name. `decider`: named only by the decider's answer. */
-export type PipelineName = { kind: string; decider?: boolean };
+export type PipelineOption = PipelineRow['options'][number];
 
-export type PipelineOption = { name: string; spec: PipelineOptionSpec; value: unknown };
-
-/**
- * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineVersionCount`
- * (mantle branch feat/pipelines-2-m8). `version` null: read before versions
- * were recorded. Delete when the contract pin moves past the release that
- * ships it.
- */
-export type PipelineVersionCount = { version: string | null; files: number };
-
-/**
- * LOCAL COPY of the fields M8 adds to @mantle/client-types dto/pipelines.ts
- * `PipelineRow` (mantle branch feat/pipelines-2-m8). A server before M8
- * sends none of them: read them through `statsOf`. Delete when the contract
- * pin moves past the release that ships them.
- */
-export type PipelineStats = {
-  /** What it reads and what it writes, in one or two plain sentences. */
-  description: string;
-  /** `files` by the version in their stamp, highest first; null last. */
-  versions: PipelineVersionCount[];
-  /** Its writes into a file's database on this box; null when not read. */
-  runs: number | null;
-  /** When it last wrote, as an ISO time; null before its first run. */
-  lastRunAt: string | null;
-};
-
-/**
- * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineList`. Its
- * rows are phase 1 rows until `hasState` says they carry `kind`.
- */
-export type PipelineList = {
-  api: number;
-  pipelines: PipelineRowV1[];
-  /** The scan stopped at its cap: the counts are of the first files only. */
-  countsPartial: boolean;
-};
-
-/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineSetBody`
- *  (mantle branch feat/pipelines-2). Delete when the pin moves. */
-export type PipelineSetBody = {
-  options?: Record<string, unknown>;
-  /** Kept in the type; the server refuses it since WO. Never sent. */
-  workspaces?: string[];
-  /** LOCAL COPY (mantle pipelines WO): replaces the off list; [] is on in
-   *  every workspace. A router refuses it. */
-  offIn?: string[];
-};
-
-/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineTestBody`
- *  (mantle branch feat/pipelines-2-m4). Delete when the pin moves. */
-export type PipelineTestBody = {
-  fileId: string;
-  options?: Record<string, unknown>;
-  /** LOCAL COPY (mantle pipelines P3-1): a draft package to test in place
-   *  of the installed one. This screen never sends it. */
-  files?: PipelinePackage['files'];
-};
-
-/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelinePackageFile`
- *  (mantle branch feat/pipelines-p3-1): text as it is, or binary bytes as
- *  base64. Delete when the pin moves past the release that ships it. */
-export type PipelinePackageFile = string | { base64: string };
-
-/** LOCAL COPY of `PipelinePackage` (mantle branch feat/pipelines-p3-1):
- *  path -> file; `pipeline.json` is its manifest. It is also the body of
- *  POST /api/pipelines (`PipelineInstallBody`). Delete when the pin moves. */
-export type PipelinePackage = { files: Record<string, PipelinePackageFile> };
-
-/** LOCAL COPY of `PipelineInstallAnswer` (mantle branch
- *  feat/pipelines-p3-1): the answer of an install or a remove; `row` is
- *  null after a remove. Delete when the pin moves. */
-export type PipelineInstallAnswer = { row: PipelineRow | null; note: string };
-
-/** The answer of GET /api/pipelines/:id/package (mantle branch
- *  feat/pipelines-p3-1, `pipelinePackage`): the package with its id and
- *  version. Delete when the pin moves past a release that types it. */
+/** The answer of GET /api/pipelines/:id/package: the package with its id
+ *  and version. client-types 0.607.0 does not type this answer. */
 export type PipelinePackageAnswer = { id: string; version: string | null } & PipelinePackage;
-
-/** LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineTestResult`
- *  (mantle branch feat/pipelines-2-m4). Delete when the pin moves. */
-export type PipelineTestResult = {
-  status: 'ok' | 'not_mine' | 'unsure' | 'failed' | 'busy';
-  pipeline: string;
-  version: string;
-  ms: number;
-  tabs: { name: string; rows: number; columns: string[]; first: unknown[][] }[];
-  shapes: string[];
-  warnings: string[];
-  writes: string[];
-  word: 'no-database' | 'no-match' | 'too-large' | 'unreadable' | 'no-rows' | null;
-};
 
 export const PIPELINES_PATH = '/api/pipelines';
 
@@ -489,7 +358,8 @@ export const INSTALL_LINE =
 export const CANNOT_ADD = 'This box cannot add pipelines yet.';
 
 /** The brain's problem of an own row whose files are not on disk (mantle
- *  NOT_ON_DISK): the one problem the screen offers a button for. */
+ *  NOT_ON_DISK): the one problem the screen offers a button for. A brain
+ *  before `problemCode` is known by this sentence. */
 export const NOT_ON_DISK =
   'The files of this package are not on disk. Install it again with the same files.';
 
@@ -650,14 +520,48 @@ export function packageFileName(id: string, version: string | null): string {
 /** Is it an own pipeline (Download, Remove, the Own pill)? */
 export const isOwn = (row: PipelineRowV1) => row.source === 'own';
 
-/** The problem of a row, or null: it runs. An older server sends none. */
-export function problemOf(row: PipelineRowV1): string | null {
-  const p = (row as { problem?: unknown }).problem;
+/** A row's problem fields; an older server sends none. */
+type WithProblem = PipelineRowV1 & Partial<Pick<PipelineRow, 'problem' | 'problemCode'>>;
+
+/** The problem of a row, or null: it runs. */
+export function problemOf(row: WithProblem): string | null {
+  const p = row.problem;
   return typeof p === 'string' && p.trim() ? p : null;
 }
 
-/** Does the problem have its one act, "Write the files again"? */
-export const canWriteAgain = (problem: string | null) => problem === NOT_ON_DISK;
+/** The problem's code, or null: none, or a brain before `problemCode`. A
+ *  later brain may send a code this client does not know. */
+export function problemCodeOf(row: WithProblem): string | null {
+  const c = row.problemCode;
+  return typeof c === 'string' && c ? c : null;
+}
+
+/** The short line of each problem code. The brain's `problem` sentence is
+ *  the detail under it. */
+export const PROBLEM_LINES: Readonly<Record<PipelineProblemCode, string>> = {
+  'not-on-disk': 'Does not run: its files are not on disk.',
+  'curated-only': 'Does not run: this box runs curated pipelines only.',
+  'builtin-id': 'Does not run: a built-in has its id now.',
+  'ext-taken': 'Does not run: an earlier reader takes one of its extensions.',
+  manifest: 'Does not run: its manifest does not pass the check.',
+};
+
+/** The problem as the screen shows it, or null: it runs. A known code gives
+ *  its short line, with the brain's sentence as the detail. An unknown code,
+ *  or none (an older brain), gives the sentence alone. */
+export function problemText(row: WithProblem): { line: string; detail: string | null } | null {
+  const problem = problemOf(row);
+  const code = problemCodeOf(row);
+  if (code && Object.hasOwn(PROBLEM_LINES, code)) {
+    return { line: PROBLEM_LINES[code as PipelineProblemCode], detail: problem };
+  }
+  return problem ? { line: problem, detail: null } : null;
+}
+
+/** Does the problem have its one act, "Write the files again"? By the code;
+ *  on a brain before `problemCode`, by the sentence. */
+export const canWriteAgain = (row: WithProblem) =>
+  problemCodeOf(row) === 'not-on-disk' || problemOf(row) === NOT_ON_DISK;
 
 /** The sentence of a refused install: the brain's own, or, on a brain
  *  before own pipelines (no POST: 404 or 405), CANNOT_ADD. */

@@ -63,7 +63,7 @@ import {
   optionValues,
   packageFileName,
   pipelinePath,
-  problemOf,
+  problemText,
   readsText,
   rereadLabel,
   setBody,
@@ -638,7 +638,7 @@ export function OwnHeaderButtons({ p }: { p: PipelineRowV1 }) {
 export function ProblemLine({ p }: { p: PipelineRowV1 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const problem = problemOf(p);
+  const problem = problemText(p);
   const again = useMutation({
     mutationFn: async () => {
       const pkg = await getPackage(p.id);
@@ -655,8 +655,9 @@ export function ProblemLine({ p }: { p: PipelineRowV1 }) {
       aria-label="Problem"
       className="space-y-3 rounded-xl border border-warning/50 bg-warning/10 p-4 text-sm"
     >
-      <p className="text-warning-ink">{problem}</p>
-      {canWriteAgain(problem) && (
+      <p className="font-medium text-warning-ink">{problem.line}</p>
+      {problem.detail && <p className="text-warning-ink">{problem.detail}</p>}
+      {canWriteAgain(p) && (
         <div className="flex items-center justify-end gap-2">
           <Button
             size="sm"

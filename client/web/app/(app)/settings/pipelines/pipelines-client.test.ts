@@ -83,8 +83,13 @@ const LIST: PipelineList = {
   countsPartial: false,
 };
 
-/** A phase 2 reader with one option of each type (made up). */
-const READER: PipelineRow = {
+/** A row as an older brain sends it, with fields the 0.607.0 contract type
+ *  holds required left out. The type does not describe it: one cast, here. */
+const older = (row: Partial<PipelineRow>) => row as PipelineRow;
+
+/** A phase 2 reader of a server before M8, with one option of each type
+ *  (made up). */
+const READER: PipelineRow = older({
   ...LIST.pipelines[1]!,
   kind: 'reader',
   workspaces: 'all',
@@ -114,10 +119,11 @@ const READER: PipelineRow = {
       value: ['FV', 'PT'],
     },
   ],
-};
+});
 
-/** A phase 2 `after` pipeline, off in one workspace (made up). */
-const AFTER: PipelineRow = {
+/** A phase 2 `after` pipeline of a server before M8, off in one workspace
+ *  (made up). */
+const AFTER: PipelineRow = older({
   ...LIST.pipelines[1]!,
   id: 'site-tags',
   name: 'Site tags',
@@ -127,7 +133,7 @@ const AFTER: PipelineRow = {
   after: 'texts-v1',
   tabs: ['Site tags'],
   options: [],
-};
+});
 
 const text = (html: string) =>
   html
@@ -332,7 +338,7 @@ describe('Settings > Pipelines, a phase 2 brain', () => {
 
   it('a row of an older server (no offIn) is on everywhere', () => {
     const { offIn: _o, ...old } = AFTER;
-    const html = render(createElement(PipelineDetail, { row: old }), WS);
+    const html = render(createElement(PipelineDetail, { row: older(old) }), WS);
     expect(text(html)).toContain('On in every workspace');
     expect(wsSwitch(html, 'South site')).toBe('true');
   });
@@ -582,7 +588,9 @@ describe('Settings > Pipelines, a router and kinds the client does not know', ()
   it('an unknown kind is a plain, read-only row and detail', () => {
     // A future kind with none of the phase 2 parts: nothing may fail.
     const { options: _o, workspaces: _w, offIn: _f, tabs: _t, ...bare } = READER;
-    const odd = { ...bare, id: 'sorter-1', name: 'Sorter', kind: 'sorter' } as PipelineRow;
+    // The contract type lists three kind words, and says to show an unknown
+    // one as a plain row: the test says so with one cast.
+    const odd = older({ ...bare, id: 'sorter-1', name: 'Sorter', kind: 'sorter' } as object);
     const list: PipelineList = { ...LIST, pipelines: [odd] };
     const card = cards(panes(screen(list)).list)[0]!;
     expect(text(card)).toContain('Sorter');
@@ -665,5 +673,25 @@ describe('Settings > Pipelines, own pipelines (P3-3)', () => {
     const t = text(panes(screen({ ...LIST, pipelines: [clash] })).detail);
     expect(t).toContain('A built-in now reads .lx9.');
     expect(t).not.toContain('Write the files again');
+  });
+
+  it("a code gives its short line, with the brain's sentence under it", () => {
+    const clash = {
+      ...OWN,
+      problem: 'A built-in now reads .lx9. Remove this one, or install it for another extension.',
+      problemCode: 'ext-taken' as const,
+    };
+    const t = text(panes(screen({ ...LIST, pipelines: [clash] })).detail);
+    expect(t).toContain('Does not run: an earlier reader takes one of its extensions.');
+    expect(t).toContain('A built-in now reads .lx9.');
+    expect(t).not.toContain('Write the files again');
+  });
+
+  it('the code not-on-disk offers Write the files again, whatever the sentence', () => {
+    const gone = { ...OWN, problem: 'Gone.', problemCode: 'not-on-disk' as const };
+    const t = text(panes(screen({ ...LIST, pipelines: [gone] })).detail);
+    expect(t).toContain('Does not run: its files are not on disk.');
+    expect(t).toContain('Gone.');
+    expect(t).toContain('Write the files again');
   });
 });

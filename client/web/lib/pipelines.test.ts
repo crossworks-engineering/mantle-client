@@ -35,16 +35,20 @@ import {
   packageFileName,
   packageFileOf,
   problemOf,
+  problemText,
   readPackage,
+  PROBLEM_LINES,
   replacesText,
   type PickedFile,
   type PipelineList,
   type PipelineRow,
 } from './pipelines';
+import type { PipelineProblemCode } from '@mantle/client-types';
 
 const ROW: PipelineRow = {
   id: 'drawing-pdf',
   name: 'PDF drawing',
+  description: '',
   version: '1.0.0',
   source: 'builtin',
   start: 'upload',
@@ -55,7 +59,12 @@ const ROW: PipelineRow = {
   tools: [],
   files: 4,
   older: 1,
+  versions: [],
+  runs: null,
+  lastRunAt: null,
   kind: 'reader',
+  names: [],
+  claims: [],
   workspaces: 'all',
   offIn: [],
   after: null,
@@ -76,6 +85,14 @@ const ROW: PipelineRow = {
 };
 
 const AFTER: PipelineRow = { ...ROW, id: 'site-tags', kind: 'after', offIn: ['w1'] };
+
+/** A row as an older brain sends it, with fields the 0.607.0 contract type
+ *  holds required left out. The type does not describe it: one cast, here. */
+const older = (row: Partial<PipelineRow>) => row as PipelineRow;
+
+/** A row with a kind word a later brain may send. The contract type lists
+ *  three words and says to show an unknown one as a plain row. */
+const laterKind = (row: PipelineRow, kind: string) => ({ ...row, kind }) as PipelineRow;
 
 describe('Settings > Pipelines words', () => {
   it('a count the brain did not make is a dash', () => {
@@ -147,9 +164,9 @@ describe('Save sends the changed values only', () => {
 
   it('an older server sends no offIn: on everywhere, and no crash', () => {
     const { offIn: _o, ...old } = ROW;
-    expect(offInOf(old)).toEqual([]);
-    expect(usedInText(old)).toBe('Every workspace');
-    expect(setBody(old, { width: 30, frames: false, words: ['AB'] }, [])).toBeNull();
+    expect(offInOf(older(old))).toEqual([]);
+    expect(usedInText(older(old))).toBe('Every workspace');
+    expect(setBody(older(old), { width: 30, frames: false, words: ['AB'] }, [])).toBeNull();
   });
 
   it('the summary line and the off list from the switches', () => {
@@ -188,7 +205,8 @@ describe('Settings > Pipelines, the M8 fields', () => {
   };
 
   it('a row with no versions is a server before M8: no fields', () => {
-    expect(statsOf(ROW)).toBeNull();
+    const { versions: _v, ...beforeM8 } = ROW;
+    expect(statsOf(beforeM8)).toBeNull();
     expect(statsOf({ ...ROW, ...stats })).toEqual(stats);
   });
 
@@ -247,21 +265,21 @@ describe('Settings > Pipelines, the router and the kinds', () => {
     expect(canChange(ROW)).toBe(true);
     expect(canChange(AFTER)).toBe(true);
     expect(canChange(ROUTER)).toBe(false);
-    expect(canChange({ ...ROW, kind: 'sorter' })).toBe(false);
+    expect(canChange(laterKind(ROW, 'sorter'))).toBe(false);
   });
 
   it('the role word, and the Used in cell', () => {
     expect(kindText(ROW)).toBe('Reader');
     expect(kindText(AFTER)).toBe('Transformer, on -');
     expect(kindText({ ...AFTER, after: 'texts-v1' })).toBe('Transformer, on texts-v1');
-    expect(kindText({ ...ROW, kind: 'agent' })).toBe('Agent');
+    expect(kindText(laterKind(ROW, 'agent'))).toBe('Agent');
     expect(kindText(ROUTER)).toBe('Router');
-    expect(kindText({ ...ROW, kind: 'sorter' })).toBe('Sorter');
+    expect(kindText(laterKind(ROW, 'sorter'))).toBe('Sorter');
     expect(usedInText(ROW)).toBe('Every workspace');
     expect(usedInText(AFTER)).toBe('Off in 1');
     expect(usedInText({ ...ROW, offIn: ['w1', 'w2'] })).toBe('Off in 2');
     expect(usedInText(ROUTER)).toBe('Router');
-    expect(usedInText({ ...ROW, kind: 'sorter', workspaces: [] })).toBe('Sorter');
+    expect(usedInText({ ...laterKind(ROW, 'sorter'), workspaces: [] })).toBe('Sorter');
   });
 
   it("the kinds a router can name, the decider's marked", () => {
@@ -277,14 +295,14 @@ describe('Settings > Pipelines, the router and the kinds', () => {
 
   it('an older server sends no names and no claims: nothing shows', () => {
     const { names: _n, claims: _c, ...old } = ROUTER;
-    expect(nameLines(old)).toEqual([]);
+    expect(nameLines(older(old))).toEqual([]);
     expect(claimsText(ROW)).toBeNull();
   });
 });
 
 describe('filterPipelines: the search of the list', () => {
   const rows: PipelineRow[] = [
-    { ...ROW, description: 'Reads a PDF drawing into its texts.', versions: [] } as PipelineRow,
+    { ...ROW, description: 'Reads a PDF drawing into its texts.' },
     { ...AFTER, name: 'Site tags', reads: ['dwg'] },
     ROUTER,
   ];
@@ -430,12 +448,52 @@ describe('own pipelines: replaces, download name, problem, refusal', () => {
 
   it('the problem of a row; an older server sends none; only "not on disk" has its act', () => {
     expect(problemOf(ROW)).toBeNull();
-    expect(problemOf({ ...own, problem: null } as typeof own)).toBeNull();
-    expect(problemOf({ ...own, problem: NOT_ON_DISK } as typeof own)).toBe(NOT_ON_DISK);
-    expect(canWriteAgain(NOT_ON_DISK)).toBe(true);
-    expect(canWriteAgain('A built-in now reads .lx9.')).toBe(false);
+    expect(problemOf({ ...own, problem: null })).toBeNull();
+    expect(problemOf({ ...own, problem: NOT_ON_DISK })).toBe(NOT_ON_DISK);
     expect(isOwn(own)).toBe(true);
     expect(isOwn(ROW)).toBe(false);
+  });
+
+  it('"Write the files again" by the code; a brain before the code, by the sentence', () => {
+    expect(canWriteAgain({ ...own, problem: 'Not there.', problemCode: 'not-on-disk' })).toBe(true);
+    expect(canWriteAgain({ ...own, problem: NOT_ON_DISK })).toBe(true);
+    expect(
+      canWriteAgain({ ...own, problem: 'A built-in reads .lx9.', problemCode: 'ext-taken' }),
+    ).toBe(false);
+    expect(canWriteAgain(own)).toBe(false);
+  });
+});
+
+describe('the problem line: a short line by the code, the sentence as its detail', () => {
+  const own = { ...ROW, id: 'lx9-logger', source: 'own' as const };
+  const lines: [PipelineProblemCode, string][] = [
+    ['not-on-disk', 'Does not run: its files are not on disk.'],
+    ['curated-only', 'Does not run: this box runs curated pipelines only.'],
+    ['builtin-id', 'Does not run: a built-in has its id now.'],
+    ['ext-taken', 'Does not run: an earlier reader takes one of its extensions.'],
+    ['manifest', 'Does not run: its manifest does not pass the check.'],
+  ];
+
+  it.each(lines)('%s has its own line', (problemCode, line) => {
+    const problem = 'The sentence of the brain.';
+    expect(problemText({ ...own, problem, problemCode })).toEqual({ line, detail: problem });
+  });
+
+  it('every code of the contract has a line', () => {
+    expect(Object.keys(PROBLEM_LINES).sort()).toEqual(lines.map(([c]) => c).sort());
+  });
+
+  it('an unknown code, or none, shows the sentence alone', () => {
+    const problem = 'A later problem, said plainly.';
+    const later = { ...own, problem, problemCode: 'later-word' } as unknown as PipelineRow;
+    expect(problemText(later)).toEqual({ line: problem, detail: null });
+    expect(problemText({ ...own, problem })).toEqual({ line: problem, detail: null });
+  });
+
+  it('no problem: nothing shows', () => {
+    expect(problemText(own)).toBeNull();
+    expect(problemText({ ...own, problem: null, problemCode: null })).toBeNull();
+    expect(problemText({ ...own, problem: '  ' })).toBeNull();
   });
 
   it("a refused install shows the brain's sentence; no install route says so plainly", () => {
