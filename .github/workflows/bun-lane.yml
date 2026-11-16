@@ -116,7 +116,8 @@ jobs:
   # itself runs on Node, as in verify.yml.
   e2e-workspace-bun:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # The same 265 specs as verify.yml's e2e-workspace, with `next dev` on Bun.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
         with:
