@@ -13,38 +13,14 @@
  * are the answer's own. Pure helpers only: no DOM here.
  */
 
-/**
- * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineRunSkip`,
- * `PipelineRunBody` and `PipelineRunAnswer` (mantle, branch
- * feat/pipelines-2-m5, pipelines phase 2). Declared here until the contract
- * pin moves past the release that ships them; then import them and delete
- * these.
- */
-export type PipelineRunSkip =
-  'no-match' | 'no-database' | 'not-attached' | 'no-sha' | 'private' | 'pdf';
+import type {
+  PipelineRereadBody,
+  PipelineRunAnswer,
+  PipelineRunBody,
+  PipelineRunSkip,
+} from '@mantle/client-types';
 
-/** LOCAL COPY, as above. With no `apply`, the dry run. */
-export type PipelineRunBody = {
-  pipeline?: string;
-  apply?: boolean;
-  limit?: number;
-  after?: string;
-};
-
-/** LOCAL COPY, as above. The dry run and the run alike. */
-export type PipelineRunAnswer = {
-  apply: boolean;
-  /** The extract queue is busy: nothing was queued. */
-  busy: boolean;
-  /** The pipelines that can run on these files, with the count each takes.
-   *  `refused`: a word when it may not run ('pdf'). */
-  choices: { pipeline: string; name: string; files: number; refused: string | null }[];
-  queued: number;
-  /** The files the named pipeline does not take, by PipelineRunSkip word. */
-  skipped: Record<string, number>;
-  /** The last file id looked at, when there are more: send it as `after`. */
-  next: string | null;
-};
+export type { PipelineRereadBody, PipelineRunAnswer, PipelineRunBody, PipelineRunSkip };
 
 export type RunTarget = { kind: 'file' | 'folder'; id: string; name: string };
 
@@ -120,6 +96,11 @@ const SKIP_WORDS: Record<PipelineRunSkip, { one: string; many: string }> = {
   pdf: {
     one: 'is a PDF drawing, whose reader is refused for now',
     many: 'are PDF drawings, whose reader is refused for now',
+  },
+  // The re-read keeps a file's text: a new text needs a re-extract.
+  text: {
+    one: 'has text and no tabs, which a re-read keeps as it is',
+    many: 'have text and no tabs, which a re-read keeps as it is',
   },
 };
 
@@ -212,15 +193,6 @@ export async function postRun(
     throw err;
   }
 }
-
-/**
- * LOCAL COPY of @mantle/client-types dto/pipelines.ts `PipelineRereadBody`
- * (mantle branch feat/pipelines-2-m8): read the older files of one pipeline
- * again. With no `apply`, the dry run. Its answer is a `PipelineRunAnswer`
- * with one choice, whose `files` are the older files of this page. Delete
- * when the contract pin moves past the release that ships it.
- */
-export type PipelineRereadBody = { apply?: boolean; limit?: number; after?: string };
 
 export function rereadPath(pipelineId: string): string {
   return `/api/pipelines/${encodeURIComponent(pipelineId)}/reread`;

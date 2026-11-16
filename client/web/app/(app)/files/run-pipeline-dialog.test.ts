@@ -147,6 +147,7 @@ describe('the Run dialog', () => {
     ]);
     expect(t).toContain('1 has no database yet');
     expect(skipText('not-attached', 1)).toBe('1 is in a workspace where the pipeline is off');
+    expect(skipText('text', 2)).toBe('2 have text and no tabs, which a re-read keeps as it is');
     expect(t).toContain(RUN_QUEUED_NOTE);
     expect(t).not.toContain(RUN_NEXT_LABEL);
     expect(resultLine({ ...RESULT, queued: 1, skipped: { 'no-sha': 1 } })).toBe(
