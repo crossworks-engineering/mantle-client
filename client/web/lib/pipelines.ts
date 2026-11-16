@@ -560,8 +560,10 @@ export function problemText(row: WithProblem): { line: string; detail: string | 
 
 /** Does the problem have its one act, "Write the files again"? By the code;
  *  on a brain before `problemCode`, by the sentence. */
-export const canWriteAgain = (row: WithProblem) =>
-  problemCodeOf(row) === 'not-on-disk' || problemOf(row) === NOT_ON_DISK;
+export const canWriteAgain = (row: WithProblem) => {
+  const code = problemCodeOf(row);
+  return code ? code === 'not-on-disk' : problemOf(row) === NOT_ON_DISK;
+};
 
 /** The sentence of a refused install: the brain's own, or, on a brain
  *  before own pipelines (no POST: 404 or 405), CANNOT_ADD. */

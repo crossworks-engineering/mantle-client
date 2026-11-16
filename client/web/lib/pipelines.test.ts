@@ -460,6 +460,8 @@ describe('own pipelines: replaces, download name, problem, refusal', () => {
     expect(
       canWriteAgain({ ...own, problem: 'A built-in reads .lx9.', problemCode: 'ext-taken' }),
     ).toBe(false);
+    // A code wins over the sentence: another code with the old sentence has no act.
+    expect(canWriteAgain({ ...own, problem: NOT_ON_DISK, problemCode: 'ext-taken' })).toBe(false);
     expect(canWriteAgain(own)).toBe(false);
   });
 });
