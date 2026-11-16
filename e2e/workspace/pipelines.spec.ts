@@ -752,6 +752,8 @@ const INSTALL_NOTE =
 type OwnState = {
   files: Record<string, unknown>;
   problem: string | null;
+  /** The brain's fixed word for `problem` (client-types PipelineProblemCode). */
+  problemCode: string | null;
 };
 
 /** The row of an own package, as the brain lists it. */
@@ -766,6 +768,7 @@ function ownRow(own: OwnState) {
     version: m.version,
     source: 'own',
     problem: own.problem,
+    problemCode: own.problemCode,
     start: 'upload',
     kind: 'reader',
     reads: m.match.ext,
@@ -801,7 +804,7 @@ async function routeOwn(
   opts: { noInstall?: boolean } = {},
 ): Promise<Sent[]> {
   const sent: Sent[] = [];
-  const builtins = LIST2.pipelines.map((p) => ({ ...p, problem: null }));
+  const builtins = LIST2.pipelines.map((p) => ({ ...p, problem: null, problemCode: null }));
   await page.route(
     (u) => u.pathname.startsWith('/api/pipelines'),
     async (route: Route) => {
@@ -826,7 +829,7 @@ async function routeOwn(
           });
         }
         const was = own.get(m.id);
-        own.set(m.id, { files, problem: null });
+        own.set(m.id, { files, problem: null, problemCode: null });
         return route.fulfill({
           json: {
             row: ownRow(own.get(m.id)!),
@@ -1049,7 +1052,9 @@ test('own: a row whose files are not on disk shows its line; Write the files aga
     'pipeline.json': JSON.stringify(TEMPLATE_MANIFEST),
     'step.ts': 'export async function step() {}\n',
   };
-  const own = new Map<string, OwnState>([['lx9-logger', { files, problem: NOT_ON_DISK }]]);
+  const own = new Map<string, OwnState>([
+    ['lx9-logger', { files, problem: NOT_ON_DISK, problemCode: 'not-on-disk' }],
+  ]);
   const sent = await routeOwn(page, own);
   await signIn(page, 'admin');
   await page.goto('/settings/pipelines?selected=lx9-logger');
@@ -1058,6 +1063,7 @@ test('own: a row whose files are not on disk shows its line; Write the files aga
   await expect(lx9.getByRole('img', { name: 'Does not run: see its detail' })).toBeVisible();
   await expect(card(list, 'Spreadsheet').getByRole('img', { name: /Does not run/ })).toHaveCount(0);
   const problem = detail.getByRole('region', { name: 'Problem' });
+  await expect(problem).toContainText('Does not run: its files are not on disk.');
   await expect(problem).toContainText(NOT_ON_DISK);
   await problem.getByRole('button', { name: 'Write the files again' }).click();
   await expect(page.getByText('The files of version 1.0.0 are on disk again.')).toBeVisible();
