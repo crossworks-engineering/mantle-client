@@ -23,6 +23,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 const KIND_LABEL: Record<string, string> = {
   responder_turn: 'Responder',
   extractor_run: 'Extractor',
+  pipeline_run: 'Pipeline',
   summarizer_run: 'Summarizer',
   reflector_run: 'Reflector',
   content_ingest: 'Ingest',
@@ -37,6 +38,7 @@ const KIND_OPTIONS: Array<[string, string]> = [
   ['responder_turn', 'Responder'],
   ['heartbeat_fire', 'Heartbeat'],
   ['extractor_run', 'Extractor'],
+  ['pipeline_run', 'Pipeline'],
   ['summarizer_run', 'Summarizer'],
   ['reflector_run', 'Reflector'],
   ['content_ingest', 'Ingest'],
