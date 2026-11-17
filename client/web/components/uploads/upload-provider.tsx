@@ -178,22 +178,34 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }, []);
 
+  const unmountedRef = useRef(false);
   useEffect(() => {
+    unmountedRef.current = false;
     const timers = retryTimersRef.current;
     return () => {
-      for (const t of timers.values()) clearTimeout(t);
+      unmountedRef.current = true;
+      for (const t of timers.values()) {
+        clearTimeout(t);
+        queue.release();
+      }
       timers.clear();
     };
-  }, []);
+  }, [queue]);
 
-  /** Queue a row again after the back-off; a cancel in the meantime wins. */
+  /**
+   * Queue a row again after the back-off, at the front. The queue starts
+   * nothing new while a back-off runs: a drop is often the whole link, and the
+   * next files would fail into it too. A cancel in the meantime wins.
+   */
   const scheduleAutoRetry = useCallback(
     (id: string, delay: number) => {
+      if (unmountedRef.current) return;
+      queue.hold();
       const timer = setTimeout(() => {
         retryTimersRef.current.delete(id);
         const entry = pendingRef.current.get(id);
-        if (!entry || entry.controller || queue.has(id)) return;
-        queue.push([id]);
+        if (entry && !entry.controller && !queue.has(id)) queue.push([id], { front: true });
+        queue.release();
       }, delay);
       retryTimersRef.current.set(id, timer);
     },
@@ -338,8 +350,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       // Still queued, or waiting for its automatic retry: pull it before it starts.
       queue.drop(id);
       const timer = retryTimersRef.current.get(id);
-      if (timer) clearTimeout(timer);
-      retryTimersRef.current.delete(id);
+      if (timer) {
+        clearTimeout(timer);
+        retryTimersRef.current.delete(id);
+        queue.release();
+      }
       pendingRef.current.delete(id);
       update(id, { status: 'cancelled', retrying: undefined });
     },

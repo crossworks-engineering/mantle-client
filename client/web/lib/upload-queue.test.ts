@@ -104,6 +104,39 @@ describe('createUploadQueue', () => {
     expect(h.started).toEqual(['a', 'c']);
   });
 
+  it('starts nothing new while a back-off holds it, and resumes on release', async () => {
+    const h = harness(3);
+    h.queue.push(['a', 'b', 'c', 'd', 'e']);
+    // 'a' dropped: its back-off holds the queue.
+    h.queue.hold();
+    await h.finish('a');
+    await h.finish('b');
+    expect(h.started).toEqual(['a', 'b', 'c']);
+    expect(h.queue.held).toBe(true);
+    // Back-off over: 'a' goes first, then the rest, up to the limit.
+    h.queue.push(['a'], { front: true });
+    expect(h.started).toEqual(['a', 'b', 'c']);
+    h.queue.release();
+    expect(h.queue.held).toBe(false);
+    expect(h.started).toEqual(['a', 'b', 'c', 'a', 'd']);
+  });
+
+  it('waits for every hold to be released', async () => {
+    const h = harness(1);
+    h.queue.hold();
+    h.queue.hold();
+    h.queue.push(['a']);
+    h.queue.release();
+    expect(h.started).toEqual([]);
+    h.queue.release();
+    expect(h.started).toEqual(['a']);
+    h.queue.release(); // an extra release does not go below zero
+    h.queue.hold();
+    h.queue.push(['b']);
+    await h.finish('a');
+    expect(h.started).toEqual(['a']);
+  });
+
   it('frees the slot when an upload rejects or throws', async () => {
     const started: string[] = [];
     const queue = createUploadQueue(1, (id) => {

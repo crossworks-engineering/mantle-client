@@ -47,19 +47,25 @@ export function autoRetryDelayMs(err: unknown, attempts: number): number | null 
 }
 
 export type UploadQueue = {
-  /** Queue ids at the back, then start as many as the limit allows. */
-  push: (ids: readonly string[]) => void;
+  /** Queue ids at the back (or the front), then start as many as the limit allows. */
+  push: (ids: readonly string[], opts?: { front?: boolean }) => void;
+  /** Start nothing new until every hold is released. Running uploads go on. */
+  hold: () => void;
+  release: () => void;
   /** Take a queued id out before it starts; a running one is not touched. */
   drop: (id: string) => void;
   /** Whether the id waits in the queue. */
   has: (id: string) => boolean;
   readonly running: number;
   readonly queued: number;
+  readonly held: boolean;
 };
 
 /**
  * A FIFO that runs at most `limit` uploads at once. A slot frees when the
- * promise `start` returns settles, whichever way it settles.
+ * promise `start` returns settles, whichever way it settles. While held (a
+ * dropped connection waits out its back-off) nothing new starts, so the rest
+ * of a batch does not fail into the same outage one file after another.
  */
 export function createUploadQueue(
   limit: number,
@@ -67,13 +73,14 @@ export function createUploadQueue(
 ): UploadQueue {
   let waiting: string[] = [];
   let running = 0;
+  let holds = 0;
 
   const settle = () => {
     running = Math.max(0, running - 1);
     pump();
   };
   const pump = () => {
-    while (running < limit && waiting.length > 0) {
+    while (holds === 0 && running < limit && waiting.length > 0) {
       const id = waiting.shift()!;
       running++;
       let p: Promise<void>;
@@ -87,8 +94,16 @@ export function createUploadQueue(
   };
 
   return {
-    push(ids) {
-      waiting.push(...ids);
+    push(ids, opts) {
+      if (opts?.front) waiting.unshift(...ids);
+      else waiting.push(...ids);
+      pump();
+    },
+    hold() {
+      holds++;
+    },
+    release() {
+      holds = Math.max(0, holds - 1);
       pump();
     },
     drop(id) {
@@ -102,6 +117,9 @@ export function createUploadQueue(
     },
     get queued() {
       return waiting.length;
+    },
+    get held() {
+      return holds > 0;
     },
   };
 }
