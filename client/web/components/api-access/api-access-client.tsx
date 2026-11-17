@@ -635,7 +635,7 @@ function CreateKeyDialog({
                     id="key-risky"
                     value={form.riskyTools}
                     onChange={(e) => set({ riskyTools: e.target.value })}
-                    placeholder="web_search, email_send"
+                    placeholder="web_search, telegram_send"
                     aria-invalid={error?.field === 'riskyTools' || undefined}
                     aria-describedby="key-risky-description"
                   />

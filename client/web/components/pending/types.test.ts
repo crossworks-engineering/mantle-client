@@ -123,7 +123,7 @@ describe('isQuestionRow', () => {
   it('matches the two human-answerable slugs only', () => {
     expect(isQuestionRow(row({}))).toBe(true);
     expect(isQuestionRow(row({}, { toolSlug: 'run_budget' }))).toBe(true);
-    expect(isQuestionRow(row({}, { toolSlug: 'email_send' }))).toBe(false);
+    expect(isQuestionRow(row({}, { toolSlug: 'telegram_send' }))).toBe(false);
   });
 });
 
