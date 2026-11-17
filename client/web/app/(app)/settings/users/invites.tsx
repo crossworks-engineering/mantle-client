@@ -64,6 +64,7 @@ import {
 } from '@/lib/user-invites';
 import { HeaderIconButton, HeaderInfoButton, ItemHeader } from '@/components/layout/item-header';
 import { ContactPicker, type PickedContact } from '@/components/contacts/contact-picker';
+import { useSyncOff } from '@/lib/use-sync-off';
 
 export const INVITES_KEY = ['users', 'invites'] as const;
 
@@ -115,6 +116,8 @@ export function InviteDialog({
   const [formError, setFormError] = useState<string>();
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState<MemberInviteCreated | null>(null);
+  // Contacts need the Sync service: while it is off the email is typed.
+  const syncOff = useSyncOff();
 
   const replaces = contact
     ? invites.data?.invites.some((i) => i.state === 'open' && i.contactId === contact.id)
@@ -265,19 +268,21 @@ export function InviteDialog({
             </DialogHeader>
             <form onSubmit={submit} noValidate>
               <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="invite-contact">Contact (optional)</FieldLabel>
-                  <ContactPicker
-                    id="invite-contact"
-                    hintId="invite-contact-hint"
-                    enabled={open}
-                    contact={contact}
-                    onChange={setContact}
-                  />
-                  <FieldDescription id="invite-contact-hint">
-                    Pick a contact to use their email and name, or leave it and enter an email.
-                  </FieldDescription>
-                </Field>
+                {syncOff ? null : (
+                  <Field>
+                    <FieldLabel htmlFor="invite-contact">Contact (optional)</FieldLabel>
+                    <ContactPicker
+                      id="invite-contact"
+                      hintId="invite-contact-hint"
+                      enabled={open}
+                      contact={contact}
+                      onChange={setContact}
+                    />
+                    <FieldDescription id="invite-contact-hint">
+                      Pick a contact to use their email and name, or leave it and enter an email.
+                    </FieldDescription>
+                  </Field>
+                )}
                 <Field data-invalid={!!emailError || undefined}>
                   <FieldLabel htmlFor="invite-email">
                     {contact ? 'Email (optional)' : 'Email'}

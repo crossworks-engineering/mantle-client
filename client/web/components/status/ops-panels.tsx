@@ -31,7 +31,8 @@ export function OpsPanels({
   topErrors,
   recentFailures,
 }: {
-  email: EmailStats;
+  /** Null while the Sync service is off: no Email sync card. */
+  email: EmailStats | null;
   telegram: TelegramStats;
   heartbeats: HeartbeatStats;
   topErrors: TopError[];
@@ -40,48 +41,50 @@ export function OpsPanels({
   return (
     <div className="grid grid-cols-1 gap-4 @2xl/status:grid-cols-2">
       {/* Email sync */}
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-          <CardTitle className="flex items-center gap-1.5 text-base">
-            <Mail className="size-4 text-muted-foreground" aria-hidden /> Email sync
-          </CardTitle>
-          <Link
-            href="/settings/accounts"
-            className="text-xs text-primary-ink underline-offset-2 hover:underline"
-          >
-            Accounts
-          </Link>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>
-              <b className="text-foreground">{formatCount(email.total)}</b> emails
-            </span>
-            <span>
-              <b className="text-foreground">{formatCount(email.unread)}</b> unread
-            </span>
-            <span>
-              <b className="text-foreground">{formatCount(email.withAttachments)}</b> with
-              attachments
-            </span>
-          </div>
-          {email.latestSync.length === 0 ? (
-            <Empty>No syncs yet.</Empty>
-          ) : (
-            <ul className="divide-y divide-border text-xs">
-              {email.latestSync.map((s) => (
-                <li key={s.accountId} className="flex items-center justify-between gap-2 py-1.5">
-                  <span className="truncate">{s.address}</span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className="text-muted-foreground">{rel(s.finishedAt)}</span>
-                    <span className={cn('font-medium', syncTone(s.status))}>{s.status}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      {email && (
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+            <CardTitle className="flex items-center gap-1.5 text-base">
+              <Mail className="size-4 text-muted-foreground" aria-hidden /> Email sync
+            </CardTitle>
+            <Link
+              href="/settings/accounts"
+              className="text-xs text-primary-ink underline-offset-2 hover:underline"
+            >
+              Accounts
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                <b className="text-foreground">{formatCount(email.total)}</b> emails
+              </span>
+              <span>
+                <b className="text-foreground">{formatCount(email.unread)}</b> unread
+              </span>
+              <span>
+                <b className="text-foreground">{formatCount(email.withAttachments)}</b> with
+                attachments
+              </span>
+            </div>
+            {email.latestSync.length === 0 ? (
+              <Empty>No syncs yet.</Empty>
+            ) : (
+              <ul className="divide-y divide-border text-xs">
+                {email.latestSync.map((s) => (
+                  <li key={s.accountId} className="flex items-center justify-between gap-2 py-1.5">
+                    <span className="truncate">{s.address}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-muted-foreground">{rel(s.finishedAt)}</span>
+                      <span className={cn('font-medium', syncTone(s.status))}>{s.status}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Telegram */}
       <Card>

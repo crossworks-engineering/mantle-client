@@ -66,6 +66,7 @@ import {
   type PendingGrantConfirm,
 } from './grant-dialogs';
 import { RevokeLinkDialog, type RevokeTarget } from './revoke-link-dialog';
+import { useSyncOff } from '@/lib/use-sync-off';
 
 /** The `skipped` pairs of a write answer (contract 11), else none. */
 function skippedOf(res: unknown): SkippedEmbed[] {
@@ -509,6 +510,9 @@ function OpenLinkPart({
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Contact shares need the Sync service: no section while it is off. A share
+  // made before stays on Settings > Shared links, where it can be stopped.
+  const syncOff = useSyncOff();
   if (view.link === undefined) return null;
   const link = view.link;
   const mayLink = view.mayLink === true;
@@ -596,7 +600,7 @@ function OpenLinkPart({
         onMake={() => void make()}
         onStop={() => link && onRevoke({ shareId: link.id, title, cascade: false, stays: null })}
       />
-      {shares && mayLink && type !== 'branch' && (
+      {shares && mayLink && type !== 'branch' && !syncOff && (
         <ContactShareSection
           nodeId={nodeId}
           itemType={type ?? ''}

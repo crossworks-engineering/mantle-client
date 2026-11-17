@@ -46,6 +46,7 @@ import {
 } from '@mantle/web-ui/ui/list-card';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { play } from '@/lib/sounds/play';
+import { useSyncOff } from '@/lib/use-sync-off';
 
 /** Connector shapes come from the contract package (pins ≥ 0.232.73). */
 type McpBinding = NonNullable<ToolGroupIntegrationDTO['mcp']>;
@@ -213,6 +214,18 @@ function OAuthStatusPill({ oauth }: { oauth: McpOAuthInfo }) {
  *
  *  Every caller must close the tab on any path that does NOT navigate it —
  *  otherwise a blank tab is left behind. */
+/** Settings → Microsoft: a link, or plain words while the Sync service is off
+ *  (that screen is closed then, lib/sync.ts). */
+function MicrosoftSettingsLink() {
+  const syncOff = useSyncOff();
+  if (syncOff) return <>Settings → Microsoft (it needs the Sync service)</>;
+  return (
+    <Link href="/settings/microsoft" className="underline underline-offset-2">
+      Settings → Microsoft
+    </Link>
+  );
+}
+
 function openTab(): Window | null {
   const tab = window.open('', '_blank');
   if (tab) tab.opener = null;
@@ -883,24 +896,12 @@ export function ConnectorsClient() {
                                 Signs in with app{' '}
                                 <code className="font-mono">{microsoftApp.clientId}</code> in tenant{' '}
                                 <code className="font-mono">{microsoftApp.tenant}</code>, from{' '}
-                                <Link
-                                  href="/settings/microsoft"
-                                  className="underline underline-offset-2"
-                                >
-                                  Settings → Microsoft
-                                </Link>
-                                . For servers behind Microsoft sign-in, like Power BI.
+                                <MicrosoftSettingsLink />. For servers behind Microsoft sign-in,
+                                like Power BI.
                               </>
                             ) : (
                               <>
-                                Set up the app under{' '}
-                                <Link
-                                  href="/settings/microsoft"
-                                  className="underline underline-offset-2"
-                                >
-                                  Settings → Microsoft
-                                </Link>{' '}
-                                first.
+                                Set up the app under <MicrosoftSettingsLink /> first.
                               </>
                             )
                           ) : form.oauthApp === 'manual' ? (

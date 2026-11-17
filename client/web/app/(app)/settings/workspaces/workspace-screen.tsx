@@ -44,6 +44,7 @@ import {
   contactLabel,
   type PickedContact,
 } from '@/components/contacts/contact-picker';
+import { useSyncOff } from '@/lib/use-sync-off';
 import {
   ADMIN_ADD_TEXT,
   ADMIN_MODERATED_TEXT,
@@ -266,19 +267,23 @@ function AboutText({
   workspace: Workspace;
   contactReadable: boolean;
 }) {
-  const contact = useContact(ws.contactNodeId, contactReadable);
+  // Contacts need the Sync service: no Contact line while it is off.
+  const syncOff = useSyncOff();
+  const contact = useContact(ws.contactNodeId, contactReadable && !syncOff);
   return (
     <div className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
       <div className="sm:col-span-2">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Description</div>
         <div className="mt-0.5 whitespace-pre-wrap">{ws.description.trim() || 'None'}</div>
       </div>
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">Contact</div>
-        <div className="mt-0.5">
-          {contactText(ws.contactNodeId, contactReadable, contact.data, contact.isError)}
+      {syncOff ? null : (
+        <div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Contact</div>
+          <div className="mt-0.5">
+            {contactText(ws.contactNodeId, contactReadable, contact.data, contact.isError)}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -296,7 +301,10 @@ function AboutForm({
 }) {
   const toast = useToast();
   const actions = useWorkspaceActions();
-  const contactQuery = useContact(ws.contactNodeId, contactEditable);
+  // Contacts need the Sync service: while it is off the field is not shown,
+  // and a save keeps the saved contact as it is.
+  const syncOff = useSyncOff();
+  const contactQuery = useContact(ws.contactNodeId, contactEditable && !syncOff);
   const [name, setName] = useState(ws.name);
   const [description, setDescription] = useState(ws.description);
   // undefined: the saved contact, not changed here.
@@ -379,28 +387,30 @@ function AboutForm({
           />
         </Field>
         {lookEditable ? <LookField workspace={ws} /> : null}
-        <Field>
-          <FieldLabel htmlFor="workspace-contact">Contact (optional)</FieldLabel>
-          {!contactEditable ? (
-            <p id="workspace-contact" className="text-sm">
-              {contactText(ws.contactNodeId, false, undefined, false)}
-            </p>
-          ) : ws.contactNodeId && contact === undefined && contactQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : (
-            <ContactPicker
-              id="workspace-contact"
-              hintId={hintId('workspace-contact')}
-              enabled
-              contact={shownContact}
-              onChange={setContact}
-            />
-          )}
-          <FieldHint id="workspace-contact">
-            Who this workspace is for. Information only: it gives nobody access.
-            {contactEditable ? null : ' An Admin user sets it.'}
-          </FieldHint>
-        </Field>
+        {syncOff ? null : (
+          <Field>
+            <FieldLabel htmlFor="workspace-contact">Contact (optional)</FieldLabel>
+            {!contactEditable ? (
+              <p id="workspace-contact" className="text-sm">
+                {contactText(ws.contactNodeId, false, undefined, false)}
+              </p>
+            ) : ws.contactNodeId && contact === undefined && contactQuery.isPending ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : (
+              <ContactPicker
+                id="workspace-contact"
+                hintId={hintId('workspace-contact')}
+                enabled
+                contact={shownContact}
+                onChange={setContact}
+              />
+            )}
+            <FieldHint id="workspace-contact">
+              Who this workspace is for. Information only: it gives nobody access.
+              {contactEditable ? null : ' An Admin user sets it.'}
+            </FieldHint>
+          </Field>
+        )}
         <div>
           <SubmitButton pending={pending} disabled={!dirty}>
             Save
