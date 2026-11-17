@@ -17,6 +17,8 @@ import {
 import { ALL_NAV_ITEMS } from '@mantle/web-ui/layout/nav-items';
 import { companySignInOffered } from '@/lib/sso-setup';
 import { fleetOffered } from '@/lib/fleet';
+import { syncOffered } from '@/lib/sync';
+import { useSyncOff } from '@/lib/use-sync-off';
 import { useFleetShown } from '@/lib/use-fleet-shown';
 import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
 import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
@@ -136,9 +138,13 @@ export function SearchPalette({
   const shellAreas = useShellWorkspaces()?.areas;
   const ssoSetupShown = useSsoSetupShown(shellAreas);
   const fleetShown = useFleetShown(shellAreas);
+  const syncOff = useSyncOff();
   const navMatches = filterNavItems(
     ALL_NAV_ITEMS.filter(
-      (i) => companySignInOffered(i.href, ssoSetupShown) && fleetOffered(i.href, fleetShown),
+      (i) =>
+        companySignInOffered(i.href, ssoSetupShown) &&
+        fleetOffered(i.href, fleetShown) &&
+        syncOffered(i.href, syncOff),
     ),
     query,
   );

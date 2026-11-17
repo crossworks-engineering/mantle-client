@@ -17,6 +17,8 @@ import {
 } from '@/lib/tour/model';
 import { tourById as builtInTourById } from '@/lib/tour/tours';
 import { useShellRole } from '@/components/layout/shell-role';
+import { tourWithSync } from '@/lib/sync';
+import { useSyncOff } from '@/lib/use-sync-off';
 
 /**
  * The guided tour's state: which tour, which step, and where its target is on
@@ -120,9 +122,15 @@ export function TourProvider({
   // instead of pushing it to screens it may not open.
   const admin = useShellRole() === 'admin';
   const autoTour = React.useMemo(() => (admin ? runtimeTour() : null), [admin]);
+  // The role and Sync come from the same shell answer, so a tour never starts
+  // before it is known whether its mail stop is skipped (lib/sync.ts).
+  const syncOff = useSyncOff();
   const tourById = React.useCallback(
-    (id: string): Tour | null => (tours ? (tours[id] ?? null) : admin ? builtInTourById(id) : null),
-    [tours, admin],
+    (id: string): Tour | null => {
+      const tour = tours ? (tours[id] ?? null) : admin ? builtInTourById(id) : null;
+      return tour ? tourWithSync(tour, syncOff) : null;
+    },
+    [tours, admin, syncOff],
   );
   const [state, setState] = React.useState<{ tour: Tour; index: number } | null>(null);
   const [rect, setRect] = React.useState<Rect | null>(null);

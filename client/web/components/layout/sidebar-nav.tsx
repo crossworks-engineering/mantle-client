@@ -40,6 +40,8 @@ import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
 import { withCompanySignIn } from '@/lib/sso-setup';
 import { useFleetShown } from '@/lib/use-fleet-shown';
 import { withFleet } from '@/lib/fleet';
+import { useSyncOff } from '@/lib/use-sync-off';
+import { withSync } from '@/lib/sync';
 import {
   NAV_GROUPS,
   type NavGroup as BaseNavGroup,
@@ -104,12 +106,15 @@ export function SidebarNav({
   // The Control Center group and its CC tab: only on a Control Center
   // (GET /api/fleet answers 200).
   const fleetShown = useFleetShown(areas);
+  // Email, contacts and linked accounts: hidden only while the brain says the
+  // Sync service is off (lib/sync.ts).
+  const syncOff = useSyncOff();
   const scope = scopeInPlay(storedScope, fleetShown);
   const scopes = navScopes(fleetShown);
   const groups: NavGroup[] = withFleet(
     withCompanySignIn(
       withChats(
-        navWithAreas(NAV_GROUPS, areas),
+        withSync(navWithAreas(NAV_GROUPS, areas), syncOff),
         // Hidden only on a 404: a count still loading (or failing) leaves the
         // entry where it is, so the rows below it do not jump.
         messenger.available !== 'no',
