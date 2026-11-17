@@ -48,10 +48,10 @@ export function OpsPanels({
               <Mail className="size-4 text-muted-foreground" aria-hidden /> Email sync
             </CardTitle>
             <Link
-              href="/settings/accounts"
+              href="/inbox"
               className="text-xs text-primary-ink underline-offset-2 hover:underline"
             >
-              Accounts
+              Inbox
             </Link>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">

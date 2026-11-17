@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Mail, Plug, UserCheck } from 'lucide-react';
+import { Mail, UserCheck } from 'lucide-react';
 import type { MessageDetailDTO } from '@mantle/client-types';
 import type { PublicEmailAccount, FolderFacet, MessageListItem } from '@mantle/client-types';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
@@ -155,50 +155,40 @@ export function InboxClient() {
     return <CenterError onRetry={() => accountsQuery.refetch()} />;
   }
 
-  // Gate: no connected accounts → connect prompt.
+  // Gate: no mailbox linked. Linking one is not in this client since Sync M4:
+  // it comes back inside the Sync service, so this says so plainly and links
+  // nowhere.
   if (accounts.length === 0) {
     return (
       <div className="mx-auto max-w-xl space-y-4 px-6 py-16 text-center">
         <Mail className="mx-auto size-8 text-muted-foreground" aria-hidden />
-        <h2 className="text-xl font-semibold">
-          Your inbox is empty because nothing&apos;s plugged in.
-        </h2>
+        <h2 className="text-xl font-semibold">No mailbox is linked.</h2>
         <p className="text-sm text-muted-foreground">
-          Connect your first email account and MantleOS will start pulling messages, attachments,
-          and metadata into your tree.
+          Linking a mailbox comes with the Sync service, in a later release. Mail that is already
+          here stays readable.
         </p>
-        <Button asChild>
-          <Link href="/settings/accounts">
-            <Plug aria-hidden /> Connect an account
-          </Link>
-        </Button>
       </div>
     );
   }
 
-  // Gate: account connected but the contacts allowlist is empty → nudge.
-  // Contacts are the SOLE inbound gate now: mail is ingested only from a
-  // contact's address or `@domain` wildcard, so with no contacts nothing lands.
+  // Gate: a mailbox but an empty contacts list. Contacts are the email
+  // allowlist: when mail sync returns, mail is kept only from a contact's
+  // address or `@domain` wildcard, so with no contacts nothing would land.
   if (gateQuery.isPending) return <CenterSpinner />;
   if (gateQuery.data === true) {
     return (
       <div className="mx-auto max-w-xl space-y-4 px-6 py-16 text-center">
         <UserCheck className="mx-auto size-8 text-muted-foreground" aria-hidden />
-        <h2 className="text-xl font-semibold">
-          No contacts yet — so nothing&apos;s being ingested.
-        </h2>
+        <h2 className="text-xl font-semibold">No contacts yet.</h2>
         <p className="text-sm text-muted-foreground">
-          MantleOS only pulls mail from people in your contacts — an address like{' '}
+          Contacts are the email allowlist: when mail sync returns with the Sync service, MantleOS
+          keeps mail only from people in your contacts, an address like{' '}
           <code className="rounded bg-muted px-1">you@example.com</code> or a whole domain like{' '}
-          <code className="rounded bg-muted px-1">@example.com</code>. Add a contact to start, or
-          discover who&apos;s recently emailed you.
+          <code className="rounded bg-muted px-1">@example.com</code>.
         </p>
         <div className="flex justify-center gap-2">
           <Button asChild>
             <Link href="/contacts">Add a contact</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/settings/discover">Discover senders</Link>
           </Button>
         </div>
       </div>
