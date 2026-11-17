@@ -106,7 +106,7 @@ export function SidebarNav({
   // The Control Center group and its CC tab: only on a Control Center
   // (GET /api/fleet answers 200).
   const fleetShown = useFleetShown(areas);
-  // Email, contacts and linked accounts: hidden only while the brain says the
+  // Email and contacts: hidden only while the brain says the
   // Sync service is off (lib/sync.ts).
   const syncOff = useSyncOff();
   const scope = scopeInPlay(storedScope, fleetShown);

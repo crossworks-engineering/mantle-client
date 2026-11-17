@@ -12,9 +12,7 @@ describe('matchRouteParams', () => {
   });
 
   it('reads a segment in the middle of a longer route', () => {
-    expect(matchRouteParams('/settings/accounts/[id]/edit', '/settings/accounts/a1/edit')).toEqual({
-      id: 'a1',
-    });
+    expect(matchRouteParams('/nodes/[id]/history', '/nodes/a1/history')).toEqual({ id: 'a1' });
   });
 
   it('reads a catch-all as the rest of the path', () => {
@@ -37,9 +35,7 @@ describe('matchRouteParams', () => {
 
   it('gives nothing for a path of another route', () => {
     expect(matchRouteParams('/notes/[id]', '/tasks/abc')).toEqual({});
-    expect(
-      matchRouteParams('/settings/accounts/[id]/edit', '/settings/accounts/a1/folders'),
-    ).toEqual({});
+    expect(matchRouteParams('/nodes/[id]/history', '/nodes/a1/edit')).toEqual({});
   });
 
   it('leaves a missing segment absent', () => {

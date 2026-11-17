@@ -225,7 +225,7 @@ export type MockWorkspaceApi = {
    *  brain. */
   noAutoTables: boolean | undefined;
   /** GET /api/shell's `features.sync`: the optional Sync service (email,
-   *  contacts, linked accounts) is on. Default true; undefined sends no field,
+   *  contacts) is on. Default true; undefined sends no field,
    *  as an older brain. */
   sync: boolean | undefined;
   /** What GET /api/shell says in `onboarded`, for every login (default true). */

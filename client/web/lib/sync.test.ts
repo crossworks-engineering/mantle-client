@@ -7,18 +7,12 @@ const groups = [
     label: 'Workspace',
     items: [{ href: '/' }, { href: '/inbox' }, { href: '/files' }, { href: '/contacts' }],
   },
-  { label: 'Review', items: [{ href: '/settings/discover' }] },
   {
-    label: 'Settings',
-    defaultHead: ['/settings/accounts', '/settings/profile', '/settings/calendar'],
-    items: [
-      { href: '/settings/accounts' },
-      { href: '/settings/microsoft' },
-      { href: '/settings/calendar' },
-      { href: '/settings/profile' },
-    ],
+    label: 'People',
+    defaultHead: ['/contacts', '/settings/users'],
+    items: [{ href: '/contacts' }, { href: '/settings/users' }],
   },
-  { label: 'Mail only', items: [{ href: '/settings/microsoft' }] },
+  { label: 'Mail only', items: [{ href: '/inbox' }] },
 ];
 
 describe('syncOffOf', () => {
@@ -39,10 +33,10 @@ describe('syncOffOf', () => {
 describe('withSync', () => {
   it('off: drops the Sync rows, their heads and a group left empty', () => {
     const out = withSync(groups, true);
-    expect(out.map((g) => g.label)).toEqual(['Workspace', 'Settings']);
+    expect(out.map((g) => g.label)).toEqual(['Workspace', 'People']);
     expect(out[0]!.items.map((i) => i.href)).toEqual(['/', '/files']);
-    expect(out[1]!.items.map((i) => i.href)).toEqual(['/settings/profile']);
-    expect(out[1]!.defaultHead).toEqual(['/settings/profile']);
+    expect(out[1]!.items.map((i) => i.href)).toEqual(['/settings/users']);
+    expect(out[1]!.defaultHead).toEqual(['/settings/users']);
     // Every Sync screen is gone from what is left.
     const left = out.flatMap((g) => g.items.map((i) => i.href));
     for (const h of SYNC_HREFS) expect(left).not.toContain(h);
@@ -66,10 +60,21 @@ describe('syncOffered', () => {
 
   it('knows a screen under a Sync screen, not a look-alike', () => {
     expect(isSyncPath('/contacts/abc')).toBe(true);
-    expect(isSyncPath('/settings/accounts/imap')).toBe(true);
     expect(isSyncPath('/inbox?account=1')).toBe(true);
     expect(isSyncPath('/inboxes')).toBe(false);
     expect(isSyncPath('/settings/agents')).toBe(false);
+  });
+
+  it('is the mail reader and contacts only: the linked-account screens are gone (M4)', () => {
+    expect([...SYNC_HREFS].sort()).toEqual(['/contacts', '/inbox']);
+    for (const gone of [
+      '/settings/accounts',
+      '/settings/microsoft',
+      '/settings/calendar',
+      '/settings/discover',
+    ]) {
+      expect(isSyncPath(gone)).toBe(false);
+    }
   });
 });
 

@@ -3,7 +3,7 @@ import { signIn, startMockWorkspaceApi, type MockWorkspaceApi } from './mock-wor
 import { rowsInAnyScope } from './shell-nav';
 
 /**
- * The optional Sync service (email, contacts, linked accounts; lib/sync.ts):
+ * The optional Sync service (email and contacts; lib/sync.ts):
  * the shell's `features.sync: false` takes its rows out of the nav, and a
  * typed link to one of its screens says the service is off. In-memory brain
  * (mock-workspace-api.ts), no real one.

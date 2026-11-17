@@ -23,7 +23,7 @@ export function ServiceOff({ title, text }: { title: string; text: string }) {
 }
 
 /**
- * Keeps a Sync screen (email, contacts, linked accounts) closed while the
+ * Keeps a Sync screen (email, contacts) closed while the
  * brain says the service is off. The nav already leaves the screen out; this
  * covers a typed or old link. Otherwise the children render as they are.
  */
