@@ -1297,7 +1297,7 @@ and every width remembered (`app/(app)/recall/v2/cards-view.tsx`):
 
 Start with `<BackLink href>`; title via `<SetPageTitle>`. **Keep these working
 as deep links** even after a master-detail supersedes the in-app navigation
-(e.g. `/traces/[id]`, `/settings/accounts/[id]/*`), other screens link to them.
+(e.g. `/traces/[id]`, `/nodes/[id]/history`), other screens link to them.
 
 ### Radius / spacing
 
