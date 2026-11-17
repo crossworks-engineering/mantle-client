@@ -155,7 +155,6 @@ await Promise.all([
   getJson('/api/heartbeats').then((d) => (f.heartbeat = pluck(d, 'heartbeats'))),
   getJson('/api/contacts?limit=1').then((d) => (f.contact = pluck(d, 'contacts'))),
   getJson('/api/draws?limit=1').then((d) => (f.draw = pluck(d, 'draws'))),
-  getJson('/api/email/accounts').then((d) => (f.account = pluck(d, 'accounts'))),
   getJson('/api/changelog').then((d) => (f.changelog = d?.latest || d?.versions?.[0] || null)),
   // The reader hands back the href of its first document. Normalise it to a
   // path: a bare "docs/…" (no leading slash) is not a URL the browser will
@@ -191,8 +190,6 @@ const FIXTURES = [
   ['/debug/journey/[traceId]', () => f.trace && `/debug/journey/${f.trace}`],
   ['/changelog/[version]', () => f.changelog && `/changelog/${f.changelog}`],
   ['/docs/[collection]/[...slug]', () => f.docHref],
-  ['/settings/accounts/[id]/edit', () => f.account && `/settings/accounts/${f.account}/edit`],
-  ['/settings/accounts/[id]/folders', () => f.account && `/settings/accounts/${f.account}/folders`],
 ];
 const fixtureFor = (route) => {
   const hit = FIXTURES.find(([pattern]) => pattern === route);
