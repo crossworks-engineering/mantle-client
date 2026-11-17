@@ -69,6 +69,10 @@ type CatalogEntry = {
   secretService?: string;
   docsUrl: string;
   whenToUse: string;
+  /** Set when the server's sign-in needs an app the owner registers (its
+   *  value named the borrowed Microsoft app before Sync M4; any value now
+   *  opens the form on the manual app). */
+  oauthClient?: string;
   /** Steps outside Mantle the owner or their IT admin must do first. */
   setup?: string[];
   connected: boolean;
@@ -135,6 +139,7 @@ function formFromCatalog(c: CatalogEntry): FormState {
     auth,
     secretRef: '',
     ...noOAuthApp,
+    oauthApp: c.oauthClient ? 'manual' : 'dynamic',
   };
 }
 
