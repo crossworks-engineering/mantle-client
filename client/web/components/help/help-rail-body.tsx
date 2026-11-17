@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 import Link from 'next/link';
 import { Bot, Cog, Info } from 'lucide-react';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { ApiError, apiFetch } from '@mantle/web-ui/api-fetch';
 import { padAsideFences, remarkAsides } from '@/lib/doc-asides';
 import { DocAside } from '@/components/doc-aside';
 
@@ -68,6 +68,8 @@ export function HelpRailBody({ topic }: { topic: string }) {
     queryFn: () => apiFetch<{ help: HelpTopic }>(`/api/help/${topic}`),
     staleTime: Infinity,
     gcTime: Infinity,
+    // A 404 is an answer (no topic), not a fault worth asking again.
+    retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 1,
   });
   const help = query.data?.help;
 
@@ -78,6 +80,10 @@ export function HelpRailBody({ topic }: { topic: string }) {
       </div>
     );
   }
+
+  // No topic for this screen: the brain answers 404 when the topic's service
+  // is off (its screen is closed too). Nothing to say, so say nothing.
+  if (query.error instanceof ApiError && query.error.status === 404) return null;
 
   if (query.isError || !help) {
     return (
