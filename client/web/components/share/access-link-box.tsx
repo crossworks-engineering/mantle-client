@@ -23,7 +23,6 @@ export function AccessLinkBox({
   mayLink,
   copied,
   busy = false,
-  warning,
   served,
   onCopy,
   onMake,
@@ -36,8 +35,6 @@ export function AccessLinkBox({
   mayLink: boolean;
   copied: boolean;
   busy?: boolean;
-  /** Shown above "Make an open link" (an app a contact writes, L21). */
-  warning?: React.ReactNode;
   /** What the link shows besides its item (contract 30), under a live link. */
   served?: React.ReactNode;
   onCopy: () => void;
@@ -82,7 +79,6 @@ export function AccessLinkBox({
         </>
       ) : mayLink ? (
         <>
-          {warning}
           <Button size="sm" variant="outline" disabled={busy} onClick={onMake}>
             {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Link2 />}
             Make an open link

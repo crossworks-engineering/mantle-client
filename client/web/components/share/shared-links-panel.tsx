@@ -32,20 +32,7 @@ export type SharedLinkRow = {
   createdAt: string;
   viewCount: number;
   lastViewedAt: string | null;
-  /** A contact share (brain migration 0214): the contact it is for, and
-   *  whether that contact may write the app. Absent on an open link and on
-   *  older brains. */
-  contactId?: string | null;
-  contactName?: string | null;
-  canWrite?: boolean;
 };
-
-/** The contact line of a contact share's card, or null for an open link. */
-function contactLine(row: SharedLinkRow): string | null {
-  if (!row.contactId) return null;
-  const who = row.contactName || 'a removed contact';
-  return `For ${who} only${row.canWrite ? ', can write' : ''}`;
-}
 
 type SharesData = { shares: SharedLinkRow[] };
 
@@ -171,7 +158,6 @@ export function SharedLinksPanel({
                         {row.viewCount === 1 ? '' : 's'}
                         {row.lastViewedAt ? `, last ${formatDate(row.lastViewedAt)}` : ''}
                       </ListCardMeta>
-                      {contactLine(row) ? <ListCardMeta>{contactLine(row)}</ListCardMeta> : null}
                     </ListCard>
                   </li>
                 ))}
@@ -192,11 +178,7 @@ export function SharedLinksPanel({
                     )
                   }
                   title={selected.title}
-                  subtitle={
-                    contactLine(selected)
-                      ? `${contactLine(selected)}. It opens with their code.`
-                      : `${kindLabel(selected.nodeType)} · shared ${formatDate(selected.createdAt)} · ${selected.viewCount} view${selected.viewCount === 1 ? '' : 's'}`
-                  }
+                  subtitle={`${kindLabel(selected.nodeType)} · shared ${formatDate(selected.createdAt)} · ${selected.viewCount} view${selected.viewCount === 1 ? '' : 's'}`}
                   iconActions={
                     <>
                       <HeaderIconButton label="Copy link" onClick={() => void copy(selected)}>
@@ -246,9 +228,6 @@ export function SharedLinksPanel({
                 shareId: confirmRevoke.id,
                 title: confirmRevoke.title,
                 cascade: confirmRevoke.cascade,
-                stays: confirmRevoke.contactId
-                  ? `Only ${confirmRevoke.contactName || 'that contact'} loses it. The workspaces do not change.`
-                  : null,
               }
             : null
         }

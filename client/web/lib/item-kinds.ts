@@ -7,7 +7,7 @@
  * Pure: no React, so the rules are unit-tested (item-kinds.test.ts).
  */
 
-/** Each item kind in the owner's words (links, contact shares). */
+/** Each item kind in the owner's words (links). */
 export const ITEM_KIND_LABEL: Record<string, string> = {
   page: 'Page',
   note: 'Note',

@@ -17,7 +17,6 @@ import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { serverUrl } from '@mantle/web-ui/runtime-env';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { queryKeysForType } from '@/lib/item-kinds';
-import { openLinkReadsContactWrites } from '@/lib/contact-shares';
 import {
   FOLDER_CONFIRM_NOTE,
   folderPreviewUrl,
@@ -57,7 +56,6 @@ import { looksById } from '@/lib/workspace-look';
 import { AccessLinkBox } from './access-link-box';
 import { AccessStack, accessStackLabel } from './access-stack';
 import { LinkServedList } from './link-served-list';
-import { ContactShareSection, OpenLinkDataWarning } from './contact-share-section';
 import { GrantAccessView } from './grant-access-view';
 import {
   GrantConfirmDialog,
@@ -136,8 +134,8 @@ function useGrantDialogs(beforeAsk?: () => void) {
 
 /**
  * The Grant Access button (plan 7.1; replaces AccessControl): a popover with
- * the item's workspaces, "Add workspace", the open link and the contact
- * shares. Loads fresh on every open.
+ * the item's workspaces, "Add workspace" and the open link. Loads fresh on
+ * every open.
  */
 export function GrantAccessControl({
   nodeId,
@@ -483,8 +481,7 @@ function GrantAccessPanel({
 }
 
 /**
- * The open link and the contact shares (plan 8.1 and 8.2, kept under the
- * panel). A link is a per-item open door for people with no login; it is not
+ * The open link (plan 8.1, kept under the panel). A link is a per-item open door for people with no login; it is not
  * a workspace. Shown only when the brain sends the item's link (contract ask
  * 1): a brain that does not shows the workspaces alone.
  */
@@ -513,11 +510,6 @@ function OpenLinkPart({
   const link = view.link;
   const mayLink = view.mayLink === true;
   const url = link ? serverUrl(link.path) : '';
-  const shares = view.contactShares ?? null;
-  const warn =
-    !link &&
-    !!shares &&
-    openLinkReadsContactWrites({ itemType: type ?? '', openLink: true, shares });
 
   const make = async () => {
     setBusy(true);
@@ -564,7 +556,7 @@ function OpenLinkPart({
     }
   };
 
-  if (!link && !mayLink && !view.hasLink && !shares?.length) return null;
+  if (!link && !mayLink && !view.hasLink) return null;
 
   return (
     <>
@@ -574,7 +566,6 @@ function OpenLinkPart({
         mayLink={mayLink}
         copied={copied}
         busy={busy}
-        warning={warn ? <OpenLinkDataWarning /> : null}
         served={
           <LinkServedList
             rows={serveRows(view)}
@@ -594,28 +585,8 @@ function OpenLinkPart({
           )
         }
         onMake={() => void make()}
-        onStop={() => link && onRevoke({ shareId: link.id, title, cascade: false, stays: null })}
+        onStop={() => link && onRevoke({ shareId: link.id, title, cascade: false })}
       />
-      {shares && mayLink && type !== 'branch' && (
-        <ContactShareSection
-          nodeId={nodeId}
-          itemType={type ?? ''}
-          shares={shares}
-          openLink={!!link}
-          onChanged={() => {
-            onChanged();
-            invalidateLinkQueries(qc);
-          }}
-          onRemove={(s) =>
-            onRevoke({
-              shareId: s.shareId,
-              title,
-              cascade: false,
-              stays: `Only ${s.name || 'this contact'} loses it. The workspaces do not change.`,
-            })
-          }
-        />
-      )}
     </>
   );
 }

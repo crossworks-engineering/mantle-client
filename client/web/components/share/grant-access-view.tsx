@@ -92,7 +92,7 @@ export function GrantAccessView({
   /** The item's kind, when known ('app' words its Writable switch). */
   type?: string;
   hint?: string;
-  /** The open link and the contact shares, under the rows (8.1, kept). */
+  /** The open link, under the rows (8.1, kept). */
   link?: ReactNode;
   /** The workspaces this user moderates: a row there may be revoked, or
    *  its Write turned off, without managing the item (contract 10). */

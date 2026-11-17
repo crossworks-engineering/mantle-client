@@ -5,10 +5,6 @@
  * right. URL-driven search + pagination via useListNav; selection via ?id=.
  * Saving the form PATCHes /api/contacts/[id]; the "New" button POSTs an empty
  * contact and navigates to it so the form is the same surface for create+edit.
- *
- * Contact shares (brain migration 0214): the detail has a "Sharing" block
- * (Enable sharing, the code once, Regenerate, Revoke all) and a "Shared" tab
- * beside the details. A brain before 0214 sends no `sharing`: neither shows.
  */
 
 import { useItemAddress } from '@/components/layout/use-item-address';
@@ -67,9 +63,6 @@ import { treeKey } from '@/components/item-tree/tree-api';
 import { useTreeServes } from '@/components/item-tree/use-tree-kinds';
 import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
-import { Tabs, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
-import { brainHasContactShares, type SharingContactRow } from '@/lib/contact-shares';
-import { ContactSharedTab, ContactSharingBlock } from './contact-sharing';
 import { play } from '@/lib/sounds/play';
 
 type ContactsListResponse = {
@@ -332,9 +325,6 @@ function ContactForm({ contact }: { contact: ContactRow }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, start] = useTransition();
   const [pendingDelete, startDelete] = useTransition();
-  const [tab, setTab] = useState<'details' | 'shared'>('details');
-  const sharingRow = contact as SharingContactRow;
-  const sharesKnown = brainHasContactShares(sharingRow);
 
   // Reset the form whenever a different contact is selected. (`key` on the
   // parent already remounts us; this is belt-and-braces if the parent stops
@@ -423,7 +413,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
     <div>
       {/* The item header (contract 2026-10-21): one row; when it was added
           behind Info. A contact's form is always open, so it has no Edit
-          pencil, and its sharing is the Shared tab, not Access. */}
+          pencil. */}
       <ItemHeader
         section="Contacts"
         visual={<UserRound className="size-4 text-primary-ink" aria-hidden />}
@@ -435,212 +425,179 @@ function ContactForm({ contact }: { contact: ContactRow }) {
         infoLabel="About this contact"
       />
       <div className="flex flex-col gap-6 px-6 py-6">
-        {sharesKnown && (
-          <Tabs value={tab} onValueChange={(v) => setTab(v === 'shared' ? 'shared' : 'details')}>
-            <TabsList>
-              <TabsTrigger value="details">Details</TabsTrigger>
-              <TabsTrigger value="shared">
-                Shared
-                {sharingRow.sharing?.shareCount ? ` (${sharingRow.sharing.shareCount})` : ''}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+        {/* Activity summary — counts + last-contacted per method. */}
+        {(emailCount > 0 || lastEmailAt) && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+            <span className="inline-flex items-center gap-1.5">
+              <Mail className="size-3.5 text-muted-foreground" aria-hidden />
+              <span className="font-medium">{emailCount}</span>
+              <span className="text-muted-foreground">email{emailCount === 1 ? '' : 's'} sent</span>
+            </span>
+            {lastEmailAt && (
+              <span className="text-muted-foreground">
+                last on <span className="text-foreground">{formatDateTime(lastEmailAt)}</span>
+              </span>
+            )}
+          </div>
         )}
 
-        {sharesKnown && tab === 'shared' ? (
-          <ContactSharedTab contactId={contact.id} name={contact.title || 'This contact'} />
-        ) : (
-          <>
-            {sharesKnown && (
-              <ContactSharingBlock
-                contactId={contact.id}
-                name={contact.title || 'This contact'}
-                sharing={sharingRow.sharing ?? null}
+        <FieldGroup>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="firstName">First name</FieldLabel>
+              <Input
+                id="firstName"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
               />
-            )}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="lastName">Last name</FieldLabel>
+              <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+            </Field>
+          </div>
 
-            {/* Activity summary — counts + last-contacted per method. */}
-            {(emailCount > 0 || lastEmailAt) && (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
-                <span className="inline-flex items-center gap-1.5">
-                  <Mail className="size-3.5 text-muted-foreground" aria-hidden />
-                  <span className="font-medium">{emailCount}</span>
-                  <span className="text-muted-foreground">
-                    email{emailCount === 1 ? '' : 's'} sent
-                  </span>
-                </span>
-                {lastEmailAt && (
-                  <span className="text-muted-foreground">
-                    last on <span className="text-foreground">{formatDateTime(lastEmailAt)}</span>
-                  </span>
-                )}
-              </div>
-            )}
+          <Field>
+            <FieldLabel htmlFor="company">Company</FieldLabel>
+            <Input
+              id="company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Modular"
+              aria-describedby="company-description"
+            />
+            <FieldDescription id="company-description">
+              Optional. Use the company alone for a supplier/org contact, or pair it with a person.
+            </FieldDescription>
+          </Field>
 
-            <FieldGroup>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor="firstName">First name</FieldLabel>
-                  <Input
-                    id="firstName"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="lastName">Last name</FieldLabel>
-                  <Input
-                    id="lastName"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                  />
-                </Field>
-              </div>
-
-              <Field>
-                <FieldLabel htmlFor="company">Company</FieldLabel>
-                <Input
-                  id="company"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  placeholder="Modular"
-                  aria-describedby="company-description"
-                />
-                <FieldDescription id="company-description">
-                  Optional. Use the company alone for a supplier/org contact, or pair it with a
-                  person.
-                </FieldDescription>
-              </Field>
-
-              <Field data-invalid={emailsInvalid || undefined}>
-                <FieldLabel asChild>
-                  <span>Email addresses</span>
-                </FieldLabel>
-                <div className="space-y-2">
-                  {emails.map((entry, i) => {
-                    const invalid = entry.trim() !== '' && !isPlausibleEmailOrDomain(entry);
-                    return (
-                      <div key={i} className="flex items-center gap-2">
-                        <Input
-                          type="text"
-                          value={entry}
-                          onChange={(e) =>
-                            setEmails((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
-                          }
-                          placeholder={i === 0 ? 'orders@modular.co.za' : '@modular.co.za'}
-                          autoComplete="off"
-                          // `Input` paints its own invalid border off this attribute,
-                          // so the hand-added `border-destructive` was a second way of
-                          // saying the same thing — and the one that could drift.
-                          aria-invalid={invalid || undefined}
-                          aria-describedby={invalid ? 'emails-error' : undefined}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Remove email"
-                          onClick={() =>
-                            setEmails((prev) =>
-                              prev.length === 1 ? [''] : prev.filter((_, j) => j !== i),
-                            )
-                          }
-                        >
-                          <X aria-hidden />
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* Wrapped, not bare: a vertical `Field` stretches its DIRECT children
+          <Field data-invalid={emailsInvalid || undefined}>
+            <FieldLabel asChild>
+              <span>Email addresses</span>
+            </FieldLabel>
+            <div className="space-y-2">
+              {emails.map((entry, i) => {
+                const invalid = entry.trim() !== '' && !isPlausibleEmailOrDomain(entry);
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      value={entry}
+                      onChange={(e) =>
+                        setEmails((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
+                      }
+                      placeholder={i === 0 ? 'orders@modular.co.za' : '@modular.co.za'}
+                      autoComplete="off"
+                      // `Input` paints its own invalid border off this attribute,
+                      // so the hand-added `border-destructive` was a second way of
+                      // saying the same thing — and the one that could drift.
+                      aria-invalid={invalid || undefined}
+                      aria-describedby={invalid ? 'emails-error' : undefined}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Remove email"
+                      onClick={() =>
+                        setEmails((prev) =>
+                          prev.length === 1 ? [''] : prev.filter((_, j) => j !== i),
+                        )
+                      }
+                    >
+                      <X aria-hidden />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Wrapped, not bare: a vertical `Field` stretches its DIRECT children
               to full width (`*:w-full`), which turned this small outline button
               into a full-width bar. The wrapper takes the stretch instead. */}
-                <div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEmails((prev) => [...prev, ''])}
-                  >
-                    <Plus aria-hidden /> Add email
-                  </Button>
-                </div>
-                {/* The red border was the only signal before, which a screen reader
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setEmails((prev) => [...prev, ''])}
+              >
+                <Plus aria-hidden /> Add email
+              </Button>
+            </div>
+            {/* The red border was the only signal before, which a screen reader
               never got. §6b wants it announced as well as shown. */}
-                <FieldError id="emails-error">
-                  {emailsInvalid
-                    ? 'An address must be a full address or a leading-@ domain wildcard.'
-                    : null}
-                </FieldError>
-                <FieldDescription>
-                  Each line is a full address (<code>orders@modular.co.za</code>) or a whole-domain
-                  wildcard (<code>@modular.co.za</code>, trusting all mail from that domain).
-                  MantleOS ingests mail from these into the brain; Saskia can email the plain
-                  addresses. Adding one backfills the last 90 days.
-                </FieldDescription>
-              </Field>
+            <FieldError id="emails-error">
+              {emailsInvalid
+                ? 'An address must be a full address or a leading-@ domain wildcard.'
+                : null}
+            </FieldError>
+            <FieldDescription>
+              Each line is a full address (<code>orders@modular.co.za</code>) or a whole-domain
+              wildcard (<code>@modular.co.za</code>, trusting all mail from that domain). MantleOS
+              ingests mail from these into the brain; Saskia can email the plain addresses. Adding
+              one backfills the last 90 days.
+            </FieldDescription>
+          </Field>
 
-              <Field>
-                <FieldLabel asChild>
-                  <span>Cell number</span>
-                </FieldLabel>
-                <div className="grid grid-cols-[88px_1fr] gap-2">
-                  <Input
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    placeholder="+27"
-                    aria-label="Country code"
-                    className="font-mono"
-                  />
-                  <Input
-                    value={cell}
-                    onChange={(e) => setCell(e.target.value)}
-                    placeholder="760810774"
-                    aria-label="Cell number"
-                    inputMode="tel"
-                  />
-                </div>
-                {cellPreview && (
-                  <FieldDescription className="flex items-center gap-1.5">
-                    <Phone className="size-3" aria-hidden />
-                    <span className="font-mono">{cellPreview}</span>
-                  </FieldDescription>
-                )}
-              </Field>
+          <Field>
+            <FieldLabel asChild>
+              <span>Cell number</span>
+            </FieldLabel>
+            <div className="grid grid-cols-[88px_1fr] gap-2">
+              <Input
+                value={countryCode}
+                onChange={(e) => setCountryCode(e.target.value)}
+                placeholder="+27"
+                aria-label="Country code"
+                className="font-mono"
+              />
+              <Input
+                value={cell}
+                onChange={(e) => setCell(e.target.value)}
+                placeholder="760810774"
+                aria-label="Cell number"
+                inputMode="tel"
+              />
+            </div>
+            {cellPreview && (
+              <FieldDescription className="flex items-center gap-1.5">
+                <Phone className="size-3" aria-hidden />
+                <span className="font-mono">{cellPreview}</span>
+              </FieldDescription>
+            )}
+          </Field>
 
-              <Field>
-                <FieldLabel htmlFor="description">Description — who is this, for the AI</FieldLabel>
-                <Textarea
-                  id="description"
-                  rows={4}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Modular is the aluminium-profile supplier we use for printer projects. Sells 2020 and 3030 profiles."
-                  aria-describedby="description-description"
-                />
-                <FieldDescription id="description-description">
-                  The brain indexes this — facts and entities land on this contact&apos;s identity,
-                  so Saskia can later answer &quot;who supplies aluminium profiles?&quot;.
-                </FieldDescription>
-              </Field>
+          <Field>
+            <FieldLabel htmlFor="description">Description — who is this, for the AI</FieldLabel>
+            <Textarea
+              id="description"
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Modular is the aluminium-profile supplier we use for printer projects. Sells 2020 and 3030 profiles."
+              aria-describedby="description-description"
+            />
+            <FieldDescription id="description-description">
+              The brain indexes this — facts and entities land on this contact&apos;s identity, so
+              Saskia can later answer &quot;who supplies aluminium profiles?&quot;.
+            </FieldDescription>
+          </Field>
 
-              <Field>
-                <FieldLabel asChild>
-                  <span>Tags</span>
-                </FieldLabel>
-                <TagInput value={tags} onChange={setTags} />
-              </Field>
+          <Field>
+            <FieldLabel asChild>
+              <span>Tags</span>
+            </FieldLabel>
+            <TagInput value={tags} onChange={setTags} />
+          </Field>
 
-              {/* Footer row: divider on top, Save floats right — same shape as the
+          {/* Footer row: divider on top, Save floats right — same shape as the
             task/event forms (`flex justify-end gap-2 border-t pt-4`). */}
-              <div className="flex justify-end gap-2 border-t border-border pt-4">
-                <SubmitButton type="button" pending={pending} onClick={onSave}>
-                  Save contact
-                </SubmitButton>
-              </div>
-            </FieldGroup>
-          </>
-        )}
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <SubmitButton type="button" pending={pending} onClick={onSave}>
+              Save contact
+            </SubmitButton>
+          </div>
+        </FieldGroup>
 
         <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
           <AlertDialogContent>

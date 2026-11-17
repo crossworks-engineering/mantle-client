@@ -80,7 +80,6 @@ function view(over: Partial<GrantsView> = {}): GrantsView {
     hasLink: false,
     link: null,
     serveCandidates: [],
-    contactShares: null,
     embedsNotGranted: [],
     ...over,
   };

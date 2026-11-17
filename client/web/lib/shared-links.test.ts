@@ -12,14 +12,12 @@ describe('shared links', () => {
     expect(SHARES_PATH).toBe('/api/team-admin/shares');
   });
 
-  it('a revoke reloads the links and the contacts', () => {
+  it('a revoke reloads the links only', () => {
     const qc = new QueryClient();
     qc.setQueryData(SHARES_KEY, { shares: [] });
-    qc.setQueryData(['contacts', 'one', 'c1'], {});
     qc.setQueryData(['other'], {});
     invalidateLinkQueries(qc);
     expect(qc.getQueryState(SHARES_KEY)?.isInvalidated).toBe(true);
-    expect(qc.getQueryState(['contacts', 'one', 'c1'])?.isInvalidated).toBe(true);
     expect(qc.getQueryState(['other'])?.isInvalidated).toBe(false);
   });
 });

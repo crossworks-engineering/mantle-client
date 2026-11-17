@@ -65,8 +65,9 @@ export function describe(e: Pick<AccessEntry, 'kind' | 'detail'>): {
  *  says so, never "Anonymous" (client tier audit I5). Exported for the
  *  test. */
 export function whoOf(e: Pick<AccessEntry, 'contactId' | 'contactName' | 'detail'>): string {
-  // A contact share's row (brain migration 0214): the contact the share
-  // named, and how they got in.
+  // A contact share's row (brain migration 0214; contact shares are gone
+  // since brain migration 0378, and their old rows age out in 90 days): the
+  // contact the share named, and how they got in.
   const viaContact = e.detail.via === 'contact';
   if (e.contactName) return viaContact ? `${e.contactName} (contact share)` : e.contactName;
   if (e.contactId || viaContact) return 'Removed contact';

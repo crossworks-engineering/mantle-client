@@ -18,8 +18,6 @@ export type RevokeTarget = {
   /** Always false since folder phase 7 (a link no longer shares sub-pages);
    *  kept so older callers still type-check. */
   cascade: boolean;
-  /** One more sentence, when worth saying (who loses a contact share). */
-  stays?: string | null;
 };
 
 /**
@@ -46,7 +44,6 @@ export function RevokeLinkDialog({
           <AlertDialogTitle>Revoke this link?</AlertDialogTitle>
           <AlertDialogDescription>
             {`"${target?.title}" stops being accessible immediately. The content itself is untouched.`}
-            {target?.stays ? ` ${target.stays}` : ''}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

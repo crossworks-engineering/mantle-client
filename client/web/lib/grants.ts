@@ -26,7 +26,6 @@ import type {
 } from './contract/grants';
 
 export type {
-  GrantContactShare,
   GrantEmbed,
   GrantRow,
   GrantsResponse,

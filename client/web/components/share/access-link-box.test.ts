@@ -59,9 +59,4 @@ describe('AccessLinkBox', () => {
   it('nothing with no link and no right', () => {
     expect(box({})).toBe('');
   });
-
-  it('shows the L21 warning above Make', () => {
-    const html = box({ mayLink: true, warning: createElement('p', null, 'WARN') });
-    expect(html.indexOf('WARN')).toBeLessThan(html.indexOf('Make an open link'));
-  });
 });
