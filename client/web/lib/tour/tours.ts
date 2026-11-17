@@ -57,7 +57,7 @@ const demo: Tour = {
       route: '/inbox',
       target: 'nav:/inbox',
       title: 'Mail is learned the same way',
-      body: 'Connect a mailbox and every thread is ingested, classified and searchable beside everything else, with marketing down-weighted so it never crowds out a real conversation. The store 214 snag dispute, certificate withheld and all, arrived here as ordinary email.',
+      body: 'Mail that reaches the brain is ingested, classified and searchable beside everything else, with marketing down-weighted so it never crowds out a real conversation. The store 214 snag dispute, certificate withheld and all, arrived here as ordinary email.',
     },
     {
       route: '/pages',

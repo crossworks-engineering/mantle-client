@@ -409,7 +409,7 @@ export const API_CATALOG: CatalogGroup[] = [
       n: 'Create contact',
       m: 'POST',
       p: '/api/contacts',
-      d: 'Enqueues email backfills for new senders/domains.',
+      d: 'Adds a person; their addresses join the email allowlist.',
       b: '{\n  "first_name": "Jane",\n  "last_name": "Doe",\n  "company": "Acme",\n  "emails": ["jane@example.com"],\n  "tags": []\n}',
     },
     { n: 'Get contact', m: 'GET', p: '/api/contacts/{id}' },

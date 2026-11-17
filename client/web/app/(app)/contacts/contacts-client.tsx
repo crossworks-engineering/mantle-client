@@ -269,7 +269,7 @@ export function ContactsClient() {
         ) : (
           <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
             {!showTree && contacts.length === 0
-              ? 'Add your first contact. Saskia will then be able to email them.'
+              ? 'Add your first contact. Their addresses join the email allowlist.'
               : 'Pick a contact on the left.'}
           </div>
         )
@@ -575,8 +575,8 @@ function ContactForm({ contact }: { contact: ContactRow }) {
                 <FieldDescription>
                   Each line is a full address (<code>orders@modular.co.za</code>) or a whole-domain
                   wildcard (<code>@modular.co.za</code>, trusting all mail from that domain).
-                  MantleOS ingests mail from these into the brain; Saskia can email the plain
-                  addresses. Adding one backfills the last 90 days.
+                  Contacts are the email allowlist: when mail sync returns with the Sync service,
+                  MantleOS keeps mail only from these.
                 </FieldDescription>
               </Field>
 
@@ -647,8 +647,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this contact?</AlertDialogTitle>
               <AlertDialogDescription>
-                {contact.title} will be removed. Saskia will no longer be able to email this address
-                (deleting also removes them from the email allowlist).
+                {contact.title} will be removed, and their addresses leave the email allowlist.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
