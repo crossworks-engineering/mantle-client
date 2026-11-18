@@ -12,6 +12,7 @@ import {
   flattenTree,
   folderHasChildren,
   folderManaged,
+  folderMovable,
   isOnTheWayTo,
   itemMovable,
   itemPlaceAt,
@@ -621,5 +622,21 @@ describe('itemMovable and folderManaged (W6b fix round: the item caps)', () => {
     expect(folderManaged(folder('f', '1'))).toBe(true);
     expect(folderManaged({ ...folder('f', '1'), mayManage: false } as TreeFolder)).toBe(false);
     expect(folderManaged({ ...folder('s', '1'), system: true })).toBe(false);
+  });
+
+  it('a shared item moves on mayMove, without mayManage (a Moderator of a workspace that holds it)', () => {
+    const shared = { mayEdit: true, mayManage: false, mayMove: true };
+    expect(itemMovable({ ...item('g'), ...shared } as TreeItem)).toBe(true);
+    expect(folderMovable({ ...folder('f', '1'), ...shared } as TreeFolder)).toBe(true);
+    // Moving it is not deleting it.
+    expect(folderManaged({ ...folder('f', '1'), ...shared } as TreeFolder)).toBe(false);
+    expect(
+      folderMovable({ ...folder('f', '1'), mayManage: true, mayMove: false } as TreeFolder),
+    ).toBe(false);
+    expect(folderMovable({ ...folder('s', '1'), ...shared, system: true } as TreeFolder)).toBe(
+      false,
+    );
+    // A brain before mayMove: mayManage decides.
+    expect(folderMovable({ ...folder('f', '1'), mayManage: false } as TreeFolder)).toBe(false);
   });
 });

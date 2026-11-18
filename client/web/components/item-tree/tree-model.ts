@@ -10,16 +10,23 @@ import { ELSEWHERE_MAX } from '@/lib/workspace-hits';
 import type { ElsewhereCount } from '@mantle/client-types';
 
 /** What moves (drag, the Move menu) and is picked: never an owner's private
- *  item (no folder yet), a snapshot copy, or an item the login does not
- *  manage (its caps, W6b fix round: lib/item-access.ts). */
+ *  item (no folder yet), a snapshot copy, or an item the login may not
+ *  move (its caps, W6b fix round: lib/item-access.ts). */
 export function itemMovable(item: TreeItem): boolean {
   return item.state !== 'private' && itemAccess(item).move;
 }
 
-/** A folder the login may move, order or delete: its caps, and never a
- *  system folder. */
+/** A folder the login may order or delete: its caps, and never a system
+ *  folder. */
 export function folderManaged(folder: TreeFolder): boolean {
   return !folder.system && itemAccess(folder).manage;
+}
+
+/** A folder the login may move (drag, Move to...): its move cap (a
+ *  Moderator of its home, or of a workspace that holds it), and never a
+ *  system folder. */
+export function folderMovable(folder: TreeFolder): boolean {
+  return !folder.system && itemAccess(folder).move;
 }
 
 /** One folder's children as loaded so far: its subfolders (they all come

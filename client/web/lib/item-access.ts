@@ -5,8 +5,12 @@
  * caller's ItemCaps (lib/contract/grants.ts):
  *
  * - `mayEdit`: the login may change it. False: no editor.
- * - `mayManage`: the login may delete or move it (a Moderator of its home).
- *   False: no Delete, no Move, no Grant Access.
+ * - `mayManage`: the login may delete it, share it and move it anywhere (a
+ *   Moderator of its home). False: no Delete, no Grant Access.
+ * - `mayMove`: the login may move it (a Moderator of its home, or of a
+ *   workspace that holds it: a shared item moves inside that workspace,
+ *   the brain refuses a folder outside it). False: no Move. A brain before
+ *   it sends none: Move follows `mayManage`.
  * - `readOnly: true` with `snapshotOf`: a snapshot copy of an accepted item
  *   (the author's copy, in its private or Former user workspace). Nobody
  *   edits it, moves it or shares it; its author may delete it.
@@ -46,7 +50,8 @@ export type ItemAccess = {
   edit: boolean;
   /** Delete. */
   manage: boolean;
-  /** Move: drag, the Move menu, a new parent or folder. */
+  /** Move: drag, the Move menu, a new parent or folder (`mayMove`, else
+   *  `mayManage`). */
   move: boolean;
   /** Grant Access. */
   share: boolean;
@@ -55,14 +60,15 @@ export type ItemAccess = {
 /** The caps of an item, as the screens use them. Only an explicit `false`
  *  turns a control off; a snapshot copy is never edited, moved or shared. */
 export function itemAccess(item: object | null | undefined): ItemAccess {
-  const it = (item ?? {}) as { mayEdit?: unknown; mayManage?: unknown };
+  const it = (item ?? {}) as { mayEdit?: unknown; mayManage?: unknown; mayMove?: unknown };
   const copy = isReadOnlyItem(item);
   const manage = it.mayManage !== false;
+  const move = it.mayMove === undefined ? manage : it.mayMove !== false;
   return {
     copy,
     edit: !copy && it.mayEdit !== false,
     manage,
-    move: manage && !copy,
+    move: move && !copy,
     share: manage && !copy,
   };
 }
