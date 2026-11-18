@@ -145,7 +145,17 @@ export function FolderPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        // Escape while a new folder's name is typed drops the name, not the
+        // whole dialog (the dialog hears Escape before the field does).
+        onEscapeKeyDown={(e) => {
+          if (newName === null) return;
+          e.preventDefault();
+          setNewName(null);
+          setNewError(null);
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -207,15 +217,6 @@ export function FolderPickerDialog({
                 autoFocus
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  // Escape drops the name, not the whole dialog.
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setNewName(null);
-                    setNewError(null);
-                  }
-                }}
                 placeholder="Folder name"
                 aria-invalid={newError ? true : undefined}
                 className="h-8"

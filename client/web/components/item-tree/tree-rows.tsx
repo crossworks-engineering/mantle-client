@@ -782,6 +782,9 @@ export function ItemRow({
           aria-selected={selected || picked}
           aria-current={selected ? 'true' : undefined}
           data-row-key={rowKey}
+          {...(ctx.fileDrop && crumbs === undefined
+            ? { [DROP_PATH_ATTR]: parent?.path ?? ctx.fileDrop.rootPath }
+            : {})}
           tabIndex={rowTabIndex(ctx, rowKey)}
           onFocus={() => ctx.onRowFocus?.(rowKey)}
           title={place ? `${place} / ${item.title}` : item.title}

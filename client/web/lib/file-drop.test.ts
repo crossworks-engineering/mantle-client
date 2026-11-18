@@ -20,6 +20,12 @@ describe('isFileDrag', () => {
     expect(isFileDrag([])).toBe(false);
     expect(isFileDrag(null)).toBe(false);
   });
+
+  it('is never one for a drag that began in the page (an image Chrome lists as Files)', () => {
+    expect(isFileDrag(['Files'], true)).toBe(false);
+    expect(isFileDrag(['text/uri-list', 'Files'], true)).toBe(false);
+    expect(isFileDrag(['Files'], false)).toBe(true);
+  });
 });
 
 describe('dragDepth', () => {

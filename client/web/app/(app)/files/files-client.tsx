@@ -488,6 +488,13 @@ function FilesView({
     anchor.current = next.anchor;
     setSelectedFileIds(next.picked);
   };
+  // Shift+Space on a file's box picks the range, as a shift-click does; the
+  // box is what a screen reader hears as picked.
+  const rangeKey = (id: string, e: React.KeyboardEvent) => {
+    if (e.key !== ' ' || !e.shiftKey) return;
+    e.preventDefault();
+    if (!e.repeat) pickFile(id, { toggle: true, range: true });
+  };
   const clickFile = (f: FileRow, e: React.MouseEvent) => {
     if (!isPickClick(e)) return openFile(f.id);
     e.preventDefault();
@@ -512,12 +519,23 @@ function FilesView({
   // A move goes through the tree's Move dialog (who would see it, the
   // folder confirm, a partial failure by name), so it needs the tree.
   const treeMove = showTree;
-  const moveFiles = (rows: readonly FileRow[]) =>
+  // `from` is the folder the files sit in (not the screen's, which may
+  // still show the folder before while the next one loads); unknown when
+  // they sit in several.
+  const moveFiles = (rows: readonly FileRow[]) => {
+    const parents = new Set(rows.map((f) => f.parentPath));
+    const parent = parents.size === 1 ? rows[0]!.parentPath : null;
     requestTreeMove({
       kind: 'files',
       items: rows.map((f) => ({ id: f.id, title: f.filename })),
-      from: currentPath === FILES_ROOT ? null : (currentFolder?.id ?? undefined),
+      from:
+        parent === null
+          ? undefined
+          : parent === FILES_ROOT
+            ? null
+            : (tree.find((f) => f.path === parent)?.id ?? undefined),
     });
+  };
   const renameFile = (f: FileRow) =>
     setDialog({
       kind: 'rename',
@@ -1383,7 +1401,6 @@ function FilesView({
                                 data-mark-id={f.id}
                                 data-mark-kind="file"
                                 data-mark-label={f.filename}
-                                aria-pressed={selectedFileIds.size > 0 ? picked : undefined}
                                 title={`${f.filename} — ${described.label}, ${fmtSize(f.sizeBytes)}`}
                                 className={cn(
                                   'flex w-full flex-col overflow-hidden rounded-md border bg-card text-left hover:shadow-sm',
@@ -1399,6 +1416,7 @@ function FilesView({
                                       src={toAsset(`/api/files/files/${f.id}?thumb=1`)}
                                       alt=""
                                       loading="lazy"
+                                      draggable={false}
                                       className="h-full w-full object-cover"
                                       onError={(e) => {
                                         // Swap to the icon fallback: hide the img,
@@ -1450,6 +1468,7 @@ function FilesView({
                                   e.preventDefault();
                                   pickFile(f.id, { toggle: true, range: e.shiftKey });
                                 }}
+                                onKeyDown={(e) => rangeKey(f.id, e)}
                                 className={cn(
                                   'absolute left-2 top-2 bg-background shadow-sm',
                                   !picked &&
@@ -1547,7 +1566,6 @@ function FilesView({
                             return (
                               <tr
                                 key={f.id}
-                                aria-selected={picked}
                                 className={cn(
                                   'group',
                                   picked ? 'bg-primary/5' : 'hover:bg-muted/30',
@@ -1566,6 +1584,7 @@ function FilesView({
                                       e.preventDefault();
                                       pickFile(f.id, { toggle: true, range: e.shiftKey });
                                     }}
+                                    onKeyDown={(e) => rangeKey(f.id, e)}
                                   />
                                 </td>
                                 <td className="px-3 py-2">

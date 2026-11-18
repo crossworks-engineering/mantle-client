@@ -6,8 +6,10 @@
  * picked file acts on the whole pick; on any other file, on that file.
  * The pick rule itself (cmd/ctrl, shift) is lib/pick-range.ts.
  */
+import { Fragment } from 'react';
 import {
   FolderInput,
+  type LucideIcon,
   MoreHorizontal,
   Pencil,
   SquareArrowOutUpRight,
@@ -93,10 +95,16 @@ export function SelectionBar({
   );
 }
 
+/** One entry of a file's menu; `danger` sets it apart, last. */
+type MenuEntry = { icon: LucideIcon; label: string; run: () => void; danger?: boolean };
+
 /**
  * A file's menu. `targets` is what it acts on: the pick when this file is
  * in it, else this file alone. Controlled, so a right-click on the row can
- * open it (`open` / `onOpenChange`), as the tree's rows do.
+ * open it (`open` / `onOpenChange`), as the tree's rows do. Only the open
+ * row mounts the menu; every other row draws a plain button, so a list of
+ * thousands of files holds one menu root, not one per row. A new entry is
+ * one line in `entries`.
  */
 export function FileRowMenu({
   file,
@@ -121,54 +129,58 @@ export function FileRowMenu({
   onDelete: () => void;
   className?: string;
 }) {
+  const trigger = (
+    <Button
+      variant="ghost"
+      size="icon-2xs"
+      aria-label={`More actions for ${file.filename}`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      onClick={open ? undefined : () => onOpenChange(true)}
+      className={cn(
+        'text-muted-foreground hover:text-foreground focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+        open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+        className,
+      )}
+    >
+      <MoreHorizontal />
+    </Button>
+  );
+  if (!open) return trigger;
+
   const many = targets.length > 1;
   const may = pickRights(targets, treeMove);
-  const rename = !many && itemAccess(file).edit;
+  const entries: Array<MenuEntry | false> = [
+    !many && { icon: SquareArrowOutUpRight, label: 'Open', run: onOpen },
+    !many && itemAccess(file).edit && { icon: Pencil, label: 'Rename…', run: onRename },
+    may.move && {
+      icon: FolderInput,
+      label: many ? `Move ${files(targets.length)} to…` : 'Move to…',
+      run: onMove,
+    },
+    may.remove && {
+      icon: Trash2,
+      label: many ? `Delete ${files(targets.length)}…` : 'Delete…',
+      run: onDelete,
+      danger: true,
+    },
+  ];
+  const shown = entries.filter((e): e is MenuEntry => e !== false);
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-2xs"
-          aria-label={`More actions for ${file.filename}`}
-          className={cn(
-            'text-muted-foreground hover:text-foreground focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
-            open
-              ? 'opacity-100'
-              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
-            className,
-          )}
-        >
-          <MoreHorizontal />
-        </Button>
-      </DropdownMenuTrigger>
+    <DropdownMenu open onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
-        {!many && (
-          <DropdownMenuItem onSelect={onOpen}>
-            <SquareArrowOutUpRight /> Open
-          </DropdownMenuItem>
-        )}
-        {rename && (
-          <DropdownMenuItem onSelect={onRename}>
-            <Pencil /> Rename…
-          </DropdownMenuItem>
-        )}
-        {may.move && (
-          <DropdownMenuItem onSelect={onMove}>
-            <FolderInput /> {many ? `Move ${files(targets.length)} to…` : 'Move to…'}
-          </DropdownMenuItem>
-        )}
-        {may.remove && (
-          <>
-            <DropdownMenuSeparator />
+        {shown.map(({ icon: Icon, label, run, danger }, i) => (
+          <Fragment key={label}>
+            {danger && i > 0 && <DropdownMenuSeparator />}
             <DropdownMenuItem
-              className="text-destructive-ink focus:text-destructive-ink"
-              onSelect={onDelete}
+              onSelect={run}
+              className={danger ? 'text-destructive-ink focus:text-destructive-ink' : undefined}
             >
-              <Trash2 /> {many ? `Delete ${files(targets.length)}…` : 'Delete…'}
+              <Icon /> {label}
             </DropdownMenuItem>
-          </>
-        )}
+          </Fragment>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

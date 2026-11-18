@@ -275,7 +275,7 @@ export function DualPane({
               onNavigate={(p) => setPaneState(i, p)}
               onToggleSelect={(k) => toggleSelect(i, k)}
               onOpenFile={onOpenFile}
-              dropTarget={dropOver !== null && dropOver === paths[i]}
+              dropOver={dropOver}
             />
           ))}
         </div>
@@ -322,12 +322,13 @@ export function FilePane({
   onNavigate,
   onToggleSelect,
   onOpenFile,
-  dropTarget = false,
+  dropOver = null,
 }: {
   tree: FolderRow[];
   path: string;
-  /** Files dragged in would land here: the pane is lit. */
-  dropTarget?: boolean;
+  /** The folder a file drop would land in now (lit when it is this pane's
+   *  or one of its folder rows). */
+  dropOver?: string | null;
   active: boolean;
   selected: Set<string>;
   onActivate: () => void;
@@ -359,6 +360,7 @@ export function FilePane({
     [tree, path],
   );
   const parentPath = path.includes('.') ? path.split('.').slice(0, -1).join('.') : null;
+  const dropTarget = dropOver !== null && dropOver === path;
 
   return (
     <div
@@ -393,7 +395,14 @@ export function FilePane({
             </li>
           )}
           {childFolders.map((f) => (
-            <li key={f.id} className="flex items-center gap-2 px-3 py-1 hover:bg-muted/30">
+            <li
+              key={f.id}
+              {...{ [DROP_PATH_ATTR]: f.path }}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1 hover:bg-muted/30',
+                dropOver === f.path && 'bg-primary/10 ring-2 ring-inset ring-primary/60',
+              )}
+            >
               <Checkbox
                 aria-label={`Select folder ${f.slug}`}
                 checked={selected.has(`folder:${f.id}`)}

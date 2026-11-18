@@ -96,9 +96,10 @@ export type TreeCtx = {
   showShares?: boolean;
   /** Files dragged in from the desktop (the Files screen): each folder row
    *  names its path as a drop target (lib/file-drop.ts), and `over` is the
-   *  one a drop would land in now, lit while the drag is over it. Absent:
-   *  the tree takes no file drop. */
-  fileDrop?: { over: string | null };
+   *  one a drop would land in now, lit while the drag is over it. An item
+   *  row names its folder's path (`rootPath` at the top level). Absent: the
+   *  tree takes no file drop. */
+  fileDrop?: { over: string | null; rootPath: string };
 };
 
 /** A row's `tabIndex` under the roving tab stop, when the tree has one. */

@@ -253,31 +253,50 @@ export function batchesOf<T>(list: readonly T[], size = MOVE_BATCH): T[][] {
   return out;
 }
 
+/** What a move in runs has done so far: the runs that went through, what
+ *  moved and what failed. Kept across a confirm's repeat and a refusal, so
+ *  nothing an earlier run did is lost when a later one throws. */
+export type MoveProgress = { done: Set<number>; moved: number; failed: TreeMoveResult['failed'] };
+
+export const moveProgress = (): MoveProgress => ({ done: new Set(), moved: 0, failed: [] });
+
+/** The ids a move has not moved yet: those that failed, and every id of a
+ *  run not yet done. */
+export function movesLeft(ids: readonly string[], progress: MoveProgress): string[] {
+  const failed = new Set(progress.failed.map((f) => f.id));
+  return batchesOf(ids).flatMap((run, i) =>
+    progress.done.has(i) ? run.filter((id) => failed.has(id)) : run,
+  );
+}
+
 /**
  * A move of any number of items, MOVE_BATCH per call, one call after the
- * other; what failed is gathered. `done` keeps the runs that went through,
- * so a repeat (after the visibility confirm a later run asked for) sends
- * only the runs still to go.
+ * other; `progress` gathers what moved and failed and the runs done, so a
+ * repeat (after the visibility confirm a later run asked for) sends only
+ * the runs still to go. A confirm answers the run that asked for it, the
+ * first not yet done: only that run carries `confirm` and `seen`; every
+ * later run goes plain and asks for itself.
  */
 export async function moveTreeItemsBatched(
   kind: TreeKind,
   ids: readonly string[],
   folderId: string | null,
-  done: Set<number>,
+  progress: MoveProgress,
   confirm = false,
   source: TreeWriter = 'owner',
   seen?: number,
 ): Promise<TreeMoveResult> {
-  const out: TreeMoveResult = { moved: 0, failed: [] };
   const runs = batchesOf(ids);
+  let ask = confirm;
   for (let i = 0; i < runs.length; i++) {
-    if (done.has(i)) continue;
-    const res = await moveTreeItems(kind, runs[i]!, folderId, confirm, source, seen);
-    out.moved += res.moved;
-    out.failed.push(...res.failed);
-    done.add(i);
+    if (progress.done.has(i)) continue;
+    const res = await moveTreeItems(kind, runs[i]!, folderId, ask, source, ask ? seen : undefined);
+    ask = false;
+    progress.moved += res.moved;
+    progress.failed.push(...res.failed);
+    progress.done.add(i);
   }
-  return out;
+  return { moved: progress.moved, failed: progress.failed };
 }
 
 /** Put an item in its folder's custom order, right after another item of

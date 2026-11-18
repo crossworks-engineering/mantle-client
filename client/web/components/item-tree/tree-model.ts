@@ -334,11 +334,9 @@ export function movableOrder(
   rows: readonly TreeRow[],
   movable: (item: TreeItem) => boolean,
 ): string[] {
-  const ids: string[] = [];
-  for (const r of rows) {
-    if (r.type === 'item' && movable(r.item) && !ids.includes(r.item.id)) ids.push(r.item.id);
-  }
-  return ids;
+  const ids = new Set<string>();
+  for (const r of rows) if (r.type === 'item' && movable(r.item)) ids.add(r.item.id);
+  return [...ids];
 }
 
 /** The items a shift-click selects: every movable item row from the anchor
@@ -353,12 +351,12 @@ export function rangeOfItems(
 }
 
 /** What stays picked after a move of `items` that partly failed: the ones
- *  that did not move, in pick order, so they can be tried again. */
+ *  that did not move (`leftIds`), in pick order, so they can be tried again. */
 export function pickedAfterMove(
   items: readonly TreeItem[],
-  failed: readonly { id: string }[],
+  leftIds: readonly string[],
 ): Map<string, TreeItem> {
-  const left = new Set(failed.map((f) => f.id));
+  const left = new Set(leftIds);
   return new Map(items.filter((i) => left.has(i.id)).map((i) => [i.id, i]));
 }
 

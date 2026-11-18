@@ -100,6 +100,8 @@ import {
   fetchTags,
   marksKey,
   MOVE_BATCH,
+  moveProgress,
+  movesLeft,
   moveTreeItemsBatched,
   patchTreeFolder,
   placeTreeItem,
@@ -698,30 +700,40 @@ export function ItemTree({
     dest: Pick<TreeFolder, 'id' | 'name'> | null,
     action: string,
   ) => {
-    // The runs that went through, kept across a confirm's repeat.
-    const done = new Set<number>();
+    const ids = items.map((i) => i.id);
+    // What the runs did, kept across a confirm's repeat and any refusal.
+    const progress = moveProgress();
+    const movedSoFar = (then: string) =>
+      `Moved ${progress.moved} of ${items.length} ${adapter.noun.many}. ${then}`;
+    const landed = () => {
+      refresh();
+      onChanged?.();
+      if (items.length > 1) setPicked(pickedAfterMove(items, movesLeft(ids, progress)));
+    };
+    const runs = (confirm: boolean, seen?: number) =>
+      moveTreeItemsBatched(kind, ids, dest?.id ?? null, progress, confirm, writer, seen);
     return guarded(
       async (confirm, seen) => {
-        const res = await moveTreeItemsBatched(
-          kind,
-          items.map((i) => i.id),
-          dest?.id ?? null,
-          done,
-          confirm,
-          writer,
-          seen,
-        );
+        const res = await runs(confirm, seen).catch((err: unknown) => {
+          if (progress.done.size === 0) throw err;
+          landed();
+          if (visibilityRefusal(err)) throw err;
+          throw new ApiError(movedSoFar(grantErrorText(err, 'The rest did not move.')), 409);
+        });
         if (res.failed.length) {
-          refresh();
-          onChanged?.();
-          if (items.length > 1) setPicked(pickedAfterMove(items, res.failed));
+          landed();
           throw new ApiError(moveFailureText(items, res.failed, adapter.noun), 409);
         }
         if (items.length > 1) clearPicked();
         if (dest) setOpen(dest.id, true);
       },
       `Could not move the ${items.length === 1 ? adapter.noun.one : adapter.noun.many}`,
-      { action, verb: 'Move' },
+      {
+        get action() {
+          return progress.done.size ? movedSoFar(`Move the rest ${into(dest?.name)}.`) : action;
+        },
+        verb: 'Move',
+      },
     );
   };
 

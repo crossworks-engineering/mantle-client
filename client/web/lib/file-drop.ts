@@ -14,9 +14,12 @@
 export const DROP_PATH_ATTR = 'data-drop-path';
 
 /** Whether a drag carries files (from the desktop). A drag of text, a link
- *  or a row inside the page is not an upload and shows no drop zone. */
-export function isFileDrag(types: ArrayLike<string> | null | undefined): boolean {
-  if (!types) return false;
+ *  or a row inside the page is not an upload and shows no drop zone. Nor is
+ *  any drag that began in the page (`fromPage`): Chrome lists `Files` for a
+ *  page image dragged about, and only a drag from inside fires the window's
+ *  `dragstart`, which is how the caller knows. */
+export function isFileDrag(types: ArrayLike<string> | null | undefined, fromPage = false): boolean {
+  if (!types || fromPage) return false;
   for (let i = 0; i < types.length; i++) if (types[i] === 'Files') return true;
   return false;
 }

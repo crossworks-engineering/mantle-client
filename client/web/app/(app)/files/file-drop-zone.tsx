@@ -31,6 +31,24 @@ export function useFileDrop({
 }): { over: string | null; bind: FileDropBind } {
   const depth = useRef(0);
   const [over, setOver] = useState<string | null>(null);
+  // A drag that began in the page (an image, a row) is never an upload.
+  const fromPage = useRef(false);
+  useEffect(() => {
+    const start = () => {
+      fromPage.current = true;
+    };
+    const end = () => {
+      fromPage.current = false;
+    };
+    window.addEventListener('dragstart', start, true);
+    window.addEventListener('dragend', end, true);
+    window.addEventListener('drop', end);
+    return () => {
+      window.removeEventListener('dragstart', start, true);
+      window.removeEventListener('dragend', end, true);
+      window.removeEventListener('drop', end);
+    };
+  }, []);
   const reset = useCallback(() => {
     depth.current = dragDepth(depth.current, 'end');
     setOver(null);
@@ -51,24 +69,24 @@ export function useFileDrop({
   const at = (e: DragEvent<HTMLElement>) => dropPathAt(e.target, fallback);
   const bind: FileDropBind = {
     onDragEnter: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types)) return;
+      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
       depth.current = dragDepth(depth.current, 'enter');
       setOver(at(e));
     },
     onDragOver: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types)) return;
+      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       const path = at(e);
       setOver((prev) => (prev === path ? prev : path));
     },
     onDragLeave: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types)) return;
+      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
       depth.current = dragDepth(depth.current, 'leave');
       if (depth.current === 0) setOver(null);
     },
     onDrop: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types)) return;
+      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
       e.preventDefault();
       const path = at(e);
       reset();

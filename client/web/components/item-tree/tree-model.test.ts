@@ -518,11 +518,7 @@ describe('which kinds a brain serves as the tree', () => {
 describe('pickedAfterMove', () => {
   it('keeps the items that did not move picked, in pick order', () => {
     const items = [item('a'), item('b'), item('c')];
-    const failed: Array<{ id: string; error: string }> = [
-      { id: 'c', error: 'x' },
-      { id: 'a', error: 'y' },
-    ];
-    const left = pickedAfterMove(items, failed);
+    const left = pickedAfterMove(items, ['c', 'a']);
     expect([...left.keys()]).toEqual(['a', 'c']);
   });
   it('keeps nothing when all moved', () => {

@@ -4,6 +4,8 @@ const sent = vi.hoisted(() => [] as Array<{ url: string; method: string; body: u
 /** A brain before `seen`: its strict folder PATCH refuses the field. */
 const strictPatch = vi.hoisted(() => ({ on: false }));
 const fetched = vi.hoisted(() => ({ answer: null as unknown }));
+/** What each move call answers, in turn (an Error is thrown); empty = moved 1. */
+const moveAnswers = vi.hoisted(() => [] as unknown[]);
 
 vi.mock('@mantle/web-ui/api-fetch', () => {
   class ApiError extends Error {
@@ -20,6 +22,11 @@ vi.mock('@mantle/web-ui/api-fetch', () => {
     apiFetch: vi.fn(async () => fetched.answer),
     apiSend: vi.fn(async (url: string, method: string, body?: unknown) => {
       sent.push({ url, method, body });
+      if (url.endsWith('/move') && moveAnswers.length) {
+        const next = moveAnswers.shift();
+        if (next instanceof Error) throw next;
+        return next;
+      }
       if (
         strictPatch.on &&
         method === 'PATCH' &&
@@ -41,12 +48,15 @@ import {
   fetchFolderPage,
   MOVE_BATCH,
   moveTreeItems,
+  moveProgress,
+  movesLeft,
   moveTreeItemsBatched,
   patchTreeFolder,
 } from './tree-api';
 
 beforeEach(() => {
   sent.length = 0;
+  moveAnswers.length = 0;
   strictPatch.on = false;
 });
 
@@ -149,21 +159,82 @@ describe('a move of many items', () => {
 
   it('sends one call per run of 200 and adds up what moved', async () => {
     const ids = Array.from({ length: 450 }, (_, i) => `i${i}`);
-    const done = new Set<number>();
-    const res = await moveTreeItemsBatched('files', ids, 'f1', done);
+    const progress = moveProgress();
+    const res = await moveTreeItemsBatched('files', ids, 'f1', progress);
     const calls = sent.filter((s) => s.url === '/api/tree/files/move');
     expect(calls.map((c) => (c.body as { ids: string[] }).ids.length)).toEqual([200, 200, 50]);
     expect((calls[2]!.body as { ids: string[] }).ids[0]).toBe('i400');
     expect(res).toEqual({ moved: 3, failed: [] });
-    expect([...done]).toEqual([0, 1, 2]);
+    expect([...progress.done]).toEqual([0, 1, 2]);
   });
 
   it('sends again only the runs not yet done (a repeat after a confirm)', async () => {
     const ids = Array.from({ length: 450 }, (_, i) => `i${i}`);
-    await moveTreeItemsBatched('files', ids, 'f1', new Set([0, 1]), true, 'owner', 4);
+    const progress = { ...moveProgress(), done: new Set([0, 1]) };
+    await moveTreeItemsBatched('files', ids, 'f1', progress, true, 'owner', 4);
     const calls = sent.filter((s) => s.url === '/api/tree/files/move');
     expect(calls).toHaveLength(1);
     expect(calls[0]!.body).toMatchObject({ confirm: true, seen: 4, folderId: 'f1' });
     expect((calls[0]!.body as { ids: string[] }).ids).toHaveLength(50);
+  });
+
+  it('keeps what earlier runs did when a later run throws, and on the repeat', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => `i${i}`);
+    const failed = [
+      { id: 'i3', error: 'name taken' },
+      { id: 'i7', error: 'name taken' },
+      { id: 'i9', error: 'locked' },
+    ];
+    const ask = new Error('would change who sees it');
+    moveAnswers.push({ moved: 197, failed }, ask);
+    const progress = moveProgress();
+    await expect(moveTreeItemsBatched('files', ids, 'f1', progress)).rejects.toBe(ask);
+    // Run 0 landed with its 3 failures; run 1 asked; nothing is lost.
+    expect([...progress.done]).toEqual([0]);
+    expect(progress.moved).toBe(197);
+    expect(progress.failed).toEqual(failed);
+    // Not moved yet: the 3 that failed, and all of runs 1 and 2.
+    const left = movesLeft(ids, progress);
+    expect(left).toHaveLength(3 + 250);
+    expect(left.slice(0, 4)).toEqual(['i3', 'i7', 'i9', 'i200']);
+
+    // After the confirm, the result covers every run, the first one too.
+    moveAnswers.push({ moved: 200, failed: [] }, { moved: 50, failed: [] });
+    const res = await moveTreeItemsBatched('files', ids, 'f1', progress, true, 'owner', 12);
+    expect(res).toEqual({ moved: 447, failed });
+    expect(movesLeft(ids, progress)).toEqual(['i3', 'i7', 'i9']);
+  });
+
+  it('sends confirm and seen on the first run not yet done only; later runs ask for themselves', async () => {
+    const ids = Array.from({ length: 650 }, (_, i) => `i${i}`);
+    const progress = { ...moveProgress(), done: new Set([0]) };
+    await moveTreeItemsBatched('files', ids, 'f1', progress, true, 'owner', 12);
+    const bodies = sent
+      .filter((s) => s.url === '/api/tree/files/move')
+      .map((c) => c.body as { ids: string[]; confirm?: boolean; seen?: number });
+    expect(bodies.map((b) => b.ids[0])).toEqual(['i200', 'i400', 'i600']);
+    expect(bodies[0]).toMatchObject({ confirm: true, seen: 12 });
+    for (const b of bodies.slice(1)) {
+      expect(b.confirm).toBeUndefined();
+      expect(b.seen).toBeUndefined();
+    }
+  });
+
+  it('stops at a later run that asks, and its own repeat confirms only that run', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => `i${i}`);
+    const ask = new Error('run 2 changes who sees it');
+    moveAnswers.push({ moved: 200, failed: [] }, ask);
+    const progress = { ...moveProgress(), done: new Set([0]) };
+    await expect(moveTreeItemsBatched('files', ids, 'f1', progress, true, 'owner', 4)).rejects.toBe(
+      ask,
+    );
+    expect([...progress.done]).toEqual([0, 1]);
+    expect(progress.moved).toBe(200);
+    sent.length = 0;
+    await moveTreeItemsBatched('files', ids, 'f1', progress, true, 'owner', 9);
+    const calls = sent.filter((s) => s.url === '/api/tree/files/move');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).toMatchObject({ confirm: true, seen: 9 });
+    expect((calls[0]!.body as { ids: string[] }).ids[0]).toBe('i400');
   });
 });
