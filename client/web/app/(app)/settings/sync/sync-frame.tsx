@@ -14,9 +14,10 @@ type Ticket = { ticket: string; url: string };
  * (POST /api/services/sync/frame-ticket); the brain renews it with every
  * screen. No script, no same-origin, no top navigation. Popups may leave the
  * sandbox (Sync M3): "Connect a Microsoft account" opens Microsoft's sign-in
- * in a new tab, which a sandboxed tab could not run. Coming back to this tab
- * reloads the screens, so a new connection shows. After a long pause the
- * ticket ends: "Reload" asks a new one.
+ * in a new tab, which a sandboxed tab could not run. "Reload" shows a new
+ * connection (no reload on its own: it would wipe a form half filled while
+ * the person copies a secret from another tab). After a long pause the
+ * ticket ends: "Reload" asks a new one too.
  */
 export function SyncFrame() {
   const [src, setSrc] = useState<string | null>(null);
@@ -35,15 +36,6 @@ export function SyncFrame() {
 
   useEffect(() => {
     void load();
-  }, [load]);
-
-  // Back from the sign-in tab: show what it connected.
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void load();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [load]);
 
   return (
