@@ -37,6 +37,9 @@ import type { FileExtraction } from './files-shared';
 import { hasDataView, readDbView, withDbView } from './file-data-model';
 import { RunPipelineDialog, useRunRouteGone } from './run-pipeline-dialog';
 import { showRunEntry, type RunTarget } from '@/lib/pipeline-run';
+import { FileDetailsSheet } from './file-details';
+import { FileStatusBadge } from './file-status-badge';
+import type { FileStatus } from './file-status';
 
 type FileRow = {
   id: string;
@@ -56,6 +59,8 @@ type FileRow = {
   /** Whether Files shows its Data view (hasDataView). Only the GET answers
    *  carry it, not the PATCH ones; a brain before pipelines sends none. */
   dataView?: boolean;
+  /** What the brain did with it (P4); none from an older brain. */
+  status?: FileStatus;
 };
 
 type Mode = 'edit' | 'preview' | 'split';
@@ -92,6 +97,8 @@ export function FileEditor({
   // session once the brain answers its route 404.
   const [runTarget, setRunTarget] = useState<RunTarget | null>(null);
   const runGone = useRunRouteGone();
+  // The Details sheet (file-details.tsx), from the header's Info slot.
+  const [detailsOpen, setDetailsOpen] = useState(false);
   // The file's read-only database instead of its preview (file-data.tsx).
   // The URL alone says so (view=data or view=query, and dbtab), so a link,
   // a Data files row or a reload opens it; back to the file clears it.
@@ -260,7 +267,12 @@ export function FileEditor({
         visual={(() => {
           const d = describeFile(file.mimeType, file.filename);
           const Icon = d.icon;
-          return <Icon aria-hidden className={`size-4 shrink-0 ${KIND_TINT[d.kind]}`} />;
+          return (
+            <span className="relative inline-flex shrink-0">
+              <Icon aria-hidden className={`size-4 shrink-0 ${KIND_TINT[d.kind]}`} />
+              <FileStatusBadge status={file.status} extraction={file.extraction} />
+            </span>
+          );
         })()}
         title={
           renaming && !readOnly ? (
@@ -388,14 +400,21 @@ export function FileEditor({
                 },
               }
         }
-        info={{
-          path: file.parentPath.split('.').filter(Boolean),
-          rows: [
-            { label: 'Type', value: fileTypeLabel(file.mimeType, file.filename) },
-            ...(note ? [{ label: 'Access', value: note }] : []),
-          ],
-        }}
-        infoLabel="About this file"
+        onInfo={() => setDetailsOpen(true)}
+        infoLabel="Details"
+      />
+      <FileDetailsSheet
+        fileId={detailsOpen ? file.id : null}
+        filename={file.filename}
+        fallback={[
+          {
+            label: 'Location',
+            value: file.parentPath.split('.').filter(Boolean).join(' / ') || 'Top level',
+          },
+          { label: 'Type', value: fileTypeLabel(file.mimeType, file.filename) },
+        ]}
+        extra={note ? [{ label: 'Access', value: note }] : []}
+        onOpenChange={setDetailsOpen}
       />
       <RunPipelineDialog target={runTarget} onOpenChange={(o) => !o && setRunTarget(null)} />
       <ExtractionNote x={file.extraction} />
