@@ -115,7 +115,7 @@ import {
 import { play } from '@/lib/sounds/play';
 import { requestTreeMove } from '@/components/item-tree/tree-move-request';
 import { folderCrumbs } from '@/lib/file-drop';
-import { isPickClick, keepOnScreen, pickClick } from '@/lib/pick-range';
+import { isPickClick, keepOnScreen, pickClick, withoutPicks } from '@/lib/pick-range';
 import { FileDropOverlay, useFileDrop } from './file-drop-zone';
 import { FileRowMenu, SelectionBar } from './files-selection';
 
@@ -591,7 +591,9 @@ function FilesView({
     if (res.deleted > 0) {
       toast.success(`Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`);
     }
-    setSelectedFileIds(new Set());
+    // Only what this delete acted on leaves the pick: a delete from one
+    // file's menu keeps a pick it was not part of.
+    setSelectedFileIds((prev) => withoutPicks(prev, ids) as Set<string>);
     refresh();
   };
 

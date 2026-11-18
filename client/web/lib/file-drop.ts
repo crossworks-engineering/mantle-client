@@ -24,6 +24,44 @@ export function isFileDrag(types: ArrayLike<string> | null | undefined, fromPage
   return false;
 }
 
+/** The events that end a drag begun in the page, with whether each is
+ *  heard in the capture phase. `drop` is heard last (bubble), so a drop
+ *  handler still sees the drag as the page's own. A drag the page swallows
+ *  may fire no `dragend`; a native drag fires no pointer or mouse events,
+ *  so the next `pointerdown` or `mousemove` proves it is over. */
+const PAGE_DRAG_ENDS: ReadonlyArray<readonly [string, boolean]> = [
+  ['dragend', true],
+  ['drop', false],
+  ['pointerdown', true],
+  ['mousemove', true],
+];
+
+type Listens = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
+
+/** Follow, on `target` (the window), whether a drag that began in the page
+ *  is going on: only such a drag fires `dragstart` there. `stop` removes
+ *  the listeners. Pinned by file-drop.test.ts. */
+export function trackPageDrag(target: Listens): { active: () => boolean; stop: () => void } {
+  let on = false;
+  const start = () => {
+    on = true;
+  };
+  const end = () => {
+    on = false;
+  };
+  target.addEventListener('dragstart', start, true);
+  for (const [type, capture] of PAGE_DRAG_ENDS) target.addEventListener(type, end, capture);
+  return {
+    active: () => on,
+    stop: () => {
+      target.removeEventListener('dragstart', start, true);
+      for (const [type, capture] of PAGE_DRAG_ENDS) {
+        target.removeEventListener(type, end, capture);
+      }
+    },
+  };
+}
+
 /**
  * The drag depth after one event. A drag fires `dragenter` on each child it
  * crosses and `dragleave` on the one it left, so a plain "leave = hide"

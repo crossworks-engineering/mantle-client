@@ -20,6 +20,7 @@ import {
   placeSiblings,
   mergeFolderPages,
   moveFailureText,
+  movedSoFarText,
   pickedAfterMove,
   rangeOfItems,
   refreshFor,
@@ -635,6 +636,28 @@ describe('itemMovable and folderManaged (W6b fix round: the item caps)', () => {
     );
     // A brain before mayMove: mayManage decides.
     expect(folderMovable({ ...folder('f', '1'), mayManage: false } as TreeFolder)).toBe(false);
+  });
+});
+
+describe('movedSoFarText', () => {
+  const noun = { one: 'file', many: 'files' };
+  const items = ['a', 'b', 'c'].map((x) => ({ id: x, title: `${x}.pdf` }));
+
+  it('says what moved and why the rest did not', () => {
+    expect(movedSoFarText(items, { moved: 2, failed: [] }, noun, 'Offline.')).toBe(
+      'Moved 2 of 3 files. Offline.',
+    );
+  });
+
+  it('names what earlier runs could not move when a later run fails', () => {
+    expect(
+      movedSoFarText(
+        items,
+        { moved: 1, failed: [{ id: 'b', error: 'Name taken' }] },
+        noun,
+        'Offline.',
+      ),
+    ).toBe('Moved 1 of 3 files. Offline. Could not move 1 of 3 files (“b.pdf”): Name taken');
   });
 });
 

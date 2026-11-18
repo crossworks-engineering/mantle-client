@@ -64,3 +64,14 @@ export function keepOnScreen(
   }
   return picked;
 }
+
+/** The pick without `ids` (what a delete acted on): a delete of a file
+ *  outside the pick leaves the pick as it was, the same set back. */
+export function withoutPicks(
+  picked: ReadonlySet<string>,
+  ids: readonly string[],
+): ReadonlySet<string> {
+  if (!ids.some((id) => picked.has(id))) return picked;
+  const gone = new Set(ids);
+  return new Set([...picked].filter((x) => !gone.has(x)));
+}

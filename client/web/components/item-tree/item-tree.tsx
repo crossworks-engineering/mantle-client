@@ -135,6 +135,7 @@ import {
   itemMovable,
   itemPlaceAt,
   moveFailureText,
+  movedSoFarText,
   pickedAfterMove,
   placeSiblings,
   movableOrder,
@@ -703,8 +704,7 @@ export function ItemTree({
     const ids = items.map((i) => i.id);
     // What the runs did, kept across a confirm's repeat and any refusal.
     const progress = moveProgress();
-    const movedSoFar = (then: string) =>
-      `Moved ${progress.moved} of ${items.length} ${adapter.noun.many}. ${then}`;
+    const movedSoFar = (then: string) => movedSoFarText(items, progress, adapter.noun, then);
     const landed = () => {
       refresh();
       onChanged?.();

@@ -6,7 +6,7 @@
  * picked file acts on the whole pick; on any other file, on that file.
  * The pick rule itself (cmd/ctrl, shift) is lib/pick-range.ts.
  */
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import {
   FolderInput,
   type LucideIcon,
@@ -129,8 +129,14 @@ export function FileRowMenu({
   onDelete: () => void;
   className?: string;
 }) {
+  // The open row draws a new button inside the menu, and the closed row a
+  // plain one again, so Radix's own return of focus finds a button that is
+  // gone. One ref names whichever is drawn; a close puts focus back on it,
+  // unless the entry chosen moved focus on (a dialog, an editor).
+  const button = useRef<HTMLButtonElement>(null);
   const trigger = (
     <Button
+      ref={button}
       variant="ghost"
       size="icon-2xs"
       aria-label={`More actions for ${file.filename}`}
@@ -169,7 +175,16 @@ export function FileRowMenu({
   return (
     <DropdownMenu open onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent
+        align="end"
+        className="w-52"
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          if (!document.activeElement || document.activeElement === document.body) {
+            button.current?.focus();
+          }
+        }}
+      >
         {shown.map(({ icon: Icon, label, run, danger }, i) => (
           <Fragment key={label}>
             {danger && i > 0 && <DropdownMenuSeparator />}

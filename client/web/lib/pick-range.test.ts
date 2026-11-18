@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPickClick, keepOnScreen, pickClick, rangeBetween } from './pick-range';
+import { isPickClick, keepOnScreen, pickClick, rangeBetween, withoutPicks } from './pick-range';
 
 const ORDER = ['a', 'b', 'c', 'd', 'e'];
 const none = new Set<string>();
@@ -71,5 +71,17 @@ describe('keepOnScreen', () => {
     expect([...keepOnScreen(picked, ORDER)]).toEqual(['a']);
     const same = new Set(['a', 'b']);
     expect(keepOnScreen(same, ORDER)).toBe(same);
+  });
+});
+
+describe('withoutPicks', () => {
+  it('keeps the pick when a file outside it is deleted', () => {
+    const picked = new Set(['a', 'b']);
+    expect(withoutPicks(picked, ['c'])).toBe(picked);
+  });
+
+  it('drops only the deleted ids from the pick', () => {
+    expect([...withoutPicks(new Set(['a', 'b', 'c']), ['b', 'x'])]).toEqual(['a', 'c']);
+    expect([...withoutPicks(new Set(['a', 'b']), ['a', 'b'])]).toEqual([]);
   });
 });

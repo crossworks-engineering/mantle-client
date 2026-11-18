@@ -385,6 +385,20 @@ export function moveFailureText(
   return `Could not move ${failed.length} of ${items.length} ${noun.many} (${list})${why}`;
 }
 
+/** A move in runs that stopped part way: what moved, `then` (why the rest
+ *  did not, or what to do next), and the items earlier runs could not move,
+ *  by name, so a later refusal never hides them. */
+export function movedSoFarText(
+  items: readonly Pick<TreeItem, 'id' | 'title'>[],
+  progress: { moved: number; failed: readonly { id: string; error: string }[] },
+  noun: { one: string; many: string },
+  then: string,
+): string {
+  const head = `Moved ${progress.moved} of ${items.length} ${noun.many}. ${then}`;
+  if (!progress.failed.length) return head;
+  return `${head} ${moveFailureText(items, progress.failed, noun)}`;
+}
+
 /** The open-folder set after "Collapse all": every folder shut, at every
  *  depth, the one holding the selected item too. The page keeps showing what
  *  it showed; the tree does not unfold to it again until the page goes

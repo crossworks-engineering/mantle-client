@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { ChevronRight, Upload } from 'lucide-react';
-import { dragDepth, dropPathAt, isFileDrag } from '@/lib/file-drop';
+import { dragDepth, dropPathAt, isFileDrag, trackPageDrag } from '@/lib/file-drop';
 
 export type FileDropBind = {
   onDragEnter: (e: DragEvent<HTMLElement>) => void;
@@ -32,22 +32,11 @@ export function useFileDrop({
   const depth = useRef(0);
   const [over, setOver] = useState<string | null>(null);
   // A drag that began in the page (an image, a row) is never an upload.
-  const fromPage = useRef(false);
+  const pageDrag = useRef<{ active: () => boolean } | null>(null);
   useEffect(() => {
-    const start = () => {
-      fromPage.current = true;
-    };
-    const end = () => {
-      fromPage.current = false;
-    };
-    window.addEventListener('dragstart', start, true);
-    window.addEventListener('dragend', end, true);
-    window.addEventListener('drop', end);
-    return () => {
-      window.removeEventListener('dragstart', start, true);
-      window.removeEventListener('dragend', end, true);
-      window.removeEventListener('drop', end);
-    };
+    const tracked = trackPageDrag(window);
+    pageDrag.current = tracked;
+    return tracked.stop;
   }, []);
   const reset = useCallback(() => {
     depth.current = dragDepth(depth.current, 'end');
@@ -67,27 +56,38 @@ export function useFileDrop({
   }, [over, reset]);
 
   const at = (e: DragEvent<HTMLElement>) => dropPathAt(e.target, fallback);
+  const files = (e: DragEvent<HTMLElement>) =>
+    isFileDrag(e.dataTransfer?.types, pageDrag.current?.active() ?? false);
+  // React events bubble out of portals: a drag over a dialog the screen
+  // opened (Move, the folder picker) is not over the screen.
+  const inside = (e: DragEvent<HTMLElement>) => e.currentTarget.contains(e.target as Node);
   const bind: FileDropBind = {
     onDragEnter: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
+      if (!files(e) || !inside(e)) return;
       depth.current = dragDepth(depth.current, 'enter');
       setOver(at(e));
     },
     onDragOver: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
+      if (!files(e)) return;
+      // Taken even over a dialog, so the browser never opens the file.
       e.preventDefault();
+      if (!inside(e)) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
       e.dataTransfer.dropEffect = 'copy';
       const path = at(e);
       setOver((prev) => (prev === path ? prev : path));
     },
     onDragLeave: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
+      if (!files(e) || !inside(e)) return;
       depth.current = dragDepth(depth.current, 'leave');
       if (depth.current === 0) setOver(null);
     },
     onDrop: (e) => {
-      if (!isFileDrag(e.dataTransfer?.types, fromPage.current)) return;
+      if (!files(e)) return;
       e.preventDefault();
+      if (!inside(e)) return;
       const path = at(e);
       reset();
       onDrop(e.dataTransfer, path);

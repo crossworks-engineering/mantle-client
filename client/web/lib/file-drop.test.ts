@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { crumbText, dragDepth, dropPathAt, folderCrumbs, isFileDrag } from './file-drop';
+import {
+  crumbText,
+  dragDepth,
+  dropPathAt,
+  folderCrumbs,
+  isFileDrag,
+  trackPageDrag,
+} from './file-drop';
 
 /** A stand-in for a DOM element: `closest` walks the given chain. */
 function el(chain: Array<Record<string, string>>) {
@@ -25,6 +32,40 @@ describe('isFileDrag', () => {
     expect(isFileDrag(['Files'], true)).toBe(false);
     expect(isFileDrag(['text/uri-list', 'Files'], true)).toBe(false);
     expect(isFileDrag(['Files'], false)).toBe(true);
+  });
+});
+
+describe('trackPageDrag', () => {
+  const fire = (t: EventTarget, type: string) => t.dispatchEvent(new Event(type));
+
+  it('is on from a dragstart until the drag ends or drops', () => {
+    for (const end of ['dragend', 'drop']) {
+      const win = new EventTarget();
+      const drag = trackPageDrag(win);
+      expect(drag.active()).toBe(false);
+      fire(win, 'dragstart');
+      expect(drag.active()).toBe(true);
+      fire(win, end);
+      expect(drag.active()).toBe(false);
+    }
+  });
+
+  it('clears on the next pointerdown or mousemove when the drag was swallowed', () => {
+    for (const next of ['pointerdown', 'mousemove']) {
+      const win = new EventTarget();
+      const drag = trackPageDrag(win);
+      fire(win, 'dragstart');
+      fire(win, next);
+      expect(drag.active()).toBe(false);
+    }
+  });
+
+  it('hears nothing once stopped', () => {
+    const win = new EventTarget();
+    const drag = trackPageDrag(win);
+    drag.stop();
+    fire(win, 'dragstart');
+    expect(drag.active()).toBe(false);
   });
 });
 
