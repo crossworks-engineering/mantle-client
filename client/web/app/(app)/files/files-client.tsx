@@ -7,7 +7,6 @@ import { itemAccess } from '@/lib/item-access';
 import { guardedNavigate } from '@/lib/nav-guard';
 import { grantsKey, grantsUrl, uploadVisibleTo, type GrantsView } from '@/lib/grants';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { WorkspaceChips } from '@/components/share/workspace-chips';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
@@ -20,7 +19,6 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
-  ChevronsRight,
   CircleQuestionMark,
   Columns2,
   Database,
@@ -45,9 +43,8 @@ import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { FileEditor } from './file-editor';
 import { DataFilesView } from './file-data';
-import { ExtractionBadge } from './extraction-badge';
 import { FileDetailsSheet } from './file-details';
-import { FileStatusBadge, FileStatusLegend } from './file-status-badge';
+import { FileStatusLegend } from './file-status-badge';
 import { UnreadFilesView } from './unread-files';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
 import { useFileSearch } from './use-file-search';
@@ -122,8 +119,8 @@ import { folderCrumbs } from '@/lib/file-drop';
 import { isPickClick, keepOnScreen, pickClick, withoutPicks } from '@/lib/pick-range';
 import { FileDropOverlay, useFileDrop } from './file-drop-zone';
 import { FileRowMenu, SelectionBar } from './files-selection';
+import { FileListRow, FileTile } from './files-rows';
 import { HistoryMenuItem, useHistorySheet } from '@/components/file-history/file-history-sheet';
-import { HistoryMark } from '@/components/file-history/history-mark';
 import { treeItemVersions } from '@/lib/file-history';
 
 /** The three shapes the file list can take; anything else in storage is stale. */
@@ -310,7 +307,11 @@ function FilesView({
   const cascade = dialog?.kind === 'cascade' ? dialog : null;
   // P4: the Details sheet of one file (list, grid or tree), and the legend
   // of the status icons (More menu).
-  const [details, setDetails] = useState<{ id: string; filename: string } | null>(null);
+  const [details, setDetails] = useState<{
+    id: string;
+    filename: string;
+    versions?: number;
+  } | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
 
   // Sync local file state when server re-fetches. The pick keeps the files
@@ -553,6 +554,32 @@ function FilesView({
       kind: 'rename',
       target: { kind: 'file', id: f.id, filename: f.filename, extension: f.extension },
     });
+  // A file's one menu, the same in the list and the grid (files-selection.tsx).
+  const rowMenu = (f: FileRow, className?: string) => (
+    <FileRowMenu
+      file={f}
+      targets={targetsOf(f)}
+      treeMove={treeMove}
+      open={menuFor === f.id}
+      onOpenChange={(o) => setMenuFor(o ? f.id : null)}
+      onOpen={() => openFile(f.id)}
+      onDetails={() => setDetails(f)}
+      onHistory={fileHistory.of(f)}
+      onRename={() => renameFile(f)}
+      onMove={() => moveFiles(targetsOf(f))}
+      onDelete={() => setDialog({ kind: 'bulkDelete', ids: targetsOf(f).map((t) => t.id) })}
+      className={className}
+    />
+  );
+  const itemProps = (f: FileRow) => ({
+    file: f,
+    picked: selectedFileIds.has(f.id),
+    folderNameOnly: folderIndexing.mode === 'metadata',
+    onClick: (e: React.MouseEvent) => clickFile(f, e),
+    onPick: (range: boolean) => pickFile(f.id, { toggle: true, range }),
+    onRangeKey: (e: React.KeyboardEvent) => rangeKey(f.id, e),
+    onMenu: () => setMenuFor(f.id),
+  });
 
   // ─── Delete folder ───────────────────────────────────────────────
   const confirmDeleteFolder = async () => {
@@ -744,11 +771,22 @@ function FilesView({
                   itemActions={(item) => (
                     <>
                       <DropdownMenuItem
-                        onSelect={() => setDetails({ id: item.id, filename: item.title })}
+                        onSelect={() =>
+                          setDetails({
+                            id: item.id,
+                            filename: item.title,
+                            versions: treeItemVersions(item),
+                          })
+                        }
                       >
                         <Info />
                         Details
                       </DropdownMenuItem>
+                      {treeItemVersions(item) !== undefined ? (
+                        <HistoryMenuItem
+                          onSelect={() => fileHistory.open({ id: item.id, filename: item.title })}
+                        />
+                      ) : null}
                       {showRunEntry(itemAccess(item).edit, runGone) ? (
                         <DropdownMenuItem
                           onSelect={() =>
@@ -761,11 +799,6 @@ function FilesView({
                           <Play />
                           Run a pipeline…
                         </DropdownMenuItem>
-                      ) : null}
-                      {treeItemVersions(item) !== undefined ? (
-                        <HistoryMenuItem
-                          onSelect={() => fileHistory.open({ id: item.id, filename: item.title })}
-                        />
                       ) : null}
                       {itemAccess(item).edit ? (
                         <DropdownMenuItem
@@ -1412,130 +1445,18 @@ function FilesView({
                        click opens; cmd/ctrl or shift picks, as in the list,
                        and its corner box picks too. */
                       <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3 p-4">
-                        {sortedFiles.map((f) => {
-                          const described = describeFile(f.mimeType, f.filename);
-                          const TypeIcon = described.icon;
-                          const isImage = f.mimeType.startsWith('image/');
-                          const picked = selectedFileIds.has(f.id);
-                          return (
-                            <div
-                              key={f.id}
-                              className="group relative"
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                setMenuFor(f.id);
-                              }}
-                            >
-                              <RowButton
-                                onClick={(e) => clickFile(f, e)}
-                                onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                                data-mark-id={f.id}
-                                data-mark-kind="file"
-                                data-mark-label={f.filename}
-                                title={`${f.filename} — ${described.label}, ${fmtSize(f.sizeBytes)}`}
-                                className={cn(
-                                  'flex w-full flex-col overflow-hidden rounded-md border bg-card text-left hover:shadow-sm',
-                                  picked
-                                    ? 'border-primary ring-2 ring-primary/40'
-                                    : 'border-border hover:border-primary/40',
-                                )}
-                              >
-                                <span className="relative flex aspect-square w-full items-center justify-center overflow-hidden bg-muted/40">
-                                  <FileStatusBadge
-                                    status={f.status}
-                                    extraction={f.extraction}
-                                    size="lg"
-                                    className="bottom-1.5 right-1.5 z-10"
-                                  />
-                                  {isImage ? (
-                                    // eslint-disable-next-line @next/next/no-img-element -- authed same-origin thumbnail; next/image can't carry the asset token
-                                    <img
-                                      src={toAsset(`/api/files/files/${f.id}?thumb=1`)}
-                                      alt=""
-                                      loading="lazy"
-                                      draggable={false}
-                                      className="h-full w-full object-cover"
-                                      onError={(e) => {
-                                        // Swap to the icon fallback: hide the img,
-                                        // reveal the sibling icon span.
-                                        e.currentTarget.style.display = 'none';
-                                        e.currentTarget.nextElementSibling?.classList.remove(
-                                          'hidden',
-                                        );
-                                      }}
-                                    />
-                                  ) : null}
-                                  <span
-                                    className={
-                                      isImage
-                                        ? 'hidden items-center justify-center'
-                                        : 'flex items-center justify-center'
-                                    }
-                                  >
-                                    <TypeIcon
-                                      aria-hidden
-                                      className={`size-10 ${KIND_TINT[described.kind]}`}
-                                    />
-                                  </span>
-                                </span>
-                                <span className="flex flex-col gap-0.5 px-2 py-1.5">
-                                  <span className="flex min-w-0 items-center gap-1">
-                                    <span className="min-w-0 truncate text-xs font-medium">
-                                      {f.filename}
-                                    </span>
-                                    <WorkspaceChips item={f} />
-                                  </span>
-                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                    {fmtSize(f.sizeBytes)}
-                                    <HistoryMark versions={f.versions} />
-                                    {(f.indexing === 'metadata' ||
-                                      f.indexingApplied === 'metadata' ||
-                                      (!f.indexing && folderIndexing.mode === 'metadata')) && (
-                                      <span className="inline-flex items-center gap-0.5">
-                                        <EyeOff className="size-2.5" /> name only
-                                      </span>
-                                    )}
-                                    <ExtractionBadge x={f.extraction} compact />
-                                  </span>
-                                </span>
-                              </RowButton>
-                              <Checkbox
-                                aria-label={`Select ${f.filename}`}
-                                checked={picked}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  pickFile(f.id, { toggle: true, range: e.shiftKey });
-                                }}
-                                onKeyDown={(e) => rangeKey(f.id, e)}
-                                className={cn(
-                                  'absolute left-2 top-2 bg-background shadow-sm',
-                                  !picked &&
-                                    selectedFileIds.size === 0 &&
-                                    'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
-                                )}
-                              />
-                              <FileRowMenu
-                                file={f}
-                                targets={targetsOf(f)}
-                                treeMove={treeMove}
-                                open={menuFor === f.id}
-                                onOpenChange={(o) => setMenuFor(o ? f.id : null)}
-                                onOpen={() => openFile(f.id)}
-                                onRename={() => renameFile(f)}
-                                onMove={() => moveFiles(targetsOf(f))}
-                                onDetails={() => setDetails({ id: f.id, filename: f.filename })}
-                                onHistory={fileHistory.of(f)}
-                                onDelete={() =>
-                                  setDialog({
-                                    kind: 'bulkDelete',
-                                    ids: targetsOf(f).map((t) => t.id),
-                                  })
-                                }
-                                className="absolute right-1.5 top-1.5 bg-background/80 shadow-sm"
-                              />
-                            </div>
-                          );
-                        })}
+                        {sortedFiles.map((f) => (
+                          <FileTile
+                            key={f.id}
+                            {...itemProps(f)}
+                            thumbUrl={toAsset(`/api/files/files/${f.id}?thumb=1`)}
+                            picking={selectedFileIds.size > 0}
+                            menu={rowMenu(
+                              f,
+                              'absolute right-1.5 top-1.5 bg-background/80 shadow-sm',
+                            )}
+                          />
+                        ))}
                       </div>
                     ) : (
                       <table className="w-full text-sm">
@@ -1595,124 +1516,9 @@ function FilesView({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                          {sortedFiles.map((f) => {
-                            // MIME first, filename as tie-breaker — files uploaded
-                            // before the server's mime map learned audio/video/
-                            // archives are stored as octet-stream, and the
-                            // extension still names them correctly.
-                            const described = describeFile(f.mimeType, f.filename);
-                            const TypeIcon = described.icon;
-                            const picked = selectedFileIds.has(f.id);
-                            return (
-                              <tr
-                                key={f.id}
-                                className={cn(
-                                  'group',
-                                  picked ? 'bg-primary/5' : 'hover:bg-muted/30',
-                                )}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  setMenuFor(f.id);
-                                }}
-                              >
-                                <td className="px-3 py-2">
-                                  <Checkbox
-                                    aria-label={`Select ${f.filename}`}
-                                    checked={picked}
-                                    onClick={(e) => {
-                                      // Shift on the box picks the range too.
-                                      e.preventDefault();
-                                      pickFile(f.id, { toggle: true, range: e.shiftKey });
-                                    }}
-                                    onKeyDown={(e) => rangeKey(f.id, e)}
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <RowButton
-                                    onClick={(e) => clickFile(f, e)}
-                                    onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                                    data-mark-id={f.id}
-                                    data-mark-kind="file"
-                                    data-mark-label={f.filename}
-                                    className="flex items-center gap-2 text-left hover:underline"
-                                  >
-                                    <span className="relative inline-flex shrink-0">
-                                      <TypeIcon
-                                        aria-hidden
-                                        className={`size-4 shrink-0 ${KIND_TINT[described.kind]}`}
-                                      />
-                                      <FileStatusBadge status={f.status} extraction={f.extraction} />
-                                    </span>
-                                    <span className="font-medium">{f.filename}</span>
-                                    <span
-                                      title={described.label}
-                                      className="text-[10px] uppercase tracking-wider text-muted-foreground"
-                                    >
-                                      {f.extension}
-                                    </span>
-                                    <HistoryMark versions={f.versions} />
-                                    {(f.indexing === 'metadata' ||
-                                      f.indexingApplied === 'metadata' ||
-                                      (!f.indexing && folderIndexing.mode === 'metadata')) && (
-                                      <span
-                                        title={
-                                          f.indexing === 'metadata'
-                                            ? 'Name-only: content not indexed (set on this file)'
-                                            : 'Name-only: content not indexed (inherited from the folder)'
-                                        }
-                                        className="inline-flex items-center gap-0.5 rounded-sm bg-muted px-1 text-[10px] text-muted-foreground"
-                                      >
-                                        <EyeOff className="size-3 shrink-0" /> name only
-                                      </span>
-                                    )}
-                                    <ExtractionBadge x={f.extraction} />
-                                    {f.summary &&
-                                      f.indexingApplied !== 'metadata' &&
-                                      (!f.extraction || f.extraction.state === 'indexed') && (
-                                        <span
-                                          title="Indexed — summary ready"
-                                          className="inline-flex items-center text-primary-ink"
-                                        >
-                                          <ChevronsRight className="size-3.5 shrink-0" />
-                                        </span>
-                                      )}
-                                  </RowButton>
-                                </td>
-                                <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                                  {described.label}
-                                </td>
-                                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                                  {fmtSize(f.sizeBytes)}
-                                </td>
-                                <td className="max-w-[40ch] truncate px-3 py-2 text-xs text-muted-foreground">
-                                  {f.summary ?? <span className="italic">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-xs text-muted-foreground">
-                                  {fmtRelative(f.updatedAt)}
-                                </td>
-                                <td className="px-3 py-2 text-right">
-                                  <FileRowMenu
-                                    file={f}
-                                    targets={targetsOf(f)}
-                                    treeMove={treeMove}
-                                    open={menuFor === f.id}
-                                    onOpenChange={(o) => setMenuFor(o ? f.id : null)}
-                                    onOpen={() => openFile(f.id)}
-                                    onRename={() => renameFile(f)}
-                                    onMove={() => moveFiles(targetsOf(f))}
-                                    onDetails={() => setDetails({ id: f.id, filename: f.filename })}
-                                    onHistory={fileHistory.of(f)}
-                                    onDelete={() =>
-                                      setDialog({
-                                        kind: 'bulkDelete',
-                                        ids: targetsOf(f).map((t) => t.id),
-                                      })
-                                    }
-                                  />
-                                </td>
-                              </tr>
-                            );
-                          })}
+                          {sortedFiles.map((f) => (
+                            <FileListRow key={f.id} {...itemProps(f)} menu={rowMenu(f)} />
+                          ))}
                         </tbody>
                       </table>
                     )}
@@ -1747,6 +1553,7 @@ function FilesView({
       <FileDetailsSheet
         fileId={details?.id ?? null}
         filename={details?.filename}
+        onHistory={details ? fileHistory.of(details) : undefined}
         onOpenChange={(open) => !open && setDetails(null)}
       />
       <FileStatusLegend open={legendOpen} onOpenChange={setLegendOpen} />

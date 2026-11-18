@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Brain,
   FileText,
+  History,
   Image as ImageIcon,
   Loader2,
   NotebookPen,
@@ -18,6 +19,7 @@ import {
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import { describeFile, fileTypeLabel, KIND_TINT } from '@mantle/web-ui/lib/mime-label';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@mantle/web-ui/ui/sheet';
 import { StatusIcon } from './file-status-badge';
 import {
@@ -235,6 +237,7 @@ export function FileDetailsSheet({
   filename,
   fallback = [],
   extra = [],
+  onHistory,
   onOpenChange,
 }: {
   /** The file to show; null = closed. */
@@ -245,6 +248,8 @@ export function FileDetailsSheet({
   fallback?: DetailsExtraRow[];
   /** Rows only the caller knows (Access). */
   extra?: DetailsExtraRow[];
+  /** Opens the file's History sheet; none from a brain before file history. */
+  onHistory?: () => void;
   onOpenChange: (open: boolean) => void;
 }) {
   const q = useFileProcessing(fileId);
@@ -293,6 +298,19 @@ export function FileDetailsSheet({
             <SheetTitle className="truncate text-base">{name}</SheetTitle>
             <SheetDescription className="text-xs">Details</SheetDescription>
           </div>
+          {onHistory ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto shrink-0"
+              onClick={() => {
+                close();
+                onHistory();
+              }}
+            >
+              <History /> History
+            </Button>
+          ) : null}
         </div>
         {body}
       </SheetContent>

@@ -21,10 +21,13 @@ import {
 import type { FileExtraction } from './files-shared';
 import { BADGE_LEGEND, statusBadge, type FileStatus, type StatusBadgeKind } from './file-status';
 
-/** Each badge's icon and colour. Failed is the only loud one. */
+/** Each badge's icon and colour. Failed is the only loud one. Done is
+ *  `quiet`: muted and smaller on a file icon, so a big folder of read files
+ *  is not a sea of green while failed, waiting and partial still stand out.
+ *  The legend and Details keep its own colour. */
 export const BADGE_LOOK: Record<
   StatusBadgeKind,
-  { icon: LucideIcon; tone: string; spin?: boolean }
+  { icon: LucideIcon; tone: string; spin?: boolean; quiet?: boolean }
 > = {
   failed: { icon: CircleAlert, tone: 'text-destructive-ink' },
   running: { icon: LoaderCircle, tone: 'text-info-ink', spin: true },
@@ -32,7 +35,7 @@ export const BADGE_LOOK: Record<
   partial: { icon: CircleDashed, tone: 'text-warning-ink' },
   stale: { icon: History, tone: 'text-warning-ink' },
   pipeline: { icon: Workflow, tone: 'text-primary-ink' },
-  done: { icon: CircleCheck, tone: 'text-success-ink' },
+  done: { icon: CircleCheck, tone: 'text-success-ink', quiet: true },
 };
 
 /** The icon of one badge kind, as the legend and the Details panel draw it. */
@@ -68,6 +71,13 @@ export function FileStatusBadge({
 }) {
   const badge = statusBadge(status, extraction);
   if (!badge) return null;
+  const quiet = BADGE_LOOK[badge.kind].quiet;
+  const box =
+    size === 'lg' ? (quiet ? 'size-4' : 'size-5 shadow-sm') : quiet ? 'size-2.5' : 'size-3';
+  const icon = cn(
+    size === 'lg' ? (quiet ? 'size-3' : 'size-4') : quiet ? 'size-2' : 'size-2.5',
+    quiet && 'text-muted-foreground',
+  );
   return (
     <span
       role="img"
@@ -76,11 +86,12 @@ export function FileStatusBadge({
       data-file-status={badge.kind}
       className={cn(
         'absolute inline-flex items-center justify-center rounded-full bg-background',
-        size === 'lg' ? '-right-1.5 -top-1.5 size-5 shadow-sm' : '-right-1 -top-1 size-3',
+        size === 'lg' ? '-right-1.5 -top-1.5' : '-right-1 -top-1',
+        box,
         className,
       )}
     >
-      <StatusIcon kind={badge.kind} className={size === 'lg' ? 'size-4' : 'size-2.5'} />
+      <StatusIcon kind={badge.kind} className={icon} />
     </span>
   );
 }

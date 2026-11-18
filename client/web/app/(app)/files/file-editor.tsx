@@ -458,6 +458,7 @@ export function FileEditor({
           { label: 'Type', value: fileTypeLabel(file.mimeType, file.filename) },
         ]}
         extra={note ? [{ label: 'Access', value: note }] : []}
+        onHistory={typeof file.versions === 'number' ? () => setHistoryOpen(true) : undefined}
         onOpenChange={setDetailsOpen}
       />
       <RunPipelineDialog target={runTarget} onOpenChange={(o) => !o && setRunTarget(null)} />
