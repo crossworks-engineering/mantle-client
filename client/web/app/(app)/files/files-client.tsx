@@ -493,6 +493,19 @@ function FilesView({
     e.preventDefault();
     pickFile(f.id, { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey });
   };
+  // Escape clears the pick, unless it closes a dialog or a menu first.
+  const picking = selectedFileIds.size > 0;
+  useEffect(() => {
+    if (!picking) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
+      setSelectedFileIds(new Set());
+      anchor.current = null;
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [picking]);
   /** What a file's menu acts on: the pick when the file is in it. */
   const targetsOf = (f: FileRow) =>
     selectedFileIds.has(f.id) && pickedRows.length > 1 ? pickedRows : [f];
@@ -840,16 +853,8 @@ function FilesView({
              content can never exceed it, so it has nothing to scroll.
 
              The drop zone's overlay sits over this pane in every view; its
-             events are the whole screen's (the box around MasterDetail).
-             Escape clears a pick of files. */
-            <div
-              className="relative flex h-full flex-col overflow-hidden"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape' && !e.defaultPrevented && selectedFileIds.size > 0) {
-                  clearPick();
-                }
-              }}
-            >
+             events are the whole screen's (the box around MasterDetail). */
+            <div className="relative flex h-full flex-col overflow-hidden">
               {drop.over !== null && (
                 <FileDropOverlay crumbs={folderCrumbs(drop.over, titleOf)} visibleTo={visibleTo} />
               )}

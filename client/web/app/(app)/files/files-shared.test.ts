@@ -114,12 +114,13 @@ describe('Files writes into a shared folder', () => {
   it('an upload into a shared folder asks nothing and goes at once', () => {
     const src = read('./files-client.tsx');
     expect(src).not.toMatch(/asksOnUpload|setSharedUpload|sharedUpload|to a shared folder\?/);
-    expect(src).toContain('if (picked.length) enqueue(picked, currentPath);');
+    expect(src).toContain('if (picked.length) enqueue(picked, parentPath);');
     expect(src).toContain('void sendTree(plan);');
     expect(src).toContain('for (const b of plan.batches) enqueue(b.files, b.parentPath);');
-    expect(src).toContain('if (e.dataTransfer.files?.length) upload(e.dataTransfer.files);');
+    // A drop goes to the folder under the pointer, else the open one.
+    expect(src).toContain('if (data.files?.length) upload(data.files, path);');
     expect(src).toContain(
-      'const visibleTo = currentFolder ? uploadVisibleTo(folderGrants.data) : null;',
+      'const visibleTo = dropFolder ? uploadVisibleTo(folderGrants.data) : null;',
     );
   });
 
