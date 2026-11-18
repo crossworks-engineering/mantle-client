@@ -88,6 +88,22 @@ describe('itemAccess (W6b fix round: the item caps)', () => {
     expect(itemAccess({ ...copy, mayEdit: true }).edit).toBe(false);
   });
 
+  it('a Moderator of a workspace that holds it (a shared item): edit and Move, no Delete or Grant Access', () => {
+    expect(itemAccess({ mayEdit: true, mayManage: false, mayMove: true })).toEqual({
+      copy: false,
+      edit: true,
+      manage: false,
+      move: true,
+      share: false,
+    });
+    // A Write grant's user: no Move, whatever mayManage says.
+    expect(itemAccess({ mayEdit: true, mayManage: false, mayMove: false }).move).toBe(false);
+    // A brain before mayMove: Move follows mayManage.
+    expect(itemAccess({ mayEdit: true, mayManage: true }).move).toBe(true);
+    // Never a snapshot copy.
+    expect(itemAccess({ mayMove: true, readOnly: true, snapshotOf: 'n1' }).move).toBe(false);
+  });
+
   it('only a real false turns a control off', () => {
     expect(itemAccess({ mayEdit: 'false', mayManage: 0 }).edit).toBe(true);
     expect(itemAccess({ mayEdit: 'false', mayManage: 0 }).manage).toBe(true);

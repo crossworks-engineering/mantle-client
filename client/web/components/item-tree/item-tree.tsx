@@ -128,6 +128,7 @@ import {
   isAtOrBelow,
   isOnTheWayTo,
   folderManaged,
+  folderMovable,
   itemMovable,
   itemPlaceAt,
   pickedAfterMove,
@@ -868,7 +869,7 @@ export function ItemTree({
             )}
             {folderActions?.(folder)}
             <DropdownMenuSeparator />
-            {folderManaged(folder) && (
+            {folderMovable(folder) && (
               <DropdownMenuItem onSelect={() => setMoveTarget({ type: 'folder', folder })}>
                 Move to…
               </DropdownMenuItem>
@@ -989,7 +990,7 @@ export function ItemTree({
     // A dragged item may only be placed (no move), a folder only ordered
     // among its siblings (no move), when the login's caps allow no more.
     const movesItem = a.type === 'item' && canMove(a.item);
-    const movesFolder = a.type === 'folder' && folderManaged(a.folder);
+    const movesFolder = a.type === 'folder' && folderMovable(a.folder);
     if (o.type === 'root') {
       return a.parent === null || !(movesItem || movesFolder)
         ? null
@@ -1077,7 +1078,7 @@ export function ItemTree({
     picked: pickedIds,
     // Drag follows the same rule as the Move menu: the item's caps.
     canMoveItem: canMove,
-    canMoveFolder: folderManaged,
+    canMoveFolder: folderMovable,
     ordering,
     folderMenu,
     itemMenu,
