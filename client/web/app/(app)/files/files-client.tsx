@@ -249,6 +249,11 @@ function FilesView({
   const [crossView, setCrossView] = useState<null | 'recent' | 'data' | 'unread'>(() =>
     searchParams.get('unread') === '1' ? 'unread' : null,
   );
+  // A push tapped while Files is open lands here as a new ?unread=1.
+  const unreadAsked = searchParams.get('unread') === '1';
+  useEffect(() => {
+    if (unreadAsked) setCrossView('unread');
+  }, [unreadAsked]);
   const recentView = crossView === 'recent';
   // Data files from a folder's header: that folder and below; from the rail: all.
   const [dataUnder, setDataUnder] = useState<string | null>(null);
