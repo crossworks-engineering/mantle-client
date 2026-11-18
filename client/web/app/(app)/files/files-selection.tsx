@@ -8,7 +8,6 @@
  */
 import {
   FolderInput,
-  History,
   MoreHorizontal,
   Pencil,
   SquareArrowOutUpRight,
@@ -25,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from '@mantle/web-ui/ui/dropdown-menu';
 import { itemAccess } from '@/lib/item-access';
+import { HistoryMenuItem } from '@/components/file-history/file-history-sheet';
 import type { FileRow } from './files-shared';
 
 const files = (n: number) => `${n} file${n === 1 ? '' : 's'}`;
@@ -162,11 +162,7 @@ export function FileRowMenu({
             <FolderInput /> {many ? `Move ${files(targets.length)} to…` : 'Move to…'}
           </DropdownMenuItem>
         )}
-        {!many && onHistory && (
-          <DropdownMenuItem onSelect={onHistory}>
-            <History /> History
-          </DropdownMenuItem>
-        )}
+        {!many && onHistory && <HistoryMenuItem onSelect={onHistory} />}
         {may.remove && (
           <>
             <DropdownMenuSeparator />

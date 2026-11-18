@@ -56,6 +56,37 @@ import {
   type HistoryRow,
 } from '@/lib/file-history';
 import { play } from '@/lib/sounds/play';
+import { DropdownMenuItem } from '@mantle/web-ui/ui/dropdown-menu';
+
+/** The "History" entry of a file's menu (the list's, the grid's, the tree's). */
+export function HistoryMenuItem({ onSelect }: { onSelect: () => void }) {
+  return (
+    <DropdownMenuItem onSelect={onSelect}>
+      <History /> History
+    </DropdownMenuItem>
+  );
+}
+
+/**
+ * A list's History sheet: `open` (a tree row) and `of` (a list row: its
+ * opener, none from a brain before file history), and the sheet to render.
+ * The sheet reads the listed row, so a restore's refresh shows in it.
+ */
+export function useHistorySheet(rows: readonly (HistoryFile & { versions?: number })[]) {
+  const [shown, setShown] = useState<{ id: string; filename: string } | null>(null);
+  const open = (f: HistoryFile) => setShown({ id: f.id, filename: f.filename });
+  return {
+    open,
+    of: (f: HistoryFile & { versions?: number }) =>
+      typeof f.versions === 'number' ? () => open(f) : undefined,
+    sheet: (
+      <FileHistorySheet
+        file={shown ? (rows.find((r) => r.id === shown.id) ?? shown) : null}
+        onOpenChange={(o) => !o && setShown(null)}
+      />
+    ),
+  };
+}
 
 export function FileHistorySheet({
   file,
