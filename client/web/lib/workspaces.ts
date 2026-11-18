@@ -98,6 +98,9 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/settings/heartbeats', 'assistants'],
   ['/settings/skills', 'assistants'],
   ['/settings/connectors', 'connectors'],
+  // The Sync service's account screens (mailboxes, feeds): as linking mail
+  // was before Sync M4.
+  ['/settings/sync', 'connectors'],
   ['/settings/tool-groups', 'connectors'],
   ['/settings/tools', 'connectors'],
   ['/settings/peers', 'connectors'],
