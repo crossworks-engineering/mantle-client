@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  answered,
   attentionHint,
   FILE_REINDEX_MAX,
   REINDEX_BUSY,
@@ -19,8 +20,10 @@ function outcome(over: Partial<ReindexOutcome> = {}): ReindexOutcome {
   return {
     queued: 0,
     databases: 0,
-    skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 0 },
+    skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 0, other: 0 },
+    otherReasons: [],
     busy: false,
+    error: null,
     left: [],
     ...over,
   };
@@ -61,7 +64,7 @@ describe('sendReindex: the send loop', () => {
       outcome({
         queued: 398,
         databases: 3,
-        skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 3 },
+        skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 3, other: 0 },
       }),
     );
   });
@@ -90,10 +93,63 @@ describe('sendReindex: the send loop', () => {
     expect(out.left).not.toContain('id-200');
   });
 
-  it('an error throws on', async () => {
-    await expect(
-      sendReindex(['a'], () => Promise.reject(Object.assign(new Error('gone'), { status: 404 }))),
-    ).rejects.toThrow('gone');
+  it('a failed first page: nothing answered, every id left, the error kept', async () => {
+    const gone = Object.assign(new Error('gone'), { status: 404 });
+    const out = await sendReindex(['a', 'b'], () => Promise.reject(gone));
+    expect(out.error).toBe(gone);
+    expect(answered(out)).toBe(0);
+    expect(out.left).toEqual(['a', 'b']);
+  });
+
+  it('page one queued, page two fails: the 200 are told, the rest left, no resend', async () => {
+    const sent: string[][] = [];
+    const out = await sendReindex(ids(600), async (_p, body) => {
+      sent.push(body.ids);
+      if (sent.length === 2) throw new Error('500');
+      return { queued: 200, databases: 2, skipped: [] };
+    });
+    // Page three is not sent after the failure.
+    expect(sent.map((p) => p.length)).toEqual([200, 200]);
+    expect(out.queued).toBe(200);
+    expect(answered(out)).toBe(200);
+    expect(out.error).toBeInstanceOf(Error);
+    expect(out.busy).toBe(false);
+    // Pages two and three, none of page one (a try again reads none twice).
+    expect(out.left).toHaveLength(400);
+    expect(out.left).not.toContain('id-0');
+    expect(out.left).not.toContain('id-199');
+    expect(out.left).toContain('id-200');
+    expect(out.left).toContain('id-599');
+    expect(reindexText(out)).toEqual({
+      tone: 'error',
+      message:
+        'Queued 200, then the request failed. 2 databases will be built again. 400 not sent; try again.',
+    });
+  });
+
+  it('a skip reason this client does not know counts as other and is named', async () => {
+    const out = await sendReindex(['a', 'b', 'c', 'd'], async () => ({
+      queued: 1,
+      databases: 0,
+      skipped: [
+        { id: 'b', reason: 'locked' as never },
+        { id: 'c', reason: 'locked' as never },
+        { id: 'd', reason: 'toString' as never },
+      ],
+    }));
+    expect(out.skipped).toEqual({ 'not-found': 0, 'not-allowed': 0, 'in-queue': 0, other: 3 });
+    expect(out.otherReasons).toEqual(['locked', 'toString']);
+    expect(answered(out)).toBe(4);
+    expect(reindexText(out).message).toBe('Queued 1. Skipped 3: 3 other (locked, toString).');
+    const one = await sendReindex(['a'], async () => ({
+      queued: 0,
+      databases: 0,
+      skipped: [{ id: 'a', reason: 'locked' as never }],
+    }));
+    expect(reindexText(one, 'a.pdf')).toEqual({
+      tone: 'error',
+      message: 'a.pdf was not queued (locked).',
+    });
   });
 });
 
@@ -110,7 +166,10 @@ describe('reindexText: the answer in plain words', () => {
 
   it('every skip reason, counted', () => {
     const t = reindexText(
-      outcome({ queued: 3, skipped: { 'in-queue': 2, 'not-allowed': 1, 'not-found': 1 } }),
+      outcome({
+        queued: 3,
+        skipped: { 'in-queue': 2, 'not-allowed': 1, 'not-found': 1, other: 0 },
+      }),
     );
     expect(t).toEqual({
       tone: 'success',
@@ -120,7 +179,9 @@ describe('reindexText: the answer in plain words', () => {
 
   it('nothing queued', () => {
     expect(
-      reindexText(outcome({ skipped: { 'in-queue': 2, 'not-allowed': 0, 'not-found': 0 } })),
+      reindexText(
+        outcome({ skipped: { 'in-queue': 2, 'not-allowed': 0, 'not-found': 0, other: 0 } }),
+      ),
     ).toEqual({
       tone: 'info',
       message: 'Nothing was queued. Skipped 2: 2 already in the queue.',
@@ -150,7 +211,9 @@ describe('reindexText: the answer in plain words', () => {
     );
     const one = (k: 'in-queue' | 'not-allowed' | 'not-found') =>
       reindexText(
-        outcome({ skipped: { 'in-queue': 0, 'not-allowed': 0, 'not-found': 0, [k]: 1 } }),
+        outcome({
+          skipped: { 'in-queue': 0, 'not-allowed': 0, 'not-found': 0, other: 0, [k]: 1 },
+        }),
         'a.pdf',
       ).message;
     expect(one('in-queue')).toBe('a.pdf is already in the queue.');
@@ -159,12 +222,30 @@ describe('reindexText: the answer in plain words', () => {
     expect(reindexText(outcome({ busy: true, left: ['x'] }), 'a.pdf').message).toBe(REINDEX_BUSY);
   });
 
+  it('a failure after skips only', () => {
+    expect(
+      reindexText(
+        outcome({
+          skipped: { 'in-queue': 200, 'not-allowed': 0, 'not-found': 0, other: 0 },
+          error: new Error('x'),
+          left: ids(50),
+        }),
+      ).message,
+    ).toBe(
+      'Nothing was queued, then the request failed. Skipped 200: 200 already in the queue. 50 not sent; try again.',
+    );
+  });
+
   it('the confirm for many', () => {
     expect(reindexConfirmText(12)).toEqual({
       title: 'Read 12 files again?',
       body: 'This runs the whole pipeline (text, embedding, facts, file database) and may use model credits.',
       action: 'Reindex 12 files',
     });
+    expect(reindexConfirmText(200).body).not.toContain('at a time');
+    expect(reindexConfirmText(450).body).toBe(
+      'This runs the whole pipeline (text, embedding, facts, file database) and may use model credits. Up to 200 are queued at a time; the rest stay picked so you can send them next.',
+    );
   });
 });
 

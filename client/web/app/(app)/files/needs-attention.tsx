@@ -29,22 +29,38 @@ type StaleAnswer = { files: FileRow[]; next: string | null; total: number };
 const n = (x: number) => x.toLocaleString('en-GB');
 const where = (path: string) => path.split('.').filter(Boolean).join(' / ');
 
-/** One list's total, for its tab (one row asked, the total comes with it). */
-function useStaleTotal(state: FileStaleState): number | undefined {
+/** One list's total, for a tab not shown (one row asked, the total comes
+ *  with it). The tab shown takes the total from its own list. */
+function useStaleTotal(state: FileStaleState, shown: FileStaleState): number | undefined {
   const q = useQuery({
     queryKey: [ATTENTION_KEY, 'count', state],
     queryFn: () => apiFetch<StaleAnswer>(stalePath(state, null, 1)),
+    enabled: state !== shown,
     staleTime: 30_000,
     retry: false,
   });
   return q.data?.total;
 }
 
+/** The rows of every page, each file once (a file that moved between two
+ *  pages while they loaded would come twice). */
+function onceById(pages: readonly StaleAnswer[] | undefined): FileRow[] {
+  const seen = new Set<string>();
+  return (pages ?? [])
+    .flatMap((p) => p.files)
+    .filter((f) => {
+      if (seen.has(f.id)) return false;
+      seen.add(f.id);
+      return true;
+    });
+}
+
 export function NeedsAttentionView({
   initial = 'stale',
   onOpen,
 }: {
-  /** The list first shown (a "could not be read" push opens Failed). */
+  /** The list first shown (a "could not be read" push opens Failed). Read
+   *  once: the caller keys the view on it, so a new push opens it anew. */
   initial?: FileStaleState;
   onOpen: (f: FileRow) => void;
 }) {
@@ -53,9 +69,9 @@ export function NeedsAttentionView({
   const [state, setState] = useState<FileStaleState>(initial);
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const totals: Record<FileStaleState, number | undefined> = {
-    stale: useStaleTotal('stale'),
-    failed: useStaleTotal('failed'),
-    partial: useStaleTotal('partial'),
+    stale: useStaleTotal('stale', state),
+    failed: useStaleTotal('failed', state),
+    partial: useStaleTotal('partial', state),
   };
   const list = useInfiniteQuery({
     queryKey: [ATTENTION_KEY, 'list', state],
@@ -65,7 +81,8 @@ export function NeedsAttentionView({
     staleTime: 30_000,
     retry: false,
   });
-  const rows = list.data?.pages.flatMap((p) => p.files) ?? [];
+  const rows = onceById(list.data?.pages);
+  totals[state] = list.data?.pages[0]?.total ?? totals[state];
   const tab = ATTENTION_TABS.find((t) => t.state === state)!;
   const pickedRows = rows.filter((f) => picked.has(f.id));
 

@@ -332,7 +332,7 @@ function FilesView({
   // P5: read files again, and Needs attention (in place of Not read on a
   // brain with the stale list).
   const reindex = useReindex();
-  const attention = useAttentionRoute() === true;
+  const attention = useAttentionRoute();
 
   // Sync local file state when server re-fetches. The pick keeps the files
   // still listed (a live update elsewhere does not drop it); another folder
@@ -1098,6 +1098,7 @@ function FilesView({
                 </>
               ) : crossView === 'unread' && attention ? (
                 <NeedsAttentionView
+                  key={unreadAsked ? 'failed' : 'stale'}
                   initial={unreadAsked ? 'failed' : 'stale'}
                   onOpen={openFromView}
                 />

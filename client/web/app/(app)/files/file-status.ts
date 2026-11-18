@@ -191,8 +191,9 @@ export function jobLine(job: FileJob): string {
   return job === 'running' ? 'Being read now' : 'In the queue to be read';
 }
 
-/** The words for an older read: the stale mark's tooltip. */
-export const STALE_LINE = 'Read by an older reader. Reindex to read it again.';
+/** The words for an older read: the stale mark's tooltip. No end stop:
+ *  the badge joins its lines with ". ". */
+export const STALE_LINE = 'Read by an older reader. Reindex to read it again';
 
 export function dbLine(db: FileDbState, pipeline?: string): string {
   switch (db) {

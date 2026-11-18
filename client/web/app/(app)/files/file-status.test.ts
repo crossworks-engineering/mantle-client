@@ -297,7 +297,7 @@ describe('P5: the stale mark and the pipeline name', () => {
     const b = statusBadge({ ingest: 'done', stale: true });
     expect(b?.title).toBe('Older read');
     expect(b?.lines).toContain(STALE_LINE);
-    expect(STALE_LINE).toBe('Read by an older reader. Reindex to read it again.');
+    expect(STALE_LINE).toBe('Read by an older reader. Reindex to read it again');
   });
 
   it('the pipe tooltip names the pipeline that built the database', () => {
