@@ -43,6 +43,13 @@ import {
 } from '@/lib/upload-progress';
 import type { AggregateProgress, ClashVerdict } from '@/lib/upload-progress';
 import { UploadAbortedError, UploadHttpError, xhrUploadToBrain } from '@/lib/xhr-upload';
+import {
+  autoRetryDelayMs,
+  canRetryTask,
+  createUploadQueue,
+  retryableIds,
+} from '@/lib/upload-queue';
+import type { UploadQueue } from '@/lib/upload-queue';
 import { useNoAutoTables } from '@/components/workspaces/use-shell-workspaces';
 import { uploadBatchSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
@@ -83,6 +90,8 @@ export type UploadTask = {
   note?: string;
   /** False when the failure is final (refused as too large): retry is pointless. */
   retryable?: boolean;
+  /** Pending again after a dropped connection: its one automatic retry. */
+  retrying?: boolean;
 };
 
 type UploadApi = {
@@ -94,6 +103,8 @@ type UploadApi = {
   enqueue: (input: FileList | File[], parentPath: string) => void;
   cancel: (id: string) => void;
   retry: (id: string) => void;
+  /** Send every failed row that can be retried again, through the same queue. */
+  retryAll: () => void;
   /** Send a `conflict` upload again, over the different version. */
   replace: (id: string) => void;
   clearFinished: () => void;
@@ -137,6 +148,8 @@ type Pending = {
   /** Write over the file of the same name (the Replace on a conflict). */
   replace?: boolean;
   controller?: AbortController;
+  /** Automatic retries used since the last send the user asked for. */
+  autoRetries?: number;
 };
 
 export function UploadProvider({ children }: { children: React.ReactNode }) {
@@ -149,10 +162,15 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const limitRef = useRef<number | null>(null);
   limitRef.current = maxUploadBytes;
   const pendingRef = useRef(new Map<string, Pending>());
-  const queueRef = useRef<string[]>([]);
-  const runningRef = useRef(0);
   const idRef = useRef(0);
   const uploadOneRef = useRef<(id: string) => Promise<void>>(undefined);
+  // At most CONCURRENCY at once. Calls the latest uploader through a ref, so
+  // the queue is made once and the uploader can change every render.
+  const [queue] = useState<UploadQueue>(() =>
+    createUploadQueue(CONCURRENCY, async (id) => uploadOneRef.current?.(id)),
+  );
+  // Rows waiting out the back-off before their automatic retry.
+  const retryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const toast = useToast();
   const queryClient = useQueryClient();
 
@@ -160,26 +178,52 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }, []);
 
-  // Start as many uploads as concurrency allows. Calls the latest uploader via
-  // a ref so pump/uploadOne can reference each other without a render cycle.
-  const pump = useCallback(() => {
-    while (runningRef.current < CONCURRENCY && queueRef.current.length > 0) {
-      const id = queueRef.current.shift()!;
-      runningRef.current++;
-      void uploadOneRef.current?.(id);
-    }
-  }, []);
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    const timers = retryTimersRef.current;
+    return () => {
+      unmountedRef.current = true;
+      for (const t of timers.values()) {
+        clearTimeout(t);
+        queue.release();
+      }
+      timers.clear();
+    };
+  }, [queue]);
+
+  /**
+   * Queue a row again after the back-off, at the front. The queue starts
+   * nothing new while a back-off runs: a drop is often the whole link, and the
+   * next files would fail into it too. A cancel in the meantime wins.
+   */
+  const scheduleAutoRetry = useCallback(
+    (id: string, delay: number) => {
+      if (unmountedRef.current) return;
+      queue.hold();
+      const timer = setTimeout(() => {
+        retryTimersRef.current.delete(id);
+        const entry = pendingRef.current.get(id);
+        if (entry && !entry.controller && !queue.has(id)) queue.push([id], { front: true });
+        queue.release();
+      }, delay);
+      retryTimersRef.current.set(id, timer);
+    },
+    [queue],
+  );
 
   uploadOneRef.current = async (id: string) => {
     const entry = pendingRef.current.get(id);
-    if (!entry) {
-      runningRef.current = Math.max(0, runningRef.current - 1);
-      pump();
-      return;
-    }
+    if (!entry) return;
     const controller = new AbortController();
     entry.controller = controller;
-    update(id, { status: 'uploading', loaded: 0, rate: null, error: undefined });
+    update(id, {
+      status: 'uploading',
+      loaded: 0,
+      rate: null,
+      error: undefined,
+      retrying: undefined,
+    });
 
     // Progress bookkeeping lives outside React state; state gets a throttled copy.
     const onProgress = progressTicker((loaded, rate) => update(id, { loaded, rate }));
@@ -225,18 +269,27 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           });
         }
       } else {
-        // Keep the File so "retry" can resend it without a new picker round.
-        update(id, {
-          status: 'error',
-          rate: null,
-          error: err instanceof Error ? err.message : 'Upload failed.',
-          retryable: true,
-        });
+        const attempts = entry.autoRetries ?? 0;
+        const delay = autoRetryDelayMs(err, attempts);
+        if (delay !== null) {
+          // A dropped connection: wait a moment, then send it once more. It
+          // does not hold a slot while it waits.
+          entry.autoRetries = attempts + 1;
+          update(id, { status: 'pending', loaded: 0, rate: null, retrying: true });
+          scheduleAutoRetry(id, delay);
+        } else {
+          // Keep the File so "retry" can resend it without a new picker round.
+          update(id, {
+            status: 'error',
+            rate: null,
+            error: err instanceof Error ? err.message : 'Upload failed.',
+            retryable: true,
+            retrying: undefined,
+          });
+        }
       }
     } finally {
       entry.controller = undefined;
-      runningRef.current = Math.max(0, runningRef.current - 1);
-      pump();
     }
   };
 
@@ -247,6 +300,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const limit = limitRef.current ?? LEGACY_LIMIT_BYTES;
       const fresh: UploadTask[] = [];
       const refused: string[] = [];
+      const queued: string[] = [];
       for (const file of files) {
         const id = `u${idRef.current++}`;
         const base = {
@@ -270,10 +324,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           continue;
         }
         pendingRef.current.set(id, { file, parentPath });
-        queueRef.current.push(id);
+        queued.push(id);
         fresh.push({ ...base, status: 'pending' });
       }
       setTasks((ts) => [...ts, ...fresh]);
+      queue.push(queued);
       if (refused.length > 0) {
         toast.error(
           refused.length === 1
@@ -281,9 +336,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             : `${refused.length} files are over the ${formatBytes(limit)} upload limit.`,
         );
       }
-      pump();
     },
-    [pump, toast],
+    [queue, toast],
   );
 
   const cancel = useCallback(
@@ -293,35 +347,65 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         entry.controller.abort(); // the uploader marks it cancelled
         return;
       }
-      // Still queued: pull it before it starts.
-      queueRef.current = queueRef.current.filter((q) => q !== id);
+      // Still queued, or waiting for its automatic retry: pull it before it starts.
+      queue.drop(id);
+      const timer = retryTimersRef.current.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        retryTimersRef.current.delete(id);
+        queue.release();
+      }
       pendingRef.current.delete(id);
-      update(id, { status: 'cancelled' });
+      update(id, { status: 'cancelled', retrying: undefined });
     },
-    [update],
+    [queue, update],
   );
 
-  const retry = useCallback(
-    (id: string) => {
-      const entry = pendingRef.current.get(id);
-      if (!entry || entry.controller) return;
-      update(id, { status: 'pending', loaded: 0, rate: null, error: undefined });
-      queueRef.current.push(id);
-      pump();
+  /** Send rows again through the queue: one state update, one push. Rows not
+   *  idle (running, queued, waiting for an automatic retry) are skipped. */
+  const requeue = useCallback(
+    (ids: readonly string[]) => {
+      const ready = ids.filter((id) => {
+        const entry = pendingRef.current.get(id);
+        return (
+          entry !== undefined &&
+          !entry.controller &&
+          !queue.has(id) &&
+          !retryTimersRef.current.has(id)
+        );
+      });
+      if (ready.length === 0) return;
+      // A send the user asked for gets its own automatic retry again.
+      for (const id of ready) pendingRef.current.get(id)!.autoRetries = 0;
+      const picked = new Set(ready);
+      setTasks((ts) =>
+        ts.map((t) =>
+          picked.has(t.id)
+            ? { ...t, status: 'pending', loaded: 0, rate: null, error: undefined }
+            : t,
+        ),
+      );
+      queue.push(ready);
     },
-    [pump, update],
+    [queue],
   );
+
+  const retry = useCallback((id: string) => requeue([id]), [requeue]);
+
+  // From the rendered rows, as clearFinished does: the rows on screen are the
+  // ones the button counted.
+  const retryAll = useCallback(() => requeue(retryableIds(tasksRef.current)), [requeue]);
 
   const replace = useCallback(
     (id: string) => {
       const entry = pendingRef.current.get(id);
-      if (!entry || entry.controller) return;
+      if (!entry || entry.controller || queue.has(id)) return;
       entry.replace = true;
+      entry.autoRetries = 0;
       update(id, { status: 'pending', loaded: 0, rate: null, note: undefined });
-      queueRef.current.push(id);
-      pump();
+      queue.push([id]);
     },
-    [pump, update],
+    [queue, update],
   );
 
   const clearFinished = useCallback(() => {
@@ -371,10 +455,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       enqueue,
       cancel,
       retry,
+      retryAll,
       replace,
       clearFinished,
     }),
-    [tasks, active, maxUploadBytes, enqueue, cancel, retry, replace, clearFinished],
+    [tasks, active, maxUploadBytes, enqueue, cancel, retry, retryAll, replace, clearFinished],
   );
 
   return <UploadContext.Provider value={api}>{children}</UploadContext.Provider>;
@@ -398,7 +483,7 @@ export function useUploads(): UploadApi {
  * which read as three uploads for one file.
  */
 export function UploadDock() {
-  const { tasks, active, cancel, retry, replace, clearFinished } = useUploads();
+  const { tasks, active, cancel, retry, retryAll, replace, clearFinished } = useUploads();
   const [collapsed, setCollapsed] = useState(false);
   const noAutoTables = useNoAutoTables();
 
@@ -410,6 +495,7 @@ export function UploadDock() {
   const conflicts = tasks.filter((t) => t.status === 'conflict').length;
   const failed = tasks.filter((t) => t.status === 'error').length;
   const cancelled = tasks.filter((t) => t.status === 'cancelled').length;
+  const retryable = tasks.filter(canRetryTask).length;
   const finished = done + exists + conflicts + failed + cancelled;
   const agg = aggregateProgress(tasks);
   const hint = spreadsheetHint(tasks, noAutoTables);
@@ -461,7 +547,15 @@ export function UploadDock() {
           <UploadProgressBar progress={agg} />
         </div>
       ) : (
-        <div className="flex justify-end border-t border-border px-2 py-1.5">
+        <div className="flex justify-end gap-1 border-t border-border px-2 py-1.5">
+          {retryable > 0 && (
+            <RowButton
+              onClick={retryAll}
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <RotateCcw className="size-3.5" aria-hidden /> Retry failed ({retryable})
+            </RowButton>
+          )}
           <RowButton
             onClick={clearFinished}
             className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -548,7 +642,9 @@ function UploadRow({
     t.status === 'uploading'
       ? `${formatBytes(t.loaded)} of ${formatBytes(t.size)}`
       : t.status === 'pending'
-        ? `Waiting · ${formatBytes(t.size)}`
+        ? t.retrying
+          ? 'Connection dropped · retrying'
+          : `Waiting · ${formatBytes(t.size)}`
         : t.status === 'done'
           ? formatBytes(t.size)
           : t.status === 'exists' || t.status === 'conflict'
@@ -557,7 +653,7 @@ function UploadRow({
               ? 'Cancelled'
               : (t.error ?? 'Upload failed.');
   const canCancel = t.status === 'pending' || t.status === 'uploading';
-  const canRetry = t.status === 'error' && t.retryable !== false;
+  const canRetry = canRetryTask(t);
   // `retryable` false on a conflict: a replace was refused already.
   const canReplace = t.status === 'conflict' && t.retryable !== false;
 
