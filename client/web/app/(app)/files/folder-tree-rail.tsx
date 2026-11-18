@@ -90,6 +90,7 @@ export function FolderTreeRail({
   onData,
   unreadActive = false,
   onUnread,
+  attention = false,
   onNewFolder,
   onNewFile,
   onRename,
@@ -108,6 +109,9 @@ export function FolderTreeRail({
   /** Not read: the files whose content was not read, in every folder. */
   unreadActive?: boolean;
   onUnread?: () => void;
+  /** The brain has the stale list (P5): the entry is Needs attention
+   *  (older reads, failed, read in part) in place of Not read. */
+  attention?: boolean;
   onNewFolder: (parentPath: string) => void;
   /** "New file inside": the screen's own create, in that folder. */
   onNewFile?: (parentPath: string) => void;
@@ -347,7 +351,7 @@ export function FolderTreeRail({
               isLast: false,
               guides: [],
               selected: unreadActive,
-              label: 'Not read',
+              label: attention ? 'Needs attention' : 'Not read',
               tile: (
                 <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-muted text-muted-foreground">
                   <FileWarning className="size-3" aria-hidden />

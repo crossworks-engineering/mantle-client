@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Loader2,
   NotebookPen,
+  RefreshCw,
   Shapes,
   Table2,
   Workflow,
@@ -22,10 +23,12 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@mantle/web-ui/ui/sheet';
 import { StatusIcon } from './file-status-badge';
+import { useReindex } from './file-reindex-ui';
 import {
   derivedHref,
   derivedNoun,
   detailsView,
+  reindexUrgent,
   type DetailRow,
   type DetailTone,
   type FileDerivedItem,
@@ -257,6 +260,7 @@ export function FileDetailsSheet({
   fallback = [],
   extra = [],
   onHistory,
+  canReindex = true,
   onOpenChange,
 }: {
   /** The file to show; null = closed. */
@@ -269,9 +273,13 @@ export function FileDetailsSheet({
   extra?: DetailsExtraRow[];
   /** Opens the file's History sheet; none from a brain before file history. */
   onHistory?: () => void;
+  /** The login may change the file (its edit right): Reindex shows. */
+  canReindex?: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const q = useFileProcessing(fileId);
+  const reindex = useReindex();
+  const urgent = reindexUrgent(q.data?.status);
   const name = q.data?.file.filename ?? filename ?? 'File';
   const d = describeFile(q.data?.file.mimeType ?? null, name);
   const TypeIcon = d.icon;
@@ -317,21 +325,34 @@ export function FileDetailsSheet({
             <SheetTitle className="truncate text-base">{name}</SheetTitle>
             <SheetDescription className="text-xs">Details</SheetDescription>
           </div>
-          {onHistory ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-auto shrink-0"
-              onClick={() => {
-                close();
-                onHistory();
-              }}
-            >
-              <History /> History
-            </Button>
-          ) : null}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {canReindex && !reindex.gone && fileId ? (
+              <Button
+                size="sm"
+                variant={urgent ? 'default' : 'outline'}
+                disabled={reindex.running}
+                title="Read it again: text, embedding, facts and its database"
+                onClick={() => void reindex.start([{ id: fileId, filename: name }])}
+              >
+                <RefreshCw className={cn(reindex.running && 'animate-spin')} /> Reindex
+              </Button>
+            ) : null}
+            {onHistory ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  close();
+                  onHistory();
+                }}
+              >
+                <History /> History
+              </Button>
+            ) : null}
+          </div>
         </div>
         {body}
+        {reindex.confirm}
       </SheetContent>
     </Sheet>
   );

@@ -50,6 +50,9 @@ export type FileRow = {
   /** What the brain did with it (P4, file-status.ts): the icon's corner
    *  badge. A brain before P4 sends none. */
   status?: FileStatus;
+  /** P5: the raw read stamps; absent before P5, or never read. */
+  readBy?: { reader: string; v: number };
+  pipelineRead?: { id: string; name: string; version: string };
   createdAt: string;
   updatedAt: string;
   /** Kept earlier versions (file history; 0 for none). Absent from a brain

@@ -14,6 +14,7 @@ import {
   type LucideIcon,
   MoreHorizontal,
   Pencil,
+  RefreshCw,
   SquareArrowOutUpRight,
   Trash2,
   X,
@@ -38,21 +39,26 @@ export function pickRights(rows: readonly FileRow[], treeMove: boolean) {
   return {
     move: treeMove && rows.length > 0 && rows.every((f) => itemAccess(f).move),
     remove: rows.length > 0 && rows.every((f) => itemAccess(f).manage),
+    // Read again: any it may change; the brain names the rest (not allowed).
+    reindex: rows.some((f) => itemAccess(f).edit),
   };
 }
 
-/** The bar over a pick: how many, Move to…, Delete, and clear (Esc). */
+/** The bar over a pick: how many, Reindex, Move to…, Delete, and clear
+ *  (Esc). No `onReindex` on a brain without the route. */
 export function SelectionBar({
   rows,
   treeMove,
   onMove,
   onDelete,
+  onReindex,
   onClear,
 }: {
   rows: readonly FileRow[];
   treeMove: boolean;
   onMove: () => void;
   onDelete: () => void;
+  onReindex?: () => void;
   onClear: () => void;
 }) {
   if (rows.length === 0) return null;
@@ -68,6 +74,16 @@ export function SelectionBar({
         Shift-click picks a range, Cmd or Ctrl-click one more
       </span>
       <div className="ml-auto flex items-center gap-2">
+        {onReindex && may.reindex && (
+          <Button
+            size="sm"
+            variant="outline"
+            title="Read them again: the whole pipeline"
+            onClick={onReindex}
+          >
+            <RefreshCw /> Reindex {rows.length}
+          </Button>
+        )}
         {may.move && (
           <Button size="sm" variant="outline" onClick={onMove}>
             <FolderInput /> Move to…
@@ -120,6 +136,7 @@ export function FileRowMenu({
   onDelete,
   onDetails,
   onHistory,
+  onReindex,
   className,
 }: {
   file: FileRow;
@@ -135,6 +152,8 @@ export function FileRowMenu({
   onDetails: () => void;
   /** The file's History (file history); none from a brain before it. */
   onHistory?: () => void;
+  /** Read it (or the pick) again; none on a brain without the route. */
+  onReindex?: () => void;
   className?: string;
 }) {
   // The open row draws a new button inside the menu, and the closed row a
@@ -169,6 +188,12 @@ export function FileRowMenu({
     !many && { icon: Info, label: 'Details', run: onDetails },
     !many && onHistory !== undefined && { icon: History, label: 'History', run: onHistory },
     !many && itemAccess(file).edit && { icon: Pencil, label: 'Rename…', run: onRename },
+    onReindex !== undefined &&
+      may.reindex && {
+        icon: RefreshCw,
+        label: many ? `Reindex ${files(targets.length)}…` : 'Reindex',
+        run: onReindex,
+      },
     may.move && {
       icon: FolderInput,
       label: many ? `Move ${files(targets.length)} to…` : 'Move to…',

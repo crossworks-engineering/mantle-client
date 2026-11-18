@@ -5,8 +5,8 @@ import {
   CircleCheck,
   CircleDashed,
   Clock,
-  History,
   LoaderCircle,
+  RefreshCw,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
@@ -33,7 +33,7 @@ export const BADGE_LOOK: Record<
   running: { icon: LoaderCircle, tone: 'text-info-ink', spin: true },
   waiting: { icon: Clock, tone: 'text-muted-foreground' },
   partial: { icon: CircleDashed, tone: 'text-warning-ink' },
-  stale: { icon: History, tone: 'text-warning-ink' },
+  stale: { icon: RefreshCw, tone: 'text-warning-ink' },
   pipeline: { icon: Workflow, tone: 'text-primary-ink' },
   done: { icon: CircleCheck, tone: 'text-success-ink', quiet: true },
 };
@@ -116,8 +116,7 @@ export function FileStatusLegend({
           </DialogDescription>
         </DialogHeader>
         <ul className="space-y-2">
-          {/* 'stale' is reserved for a later part; no brain sends it yet. */}
-          {BADGE_LEGEND.filter((b) => b.kind !== 'stale').map((b) => (
+          {BADGE_LEGEND.map((b) => (
             <li key={b.kind} className="flex items-start gap-2 text-sm">
               <StatusIcon kind={b.kind} className="mt-0.5 size-4" />
               <span>

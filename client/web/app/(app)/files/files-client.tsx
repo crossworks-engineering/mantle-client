@@ -26,6 +26,7 @@ import {
   EyeOff,
   FileJson,
   FileText,
+  FileWarning,
   FolderPlus,
   FolderUp,
   Info,
@@ -34,6 +35,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   Upload,
@@ -46,6 +48,8 @@ import { DataFilesView } from './file-data';
 import { detailsFallback, FileDetailsSheet } from './file-details';
 import { FileStatusLegend } from './file-status-badge';
 import { UnreadFilesView } from './unread-files';
+import { NeedsAttentionView } from './needs-attention';
+import { useAttentionRoute, useReindex } from './file-reindex-ui';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
 import { useFileSearch } from './use-file-search';
 import { useWorkspaceJump, WorkspaceHitTag } from '@/components/workspaces/workspace-hit-tag';
@@ -264,6 +268,14 @@ function FilesView({
     if (unreadAsked) setCrossView('unread');
   }, [unreadAsked]);
   const recentView = crossView === 'recent';
+  // A file opened from Not read or Needs attention: in its own folder.
+  const openFromView = (f: FileRow) => {
+    setCrossView(null);
+    const sp = new URLSearchParams();
+    sp.set('path', f.parentPath);
+    sp.set('file', f.id);
+    router.push(`/files?${sp.toString()}`);
+  };
   // Data files from a folder's header: that folder and below; from the rail: all.
   const [dataUnder, setDataUnder] = useState<string | null>(null);
   const recentQuery = useQuery({
@@ -314,8 +326,13 @@ function FilesView({
     /** For the sheet's rows on an older brain (detailsFallback). */
     parentPath?: string | null;
     mimeType?: string | null;
+    mayEdit?: boolean;
   } | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
+  // P5: read files again, and Needs attention (in place of Not read on a
+  // brain with the stale list).
+  const reindex = useReindex();
+  const attention = useAttentionRoute() === true;
 
   // Sync local file state when server re-fetches. The pick keeps the files
   // still listed (a live update elsewhere does not drop it); another folder
@@ -557,6 +574,11 @@ function FilesView({
       kind: 'rename',
       target: { kind: 'file', id: f.id, filename: f.filename, extension: f.extension },
     });
+  // Read again; a pick the busy queue left stays picked for a try again.
+  const reindexFiles = (rows: readonly { id: string; filename: string }[]) =>
+    void reindex
+      .start(rows)
+      .then((out) => out && rows.length > 1 && setSelectedFileIds(new Set(out.left)));
   // A file's one menu, the same in the list and the grid (files-selection.tsx).
   const rowMenu = (f: FileRow, className?: string) => (
     <FileRowMenu
@@ -571,6 +593,7 @@ function FilesView({
       onRename={() => renameFile(f)}
       onMove={() => moveFiles(targetsOf(f))}
       onDelete={() => setDialog({ kind: 'bulkDelete', ids: targetsOf(f).map((t) => t.id) })}
+      onReindex={reindex.gone ? undefined : () => reindexFiles(targetsOf(f))}
       className={className}
     />
   );
@@ -745,6 +768,22 @@ function FilesView({
                   query={query}
                   onQueryChange={setQuery}
                   searchPlaceholder="Search files and folders…"
+                  actions={
+                    attention ? (
+                      <Button
+                        variant={crossView === 'unread' ? 'secondary' : 'outline'}
+                        size="icon-sm"
+                        aria-label="Needs attention"
+                        title="Needs attention: files to read again"
+                        onClick={() => {
+                          if (openFileId) openFile(null);
+                          setCrossView('unread');
+                        }}
+                      >
+                        <FileWarning />
+                      </Button>
+                    ) : undefined
+                  }
                   // Like New with that folder open: the dialog picks the type,
                   // and the file is made in the folder and opens there.
                   newItemInFolder={{
@@ -783,12 +822,21 @@ function FilesView({
                               where.folderPath ??
                               (where.folderId ? foldersById.get(where.folderId)?.path : null) ??
                               FILES_ROOT,
+                            mayEdit: itemAccess(item).edit,
                           })
                         }
                       >
                         <Info />
                         Details
                       </DropdownMenuItem>
+                      {itemAccess(item).edit && !reindex.gone ? (
+                        <DropdownMenuItem
+                          onSelect={() => reindexFiles([{ ...item, filename: item.title }])}
+                        >
+                          <RefreshCw />
+                          Reindex
+                        </DropdownMenuItem>
+                      ) : null}
                       {treeItemVersions(item) !== undefined ? (
                         <HistoryMenuItem
                           onSelect={() => fileHistory.open({ id: item.id, filename: item.title })}
@@ -898,6 +946,7 @@ function FilesView({
                     recentActive={recentView}
                     onRecent={() => setCrossView('recent')}
                     unreadActive={crossView === 'unread'}
+                    attention={attention}
                     onUnread={() => {
                       if (openFileId) openFile(null);
                       setCrossView('unread');
@@ -1047,16 +1096,13 @@ function FilesView({
                     }}
                   />
                 </>
-              ) : crossView === 'unread' ? (
-                <UnreadFilesView
-                  onOpen={(f) => {
-                    setCrossView(null);
-                    const sp = new URLSearchParams();
-                    sp.set('path', f.parentPath);
-                    sp.set('file', f.id);
-                    router.push(`/files?${sp.toString()}`);
-                  }}
+              ) : crossView === 'unread' && attention ? (
+                <NeedsAttentionView
+                  initial={unreadAsked ? 'failed' : 'stale'}
+                  onOpen={openFromView}
                 />
+              ) : crossView === 'unread' ? (
+                <UnreadFilesView onOpen={openFromView} />
               ) : recentView ? (
                 /* ── Recent files, whole tree ──────────────────────── */
                 <div className="flex h-full flex-col overflow-hidden">
@@ -1403,6 +1449,7 @@ function FilesView({
                       treeMove={treeMove}
                       onMove={() => moveFiles(pickedRows)}
                       onDelete={() => setDialog({ kind: 'bulkDelete' })}
+                      onReindex={reindex.gone ? undefined : () => reindexFiles(pickedRows)}
                       onClear={clearPick}
                     />
                   )}
@@ -1562,9 +1609,11 @@ function FilesView({
         filename={details?.filename}
         fallback={details ? detailsFallback(details) : []}
         onHistory={details ? fileHistory.of(details) : undefined}
+        canReindex={itemAccess(details).edit}
         onOpenChange={(open) => !open && setDetails(null)}
       />
       <FileStatusLegend open={legendOpen} onOpenChange={setLegendOpen} />
+      {reindex.confirm}
 
       {/* ── Run a pipeline on a tree file or folder ───────────────── */}
       <RunPipelineDialog

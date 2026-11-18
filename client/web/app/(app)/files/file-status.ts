@@ -27,8 +27,24 @@ export type FileStatus = {
   ingest: FileIngest;
   job?: FileJob;
   db?: FileDbState;
-  /** Reserved for P5 (read by an older reader); never sent yet. */
+  /** P5: sent only when an older reader (or an older Reader pipeline) read
+   *  it. Absent: current, or unknown (read before P5). */
   stale?: boolean;
+  /** P5: the name of the Reader pipeline that built its database. */
+  pipeline?: string;
+};
+
+/** P5: the reader that read the file, with its version then and now
+ *  (`current` null: no longer a known reader). */
+export type FileReadBy = { reader: string; version: number; current: number | null };
+
+/** P5: the Reader pipeline that built the file's database or text
+ *  (`current` null: that pipeline is not installed now). */
+export type FilePipelineRead = {
+  id: string;
+  name: string;
+  version: string;
+  current: string | null;
 };
 
 /** One item made from the file ("where it went"). */
@@ -73,7 +89,11 @@ export type FileProcessing = {
     tables?: { name: string; rows: number }[];
   };
   job: FileJob | null;
+  /** true stale, false current, null no stamp (unknown). */
   stale: boolean | null;
+  /** P5; absent from a brain before it. */
+  readBy?: FileReadBy | null;
+  pipelineRead?: FilePipelineRead | null;
   error: null | { reason: string; hint: string | null };
   images: null | { kept: number; found: number };
   derived: { items: FileDerivedItem[]; truncated: boolean };
@@ -110,7 +130,7 @@ export const BADGE_LEGEND: { kind: StatusBadgeKind; title: string; meaning: stri
   {
     kind: 'stale',
     title: 'Older read',
-    meaning: 'Read by an older reader; read it again to refresh',
+    meaning: 'Read by an older reader. Reindex to read it again',
   },
   {
     kind: 'pipeline',
@@ -142,6 +162,13 @@ export function statusBadgeKind(s: FileStatus | undefined | null): StatusBadgeKi
   return null;
 }
 
+/** Whether a read again is what the file needs now (failed, read in part,
+ *  or an older read): the Details sheet's Reindex button stands out. */
+export function reindexUrgent(s: FileStatus | undefined | null): boolean {
+  const k = statusBadgeKind(s);
+  return k === 'failed' || k === 'partial' || k === 'stale';
+}
+
 /** The line about the brain's read of the content. */
 export function ingestLine(ingest: FileIngest, x: FileExtraction | undefined): string {
   switch (ingest) {
@@ -164,10 +191,13 @@ export function jobLine(job: FileJob): string {
   return job === 'running' ? 'Being read now' : 'In the queue to be read';
 }
 
-export function dbLine(db: FileDbState): string {
+/** The words for an older read: the stale mark's tooltip. */
+export const STALE_LINE = 'Read by an older reader. Reindex to read it again.';
+
+export function dbLine(db: FileDbState, pipeline?: string): string {
   switch (db) {
     case 'ready':
-      return 'Database ready, built by a pipeline';
+      return pipeline ? `Database built by ${pipeline}` : 'Database ready, built by a pipeline';
     case 'too-large':
       return 'No database: the file is too large';
     case 'no-rows':
@@ -188,8 +218,8 @@ export function statusBadge(
   if (!kind || !s) return null;
   const lines = [ingestLine(s.ingest, x)];
   if (s.job) lines.push(jobLine(s.job));
-  if (s.db) lines.push(dbLine(s.db));
-  if (s.stale) lines.push('Read by an older reader');
+  if (s.db) lines.push(dbLine(s.db, s.pipeline));
+  if (s.stale) lines.push(STALE_LINE);
   if (x?.hint) lines.push(x.hint);
   return { kind, title: TITLE[kind], lines };
 }
@@ -236,6 +266,32 @@ function readLine(p: FileProcessing): DetailRow {
         ? 'Read on this box, no model'
         : 'Read whole';
   return { label: 'Read', value: `${how}, ${formatDateTime(p.readAt)}` };
+}
+
+/** The "Read by" row: the reader and its version, and the current version
+ *  when a newer reader is here (P5). */
+export function readByRow(r: FileReadBy): DetailRow {
+  const was = `${r.reader} v${r.version}`;
+  if (r.current == null) {
+    return { label: 'Read by', value: `${was}, no longer a reader here`, tone: 'muted' };
+  }
+  if (r.current > r.version) {
+    return { label: 'Read by', value: `${was}, current: v${r.current}`, tone: 'warning' };
+  }
+  return { label: 'Read by', value: `${was}, current`, tone: 'ok' };
+}
+
+/** The "Pipeline" row: the Reader pipeline that built it, its version, and
+ *  the installed one when it differs (P5). */
+export function pipelineReadRow(r: FilePipelineRead): DetailRow {
+  const was = `${r.name}, version ${r.version}`;
+  if (r.current == null) {
+    return { label: 'Pipeline', value: `${was}, not installed now`, tone: 'muted' };
+  }
+  if (r.current !== r.version) {
+    return { label: 'Pipeline', value: `${was}, current: ${r.current}`, tone: 'warning' };
+  }
+  return { label: 'Pipeline', value: `${was}, current`, tone: 'ok' };
 }
 
 /** The Details panel's rows: plain words, no React. */
@@ -297,39 +353,45 @@ export function detailsView(p: FileProcessing): DetailsView {
       tone: left > 0 ? 'warning' : undefined,
     });
   }
-  if (p.stale)
-    brain.push({ label: 'Reader', value: 'An older reader; read it again', tone: 'warning' });
+  if (p.readBy) brain.push(readByRow(p.readBy));
+  else if (p.stale) brain.push({ label: 'Read by', value: STALE_LINE, tone: 'warning' });
 
-  const pipeline = p.database
-    ? {
-        rows: [
-          {
-            label: 'Database',
-            value: dbLine(p.database.state),
-            tone: (p.database.state === 'ready'
-              ? 'ok'
-              : p.database.state === 'unreadable'
-                ? 'error'
-                : 'muted') as DetailTone,
-          },
-          ...(p.database.readBy
-            ? [
-                {
-                  label: 'Pipeline',
-                  value: `${p.database.readBy.pipeline}, version ${p.database.readBy.version}`,
-                },
-              ]
-            : []),
-          ...(p.database.bytes != null
-            ? [{ label: 'Size', value: fmtSize(p.database.bytes) }]
-            : []),
-        ],
-        tables: (p.database.tables ?? []).map((t) => ({
-          name: t.name,
-          rows: count(t.rows, 'row'),
-        })),
-      }
-    : null;
+  const pipelineRow = p.pipelineRead
+    ? pipelineReadRow(p.pipelineRead)
+    : p.database?.readBy
+      ? {
+          label: 'Pipeline',
+          value: `${p.database.readBy.pipeline}, version ${p.database.readBy.version}`,
+        }
+      : null;
+  const pipeline =
+    p.database || pipelineRow
+      ? {
+          rows: [
+            ...(p.database
+              ? [
+                  {
+                    label: 'Database',
+                    value: dbLine(p.database.state),
+                    tone: (p.database.state === 'ready'
+                      ? 'ok'
+                      : p.database.state === 'unreadable'
+                        ? 'error'
+                        : 'muted') as DetailTone,
+                  },
+                ]
+              : []),
+            ...(pipelineRow ? [pipelineRow] : []),
+            ...(p.database?.bytes != null
+              ? [{ label: 'Size', value: fmtSize(p.database.bytes) }]
+              : []),
+          ],
+          tables: (p.database?.tables ?? []).map((t) => ({
+            name: t.name,
+            rows: count(t.rows, 'row'),
+          })),
+        }
+      : null;
 
   const problem = p.error
     ? { reason: p.error.reason, hint: p.error.hint }

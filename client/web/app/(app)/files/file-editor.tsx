@@ -15,6 +15,7 @@ import {
   Loader2,
   PencilLine,
   Play,
+  RefreshCw,
   Save,
   SplitSquareHorizontal,
   X,
@@ -39,6 +40,7 @@ import { hasDataView, readDbView, withDbView } from './file-data-model';
 import { RunPipelineDialog, useRunRouteGone } from './run-pipeline-dialog';
 import { showRunEntry, type RunTarget } from '@/lib/pipeline-run';
 import { detailsFallback, FileDetailsSheet } from './file-details';
+import { useReindex } from './file-reindex-ui';
 import { FileStatusBadge } from './file-status-badge';
 import type { FileStatus } from './file-status';
 import { FileHistorySheet } from '@/components/file-history/file-history-sheet';
@@ -114,6 +116,8 @@ export function FileEditor({
   const runGone = useRunRouteGone();
   // The Details sheet (file-details.tsx), from the header's Info slot.
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Read it again (P5): the whole pipeline; hidden on an older brain.
+  const reindex = useReindex();
   // The file's History sheet, and a reload after a restore or an upload's
   // Override put other bytes in it (from this sheet, the list's, the dock).
   // With unsaved edits it asks first (newerHere): a reload drops them.
@@ -398,6 +402,16 @@ export function FileEditor({
                 },
               ]
             : []),
+          ...(canEdit && !reindex.gone
+            ? [
+                {
+                  key: 'reindex',
+                  label: 'Reindex: read it again (text, embedding, facts, database)',
+                  icon: <RefreshCw />,
+                  onSelect: () => void reindex.start([file]),
+                },
+              ]
+            : []),
           ...(isAdminUser
             ? [
                 {
@@ -462,6 +476,7 @@ export function FileEditor({
         fallback={detailsFallback(file)}
         extra={note ? [{ label: 'Access', value: note }] : []}
         onHistory={typeof file.versions === 'number' ? () => setHistoryOpen(true) : undefined}
+        canReindex={canEdit}
         onOpenChange={setDetailsOpen}
       />
       <RunPipelineDialog target={runTarget} onOpenChange={(o) => !o && setRunTarget(null)} />
