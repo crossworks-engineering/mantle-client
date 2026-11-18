@@ -29,7 +29,6 @@ import {
   CLASH_DETAIL,
   aggregateProgress,
   clashVerdict,
-  isNameClash,
   sha256Hex,
   storedFilename,
   formatBytes,
@@ -50,10 +49,22 @@ import {
   retryableIds,
 } from '@/lib/upload-queue';
 import type { UploadQueue } from '@/lib/upload-queue';
+import {
+  ALREADY_HERE,
+  LOCKED_NOTE,
+  SKIPPED_NOTE,
+  answerClash as settleClash,
+  clashStep,
+  moreInBatch,
+  readNameRefusal,
+  readUploadAnswer,
+} from '@/lib/upload-clash';
+import type { BatchRule, ClashAnswer, WaitingClash } from '@/lib/upload-clash';
+import { UploadClashPrompt } from './upload-clash-prompt';
 import { useNoAutoTables } from '@/components/workspaces/use-shell-workspaces';
 import { uploadBatchSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
-import { crumbText, folderCrumbs } from '@/lib/file-drop';
+import { useUploadWhere } from './use-upload-where';
 
 /**
  * App-wide background file uploader. Lives in the persistent app shell so a
@@ -93,6 +104,8 @@ export type UploadTask = {
   retryable?: boolean;
   /** Pending again after a dropped connection: its one automatic retry. */
   retrying?: boolean;
+  /** Paused on a name taken by other bytes: the clash prompt asks. */
+  asking?: boolean;
 };
 
 type UploadApi = {
@@ -109,6 +122,12 @@ type UploadApi = {
   /** Send a `conflict` upload again, over the different version. */
   replace: (id: string) => void;
   clearFinished: () => void;
+  /** The name clash the prompt asks about now, and how many more of its
+   *  batch wait behind it. */
+  clash: WaitingClash | null;
+  clashMore: number;
+  /** The person's answer to `clash` (Escape or close is `skip`). */
+  answerClash: (answer: ClashAnswer) => void;
 };
 
 const UploadContext = createContext<UploadApi | null>(null);
@@ -119,10 +138,11 @@ const CONCURRENCY = 3;
 const LEGACY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 /**
- * The brain refuses an upload whose name is taken in the folder, whatever
- * its bytes. Look at the file that holds the name: the same bytes mean the
- * upload is already done; other bytes mean a different version stays there.
- * Null when the folder could not be read.
+ * A 409 with no reason: a brain before file history refuses any taken name,
+ * and a newer one a name the login may not change. Look at the file that
+ * holds the name: the same bytes mean the upload is already done; other
+ * bytes mean a different version stays there. Null when the folder could
+ * not be read.
  */
 async function checkClash(file: File, parentPath: string): Promise<ClashVerdict | null> {
   try {
@@ -151,6 +171,8 @@ type Pending = {
   controller?: AbortController;
   /** Automatic retries used since the last send the user asked for. */
   autoRetries?: number;
+  /** The enqueue it came in with: an "...all" clash answer holds for it. */
+  batch: string;
 };
 
 export function UploadProvider({ children }: { children: React.ReactNode }) {
@@ -164,6 +186,17 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   limitRef.current = maxUploadBytes;
   const pendingRef = useRef(new Map<string, Pending>());
   const idRef = useRef(0);
+  const batchSeqRef = useRef(0);
+  // Name clashes waiting for the person, first one asked. The ref is the
+  // truth (read and written at once); the state mirrors it for render.
+  const clashesRef = useRef<WaitingClash[]>([]);
+  const [clashes, setClashes] = useState<WaitingClash[]>([]);
+  const setWaiting = useCallback((w: WaitingClash[]) => {
+    clashesRef.current = w;
+    setClashes(w);
+  }, []);
+  // An "...all" answer, per batch.
+  const rulesRef = useRef(new Map<string, BatchRule>());
   const uploadOneRef = useRef<(id: string) => Promise<void>>(undefined);
   // At most CONCURRENCY at once. Calls the latest uploader through a ref, so
   // the queue is made once and the uploader can change every render.
@@ -213,6 +246,41 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     [queue],
   );
 
+  /** Settle clashes: Override sends the rows again with replace=true, at
+   *  the front of the queue; Skip leaves them as `conflict` rows, where the
+   *  dock still offers Replace. */
+  const settleRef = useRef<(override: string[], skip: string[]) => void>(() => {});
+  settleRef.current = (override, skip) => {
+    const ready = override.filter((id) => pendingRef.current.has(id));
+    for (const id of ready) {
+      const entry = pendingRef.current.get(id)!;
+      entry.replace = true;
+      entry.autoRetries = 0;
+      update(id, { status: 'pending', loaded: 0, rate: null, asking: undefined, note: undefined });
+    }
+    if (ready.length > 0) queue.push(ready, { front: true });
+    for (const id of skip) {
+      if (!pendingRef.current.has(id)) continue;
+      update(id, {
+        status: 'conflict',
+        rate: null,
+        asking: undefined,
+        retryable: true,
+        note: SKIPPED_NOTE,
+      });
+    }
+  };
+
+  const answerClash = useCallback(
+    (answer: ClashAnswer) => {
+      const out = settleClash(clashesRef.current, answer);
+      if (out.rule) rulesRef.current.set(out.rule.batch, out.rule.rule);
+      setWaiting(out.waiting);
+      settleRef.current(out.override, out.skip);
+    },
+    [setWaiting],
+  );
+
   uploadOneRef.current = async (id: string) => {
     const entry = pendingRef.current.get(id);
     if (!entry) return;
@@ -231,44 +299,62 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const form = uploadForm(entry.parentPath, entry.file, entry.replace === true);
-      await xhrUploadToBrain('/api/files/files', {
-        form,
-        signal: controller.signal,
-        onProgress,
-      });
-      update(id, { status: 'done', loaded: entry.file.size, rate: null });
+      const answer = readUploadAnswer(
+        await xhrUploadToBrain('/api/files/files', {
+          form,
+          signal: controller.signal,
+          onProgress,
+        }),
+      );
       pendingRef.current.delete(id);
+      if (answer.kind === 'already-here') {
+        // The same bytes are there under that name: nothing was written.
+        update(id, { status: 'exists', loaded: entry.file.size, rate: null, note: ALREADY_HERE });
+        return;
+      }
+      update(id, { status: 'done', loaded: entry.file.size, rate: null });
       // Show it now: the realtime stream can be late or blocked.
       void refreshAfterUpload(queryClient);
     } catch (err) {
+      const refusal = err instanceof UploadHttpError ? readNameRefusal(err.status, err.body) : null;
       if (err instanceof UploadAbortedError) {
         update(id, { status: 'cancelled', rate: null });
         pendingRef.current.delete(id);
-      } else if (err instanceof UploadHttpError && isNameClash(err.status, err.body)) {
-        // Not a failure to retry: the name is taken. Say what holds it. A
-        // replace refused the same way means a brain older than `replace`.
+      } else if (refusal?.kind === 'name-taken' && !entry.replace) {
+        // Other bytes hold the name: the batch's "...all" answer, or ask.
+        // The File stays in pendingRef for Override (and the dock's Replace).
+        const step = clashStep(rulesRef.current.get(entry.batch));
+        if (step === 'ask') {
+          update(id, { status: 'pending', loaded: 0, rate: null, asking: true });
+          setWaiting([
+            ...clashesRef.current,
+            {
+              id,
+              batch: entry.batch,
+              name: entry.file.name,
+              parentPath: entry.parentPath,
+              size: entry.file.size,
+              existing: refusal.existing,
+            },
+          ]);
+        } else {
+          settleRef.current(step === 'override' ? [id] : [], step === 'skip' ? [id] : []);
+        }
+      } else if (refusal) {
+        // A name this login may not write over (or a brain before file
+        // history). The same bytes there are still "Already here".
         const verdict = entry.replace ? null : await checkClash(entry.file, entry.parentPath);
         if (verdict === 'same' || verdict === 'same-size') {
           update(id, {
             status: 'exists',
             rate: null,
             loaded: entry.file.size,
-            note: CLASH_DETAIL[verdict],
+            note: verdict === 'same' ? ALREADY_HERE : CLASH_DETAIL[verdict],
           });
-          pendingRef.current.delete(id);
         } else {
-          // The File stays in pendingRef so Replace can send it again.
-          update(id, {
-            status: 'conflict',
-            rate: null,
-            retryable: !entry.replace,
-            note: entry.replace
-              ? 'Not replaced: this brain cannot replace files yet'
-              : verdict
-                ? CLASH_DETAIL.different
-                : 'A file with this name is already here, not replaced',
-          });
+          update(id, { status: 'conflict', rate: null, retryable: false, note: LOCKED_NOTE });
         }
+        pendingRef.current.delete(id);
       } else {
         const attempts = entry.autoRetries ?? 0;
         const delay = autoRetryDelayMs(err, attempts);
@@ -299,6 +385,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const files = Array.from(input).filter((f) => f.size > 0);
       if (files.length === 0) return;
       const limit = limitRef.current ?? LEGACY_LIMIT_BYTES;
+      const batch = `b${batchSeqRef.current++}`;
       const fresh: UploadTask[] = [];
       const refused: string[] = [];
       const queued: string[] = [];
@@ -324,7 +411,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           refused.push(file.name);
           continue;
         }
-        pendingRef.current.set(id, { file, parentPath });
+        pendingRef.current.set(id, { file, parentPath, batch });
         queued.push(id);
         fresh.push({ ...base, status: 'pending' });
       }
@@ -348,8 +435,12 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         entry.controller.abort(); // the uploader marks it cancelled
         return;
       }
-      // Still queued, or waiting for its automatic retry: pull it before it starts.
+      // Still queued, waiting for its automatic retry, or for a clash
+      // answer: pull it before it starts.
       queue.drop(id);
+      if (clashesRef.current.some((c) => c.id === id)) {
+        setWaiting(clashesRef.current.filter((c) => c.id !== id));
+      }
       const timer = retryTimersRef.current.get(id);
       if (timer) {
         clearTimeout(timer);
@@ -357,9 +448,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         queue.release();
       }
       pendingRef.current.delete(id);
-      update(id, { status: 'cancelled', retrying: undefined });
+      update(id, { status: 'cancelled', retrying: undefined, asking: undefined });
     },
-    [queue, update],
+    [queue, update, setWaiting],
   );
 
   /** Send rows again through the queue: one state update, one push. Rows not
@@ -459,11 +550,31 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       retryAll,
       replace,
       clearFinished,
+      clash: clashes[0] ?? null,
+      clashMore: moreInBatch(clashes),
+      answerClash,
     }),
-    [tasks, active, maxUploadBytes, enqueue, cancel, retry, retryAll, replace, clearFinished],
+    [
+      tasks,
+      active,
+      maxUploadBytes,
+      enqueue,
+      cancel,
+      retry,
+      retryAll,
+      replace,
+      clearFinished,
+      clashes,
+      answerClash,
+    ],
   );
 
-  return <UploadContext.Provider value={api}>{children}</UploadContext.Provider>;
+  return (
+    <UploadContext.Provider value={api}>
+      {children}
+      <UploadClashPrompt clash={api.clash} clashMore={api.clashMore} answerClash={answerClash} />
+    </UploadContext.Provider>
+  );
 }
 
 export function useUploads(): UploadApi {
@@ -489,15 +600,9 @@ export function UploadDock() {
   const noAutoTables = useNoAutoTables();
   // Each row says where it goes, by the folder titles the Files screen
   // loaded (a path segment where it has not).
-  const qc = useQueryClient();
+  const whereOf = useUploadWhere();
 
   if (tasks.length === 0) return null;
-  const folders = qc.getQueryData<{ folders?: Array<{ path: string; title?: string }> }>([
-    'files',
-    'tree',
-  ])?.folders;
-  const titles = new Map((folders ?? []).map((f) => [f.path, f.title]));
-  const whereOf = (path: string) => crumbText(folderCrumbs(path, (p) => titles.get(p)));
 
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === 'done').length;
@@ -662,9 +767,11 @@ function UploadRow({
     t.status === 'uploading'
       ? `${formatBytes(t.loaded)} of ${formatBytes(t.size)}`
       : t.status === 'pending'
-        ? t.retrying
-          ? 'Connection dropped · retrying'
-          : `Waiting · ${formatBytes(t.size)}`
+        ? t.asking
+          ? 'Name taken · waiting for your answer'
+          : t.retrying
+            ? 'Connection dropped · retrying'
+            : `Waiting · ${formatBytes(t.size)}`
         : t.status === 'done'
           ? formatBytes(t.size)
           : t.status === 'exists' || t.status === 'conflict'
@@ -681,7 +788,7 @@ function UploadRow({
     <li className="flex items-center gap-2 px-3 py-1.5 text-xs">
       {t.status === 'done' || t.status === 'exists' ? (
         <CheckCircle2 className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
-      ) : t.status === 'conflict' ? (
+      ) : t.status === 'conflict' || t.asking ? (
         <AlertCircle className="size-3.5 shrink-0 text-warning-ink" aria-hidden />
       ) : t.status === 'error' ? (
         <AlertCircle className="size-3.5 shrink-0 text-destructive-ink" aria-hidden />

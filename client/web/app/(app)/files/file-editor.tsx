@@ -6,6 +6,7 @@ import { useRememberLastOpened } from '@/components/last-opened/last-opened';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
+  Activity,
   Database,
   Download,
   Eye,
@@ -40,6 +41,13 @@ import { showRunEntry, type RunTarget } from '@/lib/pipeline-run';
 import { FileDetailsSheet } from './file-details';
 import { FileStatusBadge } from './file-status-badge';
 import type { FileStatus } from './file-status';
+import { FileHistorySheet } from '@/components/file-history/file-history-sheet';
+import {
+  FILE_RESTORED_EVENT,
+  hasHistory,
+  historyMarkLabel,
+  restoredFileId,
+} from '@/lib/file-history';
 
 type FileRow = {
   id: string;
@@ -61,6 +69,9 @@ type FileRow = {
   dataView?: boolean;
   /** What the brain did with it (P4); none from an older brain. */
   status?: FileStatus;
+  /** Kept earlier versions (file history); none from a brain before it. */
+  versions?: number;
+  replacedAt?: string;
 };
 
 type Mode = 'edit' | 'preview' | 'split';
@@ -103,6 +114,17 @@ export function FileEditor({
   const runGone = useRunRouteGone();
   // The Details sheet (file-details.tsx), from the header's Info slot.
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // The file's History sheet, and a reload after a restore put other bytes
+  // in it (from this sheet or the list's).
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const onRestored = (e: Event) => {
+      if (restoredFileId(e) === fileId) setReload((n) => n + 1);
+    };
+    window.addEventListener(FILE_RESTORED_EVENT, onRestored);
+    return () => window.removeEventListener(FILE_RESTORED_EVENT, onRestored);
+  }, [fileId]);
   // The file's read-only database instead of its preview (file-data.tsx).
   // The URL alone says so (view=data or view=query, and dbtab), so a link,
   // a Data files row or a reload opens it; back to the file clears it.
@@ -145,7 +167,7 @@ export function FileEditor({
     // Loaded once per file, not on each list refresh: a refresh must not
     // reload the open file over unsaved edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileId]);
+  }, [fileId, reload]);
 
   const save = async () => {
     if (state.kind !== 'loaded') return;
@@ -373,8 +395,21 @@ export function FileEditor({
                   // Every trace that touched this file (ingest, extractor, …).
                   key: 'history',
                   label: 'History: what the system did with this file',
-                  icon: <History />,
+                  icon: <Activity />,
                   href: `/nodes/${file.id}/history`,
+                },
+              ]
+            : []),
+          ...(typeof file.versions === 'number'
+            ? [
+                {
+                  // Its kept versions, to download or restore (file history).
+                  key: 'versions',
+                  label: hasHistory(file.versions)
+                    ? `File history: ${historyMarkLabel(file.versions)}`
+                    : 'File history: no earlier versions',
+                  icon: <History />,
+                  onSelect: () => setHistoryOpen(true),
                 },
               ]
             : []),
@@ -426,6 +461,7 @@ export function FileEditor({
         onOpenChange={setDetailsOpen}
       />
       <RunPipelineDialog target={runTarget} onOpenChange={(o) => !o && setRunTarget(null)} />
+      <FileHistorySheet file={historyOpen ? file : null} onOpenChange={setHistoryOpen} />
       <ExtractionNote x={file.extraction} />
 
       {/* Body */}
@@ -477,7 +513,8 @@ export function FileEditor({
           )}
         </div>
       ) : (
-        <FilePreviewBody file={file} />
+        // Keyed by the reload: a restore's bytes load anew (same URL).
+        <FilePreviewBody key={reload} file={file} />
       )}
     </div>
   );

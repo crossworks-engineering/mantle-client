@@ -122,6 +122,9 @@ import { folderCrumbs } from '@/lib/file-drop';
 import { isPickClick, keepOnScreen, pickClick, withoutPicks } from '@/lib/pick-range';
 import { FileDropOverlay, useFileDrop } from './file-drop-zone';
 import { FileRowMenu, SelectionBar } from './files-selection';
+import { HistoryMenuItem, useHistorySheet } from '@/components/file-history/file-history-sheet';
+import { HistoryMark } from '@/components/file-history/history-mark';
+import { treeItemVersions } from '@/lib/file-history';
 
 /** The three shapes the file list can take; anything else in storage is stale. */
 const VIEW_CHOICES = oneOf('list', 'grid', 'dual');
@@ -480,6 +483,7 @@ function FilesView({
   // from the last one toggled (lib/pick-range.ts, the tree's rule too).
   const anchor = useRef<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const fileHistory = useHistorySheet(files); // a file's History (file history)
   const pickedRows = files.filter((f) => selectedFileIds.has(f.id));
   const clearPick = () => {
     setSelectedFileIds(new Set());
@@ -757,6 +761,11 @@ function FilesView({
                           <Play />
                           Run a pipeline…
                         </DropdownMenuItem>
+                      ) : null}
+                      {treeItemVersions(item) !== undefined ? (
+                        <HistoryMenuItem
+                          onSelect={() => fileHistory.open({ id: item.id, filename: item.title })}
+                        />
                       ) : null}
                       {itemAccess(item).edit ? (
                         <DropdownMenuItem
@@ -1478,6 +1487,7 @@ function FilesView({
                                   </span>
                                   <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                                     {fmtSize(f.sizeBytes)}
+                                    <HistoryMark versions={f.versions} />
                                     {(f.indexing === 'metadata' ||
                                       f.indexingApplied === 'metadata' ||
                                       (!f.indexing && folderIndexing.mode === 'metadata')) && (
@@ -1514,6 +1524,7 @@ function FilesView({
                                 onRename={() => renameFile(f)}
                                 onMove={() => moveFiles(targetsOf(f))}
                                 onDetails={() => setDetails({ id: f.id, filename: f.filename })}
+                                onHistory={fileHistory.of(f)}
                                 onDelete={() =>
                                   setDialog({
                                     kind: 'bulkDelete',
@@ -1639,6 +1650,7 @@ function FilesView({
                                     >
                                       {f.extension}
                                     </span>
+                                    <HistoryMark versions={f.versions} />
                                     {(f.indexing === 'metadata' ||
                                       f.indexingApplied === 'metadata' ||
                                       (!f.indexing && folderIndexing.mode === 'metadata')) && (
@@ -1689,6 +1701,7 @@ function FilesView({
                                     onRename={() => renameFile(f)}
                                     onMove={() => moveFiles(targetsOf(f))}
                                     onDetails={() => setDetails({ id: f.id, filename: f.filename })}
+                                    onHistory={fileHistory.of(f)}
                                     onDelete={() =>
                                       setDialog({
                                         kind: 'bulkDelete',
@@ -1743,6 +1756,8 @@ function FilesView({
         target={dialog?.kind === 'run' ? dialog.target : null}
         onOpenChange={(open) => !open && closeDialog('run')}
       />
+
+      {fileHistory.sheet}
 
       {/* ── Rename file / folder dialog ───────────────────────────── */}
       <RenameDialog

@@ -9,6 +9,7 @@
 import { Fragment, useRef } from 'react';
 import {
   FolderInput,
+  History,
   Info,
   type LucideIcon,
   MoreHorizontal,
@@ -118,6 +119,7 @@ export function FileRowMenu({
   onMove,
   onDelete,
   onDetails,
+  onHistory,
   className,
 }: {
   file: FileRow;
@@ -131,6 +133,8 @@ export function FileRowMenu({
   onDelete: () => void;
   /** The file's Details sheet (what the brain did with it). */
   onDetails: () => void;
+  /** The file's History (file history); none from a brain before it. */
+  onHistory?: () => void;
   className?: string;
 }) {
   // The open row draws a new button inside the menu, and the closed row a
@@ -163,6 +167,7 @@ export function FileRowMenu({
   const entries: Array<MenuEntry | false> = [
     !many && { icon: SquareArrowOutUpRight, label: 'Open', run: onOpen },
     !many && { icon: Info, label: 'Details', run: onDetails },
+    !many && onHistory !== undefined && { icon: History, label: 'History', run: onHistory },
     !many && itemAccess(file).edit && { icon: Pencil, label: 'Rename…', run: onRename },
     may.move && {
       icon: FolderInput,

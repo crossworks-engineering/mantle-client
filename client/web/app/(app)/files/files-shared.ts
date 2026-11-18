@@ -52,6 +52,11 @@ export type FileRow = {
   status?: FileStatus;
   createdAt: string;
   updatedAt: string;
+  /** Kept earlier versions (file history; 0 for none). Absent from a brain
+   *  before it, and from upload and PATCH answers (unknown, not 0). */
+  versions?: number;
+  /** When new bytes last replaced the file (ISO); absent if never. */
+  replacedAt?: string;
 };
 
 /** The read state of a file's content. `indexingApplied` is the indexing
