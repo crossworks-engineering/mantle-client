@@ -66,7 +66,7 @@ describe('syncOffered', () => {
   });
 
   it('is the mail reader and contacts only: the linked-account screens are gone (M4)', () => {
-    expect([...SYNC_HREFS].sort()).toEqual(['/contacts', '/inbox']);
+    expect([...SYNC_HREFS].sort()).toEqual(['/contacts', '/inbox', '/settings/sync']);
     for (const gone of [
       '/settings/accounts',
       '/settings/microsoft',

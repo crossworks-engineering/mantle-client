@@ -7,6 +7,7 @@ import {
   KeyRound,
   Layers,
   Link2,
+  Mail,
   Megaphone,
   MessagesSquare,
   Power,
@@ -108,6 +109,13 @@ export const ADDED_NAV_ITEMS: ReadonlyArray<{ group: string; after: string; item
     group: 'Settings',
     after: '/settings/api-access',
     item: { name: 'Telegram', href: '/settings/telegram', icon: Send },
+  },
+  {
+    // The Sync service's account screens (Sync M2): mailboxes and calendar
+    // feeds, after Connectors. Hidden while Sync is off (client/web/lib/sync.ts).
+    group: 'Settings',
+    after: '/settings/connectors',
+    item: { name: 'Accounts', href: '/settings/sync', icon: Mail },
   },
   {
     // Pipelines (pipelines phase 1): the readers that make a file's

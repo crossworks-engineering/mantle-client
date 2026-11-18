@@ -2,8 +2,8 @@
  * The optional Sync service: email and contacts. The brain says whether it is
  * on in GET /api/shell `features.sync`; while it is off, the client hides the
  * screens that need it and gates a typed link to one with a plain card.
- * Linking a mailbox or a calendar is not in the client: it comes back inside
- * the Sync service in a later milestone.
+ * Linking a mailbox or a calendar feed is the Sync service's own screen
+ * (/settings/sync, a sandboxed frame): no provider code in this client.
  *
  * The rule is one check: hidden only when the brain says `sync: false`. A
  * brain before the field sends nothing, and then nothing hides.
@@ -14,11 +14,11 @@ import type { Tour } from './tour/model';
 
 /** The screens that need Sync. A local list until the contract carries a
  *  per-row service field. */
-export const SYNC_HREFS: ReadonlySet<string> = new Set(['/inbox', '/contacts']);
+export const SYNC_HREFS: ReadonlySet<string> = new Set(['/inbox', '/contacts', '/settings/sync']);
 
 export const SYNC_OFF_TITLE = 'Sync is turned off';
 export const SYNC_OFF_TEXT =
-  'Email and contacts need the Sync service. An admin can turn it on in Settings > Services.';
+  'Email, contacts and mail accounts need the Sync service. An admin can turn it on in Settings > Services.';
 
 /**
  * `features.sync` on GET /api/shell, until the pinned contract package

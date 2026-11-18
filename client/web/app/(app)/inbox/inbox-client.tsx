@@ -155,24 +155,28 @@ export function InboxClient() {
     return <CenterError onRetry={() => accountsQuery.refetch()} />;
   }
 
-  // Gate: no mailbox linked. Linking one is not in this client since Sync M4:
-  // it comes back inside the Sync service, so this says so plainly and links
-  // nowhere.
+  // Gate: no mailbox linked. Linking one is the Sync service's own screen
+  // (Settings > Accounts, /settings/sync), shown in a frame.
   if (accounts.length === 0) {
     return (
       <div className="mx-auto max-w-xl space-y-4 px-6 py-16 text-center">
         <Mail className="mx-auto size-8 text-muted-foreground" aria-hidden />
         <h2 className="text-xl font-semibold">No mailbox is linked.</h2>
         <p className="text-sm text-muted-foreground">
-          Linking a mailbox comes with the Sync service, in a later release. Mail that is already
-          here stays readable.
+          Link a mailbox with an app password from your mail provider. Mail from your contacts then
+          arrives every 5 minutes.
         </p>
+        <div className="flex justify-center gap-2">
+          <Button asChild>
+            <Link href="/settings/sync">Link a mailbox</Link>
+          </Button>
+        </div>
       </div>
     );
   }
 
   // Gate: a mailbox but an empty contacts list. Contacts are the email
-  // allowlist: when mail sync returns, mail is kept only from a contact's
+  // allowlist: mail is kept only from a contact's
   // address or `@domain` wildcard, so with no contacts nothing would land.
   if (gateQuery.isPending) return <CenterSpinner />;
   if (gateQuery.data === true) {
@@ -181,8 +185,7 @@ export function InboxClient() {
         <UserCheck className="mx-auto size-8 text-muted-foreground" aria-hidden />
         <h2 className="text-xl font-semibold">No contacts yet.</h2>
         <p className="text-sm text-muted-foreground">
-          Contacts are the email allowlist: when mail sync returns with the Sync service, MantleOS
-          keeps mail only from people in your contacts, an address like{' '}
+          Contacts are the email allowlist: MantleOS keeps mail only from people in your contacts, an address like{' '}
           <code className="rounded bg-muted px-1">you@example.com</code> or a whole domain like{' '}
           <code className="rounded bg-muted px-1">@example.com</code>.
         </p>
