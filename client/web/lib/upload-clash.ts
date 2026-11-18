@@ -56,13 +56,19 @@ export type SavedOutcome = {
 
 /**
  * The row after a 200. A skipped answer is "Already here" also on a
- * replace=true resend (an automatic retry whose first copy did land: the
- * brain writes nothing for the same bytes), so it never reads as an error
- * nor reloads anything. A saved Override names the file an open view reloads.
+ * replace=true resend, so it never reads as an error. When that resend was
+ * an automatic retry (`retried`), the first copy of the Override did land
+ * and its answer was lost: the file there is named so an open view reloads.
+ * A saved Override names the file an open view reloads.
  */
-export function savedOutcome(answer: UploadAnswer, replace: boolean): SavedOutcome {
+export function savedOutcome(
+  answer: UploadAnswer,
+  replace: boolean,
+  retried = false,
+): SavedOutcome {
   if (answer.kind === 'already-here') {
-    return { status: 'exists', note: ALREADY_HERE, reloadFileId: null };
+    const reloadFileId = replace && retried ? answer.existingId : null;
+    return { status: 'exists', note: ALREADY_HERE, reloadFileId };
   }
   return { status: 'done', reloadFileId: replace ? answer.fileId : null };
 }

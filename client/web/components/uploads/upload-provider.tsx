@@ -312,12 +312,13 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       pendingRef.current.delete(id);
       // Already here (the same bytes, nothing written, also on a replace
       // resend), or saved.
-      const out = savedOutcome(answer, entry.replace === true);
+      const out = savedOutcome(answer, entry.replace === true, (entry.autoRetries ?? 0) > 0);
       if (out.status === 'exists') {
         update(id, { status: 'exists', loaded: entry.file.size, rate: null, note: out.note });
-        return;
-      }
-      update(id, { status: 'done', loaded: entry.file.size, rate: null });
+        // An automatic retry of an Override: its first send landed, so
+        // reload and refresh as for a save.
+        if (!out.reloadFileId) return;
+      } else update(id, { status: 'done', loaded: entry.file.size, rate: null });
       // An open view of a file an Override wrote over reloads its bytes.
       if (out.reloadFileId) announceFileRestored(out.reloadFileId);
       // Show it now: the realtime stream can be late or blocked.

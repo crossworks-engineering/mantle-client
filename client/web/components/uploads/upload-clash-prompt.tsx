@@ -1,6 +1,6 @@
 'use client';
 
-import { FileWarning } from 'lucide-react';
+import { FileWarning, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
   Dialog,
@@ -49,8 +49,19 @@ export function UploadClashPrompt({
       <DialogContent
         key={clash.id}
         className="max-w-md"
+        hideClose
         onInteractOutside={(e) => e.preventDefault()}
       >
+        {/* The kit's corner X, with the same double-click guard as the buttons. */}
+        <Button
+          variant="ghost"
+          size="icon-2xs"
+          className="absolute right-3 top-3 text-muted-foreground"
+          aria-label="Close"
+          onClick={answer('skip')}
+        >
+          <X className="size-4" aria-hidden />
+        </Button>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileWarning className="size-4 shrink-0 text-warning-ink" aria-hidden />

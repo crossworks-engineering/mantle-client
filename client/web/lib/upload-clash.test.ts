@@ -56,6 +56,17 @@ describe('savedOutcome', () => {
     });
     expect(savedOutcome(skipped, false)).toEqual(savedOutcome(skipped, true));
   });
+  it('names the file when an automatic retry of an Override is answered skipped', () => {
+    // The first send landed, its answer was lost: the file there has the new bytes.
+    expect(savedOutcome(skipped, true, true)).toEqual({
+      status: 'exists',
+      note: ALREADY_HERE,
+      reloadFileId: 'f1',
+    });
+    // Not an Override, or not a retry: nothing to reload.
+    expect(savedOutcome(skipped, false, true).reloadFileId).toBeNull();
+    expect(savedOutcome(skipped, true, false).reloadFileId).toBeNull();
+  });
   it('names the file an Override wrote over, so an open view reloads', () => {
     const saved = readUploadAnswer({ file: { id: 'f2' } });
     expect(savedOutcome(saved, true)).toEqual({ status: 'done', reloadFileId: 'f2' });

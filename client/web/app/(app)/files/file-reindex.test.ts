@@ -20,7 +20,7 @@ function outcome(over: Partial<ReindexOutcome> = {}): ReindexOutcome {
   return {
     queued: 0,
     databases: 0,
-    skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 0, other: 0 },
+    skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 0, 'bytes-missing': 0, other: 0 },
     otherReasons: [],
     busy: false,
     error: null,
@@ -64,7 +64,7 @@ describe('sendReindex: the send loop', () => {
       outcome({
         queued: 398,
         databases: 3,
-        skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 3, other: 0 },
+        skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 3, 'bytes-missing': 0, other: 0 },
       }),
     );
   });
@@ -137,7 +137,13 @@ describe('sendReindex: the send loop', () => {
         { id: 'd', reason: 'toString' as never },
       ],
     }));
-    expect(out.skipped).toEqual({ 'not-found': 0, 'not-allowed': 0, 'in-queue': 0, other: 3 });
+    expect(out.skipped).toEqual({
+      'not-found': 0,
+      'not-allowed': 0,
+      'in-queue': 0,
+      'bytes-missing': 0,
+      other: 3,
+    });
     expect(out.otherReasons).toEqual(['locked', 'toString']);
     expect(answered(out)).toBe(4);
     expect(reindexText(out).message).toBe('Queued 1. Skipped 3: 3 other (locked, toString).');
@@ -168,7 +174,7 @@ describe('reindexText: the answer in plain words', () => {
     const t = reindexText(
       outcome({
         queued: 3,
-        skipped: { 'in-queue': 2, 'not-allowed': 1, 'not-found': 1, other: 0 },
+        skipped: { 'in-queue': 2, 'not-allowed': 1, 'not-found': 1, 'bytes-missing': 0, other: 0 },
       }),
     );
     expect(t).toEqual({
@@ -177,10 +183,37 @@ describe('reindexText: the answer in plain words', () => {
     });
   });
 
+  it('bytes missing on the server is a known reason, counted and named', async () => {
+    const out = await sendReindex(ids(3), async (_p, body) => ({
+      queued: 1,
+      databases: 0,
+      skipped: [
+        { id: body.ids[1]!, reason: 'bytes-missing' },
+        { id: body.ids[2]!, reason: 'bytes-missing' },
+      ],
+    }));
+    expect(out.skipped['bytes-missing']).toBe(2);
+    expect(out.skipped.other).toBe(0);
+    expect(out.otherReasons).toEqual([]);
+    expect(out.left).toEqual([]);
+    expect(reindexText(out)).toEqual({
+      tone: 'success',
+      message: 'Queued 1. Skipped 2: 2 have no bytes on the server (upload them again).',
+    });
+  });
+
   it('nothing queued', () => {
     expect(
       reindexText(
-        outcome({ skipped: { 'in-queue': 2, 'not-allowed': 0, 'not-found': 0, other: 0 } }),
+        outcome({
+          skipped: {
+            'in-queue': 2,
+            'not-allowed': 0,
+            'not-found': 0,
+            'bytes-missing': 0,
+            other: 0,
+          },
+        }),
       ),
     ).toEqual({
       tone: 'info',
@@ -209,16 +242,24 @@ describe('reindexText: the answer in plain words', () => {
     expect(reindexText(outcome({ queued: 1, databases: 1 }), 'a.xlsx').message).toBe(
       'a.xlsx is queued to be read again, its database too.',
     );
-    const one = (k: 'in-queue' | 'not-allowed' | 'not-found') =>
+    const one = (k: 'in-queue' | 'not-allowed' | 'not-found' | 'bytes-missing') =>
       reindexText(
         outcome({
-          skipped: { 'in-queue': 0, 'not-allowed': 0, 'not-found': 0, other: 0, [k]: 1 },
+          skipped: {
+            'in-queue': 0,
+            'not-allowed': 0,
+            'not-found': 0,
+            'bytes-missing': 0,
+            other: 0,
+            [k]: 1,
+          },
         }),
         'a.pdf',
       ).message;
     expect(one('in-queue')).toBe('a.pdf is already in the queue.');
     expect(one('not-allowed')).toBe('You may not change a.pdf, so it was not queued.');
     expect(one('not-found')).toBe('a.pdf was not found.');
+    expect(one('bytes-missing')).toBe('a.pdf was not queued: its bytes are missing on the server.');
     expect(reindexText(outcome({ busy: true, left: ['x'] }), 'a.pdf').message).toBe(REINDEX_BUSY);
   });
 
@@ -226,7 +267,13 @@ describe('reindexText: the answer in plain words', () => {
     expect(
       reindexText(
         outcome({
-          skipped: { 'in-queue': 200, 'not-allowed': 0, 'not-found': 0, other: 0 },
+          skipped: {
+            'in-queue': 200,
+            'not-allowed': 0,
+            'not-found': 0,
+            'bytes-missing': 0,
+            other: 0,
+          },
           error: new Error('x'),
           left: ids(50),
         }),

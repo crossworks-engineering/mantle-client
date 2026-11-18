@@ -12,7 +12,7 @@
 /** The most ids one call takes; more go in pages. */
 export const FILE_REINDEX_MAX = 200;
 
-export type FileReindexSkip = 'not-found' | 'not-allowed' | 'in-queue' | 'busy';
+export type FileReindexSkip = 'not-found' | 'not-allowed' | 'in-queue' | 'bytes-missing' | 'busy';
 
 /** POST /api/files/reindex 200. */
 export type FileReindexAnswer = {
@@ -39,6 +39,7 @@ const SKIP_WORDS: Record<KnownSkip, string> = {
   'in-queue': 'already in the queue',
   'not-allowed': 'not allowed',
   'not-found': 'not found',
+  'bytes-missing': 'have no bytes on the server (upload them again)',
 };
 
 /** What a reindex of many pages came to. */
@@ -77,7 +78,7 @@ export async function sendReindex(ids: readonly string[], send: Send): Promise<R
   const out: ReindexOutcome = {
     queued: 0,
     databases: 0,
-    skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 0, other: 0 },
+    skipped: { 'not-found': 0, 'not-allowed': 0, 'in-queue': 0, 'bytes-missing': 0, other: 0 },
     otherReasons: [],
     busy: false,
     error: null,
@@ -162,6 +163,12 @@ export function reindexText(
     if (o.skipped['in-queue']) return { tone: 'info', message: `${one} is already in the queue.` };
     if (o.skipped['not-allowed']) {
       return { tone: 'error', message: `You may not change ${one}, so it was not queued.` };
+    }
+    if (o.skipped['bytes-missing']) {
+      return {
+        tone: 'error',
+        message: `${one} was not queued: its bytes are missing on the server.`,
+      };
     }
     if (o.skipped.other) {
       return { tone: 'error', message: `${one} was not queued (${o.otherReasons.join(', ')}).` };
