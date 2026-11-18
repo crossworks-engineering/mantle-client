@@ -316,8 +316,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       // Show it now: the realtime stream can be late or blocked.
       void refreshAfterUpload(queryClient);
     } catch (err) {
-      const refusal =
-        err instanceof UploadHttpError ? readNameRefusal(err.status, err.body) : null;
+      const refusal = err instanceof UploadHttpError ? readNameRefusal(err.status, err.body) : null;
       if (err instanceof UploadAbortedError) {
         update(id, { status: 'cancelled', rate: null });
         pendingRef.current.delete(id);
@@ -771,8 +770,8 @@ function UploadRow({
         ? t.asking
           ? 'Name taken · waiting for your answer'
           : t.retrying
-          ? 'Connection dropped · retrying'
-          : `Waiting · ${formatBytes(t.size)}`
+            ? 'Connection dropped · retrying'
+            : `Waiting · ${formatBytes(t.size)}`
         : t.status === 'done'
           ? formatBytes(t.size)
           : t.status === 'exists' || t.status === 'conflict'

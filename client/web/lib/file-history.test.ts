@@ -7,7 +7,7 @@ import {
   historyLoadError,
   historyMarkLabel,
   historyRows,
-  restoreQuestion,
+  restoreConfirm,
   treeItemVersions,
   versionActionError,
   type FileVersion,
@@ -103,6 +103,9 @@ describe('history errors', () => {
     }
   });
   it('asks before a restore', () => {
-    expect(restoreQuestion(3)).toBe('Restore v3? The current version is kept as a new version.');
+    const c = restoreConfirm(3);
+    expect(`${c.title} ${c.body}`).toBe(
+      'Restore v3? The current version is kept as a new version.',
+    );
   });
 });

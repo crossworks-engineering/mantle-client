@@ -22,7 +22,11 @@ const clash = (id: string, batch: string): WaitingClash => ({
 describe('readUploadAnswer', () => {
   it('reads the same-bytes answer as already here, not as a new file', () => {
     expect(
-      readUploadAnswer({ skipped: true, reason: 'same-bytes', existing: { id: 'f1', sha256: 'aa' } }),
+      readUploadAnswer({
+        skipped: true,
+        reason: 'same-bytes',
+        existing: { id: 'f1', sha256: 'aa' },
+      }),
     ).toEqual({ kind: 'already-here', existingId: 'f1' });
   });
   it('reads a normal answer as saved', () => {
@@ -46,9 +50,9 @@ describe('readNameRefusal', () => {
     ).toEqual({ kind: 'name-taken', existing });
   });
   it('reads a 409 without a reason as a name the login may not change', () => {
-    expect(readNameRefusal(409, { error: "writeFile: 'x.pdf' already exists in this folder" })).toEqual(
-      { kind: 'locked' },
-    );
+    expect(
+      readNameRefusal(409, { error: "writeFile: 'x.pdf' already exists in this folder" }),
+    ).toEqual({ kind: 'locked' });
   });
   it('is no name clash for other refusals', () => {
     expect(readNameRefusal(409, { error: 'something else' })).toBeNull();
@@ -81,10 +85,7 @@ describe('clash decisions per batch', () => {
   });
 
   it('Override all settles every waiting row of that batch and sets its rule', () => {
-    const out = answerClash(
-      [clash('a', 'b1'), clash('x', 'b2'), clash('b', 'b1')],
-      'override-all',
-    );
+    const out = answerClash([clash('a', 'b1'), clash('x', 'b2'), clash('b', 'b1')], 'override-all');
     expect(out.override).toEqual(['a', 'b']);
     expect(out.rule).toEqual({ batch: 'b1', rule: 'override' });
     // Another batch's clash still waits for its own answer.

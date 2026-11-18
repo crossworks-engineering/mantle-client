@@ -2,6 +2,8 @@ import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { cn } from '@mantle/web-ui/lib/utils';
 import type { TreeItem } from '@mantle/web-ui/types/tree';
 import { StatePill } from '@/components/item-list/state-pill';
+import { HistoryMark } from '@/components/file-history/history-mark';
+import { treeItemVersions } from '@/lib/file-history';
 import type { TreeKindAdapter } from './types';
 
 /** Files: the file type's icon in its conventional tint, then the state pill
@@ -24,6 +26,7 @@ export const filesAdapter: TreeKindAdapter = {
 function FileStatus({ item }: { item: TreeItem }) {
   return (
     <>
+      <HistoryMark versions={treeItemVersions(item)} count={false} />
       {item.state && <StatePill state={item.state} className="px-1.5 py-0 text-[10px]" />}
       {item.subtype && (
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">

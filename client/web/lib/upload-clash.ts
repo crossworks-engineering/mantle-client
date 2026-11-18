@@ -44,12 +44,10 @@ export function readUploadAnswer(body: unknown): UploadAnswer {
 /** A refused upload, read: another version holds the name (`name-taken`,
  *  the person decides), a file the login may not change holds it
  *  (`locked`), or it is no name clash at all (null). */
-export type NameRefusal = { kind: 'name-taken'; existing: ExistingFile } | { kind: 'locked' } | null;
+export type NameRefusal =
+  { kind: 'name-taken'; existing: ExistingFile } | { kind: 'locked' } | null;
 
-export function readNameRefusal(
-  status: number,
-  body: Record<string, unknown> | null,
-): NameRefusal {
+export function readNameRefusal(status: number, body: Record<string, unknown> | null): NameRefusal {
   if (status !== 409) return null;
   if (body?.reason === 'name-taken') {
     const e = (body.existing ?? {}) as Partial<ExistingFile>;

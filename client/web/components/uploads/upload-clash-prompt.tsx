@@ -57,8 +57,8 @@ export function UploadClashPrompt({
         </dl>
 
         <p className="text-xs text-muted-foreground">
-          Override puts your file in its place and keeps the one there as an earlier version, so
-          it can be restored from the file&apos;s History.
+          Override puts your file in its place and keeps the one there as an earlier version, so it
+          can be restored from the file&apos;s History.
           {clashMore > 0 &&
             ` ${clashMore} more file${clashMore === 1 ? '' : 's'} in this upload ${clashMore === 1 ? 'has' : 'have'} a name already taken.`}
         </p>

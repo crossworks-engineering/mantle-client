@@ -8,6 +8,7 @@
  */
 import {
   FolderInput,
+  History,
   MoreHorizontal,
   Pencil,
   SquareArrowOutUpRight,
@@ -108,6 +109,7 @@ export function FileRowMenu({
   onRename,
   onMove,
   onDelete,
+  onHistory,
   className,
 }: {
   file: FileRow;
@@ -119,6 +121,8 @@ export function FileRowMenu({
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
+  /** The file's History (file history); none from a brain before it. */
+  onHistory?: () => void;
   className?: string;
 }) {
   const many = targets.length > 1;
@@ -156,6 +160,11 @@ export function FileRowMenu({
         {may.move && (
           <DropdownMenuItem onSelect={onMove}>
             <FolderInput /> {many ? `Move ${files(targets.length)} to…` : 'Move to…'}
+          </DropdownMenuItem>
+        )}
+        {!many && onHistory && (
+          <DropdownMenuItem onSelect={onHistory}>
+            <History /> History
           </DropdownMenuItem>
         )}
         {may.remove && (

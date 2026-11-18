@@ -166,9 +166,10 @@ export function versionActionError(err: unknown, act: 'restore' | 'delete'): str
   return act === 'restore' ? 'Could not restore the version.' : 'Could not delete the version.';
 }
 
-/** The confirm question of a restore. */
-export function restoreQuestion(seq: number): string {
-  return `Restore v${seq}? The current version is kept as a new version.`;
+/** The confirm of a restore: its title and line, read together
+ *  "Restore v3? The current version is kept as a new version." */
+export function restoreConfirm(seq: number): { title: string; body: string } {
+  return { title: `Restore v${seq}?`, body: 'The current version is kept as a new version.' };
 }
 
 /** Said on the window when a restore put other bytes in a file: an open

@@ -29,6 +29,7 @@ import {
   FileText,
   FolderPlus,
   FolderUp,
+  History,
   LayoutGrid,
   List,
   Pencil,
@@ -118,6 +119,9 @@ import { folderCrumbs } from '@/lib/file-drop';
 import { isPickClick, keepOnScreen, pickClick } from '@/lib/pick-range';
 import { FileDropOverlay, useFileDrop } from './file-drop-zone';
 import { FileRowMenu, SelectionBar } from './files-selection';
+import { FileHistorySheet } from '@/components/file-history/file-history-sheet';
+import { HistoryMark } from '@/components/file-history/history-mark';
+import { treeItemVersions, type HistoryFile } from '@/lib/file-history';
 
 /** The three shapes the file list can take; anything else in storage is stale. */
 const VIEW_CHOICES = oneOf('list', 'grid', 'dual');
@@ -472,6 +476,13 @@ function FilesView({
   // from the last one toggled (lib/pick-range.ts, the tree's rule too).
   const anchor = useRef<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // The file whose History sheet is open (file history). The sheet reads
+  // the listed row, so a restore's refresh shows in its Current line.
+  const [historyFor, setHistoryFor] = useState<HistoryFile | null>(null);
+  const historyOf = (f: FileRow) =>
+    typeof f.versions === 'number'
+      ? () => setHistoryFor({ id: f.id, filename: f.filename })
+      : undefined;
   const pickedRows = files.filter((f) => selectedFileIds.has(f.id));
   const clearPick = () => {
     setSelectedFileIds(new Set());
@@ -722,6 +733,14 @@ function FilesView({
                         >
                           <Play />
                           Run a pipeline…
+                        </DropdownMenuItem>
+                      ) : null}
+                      {treeItemVersions(item) !== undefined ? (
+                        <DropdownMenuItem
+                          onSelect={() => setHistoryFor({ id: item.id, filename: item.title })}
+                        >
+                          <History />
+                          History
                         </DropdownMenuItem>
                       ) : null}
                       {itemAccess(item).edit ? (
@@ -1432,6 +1451,7 @@ function FilesView({
                                   </span>
                                   <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                                     {fmtSize(f.sizeBytes)}
+                                    <HistoryMark versions={f.versions} />
                                     {(f.indexing === 'metadata' ||
                                       f.indexingApplied === 'metadata' ||
                                       (!f.indexing && folderIndexing.mode === 'metadata')) && (
@@ -1466,6 +1486,7 @@ function FilesView({
                                 onOpen={() => openFile(f.id)}
                                 onRename={() => renameFile(f)}
                                 onMove={() => moveFiles(targetsOf(f))}
+                                onHistory={historyOf(f)}
                                 onDelete={() =>
                                   setDialog({
                                     kind: 'bulkDelete',
@@ -1588,6 +1609,7 @@ function FilesView({
                                     >
                                       {f.extension}
                                     </span>
+                                    <HistoryMark versions={f.versions} />
                                     {(f.indexing === 'metadata' ||
                                       f.indexingApplied === 'metadata' ||
                                       (!f.indexing && folderIndexing.mode === 'metadata')) && (
@@ -1637,6 +1659,7 @@ function FilesView({
                                     onOpen={() => openFile(f.id)}
                                     onRename={() => renameFile(f)}
                                     onMove={() => moveFiles(targetsOf(f))}
+                                    onHistory={historyOf(f)}
                                     onDelete={() =>
                                       setDialog({
                                         kind: 'bulkDelete',
@@ -1682,6 +1705,12 @@ function FilesView({
       <RunPipelineDialog
         target={dialog?.kind === 'run' ? dialog.target : null}
         onOpenChange={(open) => !open && closeDialog('run')}
+      />
+
+      {/* ── A file's History (file history) ───────────────────────── */}
+      <FileHistorySheet
+        file={historyFor ? (files.find((f) => f.id === historyFor.id) ?? historyFor) : null}
+        onOpenChange={(open) => !open && setHistoryFor(null)}
       />
 
       {/* ── Rename file / folder dialog ───────────────────────────── */}
