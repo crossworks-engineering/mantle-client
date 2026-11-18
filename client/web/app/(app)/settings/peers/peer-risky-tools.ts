@@ -7,6 +7,7 @@
  * with `peerRisky` and a gate), grouped for the screen. A stopgap: the
  * proper fix is a brain endpoint that lists them, so the screen reads them
  * live. Until then a new risky tool on the brain shows here only once added.
+ * Sync M4 took `email_send` and `email_page` off the brain, so off this list.
  *
  * The brain keeps at most 64 names per peer (MAX_RISKY_TOOLS) while it has
  * more risky tools than that, so the screen counts down and stops at 64.
@@ -28,11 +29,9 @@ export type RiskyGroup = {
 export const RISKY_TOOL_GROUPS: readonly RiskyGroup[] = [
   {
     id: 'messages',
-    label: 'Email and Telegram',
-    hint: 'Sends messages from your accounts.',
+    label: 'Telegram',
+    hint: 'Sends and handles messages from your Telegram bots.',
     tools: [
-      'email_send',
-      'email_page',
       'telegram_send',
       'telegram_edit',
       'telegram_react',

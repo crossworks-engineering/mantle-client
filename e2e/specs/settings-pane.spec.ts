@@ -33,9 +33,6 @@ import { expect, test } from '../lib/fixtures';
 const SCREENS = [
   '/settings/profile',
   '/settings/appearance',
-  '/settings/microsoft',
-  '/settings/calendar',
-  '/settings/discover',
   '/settings/mcp',
   '/settings/embedding',
   '/settings/network',

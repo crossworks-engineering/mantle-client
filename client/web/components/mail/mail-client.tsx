@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Search, UserCheck } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Input } from '@mantle/web-ui/ui/input';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@mantle/web-ui/ui/resizable';
@@ -59,7 +59,7 @@ export function MailClient({
           }}
           className="h-full items-stretch"
         >
-          {/* Pane 1 — account switcher + folder rail + approvals */}
+          {/* Pane 1: account switcher + folder rail */}
           <ResizablePanel
             defaultSize="20%"
             collapsedSize={`${NAV_COLLAPSED_PCT}%`}
@@ -84,20 +84,6 @@ export function MailClient({
             </div>
             <Separator />
             <MailNav isCollapsed={isCollapsed} folders={folders} />
-            <Separator />
-            <div className={cn('p-2', isCollapsed && 'flex justify-center p-1')}>
-              <Link
-                href="/settings/discover"
-                title="Discover senders not yet in your contacts"
-                className={cn(
-                  'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                  isCollapsed && 'justify-center px-0',
-                )}
-              >
-                <UserCheck className="size-4 shrink-0" aria-hidden />
-                {!isCollapsed && <span>Discover</span>}
-              </Link>
-            </div>
           </ResizablePanel>
 
           <ResizableHandle withHandle />

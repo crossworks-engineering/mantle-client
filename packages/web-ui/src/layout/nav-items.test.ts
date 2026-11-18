@@ -6,6 +6,7 @@ import {
   ADDED_NAV_ITEMS,
   ALL_NAV_ITEMS,
   NAV_GROUPS,
+  RETIRED_NAV_HREFS,
   matchNavItem,
   withAdded,
   withAddedGroups,
@@ -14,9 +15,9 @@ import {
   type NavGroup,
 } from './nav-items';
 
-/** The retired team portal (member logins Phase 6) must not be a sidebar row,
- *  a palette entry or a usage-ranking target while the shared list still
- *  names it. */
+/** A retired screen (the team portal, Team admin, the Sync M4 linked-account
+ *  screens) must not be a sidebar row, a palette entry or a usage-ranking
+ *  target while the shared list still names it. */
 const icon = Bot as LucideIcon;
 const hrefs = (groups: NavGroup[]) => groups.flatMap((g) => g.items).map((i) => i.href);
 /** The hrefs this client adds itself (ADDED_NAV_ITEMS). */
@@ -28,8 +29,18 @@ const ADDED = new Set([
 const SERVICES_ONLY = ADDED_NAV_ITEMS.filter((a) => a.item.href === '/settings/services');
 
 describe('nav items without retired screens', () => {
-  it('drops /team-portal and /team-admin from the groups, the flat list and the matcher', () => {
-    for (const gone of ['/team-portal', '/team-admin']) {
+  it('drops every retired href from the groups, the flat list and the matcher', () => {
+    expect([...RETIRED_NAV_HREFS]).toEqual(
+      expect.arrayContaining([
+        '/team-portal',
+        '/team-admin',
+        '/settings/accounts',
+        '/settings/microsoft',
+        '/settings/calendar',
+        '/settings/discover',
+      ]),
+    );
+    for (const gone of RETIRED_NAV_HREFS) {
       expect(hrefs(NAV_GROUPS)).not.toContain(gone);
       expect(ALL_NAV_ITEMS.map((i) => i.href)).not.toContain(gone);
       expect(matchNavItem(gone)).toBeUndefined();
@@ -37,9 +48,7 @@ describe('nav items without retired screens', () => {
   });
 
   it('keeps everything else the shared list has, in order', () => {
-    const shared = hrefs(SHARED_NAV_GROUPS).filter(
-      (h) => h !== '/team-portal' && h !== '/team-admin',
-    );
+    const shared = hrefs(SHARED_NAV_GROUPS).filter((h) => !RETIRED_NAV_HREFS.has(h));
     expect(hrefs(NAV_GROUPS).filter((h) => !ADDED.has(h))).toEqual(
       shared.filter((h) => !ADDED.has(h)),
     );

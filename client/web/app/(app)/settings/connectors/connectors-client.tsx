@@ -69,20 +69,22 @@ type CatalogEntry = {
   secretService?: string;
   docsUrl: string;
   whenToUse: string;
-  /** Set when the server's sign-in needs a pre-registered app. */
-  oauthClient?: 'microsoft';
+  /** Set when the server's sign-in needs an app the owner registers (its
+   *  value named the borrowed Microsoft app before Sync M4; any value now
+   *  opens the form on the manual app). */
+  oauthClient?: string;
   /** Steps outside Mantle the owner or their IT admin must do first. */
   setup?: string[];
   connected: boolean;
 };
-type MicrosoftApp = { configured: false } | { configured: true; clientId: string; tenant: string };
 type ListResponse = {
   connectors: ConnectorRow[];
   catalog: CatalogEntry[];
   /** The callback an OAuth app must list as a (Web) redirect URI. Absent on
    *  brains older than the pre-registered-app release. */
   oauthRedirectUri?: string;
-  microsoftApp?: MicrosoftApp;
+  /* An older brain also sends `microsoftApp` (the Settings → Microsoft app,
+   * gone in Sync M4); it is not read. */
 };
 type SyncResult = {
   added: number;
@@ -93,8 +95,9 @@ type SyncResult = {
 type KeyRow = { id: string; service: string; label: string; masked: string };
 
 type AuthMode = 'none' | 'key' | 'oauth';
-/** Where an OAuth connector's app comes from (mantle docs/mcp-connectors.md). */
-type OAuthApp = 'dynamic' | 'microsoft' | 'manual';
+/** Where an OAuth connector's app comes from (mantle docs/mcp-connectors.md):
+ *  the server registers MantleOS itself, or an app the owner registered. */
+type OAuthApp = 'dynamic' | 'manual';
 
 type FormState = {
   slug: string;
@@ -136,7 +139,7 @@ function formFromCatalog(c: CatalogEntry): FormState {
     auth,
     secretRef: '',
     ...noOAuthApp,
-    oauthApp: c.oauthClient === 'microsoft' ? 'microsoft' : 'dynamic',
+    oauthApp: c.oauthClient ? 'manual' : 'dynamic',
   };
 }
 
@@ -149,7 +152,9 @@ function formFromConnector(c: ConnectorRow): FormState {
     url: mcp?.url ?? '',
     auth: mcp?.oauth ? 'oauth' : mcp?.secretRef ? 'key' : 'none',
     secretRef: mcp?.secretRef ?? '',
-    oauthApp: app?.source ?? 'dynamic',
+    // An app this client no longer offers (the retired Microsoft app) reads
+    // as dynamic; the server keeps it until the owner picks another.
+    oauthApp: app?.source === 'manual' ? 'manual' : 'dynamic',
     clientId: app?.source === 'manual' ? (mcp?.oauth?.clientId ?? '') : '',
     clientSecret: '',
     authorizationServer: app?.source === 'manual' ? (app.authorizationServer ?? '') : '',
@@ -234,7 +239,6 @@ export function ConnectorsClient() {
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const catalog = connectorsQuery.data?.catalog ?? [];
   const oauthRedirectUri = connectorsQuery.data?.oauthRedirectUri;
-  const microsoftApp = connectorsQuery.data?.microsoftApp;
   // Derived from the LIVE list so create/delete flips the placeholder rows
   // immediately (same rule as /settings/keys).
   const availableCatalog = catalog.filter(
@@ -867,47 +871,13 @@ export function ConnectorsClient() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="dynamic">Registers itself (most servers)</SelectItem>
-                            <SelectItem
-                              value="microsoft"
-                              disabled={microsoftApp?.configured === false}
-                            >
-                              Microsoft app (Settings → Microsoft)
-                            </SelectItem>
                             <SelectItem value="manual">An app I registered myself</SelectItem>
                           </SelectContent>
                         </Select>
                         <FieldDescription>
-                          {form.oauthApp === 'microsoft' ? (
-                            microsoftApp?.configured ? (
-                              <>
-                                Signs in with app{' '}
-                                <code className="font-mono">{microsoftApp.clientId}</code> in tenant{' '}
-                                <code className="font-mono">{microsoftApp.tenant}</code>, from{' '}
-                                <Link
-                                  href="/settings/microsoft"
-                                  className="underline underline-offset-2"
-                                >
-                                  Settings → Microsoft
-                                </Link>
-                                . For servers behind Microsoft sign-in, like Power BI.
-                              </>
-                            ) : (
-                              <>
-                                Set up the app under{' '}
-                                <Link
-                                  href="/settings/microsoft"
-                                  className="underline underline-offset-2"
-                                >
-                                  Settings → Microsoft
-                                </Link>{' '}
-                                first.
-                              </>
-                            )
-                          ) : form.oauthApp === 'manual' ? (
-                            'An app you registered with the server’s sign-in provider. Its secret is sealed in the vault.'
-                          ) : (
-                            'MantleOS registers itself with the server’s sign-in. Microsoft servers do not allow that: pick the Microsoft app for those.'
-                          )}
+                          {form.oauthApp === 'manual'
+                            ? 'An app you registered with the server’s sign-in provider. Its secret is sealed in the vault.'
+                            : 'MantleOS registers itself with the server’s sign-in. Microsoft servers, like Power BI, do not allow that: register an app and pick it here for those.'}
                         </FieldDescription>
                       </Field>
 
@@ -976,10 +946,10 @@ export function ConnectorsClient() {
                           </FieldLabel>
                           <CopyBlock code={oauthRedirectUri} />
                           <FieldDescription>
-                            Register this exact URL with the app.
-                            {form.oauthApp === 'microsoft'
-                              ? ' In Azure: the app → Authentication → add it under the Web platform, not “Mobile and desktop”. MantleOS sends the app’s secret, and Entra refuses a secret there.'
-                              : ''}
+                            Register this exact URL with the app. For a Microsoft app, in Azure: the
+                            app → Authentication → add it under the Web platform, not “Mobile and
+                            desktop”. MantleOS sends the app’s secret, and Entra refuses a secret
+                            there.
                           </FieldDescription>
                         </Field>
                       )}
@@ -997,9 +967,6 @@ export function ConnectorsClient() {
                         <FieldDescription id="scope-hint">
                           Optional, space-separated. Leave empty to ask for what the server
                           advertises.
-                          {form.oauthApp === 'microsoft'
-                            ? ' The Microsoft app always adds offline_access, so the connection can refresh.'
-                            : ''}
                         </FieldDescription>
                       </Field>
                     </>

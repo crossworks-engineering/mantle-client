@@ -224,6 +224,10 @@ export type MockWorkspaceApi = {
   /** GET /api/shell's `noAutoTables`; undefined sends no field, as an older
    *  brain. */
   noAutoTables: boolean | undefined;
+  /** GET /api/shell's `features.sync`: the optional Sync service (email,
+   *  contacts) is on. Default true; undefined sends no field,
+   *  as an older brain. */
+  sync: boolean | undefined;
   /** What GET /api/shell says in `onboarded`, for every login (default true). */
   onboarded: boolean;
   /** The pages made in this run, with the workspace each landed in. */
@@ -403,6 +407,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     tableImportHold: null,
     tableImportCut: false,
     noAutoTables: undefined,
+    sync: true,
     leftSince: {},
     homeApps: {},
     desks: {},
@@ -526,6 +531,7 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     navFavorites: state.favorites[role] ?? [],
     navFavoriteItems: favoriteItemsOf(role),
     ...(state.noAutoTables === undefined ? {} : { noAutoTables: state.noAutoTables }),
+    ...(state.sync === undefined ? {} : { features: { sync: state.sync } }),
     onboarded: state.onboarded,
     displayName: LOGINS[role].name,
     email: LOGINS[role].email,

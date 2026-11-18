@@ -33,11 +33,20 @@ export * from '@mantle/share-ui/nav-items';
  * `/team-portal` was the owner's signpost to the team-code portal, retired in
  * member logins Phase 6; `/team-admin` was Team admin, gone in workspaces W5c
  * (its settings are on the Team workspace, its links in Settings > Shared
- * links). The list comes from @crossworks/share-ui (the mantle repo), which
- * still carries the rows, so they are dropped here rather than rendered as
- * links to a 404. Remove an entry once the shared list drops it.
+ * links). Accounts, Microsoft, Calendars and Discover went in Sync M4: the
+ * brain no longer links mail or calendars, the Sync service will. The list
+ * comes from @crossworks/share-ui (the mantle repo), which still carries the
+ * rows, so they are dropped here rather than rendered as links to a 404.
+ * Remove an entry once the shared list drops it.
  */
-export const RETIRED_NAV_HREFS: ReadonlySet<string> = new Set(['/team-portal', '/team-admin']);
+export const RETIRED_NAV_HREFS: ReadonlySet<string> = new Set([
+  '/team-portal',
+  '/team-admin',
+  '/settings/accounts',
+  '/settings/microsoft',
+  '/settings/calendar',
+  '/settings/discover',
+]);
 
 /** Pure, so the filter is unit-tested against any list. A group left with no
  *  items goes too, and a retired href leaves a collapsible group's cold-start

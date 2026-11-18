@@ -11,8 +11,9 @@ import {
 
 /** The brain's list this catalog copies (mantle v0.300.135, mcp-core's
  *  surface-decisions snapshot: every tool whose policy says `peerRisky`,
- *  with a gate). A copy, so this pins the catalog to what was copied; a
- *  brain endpoint that lists them is the proper fix. */
+ *  with a gate), less the two email tools Sync M4 removed. A copy, so this
+ *  pins the catalog to what was copied; a brain endpoint that lists them is
+ *  the proper fix. */
 const BRAIN_RISKY = [
   'access_set',
   'agent_grant_tool_group',
@@ -48,8 +49,6 @@ const BRAIN_RISKY = [
   'contact_create',
   'contact_delete',
   'contact_update',
-  'email_page',
-  'email_send',
   'extract_from_image',
   'generate_image',
   'invoke_agent',
@@ -153,21 +152,21 @@ describe('riskyGroupsFor', () => {
 describe('withRisky', () => {
   it('turns names on and off, each once, in catalog order then the rest', () => {
     expect(
-      withRisky(['mcp_z', 'web_fetch'], ['web_search', 'email_send', 'web_fetch'], true),
-    ).toEqual(['email_send', 'web_search', 'web_fetch', 'mcp_z']);
+      withRisky(['mcp_z', 'web_fetch'], ['web_search', 'telegram_send', 'web_fetch'], true),
+    ).toEqual(['telegram_send', 'web_search', 'web_fetch', 'mcp_z']);
     expect(withRisky(['web_search', 'mcp_z'], ['mcp_z'], false)).toEqual(['web_search']);
   });
 
   it('turns a whole group off', () => {
     const web = RISKY_TOOL_GROUPS.find((g) => g.id === 'web')!.tools;
-    expect(withRisky([...web, 'email_send'], web, false)).toEqual(['email_send']);
+    expect(withRisky([...web, 'telegram_send'], web, false)).toEqual(['telegram_send']);
   });
 });
 
 describe('riskyLeft', () => {
   it('counts down from the limit, a name once, never below zero', () => {
     expect(riskyLeft([])).toBe(MAX_RISKY_TOOLS);
-    expect(riskyLeft(['web_search', 'web_search', 'email_send'])).toBe(MAX_RISKY_TOOLS - 2);
+    expect(riskyLeft(['web_search', 'web_search', 'telegram_send'])).toBe(MAX_RISKY_TOOLS - 2);
     expect(riskyLeft(catalog)).toBe(0);
   });
 });

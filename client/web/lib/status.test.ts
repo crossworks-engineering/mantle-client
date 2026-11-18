@@ -210,9 +210,9 @@ describe('containerLevel and processStates', () => {
   });
 
   it('every process, unknown where docker reports nothing', () => {
-    const list = processStates({ worker_email: running('unhealthy') });
+    const list = processStates({ worker_telegram: running('unhealthy') });
     expect(list).toHaveLength(PROCESSES.length);
-    expect(list.find((p) => p.id === 'worker_email')).toMatchObject({
+    expect(list.find((p) => p.id === 'worker_telegram')).toMatchObject({
       level: 'crit',
       label: 'Unhealthy',
     });
@@ -318,8 +318,8 @@ describe('the restart signal (docker does not count autoheal restarts)', () => {
   it('a worker that started well after the stack, recently, restarted', () => {
     const c = { ...running(), startedAt: '2026-11-04T06:06:00Z' };
     expect(restartedMinutesAgo(c, web.startedAt, now)).toBe(4);
-    const list = processStates({ web, worker_email: c }, now);
-    expect(list.find((p) => p.id === 'worker_email')).toMatchObject({
+    const list = processStates({ web, worker_telegram: c }, now);
+    expect(list.find((p) => p.id === 'worker_telegram')).toMatchObject({
       level: 'warn',
       label: 'Restarted 4 min ago',
     });
@@ -335,7 +335,7 @@ describe('the restart signal (docker does not count autoheal restarts)', () => {
       backupsEnabled: null,
       contractMismatch: false,
     });
-    expect(issues.map((i) => i.text)).toContain('The Email process restarted 4 min ago');
+    expect(issues.map((i) => i.text)).toContain('The Telegram process restarted 4 min ago');
   });
 
   it('not a restart: started with the stack, long ago, or not running', () => {

@@ -82,7 +82,7 @@ describe('API access: create body', () => {
     expect(createBody(form({ allAreas: false, areas: [] }), KEYS_AREA)).toMatchObject({
       field: 'areas',
     });
-    expect(createBody(form({ riskyTools: 'email_send, Bad-Name' }), KEYS_AREA)).toMatchObject({
+    expect(createBody(form({ riskyTools: 'telegram_send, Bad-Name' }), KEYS_AREA)).toMatchObject({
       field: 'riskyTools',
     });
   });
@@ -90,8 +90,8 @@ describe('API access: create body', () => {
   it('sends risky tools only for a login with the keys area (no longest expiry, W8)', () => {
     expect(offersRiskyTools(KEYS_AREA)).toBe(true);
     expect(offersRiskyTools(MEMBER)).toBe(false);
-    const ok = createBody(form({ riskyTools: 'web_search, email_send web_search' }), KEYS_AREA);
-    expect('body' in ok && ok.body.riskyTools).toEqual(['web_search', 'email_send']);
+    const ok = createBody(form({ riskyTools: 'web_search, telegram_send web_search' }), KEYS_AREA);
+    expect('body' in ok && ok.body.riskyTools).toEqual(['web_search', 'telegram_send']);
     const member = createBody(form({ riskyTools: 'web_search' }), MEMBER);
     expect('body' in member && member.body.riskyTools).toBeUndefined();
   });

@@ -67,7 +67,7 @@ test('the board sits in the resizable content area, with every sidecar', async (
 test('a worker docker calls unhealthy is a problem, named on the board and the list', async ({
   page,
 }) => {
-  api.status.containers.worker_email = {
+  api.status.containers.worker_telegram = {
     container: 'running',
     health: 'unhealthy',
     restarts: 2,
@@ -77,7 +77,7 @@ test('a worker docker calls unhealthy is a problem, named on the board and the l
   await page.goto('/status');
   const main = page.getByRole('main');
   await expect(main.getByRole('heading', { name: '1 problem' })).toBeVisible();
-  await main.getByRole('button', { name: /The Email process is unhealthy/ }).click();
+  await main.getByRole('button', { name: /The Telegram process is unhealthy/ }).click();
   await expect(main.locator('#status-queues')).toBeInViewport();
   await expect(main.locator('#status-queues').getByText('2 restarts')).toBeVisible();
   const queuesCard = main

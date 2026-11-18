@@ -127,7 +127,7 @@ describe('work', () => {
 
   it('carries the daily surfaces, and Review', () => {
     expect(names(work)).toEqual(
-      expect.arrayContaining(['Pages', 'Tasks', 'Email', 'Pending', 'Models', 'Discover']),
+      expect.arrayContaining(['Pages', 'Tasks', 'Email', 'Pending', 'Models']),
     );
   });
 

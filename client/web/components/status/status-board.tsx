@@ -50,6 +50,7 @@ import {
 } from './status-parts';
 import { SECTIONS } from './status-sections';
 import type { StatusData } from './use-status';
+import { useSyncOff } from '@/lib/use-sync-off';
 
 const bytes = (n: number | null | undefined) => (n == null ? 'n/a' : formatBytes(n));
 const pct = (v: number | null | undefined) =>
@@ -600,6 +601,8 @@ function Queues({ status }: { status: StatusData }) {
   const ex = box?.box.extraction;
   const parser = status.health.data?.parser;
   const d = status.dashboard.data;
+  // This brain's own Sync switch: a remote box's board keeps its email card.
+  const syncOff = useSyncOff() && !status.remote;
   return (
     <StatusSection
       id="queues"
@@ -674,7 +677,7 @@ function Queues({ status }: { status: StatusData }) {
       </div>
       {d && (
         <OpsPanels
-          email={d.email}
+          email={syncOff ? null : d.email}
           telegram={d.telegram}
           heartbeats={d.heartbeats}
           topErrors={d.errs}
