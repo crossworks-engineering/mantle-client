@@ -15,10 +15,14 @@ export const filesAdapter: TreeKindAdapter = {
     const d = describeFile(null, item.title);
     const Icon = d.icon;
     return (
-      <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
-        <Icon aria-hidden className={cn('size-4', KIND_TINT[d.kind])} />
+      <span
+        aria-hidden
+        className="relative inline-flex size-5 shrink-0 items-center justify-center"
+      >
+        <Icon className={cn('size-4', KIND_TINT[d.kind])} />
         {/* P4: TreeItem.status on file items; not in the published
-            TreeItem type yet, and absent from an older brain. */}
+            TreeItem type yet, and absent from an older brain. Hidden from
+            the row's name like the icon; its title still shows on hover. */}
         <FileStatusBadge
           status={(item as { status?: FileProcessingStatus }).status}
           className="-right-0.5 -top-0.5"
