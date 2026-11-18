@@ -534,8 +534,8 @@ function ContactForm({ contact }: { contact: ContactRow }) {
             <FieldDescription>
               Each line is a full address (<code>orders@modular.co.za</code>) or a whole-domain
               wildcard (<code>@modular.co.za</code>, trusting all mail from that domain). Contacts
-              are the email allowlist: MantleOS keeps mail only from these, and a new address
-              brings in its last 90 days of mail.
+              are the email allowlist: MantleOS keeps mail only from these, and a new address brings
+              in its last 90 days of mail.
             </FieldDescription>
           </Field>
 

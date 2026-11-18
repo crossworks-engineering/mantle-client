@@ -185,9 +185,9 @@ export function InboxClient() {
         <UserCheck className="mx-auto size-8 text-muted-foreground" aria-hidden />
         <h2 className="text-xl font-semibold">No contacts yet.</h2>
         <p className="text-sm text-muted-foreground">
-          Contacts are the email allowlist: MantleOS keeps mail only from people in your contacts, an address like{' '}
-          <code className="rounded bg-muted px-1">you@example.com</code> or a whole domain like{' '}
-          <code className="rounded bg-muted px-1">@example.com</code>.
+          Contacts are the email allowlist: MantleOS keeps mail only from people in your contacts,
+          an address like <code className="rounded bg-muted px-1">you@example.com</code> or a whole
+          domain like <code className="rounded bg-muted px-1">@example.com</code>.
         </p>
         <div className="flex justify-center gap-2">
           <Button asChild>
