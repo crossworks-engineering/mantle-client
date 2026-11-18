@@ -3,7 +3,7 @@
 import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
 import { AccessSlot } from '@/components/share/access-slot';
 import { useRememberLastOpened } from '@/components/last-opened/last-opened';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   Activity,
@@ -19,7 +19,7 @@ import {
   SplitSquareHorizontal,
   X,
 } from 'lucide-react';
-import { describeFile, fileTypeLabel, KIND_TINT } from '@mantle/web-ui/lib/mime-label';
+import { describeFile, KIND_TINT } from '@mantle/web-ui/lib/mime-label';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -38,7 +38,7 @@ import type { FileExtraction } from './files-shared';
 import { hasDataView, readDbView, withDbView } from './file-data-model';
 import { RunPipelineDialog, useRunRouteGone } from './run-pipeline-dialog';
 import { showRunEntry, type RunTarget } from '@/lib/pipeline-run';
-import { FileDetailsSheet } from './file-details';
+import { detailsFallback, FileDetailsSheet } from './file-details';
 import { FileStatusBadge } from './file-status-badge';
 import type { FileStatus } from './file-status';
 import { FileHistorySheet } from '@/components/file-history/file-history-sheet';
@@ -114,13 +114,19 @@ export function FileEditor({
   const runGone = useRunRouteGone();
   // The Details sheet (file-details.tsx), from the header's Info slot.
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // The file's History sheet, and a reload after a restore put other bytes
-  // in it (from this sheet or the list's).
+  // The file's History sheet, and a reload after a restore or an upload's
+  // Override put other bytes in it (from this sheet, the list's, the dock).
+  // With unsaved edits it asks first (newerHere): a reload drops them.
   const [historyOpen, setHistoryOpen] = useState(false);
   const [reload, setReload] = useState(0);
+  const [newerHere, setNewerHere] = useState(false);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   useEffect(() => {
     const onRestored = (e: Event) => {
-      if (restoredFileId(e) === fileId) setReload((n) => n + 1);
+      if (restoredFileId(e) !== fileId) return;
+      if (dirtyRef.current) setNewerHere(true);
+      else setReload((n) => n + 1);
     };
     window.addEventListener(FILE_RESTORED_EVENT, onRestored);
     return () => window.removeEventListener(FILE_RESTORED_EVENT, onRestored);
@@ -154,6 +160,7 @@ export function FileEditor({
         setState({ kind: 'loaded', file: body.file, content });
         setDraft(content);
         setDirty(false);
+        setNewerHere(false);
         onLoaded?.(body.file);
       } catch (err) {
         if (cancelled) return;
@@ -175,6 +182,8 @@ export function FileEditor({
     try {
       await apiSend(`/api/files/files/${fileId}`, 'PATCH', { content: draft });
       setDirty(false);
+      // The save is the newest version now.
+      setNewerHere(false);
       play('success');
       toast.success('Saved');
       onSaved();
@@ -450,13 +459,7 @@ export function FileEditor({
       <FileDetailsSheet
         fileId={detailsOpen ? file.id : null}
         filename={file.filename}
-        fallback={[
-          {
-            label: 'Location',
-            value: file.parentPath.split('.').filter(Boolean).join(' / ') || 'Top level',
-          },
-          { label: 'Type', value: fileTypeLabel(file.mimeType, file.filename) },
-        ]}
+        fallback={detailsFallback(file)}
         extra={note ? [{ label: 'Access', value: note }] : []}
         onHistory={typeof file.versions === 'number' ? () => setHistoryOpen(true) : undefined}
         onOpenChange={setDetailsOpen}
@@ -464,6 +467,20 @@ export function FileEditor({
       <RunPipelineDialog target={runTarget} onOpenChange={(o) => !o && setRunTarget(null)} />
       <FileHistorySheet file={historyOpen ? file : null} onOpenChange={setHistoryOpen} />
       <ExtractionNote x={file.extraction} />
+      {newerHere && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-2 border-b border-border bg-warning/10 px-4 py-1.5 text-xs text-warning-ink"
+        >
+          <span className="min-w-0 flex-1">A newer version is here.</span>
+          <Button size="2xs" variant="outline" onClick={() => setReload((n) => n + 1)}>
+            Reload (your unsaved edits are lost)
+          </Button>
+          <Button size="2xs" variant="ghost" onClick={() => setNewerHere(false)}>
+            Keep editing
+          </Button>
+        </div>
+      )}
 
       {/* Body */}
       {dataView && showData ? (

@@ -332,7 +332,11 @@ function HistoryLine({
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-1">
           <Button asChild variant="ghost" size="2xs" className="text-muted-foreground">
-            <a href={downloadHref} download={downloadName ?? ''}>
+            <a
+              href={downloadHref}
+              download={downloadName ?? ''}
+              aria-label={`Download ${row.label}`}
+            >
               <Download className="size-3.5" aria-hidden />
               Download
             </a>

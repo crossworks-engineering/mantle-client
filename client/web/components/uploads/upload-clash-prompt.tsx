@@ -18,7 +18,12 @@ import { useUploadWhere } from './use-upload-where';
  * The one question of an upload whose name is taken by other bytes
  * (lib/upload-clash.ts): Override, Override all, Skip, Skip all. Asked once
  * per batch when the answer is an "...all"; the rest of the batch keeps
- * uploading while it is open. Escape or the corner X is Skip.
+ * uploading while it is open. Escape or the corner X is Skip; a click
+ * outside does nothing (the dock's Cancel under it must not answer).
+ *
+ * The content is keyed by the clash, so the next one mounts anew with Skip
+ * focused: a second Enter lands on Skip, never on the last answer's button.
+ * The second click of a double click is dropped for the same reason.
  */
 export function UploadClashPrompt({
   clash,
@@ -34,9 +39,18 @@ export function UploadClashPrompt({
   const whereOf = useUploadWhere();
   if (!clash) return null;
   const there = clash.existing;
+  // A double click's second click (detail 2) would answer the next clash.
+  const answer = (a: ClashAnswer) => (e: React.MouseEvent) => {
+    if (e.detail > 1) return;
+    answerClash(a);
+  };
   return (
     <Dialog open onOpenChange={(open) => !open && answerClash('skip')}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        key={clash.id}
+        className="max-w-md"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileWarning className="size-4 shrink-0 text-warning-ink" aria-hidden />
@@ -65,18 +79,18 @@ export function UploadClashPrompt({
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => answerClash('skip-all')}>
+            <Button variant="ghost" size="sm" onClick={answer('skip-all')}>
               Skip all
             </Button>
-            <Button variant="outline" size="sm" autoFocus onClick={() => answerClash('skip')}>
+            <Button variant="outline" size="sm" autoFocus onClick={answer('skip')}>
               Skip
             </Button>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => answerClash('override-all')}>
+            <Button variant="outline" size="sm" onClick={answer('override-all')}>
               Override all
             </Button>
-            <Button size="sm" onClick={() => answerClash('override')}>
+            <Button size="sm" onClick={answer('override')}>
               Override
             </Button>
           </div>

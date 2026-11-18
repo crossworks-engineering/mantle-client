@@ -46,6 +46,7 @@ import {
   autoRetryDelayMs,
   canRetryTask,
   createUploadQueue,
+  releaseController,
   retryableIds,
 } from '@/lib/upload-queue';
 import type { UploadQueue } from '@/lib/upload-queue';
@@ -58,7 +59,9 @@ import {
   moreInBatch,
   readNameRefusal,
   readUploadAnswer,
+  savedOutcome,
 } from '@/lib/upload-clash';
+import { announceFileRestored } from '@/lib/file-history';
 import type { BatchRule, ClashAnswer, WaitingClash } from '@/lib/upload-clash';
 import { UploadClashPrompt } from './upload-clash-prompt';
 import { useNoAutoTables } from '@/components/workspaces/use-shell-workspaces';
@@ -307,12 +310,16 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         }),
       );
       pendingRef.current.delete(id);
-      if (answer.kind === 'already-here') {
-        // The same bytes are there under that name: nothing was written.
-        update(id, { status: 'exists', loaded: entry.file.size, rate: null, note: ALREADY_HERE });
+      // Already here (the same bytes, nothing written, also on a replace
+      // resend), or saved.
+      const out = savedOutcome(answer, entry.replace === true);
+      if (out.status === 'exists') {
+        update(id, { status: 'exists', loaded: entry.file.size, rate: null, note: out.note });
         return;
       }
       update(id, { status: 'done', loaded: entry.file.size, rate: null });
+      // An open view of a file an Override wrote over reloads its bytes.
+      if (out.reloadFileId) announceFileRestored(out.reloadFileId);
       // Show it now: the realtime stream can be late or blocked.
       void refreshAfterUpload(queryClient);
     } catch (err) {
@@ -376,7 +383,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } finally {
-      entry.controller = undefined;
+      // An Override resend may hold the row by now: keep its controller.
+      releaseController(entry, controller);
     }
   };
 

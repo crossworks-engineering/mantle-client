@@ -46,6 +46,19 @@ export function autoRetryDelayMs(err: unknown, attempts: number): number | null 
   return null;
 }
 
+/**
+ * Let a send's controller go when that send ends, but only while it is still
+ * that send's. An Override (or its batch's Override rule) starts the next
+ * send of the same row from inside the old send's catch, at once when a slot
+ * is free; wiping the controller then left Cancel with nothing to abort.
+ */
+export function releaseController(
+  entry: { controller?: AbortController },
+  mine: AbortController,
+): void {
+  if (entry.controller === mine) entry.controller = undefined;
+}
+
 export type UploadQueue = {
   /** Queue ids at the back (or the front), then start as many as the limit allows. */
   push: (ids: readonly string[], opts?: { front?: boolean }) => void;

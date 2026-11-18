@@ -29,16 +29,42 @@ export const SKIPPED_NOTE = 'Skipped: a different version is here';
 /** The dock line of a name a login may not write over. */
 export const LOCKED_NOTE = 'A file with this name exists that you cannot change';
 
-/** A 200 from the upload: saved, or skipped because the same bytes are there. */
-export type UploadAnswer = { kind: 'saved' } | { kind: 'already-here'; existingId: string | null };
+/** A 200 from the upload: saved (the file's id when the answer names it), or
+ *  skipped because the same bytes are there. */
+export type UploadAnswer =
+  { kind: 'saved'; fileId: string | null } | { kind: 'already-here'; existingId: string | null };
 
 export function readUploadAnswer(body: unknown): UploadAnswer {
-  const b = body as { skipped?: unknown; existing?: { id?: unknown } } | null | undefined;
-  if (b?.skipped !== true) return { kind: 'saved' };
+  const b = body as
+    { skipped?: unknown; existing?: { id?: unknown }; file?: { id?: unknown } } | null | undefined;
+  if (b?.skipped !== true) {
+    return { kind: 'saved', fileId: typeof b?.file?.id === 'string' ? b.file.id : null };
+  }
   return {
     kind: 'already-here',
     existingId: typeof b.existing?.id === 'string' ? b.existing.id : null,
   };
+}
+
+/** What a 200 makes of the dock row. */
+export type SavedOutcome = {
+  status: 'done' | 'exists';
+  note?: string;
+  /** An Override put new bytes in this file: an open view of it reloads. */
+  reloadFileId: string | null;
+};
+
+/**
+ * The row after a 200. A skipped answer is "Already here" also on a
+ * replace=true resend (an automatic retry whose first copy did land: the
+ * brain writes nothing for the same bytes), so it never reads as an error
+ * nor reloads anything. A saved Override names the file an open view reloads.
+ */
+export function savedOutcome(answer: UploadAnswer, replace: boolean): SavedOutcome {
+  if (answer.kind === 'already-here') {
+    return { status: 'exists', note: ALREADY_HERE, reloadFileId: null };
+  }
+  return { status: 'done', reloadFileId: replace ? answer.fileId : null };
 }
 
 /** A refused upload, read: another version holds the name (`name-taken`,

@@ -43,7 +43,7 @@ import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { FileEditor } from './file-editor';
 import { DataFilesView } from './file-data';
-import { FileDetailsSheet } from './file-details';
+import { detailsFallback, FileDetailsSheet } from './file-details';
 import { FileStatusLegend } from './file-status-badge';
 import { UnreadFilesView } from './unread-files';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
@@ -311,6 +311,9 @@ function FilesView({
     id: string;
     filename: string;
     versions?: number;
+    /** For the sheet's rows on an older brain (detailsFallback). */
+    parentPath?: string | null;
+    mimeType?: string | null;
   } | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
 
@@ -768,7 +771,7 @@ function FilesView({
                     sp.set('file', item.id);
                     router.push(`/files?${sp.toString()}`);
                   }}
-                  itemActions={(item) => (
+                  itemActions={(item, where) => (
                     <>
                       <DropdownMenuItem
                         onSelect={() =>
@@ -776,6 +779,10 @@ function FilesView({
                             id: item.id,
                             filename: item.title,
                             versions: treeItemVersions(item),
+                            parentPath:
+                              where.folderPath ??
+                              (where.folderId ? foldersById.get(where.folderId)?.path : null) ??
+                              FILES_ROOT,
                           })
                         }
                       >
@@ -1553,6 +1560,7 @@ function FilesView({
       <FileDetailsSheet
         fileId={details?.id ?? null}
         filename={details?.filename}
+        fallback={details ? detailsFallback(details) : []}
         onHistory={details ? fileHistory.of(details) : undefined}
         onOpenChange={(open) => !open && setDetails(null)}
       />

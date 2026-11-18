@@ -36,6 +36,25 @@ import {
  *  without the processing route still shows). */
 export type DetailsExtraRow = { label: string; value: ReactNode };
 
+/** The rows the sheet shows on a brain without the processing route:
+ *  where the file is and its type, from what the caller has of it. No
+ *  Location row when the caller does not know the folder. */
+export function detailsFallback(file: {
+  filename: string;
+  parentPath?: string | null;
+  mimeType?: string | null;
+}): DetailsExtraRow[] {
+  const rows: DetailsExtraRow[] = [];
+  if (typeof file.parentPath === 'string') {
+    rows.push({
+      label: 'Location',
+      value: file.parentPath.split('.').filter(Boolean).join(' / ') || 'Top level',
+    });
+  }
+  rows.push({ label: 'Type', value: fileTypeLabel(file.mimeType, file.filename) });
+  return rows;
+}
+
 /**
  * GET /api/files/files/:id/processing. `gone`: the brain answered 404 (a
  * brain before P4, or a file this login cannot read): the panel falls back

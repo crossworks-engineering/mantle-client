@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALREADY_HERE,
   answerClash,
   clashQuestion,
   clashStep,
   moreInBatch,
   readNameRefusal,
   readUploadAnswer,
+  savedOutcome,
   type WaitingClash,
 } from './upload-clash';
 
@@ -29,13 +31,38 @@ describe('readUploadAnswer', () => {
       }),
     ).toEqual({ kind: 'already-here', existingId: 'f1' });
   });
-  it('reads a normal answer as saved', () => {
-    expect(readUploadAnswer({ file: { id: 'f2' } })).toEqual({ kind: 'saved' });
-    expect(readUploadAnswer({})).toEqual({ kind: 'saved' });
-    expect(readUploadAnswer(null)).toEqual({ kind: 'saved' });
+  it('reads a normal answer as saved, with the file it names', () => {
+    expect(readUploadAnswer({ file: { id: 'f2' } })).toEqual({ kind: 'saved', fileId: 'f2' });
+    expect(readUploadAnswer({})).toEqual({ kind: 'saved', fileId: null });
+    expect(readUploadAnswer(null)).toEqual({ kind: 'saved', fileId: null });
   });
   it('survives a skipped answer without the file there', () => {
     expect(readUploadAnswer({ skipped: true })).toEqual({ kind: 'already-here', existingId: null });
+  });
+});
+
+describe('savedOutcome', () => {
+  const skipped = readUploadAnswer({
+    skipped: true,
+    reason: 'same-bytes',
+    existing: { id: 'f1', sha256: 'aa' },
+  });
+  it('reads a skipped answer to a replace resend as already here, not an error', () => {
+    // An automatic retry of an Override whose first copy did land.
+    expect(savedOutcome(skipped, true)).toEqual({
+      status: 'exists',
+      note: ALREADY_HERE,
+      reloadFileId: null,
+    });
+    expect(savedOutcome(skipped, false)).toEqual(savedOutcome(skipped, true));
+  });
+  it('names the file an Override wrote over, so an open view reloads', () => {
+    const saved = readUploadAnswer({ file: { id: 'f2' } });
+    expect(savedOutcome(saved, true)).toEqual({ status: 'done', reloadFileId: 'f2' });
+  });
+  it('reloads nothing for a new upload', () => {
+    const saved = readUploadAnswer({ file: { id: 'f2' } });
+    expect(savedOutcome(saved, false)).toEqual({ status: 'done', reloadFileId: null });
   });
 });
 

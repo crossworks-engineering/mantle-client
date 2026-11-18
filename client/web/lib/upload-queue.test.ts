@@ -4,6 +4,7 @@ import {
   autoRetryDelayMs,
   canRetryTask,
   createUploadQueue,
+  releaseController,
   retryableIds,
 } from './upload-queue';
 import {
@@ -175,5 +176,46 @@ describe('autoRetryDelayMs', () => {
     expect(autoRetryDelayMs(new UploadStalledError(60), 0)).toBeNull();
     expect(autoRetryDelayMs(new UploadAbortedError(), 0)).toBeNull();
     expect(autoRetryDelayMs(new Error('other'), 0)).toBeNull();
+  });
+});
+
+describe('releaseController', () => {
+  it('keeps the controller of an Override resend that started inside the old send', async () => {
+    // The provider's shape: each send puts its controller on the row, a
+    // name-taken refusal pushes the Override at the front from its catch
+    // (it starts at once: a slot is free), and the finally lets go.
+    const entry: { controller?: AbortController } = {};
+    const sends: AbortController[] = [];
+    const queue = createUploadQueue(3, async (id) => {
+      const controller = new AbortController();
+      entry.controller = controller;
+      sends.push(controller);
+      try {
+        if (sends.length === 1) {
+          await Promise.resolve();
+          throw new Error('409 name-taken');
+        }
+        await new Promise<void>(() => {}); // the resend is still uploading
+      } catch {
+        queue.push([id], { front: true });
+      } finally {
+        releaseController(entry, controller);
+      }
+    });
+    queue.push(['a']);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    expect(sends).toHaveLength(2);
+    // Cancel reads the row's controller: it must be the resend's.
+    expect(entry.controller).toBe(sends[1]);
+    entry.controller?.abort();
+    expect(sends[1]!.signal.aborted).toBe(true);
+  });
+
+  it('lets go of its own controller when no other send took the row', () => {
+    const mine = new AbortController();
+    const entry: { controller?: AbortController } = { controller: mine };
+    releaseController(entry, mine);
+    expect(entry.controller).toBeUndefined();
   });
 });
