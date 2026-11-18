@@ -43,9 +43,36 @@ export type FileRow = {
    *  actually ran — the badge reads the latter. */
   indexing: 'full' | 'metadata' | null;
   indexingApplied: 'full' | 'metadata' | null;
+  /** Whether the content was read (the brain's FileRow.extraction, task
+   *  8d40932a). A brain before it sends none. */
+  extraction?: FileExtraction;
   createdAt: string;
   updatedAt: string;
 };
+
+/** The read state of a file's content. `indexingApplied` is the indexing
+ *  MODE (stamped before the read), not this. */
+export type FileExtraction = {
+  state: 'indexed' | 'partial' | 'failed' | 'skipped' | 'pending' | 'name_only';
+  reason?: string;
+  hint?: string;
+  pages?: { read: number; total: number };
+};
+
+/** The badge words of a read state, or null when the state needs none (read
+ *  whole, name only: its own badge, or not read yet: shown while it waits). */
+export function extractionBadge(x: FileExtraction | undefined): {
+  label: string;
+  tone: 'error' | 'warning' | 'muted';
+} | null {
+  if (!x) return null;
+  if (x.state === 'failed') return { label: 'not read', tone: 'error' };
+  if (x.state === 'partial' && x.pages) {
+    return { label: `${x.pages.read} of ${x.pages.total} pages`, tone: 'warning' };
+  }
+  if (x.state === 'skipped') return { label: 'not read', tone: 'muted' };
+  return null;
+}
 
 /** One `/api/search?branch=files` hit — the server's node shape, trimmed to
  *  what the results list renders. `workspace`: where it opens (brain task

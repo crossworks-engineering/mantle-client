@@ -43,6 +43,8 @@ import { KIND_TINT, describeFile } from '@mantle/web-ui/lib/mime-label';
 import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { FileEditor } from './file-editor';
 import { DataFilesView } from './file-data';
+import { ExtractionBadge } from './extraction-badge';
+import { UnreadFilesView } from './unread-files';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
 import { useFileSearch } from './use-file-search';
 import { useWorkspaceJump, WorkspaceHitTag } from '@/components/workspaces/workspace-hit-tag';
@@ -242,7 +244,11 @@ function FilesView({
 
   // ── Recent — the cross-tree "where did that upload land" view ──
   // A view across every folder: Recent, or Data files (file-data.tsx).
-  const [crossView, setCrossView] = useState<null | 'recent' | 'data'>(null);
+  // Not read: the files whose content was not read (a push lands here with
+  // ?unread=1).
+  const [crossView, setCrossView] = useState<null | 'recent' | 'data' | 'unread'>(() =>
+    searchParams.get('unread') === '1' ? 'unread' : null,
+  );
   const recentView = crossView === 'recent';
   // Data files from a folder's header: that folder and below; from the rail: all.
   const [dataUnder, setDataUnder] = useState<string | null>(null);
@@ -722,6 +728,11 @@ function FilesView({
                   filter={query.trim()}
                   recentActive={recentView}
                   onRecent={() => setCrossView('recent')}
+                  unreadActive={crossView === 'unread'}
+                  onUnread={() => {
+                    if (openFileId) openFile(null);
+                    setCrossView('unread');
+                  }}
                   dataActive={crossView === 'data'}
                   onData={() => {
                     if (openFileId) openFile(null);
@@ -871,6 +882,16 @@ function FilesView({
                   }}
                 />
               </>
+            ) : crossView === 'unread' ? (
+              <UnreadFilesView
+                onOpen={(f) => {
+                  setCrossView(null);
+                  const sp = new URLSearchParams();
+                  sp.set('path', f.parentPath);
+                  sp.set('file', f.id);
+                  router.push(`/files?${sp.toString()}`);
+                }}
+              />
             ) : recentView ? (
               /* ── Recent files, whole tree ──────────────────────── */
               <div className="flex h-full flex-col overflow-hidden">
@@ -1330,6 +1351,7 @@ function FilesView({
                                     <EyeOff className="size-2.5" /> name only
                                   </span>
                                 )}
+                                <ExtractionBadge x={f.extraction} compact />
                               </span>
                             </span>
                           </RowButton>
@@ -1446,14 +1468,17 @@ function FilesView({
                                       <EyeOff className="size-3 shrink-0" /> name only
                                     </span>
                                   )}
-                                  {f.summary && f.indexingApplied !== 'metadata' && (
-                                    <span
-                                      title="Indexed — summary ready"
-                                      className="inline-flex items-center text-primary-ink"
-                                    >
-                                      <ChevronsRight className="size-3.5 shrink-0" />
-                                    </span>
-                                  )}
+                                  <ExtractionBadge x={f.extraction} />
+                                  {f.summary &&
+                                    f.indexingApplied !== 'metadata' &&
+                                    (!f.extraction || f.extraction.state === 'indexed') && (
+                                      <span
+                                        title="Indexed — summary ready"
+                                        className="inline-flex items-center text-primary-ink"
+                                      >
+                                        <ChevronsRight className="size-3.5 shrink-0" />
+                                      </span>
+                                    )}
                                 </RowButton>
                               </td>
                               <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">

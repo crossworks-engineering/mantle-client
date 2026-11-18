@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@mantle/web-ui/api-fetch';
 import {
   cascadeOutcome,
+  extractionBadge,
   describeDerivedCounts,
   refusalMessages,
   folderIndexingDoneText,
@@ -326,5 +327,25 @@ describe('folder indexing texts (F4 audit L7)', () => {
     expect(folderIndexingDoneText('metadata', 3)).toBe(
       'Content indexing off. Files stay findable by name, type and tags (3 re-indexing).',
     );
+  });
+});
+
+describe('extractionBadge: a file not read whole says so (task 8d40932a)', () => {
+  it('failed and skipped read "not read", a part read its pages', () => {
+    expect(extractionBadge({ state: 'failed', reason: 'document_unreadable' })).toEqual({
+      label: 'not read',
+      tone: 'error',
+    });
+    expect(extractionBadge({ state: 'skipped', reason: 'body_too_short' })?.tone).toBe('muted');
+    expect(extractionBadge({ state: 'partial', pages: { read: 10, total: 679 } })?.label).toBe(
+      '10 of 679 pages',
+    );
+  });
+
+  it('a whole read, name only, not read yet, or an older brain show no badge', () => {
+    for (const state of ['indexed', 'name_only', 'pending'] as const) {
+      expect(extractionBadge({ state })).toBeNull();
+    }
+    expect(extractionBadge(undefined)).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import {
   Clock,
   Database,
   FileText,
+  FileWarning,
   FolderPlus,
   MoreHorizontal,
   Palette,
@@ -87,6 +88,8 @@ export function FolderTreeRail({
   onRecent,
   dataActive = false,
   onData,
+  unreadActive = false,
+  onUnread,
   onNewFolder,
   onNewFile,
   onRename,
@@ -102,6 +105,9 @@ export function FolderTreeRail({
   /** Data files: every file with a database, in every folder. */
   dataActive?: boolean;
   onData?: () => void;
+  /** Not read: the files whose content was not read, in every folder. */
+  unreadActive?: boolean;
+  onUnread?: () => void;
   onNewFolder: (parentPath: string) => void;
   /** "New file inside": the screen's own create, in that folder. */
   onNewFile?: (parentPath: string) => void;
@@ -332,6 +338,22 @@ export function FolderTreeRail({
                 </span>
               ),
               onClick: onData,
+            })}
+          {onUnread &&
+            row({
+              folder: null,
+              key: 'unread',
+              depth: 0,
+              isLast: false,
+              guides: [],
+              selected: unreadActive,
+              label: 'Not read',
+              tile: (
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-muted text-muted-foreground">
+                  <FileWarning className="size-3" aria-hidden />
+                </span>
+              ),
+              onClick: onUnread,
             })}
           {row({
             folder: root,

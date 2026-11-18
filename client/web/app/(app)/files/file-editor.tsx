@@ -32,6 +32,8 @@ import { useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { itemAccess, readOnlyNote } from '@/lib/item-access';
 import { play } from '@/lib/sounds/play';
 import { FileDataView } from './file-data';
+import { ExtractionNote } from './extraction-badge';
+import type { FileExtraction } from './files-shared';
 import { hasDataView, readDbView, withDbView } from './file-data-model';
 import { RunPipelineDialog, useRunRouteGone } from './run-pipeline-dialog';
 import { showRunEntry, type RunTarget } from '@/lib/pipeline-run';
@@ -47,6 +49,8 @@ type FileRow = {
   summary: string | null;
   indexing: 'full' | 'metadata' | null;
   indexingApplied: 'full' | 'metadata' | null;
+  /** Whether the content was read (task 8d40932a); none from an older brain. */
+  extraction?: FileExtraction;
   createdAt: string;
   updatedAt: string;
   /** Whether Files shows its Data view (hasDataView). Only the GET answers
@@ -394,6 +398,7 @@ export function FileEditor({
         infoLabel="About this file"
       />
       <RunPipelineDialog target={runTarget} onOpenChange={(o) => !o && setRunTarget(null)} />
+      <ExtractionNote x={file.extraction} />
 
       {/* Body */}
       {dataView && showData ? (
