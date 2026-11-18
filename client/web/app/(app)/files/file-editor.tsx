@@ -65,10 +65,14 @@ export function FileEditor({
   onClose,
   onSaved,
   onLoaded,
+  treeMove = false,
 }: {
   fileId: string;
   onClose: () => void;
   onSaved: () => void;
+  /** The Files tree is up: "Move to folder…" in the header goes through its
+   *  Move dialog. */
+  treeMove?: boolean;
   /** The file's detail, once loaded: the files screen opens its folder when
    *  the link named only the file (a /n link). */
   onLoaded?: (file: { parentPath: string }) => void;
@@ -293,6 +297,11 @@ export function FileEditor({
           ) : null
         }
         access={<AccessSlot type="file" nodeId={file.id} canShare={access.share} shares={file} />}
+        move={
+          treeMove && access.move
+            ? { kind: 'files', item: { id: file.id, title: file.filename } }
+            : null
+        }
         tools={[
           ...(isMarkdown && canEdit
             ? [

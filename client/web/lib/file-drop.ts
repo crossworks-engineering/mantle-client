@@ -35,7 +35,9 @@ export function dragDepth(depth: number, event: 'enter' | 'leave' | 'end'): numb
 }
 
 /** The part of an element `dropPathAt` reads (a DOM Element has it). */
-type Closest = { closest: (selector: string) => { getAttribute: (n: string) => string | null } | null };
+type Closest = {
+  closest: (selector: string) => { getAttribute: (n: string) => string | null } | null;
+};
 
 /** The folder path a drop at `target` lands in: the nearest drop target's,
  *  else `fallback` (the folder the screen is in). */

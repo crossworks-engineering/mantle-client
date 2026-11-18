@@ -35,10 +35,13 @@ vi.mock('@mantle/web-ui/api-fetch', () => {
 });
 
 import {
+  batchesOf,
   createTreeFolder,
   deleteTreeFolder,
   fetchFolderPage,
+  MOVE_BATCH,
   moveTreeItems,
+  moveTreeItemsBatched,
   patchTreeFolder,
 } from './tree-api';
 
@@ -134,5 +137,33 @@ describe('the owner tree answer', () => {
     };
     fetched.answer = owner;
     expect(await fetchFolderPage('notes', null, 'updated', null)).toBe(owner);
+  });
+});
+
+describe('a move of many items', () => {
+  it('cuts the ids in runs of the brain cap, in order', () => {
+    expect(MOVE_BATCH).toBe(200);
+    expect(batchesOf([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(batchesOf([])).toEqual([]);
+  });
+
+  it('sends one call per run of 200 and adds up what moved', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => `i${i}`);
+    const done = new Set<number>();
+    const res = await moveTreeItemsBatched('files', ids, 'f1', done);
+    const calls = sent.filter((s) => s.url === '/api/tree/files/move');
+    expect(calls.map((c) => (c.body as { ids: string[] }).ids.length)).toEqual([200, 200, 50]);
+    expect((calls[2]!.body as { ids: string[] }).ids[0]).toBe('i400');
+    expect(res).toEqual({ moved: 3, failed: [] });
+    expect([...done]).toEqual([0, 1, 2]);
+  });
+
+  it('sends again only the runs not yet done (a repeat after a confirm)', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => `i${i}`);
+    await moveTreeItemsBatched('files', ids, 'f1', new Set([0, 1]), true, 'owner', 4);
+    const calls = sent.filter((s) => s.url === '/api/tree/files/move');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).toMatchObject({ confirm: true, seen: 4, folderId: 'f1' });
+    expect((calls[0]!.body as { ids: string[] }).ids).toHaveLength(50);
   });
 });

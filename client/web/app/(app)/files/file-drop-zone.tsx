@@ -78,8 +78,12 @@ export function useFileDrop({
   return { over, bind };
 }
 
-/** The drop zone over the content pane while files are dragged: an upload
- *  mark, the destination as a breadcrumb, and who else reads that folder. */
+/**
+ * The drop zone over the content pane while files are dragged: a dashed
+ * edge round the pane, and a card at its foot with an upload mark, the
+ * destination as a breadcrumb, and who else reads that folder. The pane
+ * stays readable under it, so a lit folder card or pane shows through.
+ */
 export function FileDropOverlay({
   crumbs,
   visibleTo,
@@ -88,35 +92,41 @@ export function FileDropOverlay({
   visibleTo?: readonly string[] | null;
 }) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-primary/60 bg-background/90 p-6 text-center backdrop-blur-sm"
-    >
-      <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary-ink">
-        <Upload className="size-6" aria-hidden />
-      </span>
-      <span className="text-sm font-medium text-foreground">Drop to upload</span>
-      <span className="flex max-w-full flex-wrap items-center justify-center gap-1 text-sm text-muted-foreground">
-        <span>Uploading to:</span>
-        {crumbs.map((c, i) => (
-          <span key={`${i}:${c}`} className="flex min-w-0 items-center gap-1">
-            {i > 0 && <ChevronRight className="size-3.5 shrink-0" aria-hidden />}
-            <span
-              className={
-                i === crumbs.length - 1
-                  ? 'truncate font-medium text-primary-ink'
-                  : 'truncate text-foreground'
-              }
-            >
-              {c}
-            </span>
+    <div className="pointer-events-none absolute inset-2 z-30 flex items-end justify-center rounded-lg border-2 border-dashed border-primary/60 bg-primary/[0.04] p-4">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex max-w-full items-center gap-3 rounded-lg border border-border bg-popover px-4 py-3 text-popover-foreground shadow-lg"
+      >
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary-ink">
+          <Upload className="size-5" aria-hidden />
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-sm font-medium">Drop to upload</span>
+          <span className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            <span>Uploading to:</span>
+            {crumbs.map((c, i) => (
+              <span key={`${i}:${c}`} className="flex min-w-0 items-center gap-1">
+                {i > 0 && <ChevronRight className="size-3 shrink-0" aria-hidden />}
+                <span
+                  className={
+                    i === crumbs.length - 1
+                      ? 'truncate font-medium text-primary-ink'
+                      : 'truncate text-foreground'
+                  }
+                >
+                  {c}
+                </span>
+              </span>
+            ))}
           </span>
-        ))}
-      </span>
-      {visibleTo && visibleTo.length > 0 ? (
-        <span className="text-xs text-muted-foreground">Also visible to: {visibleTo.join(', ')}</span>
-      ) : null}
+          {visibleTo && visibleTo.length > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              Also visible to: {visibleTo.join(', ')}
+            </span>
+          ) : null}
+        </span>
+      </div>
     </div>
   );
 }

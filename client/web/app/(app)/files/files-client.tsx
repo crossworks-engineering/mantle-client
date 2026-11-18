@@ -113,6 +113,11 @@ import {
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { play } from '@/lib/sounds/play';
+import { requestTreeMove } from '@/components/item-tree/tree-move-request';
+import { folderCrumbs } from '@/lib/file-drop';
+import { isPickClick, keepOnScreen, pickClick } from '@/lib/pick-range';
+import { FileDropOverlay, useFileDrop } from './file-drop-zone';
+import { FileRowMenu, SelectionBar } from './files-selection';
 
 /** The three shapes the file list can take; anything else in storage is stale. */
 const VIEW_CHOICES = oneOf('list', 'grid', 'dual');
@@ -297,10 +302,18 @@ function FilesView({
   // Narrowed once here rather than at each of its six reads below.
   const cascade = dialog?.kind === 'cascade' ? dialog : null;
 
-  // Sync local file state when server re-fetches.
+  // Sync local file state when server re-fetches. The pick keeps the files
+  // still listed (a live update elsewhere does not drop it); another folder
+  // lists none of them, so it clears there.
   useEffect(() => {
     setFiles(initialFiles);
-    setSelectedFileIds(new Set());
+    setSelectedFileIds(
+      (prev) =>
+        keepOnScreen(
+          prev,
+          initialFiles.map((f) => f.id),
+        ) as Set<string>,
+    );
   }, [initialFiles]);
 
   const openFileId = searchParams.get('file');
@@ -368,20 +381,9 @@ function FilesView({
   const { enqueue } = useUploads();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const triggerUpload = () => fileInputRef.current?.click();
-  // A new file takes its folder's sharing with no confirm (owner's word,
-  // 2026-11-12): an upload just goes. Who reads the folder is shown on the
-  // drop zone only, from its grants (W8: no level, so no other source); a
-  // view the caller cannot read shows nothing and asks nothing.
-  const folderGrants = useQuery({
-    queryKey: grantsKey(currentFolder?.id ?? 'none'),
-    queryFn: () => apiFetch<GrantsView>(grantsUrl(currentFolder!.id)),
-    enabled: !!currentFolder,
-    retry: false,
-  });
-  const visibleTo = currentFolder ? uploadVisibleTo(folderGrants.data) : null;
-  const upload = (list: FileList | File[]) => {
+  const upload = (list: FileList | File[], parentPath = currentPath) => {
     const picked = Array.from(list);
-    if (picked.length) enqueue(picked, currentPath);
+    if (picked.length) enqueue(picked, parentPath);
   };
   const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -416,8 +418,8 @@ function FilesView({
     const notice = folderUploadNotice(plan);
     if (notice) toast.info(notice);
   };
-  const uploadTree = (items: TreeFile[]) => {
-    const plan = planFolderUpload(items, currentPath);
+  const uploadTree = (items: TreeFile[], base = currentPath) => {
+    const plan = planFolderUpload(items, base);
     if (plan.fileCount === 0) {
       toast.info(folderUploadNotice(plan) ?? 'That folder has no files to upload.');
       return;
@@ -431,18 +433,83 @@ function FilesView({
   };
 
   // ─── Drag-drop ───────────────────────────────────────────────────
-  const [dragOver, setDragOver] = useState(false);
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragOver(false);
-    // A drop with a folder in it keeps its tree; read while the event runs.
-    const tree = droppedTree(e.dataTransfer.items);
-    if (tree) {
-      tree.then(uploadTree, () => toast.error('Could not read the dropped folder.'));
-      return;
-    }
-    if (e.dataTransfer.files?.length) upload(e.dataTransfer.files);
+  // One drop zone for the whole screen, in every view (lib/file-drop.ts):
+  // the folder under the pointer (a tree row, a folder card, a pane of the
+  // two-pane view) takes the drop, else the folder the screen is in.
+  const drop = useFileDrop({
+    fallback: currentPath,
+    onDrop: (data, path) => {
+      // A drop with a folder in it keeps its tree; read while the event runs.
+      const dropped = droppedTree(data.items);
+      if (dropped) {
+        dropped.then(
+          (items) => uploadTree(items, path),
+          () => toast.error('Could not read the dropped folder.'),
+        );
+        return;
+      }
+      if (data.files?.length) upload(data.files, path);
+    },
+  });
+  const dropFolder = drop.over ? (foldersByPath.get(drop.over) ?? null) : null;
+  const titleOf = (path: string) => foldersByPath.get(path)?.title;
+  // A new file takes its folder's sharing with no confirm (owner's word,
+  // 2026-11-12): an upload just goes. Who reads the folder is shown on the
+  // drop zone only, from its grants (W8: no level, so no other source); a
+  // view the caller cannot read shows nothing and asks nothing. The open
+  // folder's are read ahead, a hovered folder's while the drag is on it.
+  const grantsFolder = dropFolder ?? currentFolder;
+  const folderGrants = useQuery({
+    queryKey: grantsKey(grantsFolder?.id ?? 'none'),
+    queryFn: () => apiFetch<GrantsView>(grantsUrl(grantsFolder!.id)),
+    enabled: !!grantsFolder,
+    retry: false,
+  });
+  const visibleTo = dropFolder ? uploadVisibleTo(folderGrants.data) : null;
+
+  // ─── Pick (list and thumbnails) ──────────────────────────────────
+  // A plain click opens; cmd/ctrl toggles one file; shift adds the range
+  // from the last one toggled (lib/pick-range.ts, the tree's rule too).
+  const anchor = useRef<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const pickedRows = files.filter((f) => selectedFileIds.has(f.id));
+  const clearPick = () => {
+    setSelectedFileIds(new Set());
+    anchor.current = null;
   };
+  const pickFile = (id: string, how: { toggle: boolean; range: boolean }) => {
+    const next = pickClick(
+      selectedFileIds,
+      sortedFiles.map((f) => f.id),
+      anchor.current,
+      id,
+      how,
+    );
+    anchor.current = next.anchor;
+    setSelectedFileIds(next.picked);
+  };
+  const clickFile = (f: FileRow, e: React.MouseEvent) => {
+    if (!isPickClick(e)) return openFile(f.id);
+    e.preventDefault();
+    pickFile(f.id, { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey });
+  };
+  /** What a file's menu acts on: the pick when the file is in it. */
+  const targetsOf = (f: FileRow) =>
+    selectedFileIds.has(f.id) && pickedRows.length > 1 ? pickedRows : [f];
+  // A move goes through the tree's Move dialog (who would see it, the
+  // folder confirm, a partial failure by name), so it needs the tree.
+  const treeMove = showTree;
+  const moveFiles = (rows: readonly FileRow[]) =>
+    requestTreeMove({
+      kind: 'files',
+      items: rows.map((f) => ({ id: f.id, title: f.filename })),
+      from: currentPath === FILES_ROOT ? null : (currentFolder?.id ?? undefined),
+    });
+  const renameFile = (f: FileRow) =>
+    setDialog({
+      kind: 'rename',
+      target: { kind: 'file', id: f.id, filename: f.filename, extension: f.extension },
+    });
 
   // ─── Delete folder ───────────────────────────────────────────────
   const confirmDeleteFolder = async () => {
@@ -558,211 +625,212 @@ function FilesView({
   // ─── Breadcrumbs ─────────────────────────────────────────────────
   const breadcrumbs = useMemo(() => {
     const segments = currentPath.split('.');
-    const crumbs: { label: string; path: string }[] = [];
-    for (let i = 0; i < segments.length; i++) {
-      const path = segments.slice(0, i + 1).join('.');
-      const label = i === 0 ? 'Files' : segments[i]!.replace(/_/g, '-');
-      crumbs.push({ label, path });
-    }
-    return crumbs;
-  }, [currentPath]);
+    return folderCrumbs(currentPath, (p) => foldersByPath.get(p)?.title).map((label, i) => ({
+      label,
+      path: segments.slice(0, i + 1).join('.'),
+    }));
+  }, [currentPath, foldersByPath]);
 
   const allSelected = files.length > 0 && selectedFileIds.size === files.length;
   const someSelected = selectedFileIds.size > 0 && !allSelected;
 
   return (
     <>
-      <MasterDetail
-        id="files"
-        listCollapsed={zen}
-        // 260px, the width this screen has always had — a starting point now
-        // rather than a decree.
-        defaultListSize="260px"
-        // The literal translation of the old `grid-cols-[260px_1fr]`: the tree
-        // keeps its draggable width and the right pane takes everything else.
-        // It is a six-column file table and, when a file is open, an editor with
-        // a side-by-side preview — not a measure of reading text, so the
-        // three-panel default's 672px cap would be actively wrong here.
-        detailFills
-        list={
-          /* ── Tree rail ─────────────────────────────────────────
+      {/* The drop zone's events from every pane: `contents`, so the box
+          adds nothing to the layout. */}
+      <div className="contents" {...drop.bind}>
+        <MasterDetail
+          id="files"
+          listCollapsed={zen}
+          // 260px, the width this screen has always had — a starting point now
+          // rather than a decree.
+          defaultListSize="260px"
+          // The literal translation of the old `grid-cols-[260px_1fr]`: the tree
+          // keeps its draggable width and the right pane takes everything else.
+          // It is a six-column file table and, when a file is open, an editor with
+          // a side-by-side preview — not a measure of reading text, so the
+          // three-panel default's 672px cap would be actively wrong here.
+          detailFills
+          list={
+            /* ── Tree rail ─────────────────────────────────────────
              No `border-r`: `MasterDetail`'s handle IS a 1px `bg-border` rule in
              exactly that place, so keeping the border would draw it twice.
              `h-full` because a grid item stretched to the row and a flex item
              does not — without it the tinted background stops wherever the
              tree happens to end. */
-          showTree ? (
-            <aside className="flex h-full flex-col bg-muted/20">
-              <ItemTree
-                kind="files"
-                adapter={filesAdapter}
-                rootLabel="All files"
-                selectedItemId={openFileId}
-                selectedFolderPath={openFileId || searchActive ? null : currentPath}
-                revealPath={currentPath}
-                query={query}
-                onQueryChange={setQuery}
-                searchPlaceholder="Search files and folders…"
-                // Like New with that folder open: the dialog picks the type,
-                // and the file is made in the folder and opens there.
-                newItemInFolder={{
-                  label: 'file',
-                  icon: FileText,
-                  onCreate: (f) => {
+            showTree ? (
+              <aside className="flex h-full flex-col bg-muted/20">
+                <ItemTree
+                  kind="files"
+                  adapter={filesAdapter}
+                  rootLabel="All files"
+                  selectedItemId={openFileId}
+                  selectedFolderPath={openFileId || searchActive ? null : currentPath}
+                  revealPath={currentPath}
+                  query={query}
+                  onQueryChange={setQuery}
+                  searchPlaceholder="Search files and folders…"
+                  // Like New with that folder open: the dialog picks the type,
+                  // and the file is made in the folder and opens there.
+                  newItemInFolder={{
+                    label: 'file',
+                    icon: FileText,
+                    onCreate: (f) => {
+                      setCrossView(null);
+                      navigateFolder(f.path);
+                      setDialog({ kind: 'createFile', ext: 'md', parentPath: f.path });
+                    },
+                  }}
+                  onOpenFolder={(f) => {
                     setCrossView(null);
-                    navigateFolder(f.path);
-                    setDialog({ kind: 'createFile', ext: 'md', parentPath: f.path });
-                  },
-                }}
-                onOpenFolder={(f) => {
-                  setCrossView(null);
-                  navigateFolder(f?.path ?? FILES_ROOT);
-                }}
-                onOpenItem={(item, where) => {
-                  const sp = new URLSearchParams();
-                  sp.set(
-                    'path',
-                    where.folderPath ??
-                      (where.folderId ? foldersById.get(where.folderId)?.path : null) ??
-                      FILES_ROOT,
-                  );
-                  sp.set('file', item.id);
-                  router.push(`/files?${sp.toString()}`);
-                }}
-                itemActions={(item) => (
-                  <>
-                    {showRunEntry(itemAccess(item).edit, runGone) ? (
+                    navigateFolder(f?.path ?? FILES_ROOT);
+                  }}
+                  onOpenItem={(item, where) => {
+                    const sp = new URLSearchParams();
+                    sp.set(
+                      'path',
+                      where.folderPath ??
+                        (where.folderId ? foldersById.get(where.folderId)?.path : null) ??
+                        FILES_ROOT,
+                    );
+                    sp.set('file', item.id);
+                    router.push(`/files?${sp.toString()}`);
+                  }}
+                  itemActions={(item) => (
+                    <>
+                      {showRunEntry(itemAccess(item).edit, runGone) ? (
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            setDialog({
+                              kind: 'run',
+                              target: { kind: 'file', id: item.id, name: item.title },
+                            })
+                          }
+                        >
+                          <Play />
+                          Run a pipeline…
+                        </DropdownMenuItem>
+                      ) : null}
+                      {itemAccess(item).edit ? (
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            setDialog({
+                              kind: 'rename',
+                              target: {
+                                kind: 'file',
+                                id: item.id,
+                                filename: item.title,
+                                extension: item.subtype ?? '',
+                              },
+                            })
+                          }
+                        >
+                          <Pencil />
+                          Rename…
+                        </DropdownMenuItem>
+                      ) : null}
+                      {itemAccess(item).manage ? (
+                        <DropdownMenuItem
+                          className="text-destructive-ink focus:text-destructive-ink"
+                          onSelect={() => setDialog({ kind: 'bulkDelete', ids: [item.id] })}
+                        >
+                          <Trash2 />
+                          Delete…
+                        </DropdownMenuItem>
+                      ) : null}
+                    </>
+                  )}
+                  folderActions={(f) =>
+                    showRunEntry(itemAccess(f).edit, runGone) ? (
                       <DropdownMenuItem
                         onSelect={() =>
                           setDialog({
                             kind: 'run',
-                            target: { kind: 'file', id: item.id, name: item.title },
+                            target: { kind: 'folder', id: f.id, name: f.name },
                           })
                         }
                       >
                         <Play />
                         Run a pipeline…
                       </DropdownMenuItem>
-                    ) : null}
-                    {itemAccess(item).edit ? (
-                      <DropdownMenuItem
-                        onSelect={() =>
-                          setDialog({
-                            kind: 'rename',
-                            target: {
-                              kind: 'file',
-                              id: item.id,
-                              filename: item.title,
-                              extension: item.subtype ?? '',
-                            },
-                          })
-                        }
-                      >
-                        <Pencil />
-                        Rename…
-                      </DropdownMenuItem>
-                    ) : null}
-                    {itemAccess(item).manage ? (
-                      <DropdownMenuItem
-                        className="text-destructive-ink focus:text-destructive-ink"
-                        onSelect={() => setDialog({ kind: 'bulkDelete', ids: [item.id] })}
-                      >
-                        <Trash2 />
-                        Delete…
-                      </DropdownMenuItem>
-                    ) : null}
-                  </>
-                )}
-                folderActions={(f) =>
-                  showRunEntry(itemAccess(f).edit, runGone) ? (
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        setDialog({
-                          kind: 'run',
-                          target: { kind: 'folder', id: f.id, name: f.name },
-                        })
-                      }
-                    >
-                      <Play />
-                      Run a pipeline…
-                    </DropdownMenuItem>
-                  ) : null
-                }
-                onChanged={refresh}
-                onUnsupported={() => setTreeGone(true)}
-              />
-            </aside>
-          ) : (
-            <aside className="flex h-full flex-col bg-muted/20">
-              <div className="space-y-2 border-b border-border p-2">
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <Input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
-                    placeholder="Filter folders, search files…"
-                    aria-label="Filter folders and search files"
-                    className="h-9 pl-8 pr-8"
-                  />
-                  {query && (
-                    <Button
-                      variant="ghost"
-                      size="icon-2xs"
-                      aria-label="Clear search"
-                      onClick={() => setQuery('')}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    >
-                      <X aria-hidden />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-2">
-                <FolderTreeRail
-                  tree={tree}
-                  currentPath={crossView ? '' : currentPath}
-                  onNavigate={(p) => {
-                    setCrossView(null);
-                    setQuery('');
-                    navigateFolder(p);
-                  }}
-                  filter={query.trim()}
-                  recentActive={recentView}
-                  onRecent={() => setCrossView('recent')}
-                  unreadActive={crossView === 'unread'}
-                  onUnread={() => {
-                    if (openFileId) openFile(null);
-                    setCrossView('unread');
-                  }}
-                  dataActive={crossView === 'data'}
-                  onData={() => {
-                    if (openFileId) openFile(null);
-                    setDataUnder(null);
-                    setCrossView('data');
-                  }}
-                  onNewFolder={(parentPath) => setDialog({ kind: 'createFolder', parentPath })}
-                  onNewFile={(parentPath) => {
-                    setCrossView(null);
-                    navigateFolder(parentPath);
-                    setDialog({ kind: 'createFile', ext: 'md', parentPath });
-                  }}
-                  onRename={(f) =>
-                    setDialog({
-                      kind: 'rename',
-                      target: { kind: 'folder', id: f.id, slug: f.slug },
-                    })
+                    ) : null
                   }
+                  onChanged={refresh}
+                  onUnsupported={() => setTreeGone(true)}
+                  fileDrop={{ over: drop.over, rootPath: FILES_ROOT }}
                 />
-              </div>
-            </aside>
-          )
-        }
-        detail={
-          /* ── Main pane ─────────────────────────────────────────
+              </aside>
+            ) : (
+              <aside className="flex h-full flex-col bg-muted/20">
+                <div className="space-y-2 border-b border-border p-2">
+                  <div className="relative">
+                    <Search
+                      className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <Input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+                      placeholder="Filter folders, search files…"
+                      aria-label="Filter folders and search files"
+                      className="h-9 pl-8 pr-8"
+                    />
+                    {query && (
+                      <Button
+                        variant="ghost"
+                        size="icon-2xs"
+                        aria-label="Clear search"
+                        onClick={() => setQuery('')}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      >
+                        <X aria-hidden />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-2">
+                  <FolderTreeRail
+                    tree={tree}
+                    currentPath={crossView ? '' : currentPath}
+                    onNavigate={(p) => {
+                      setCrossView(null);
+                      setQuery('');
+                      navigateFolder(p);
+                    }}
+                    filter={query.trim()}
+                    recentActive={recentView}
+                    onRecent={() => setCrossView('recent')}
+                    unreadActive={crossView === 'unread'}
+                    onUnread={() => {
+                      if (openFileId) openFile(null);
+                      setCrossView('unread');
+                    }}
+                    dataActive={crossView === 'data'}
+                    onData={() => {
+                      if (openFileId) openFile(null);
+                      setDataUnder(null);
+                      setCrossView('data');
+                    }}
+                    onNewFolder={(parentPath) => setDialog({ kind: 'createFolder', parentPath })}
+                    onNewFile={(parentPath) => {
+                      setCrossView(null);
+                      navigateFolder(parentPath);
+                      setDialog({ kind: 'createFile', ext: 'md', parentPath });
+                    }}
+                    onRename={(f) =>
+                      setDialog({
+                        kind: 'rename',
+                        target: { kind: 'folder', id: f.id, slug: f.slug },
+                      })
+                    }
+                  />
+                </div>
+              </aside>
+            )
+          }
+          detail={
+            /* ── Main pane ─────────────────────────────────────────
              KEEPS its own `flex h-full flex-col overflow-hidden` and the
              `flex-1 overflow-y-auto` grid inside it, rather than handing the
              scroll to `MasterDetail`'s pane (landmine 9). The breadcrumb header
@@ -771,625 +839,687 @@ function FilesView({
              painted — `h-full` + `overflow-hidden` means the outer pane's
              content can never exceed it, so it has nothing to scroll.
 
-             The drag-to-upload handlers stay on this element, so the drop zone
-             is still the whole right pane. */
-          <div
-            className="flex h-full flex-col overflow-hidden"
-            onDragOver={(e) => {
-              e.preventDefault();
-              if (!dragOver) setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-          >
-            {openFileId ? (
-              <FileEditor
-                key={openFileId}
-                fileId={openFileId}
-                onClose={() => openFile(null)}
-                onSaved={refresh}
-                onLoaded={(file) => {
-                  // A /n link names only the file: open its folder too.
-                  const href = fileFolderHref(searchParams, file.parentPath);
-                  if (href) router.replace(href);
-                }}
-              />
-            ) : searchActive ? (
-              /* ── Search results ────────────────────────────────── */
-              <div className="flex h-full flex-col overflow-hidden">
-                <SetPageTitle title="Search files" />
-                <header className="border-b border-border px-6 py-3">
-                  <h2 className="text-sm font-medium">
-                    {searching
-                      ? 'Searching…'
-                      : `${(hits ?? []).length} result${(hits ?? []).length === 1 ? '' : 's'} for “${query.trim()}”`}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Ranked by meaning across file names, summaries and content. Name-only files
-                    match on name, type and tags.
-                  </p>
-                </header>
-                <div className="flex-1 overflow-y-auto scrollbar-thin">
-                  {(hits ?? []).length === 0 && !searching ? (
-                    <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-                      Nothing matched. Content search needs indexed files — name-only files match by
-                      filename and tags alone.
-                    </div>
-                  ) : (
+             The drop zone's overlay sits over this pane in every view; its
+             events are the whole screen's (the box around MasterDetail).
+             Escape clears a pick of files. */
+            <div
+              className="relative flex h-full flex-col overflow-hidden"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && !e.defaultPrevented && selectedFileIds.size > 0) {
+                  clearPick();
+                }
+              }}
+            >
+              {drop.over !== null && (
+                <FileDropOverlay crumbs={folderCrumbs(drop.over, titleOf)} visibleTo={visibleTo} />
+              )}
+              {openFileId ? (
+                <FileEditor
+                  key={openFileId}
+                  fileId={openFileId}
+                  treeMove={treeMove}
+                  onClose={() => openFile(null)}
+                  onSaved={refresh}
+                  onLoaded={(file) => {
+                    // A /n link names only the file: open its folder too.
+                    const href = fileFolderHref(searchParams, file.parentPath);
+                    if (href) router.replace(href);
+                  }}
+                />
+              ) : searchActive ? (
+                /* ── Search results ────────────────────────────────── */
+                <div className="flex h-full flex-col overflow-hidden">
+                  <SetPageTitle title="Search files" />
+                  <header className="border-b border-border px-6 py-3">
+                    <h2 className="text-sm font-medium">
+                      {searching
+                        ? 'Searching…'
+                        : `${(hits ?? []).length} result${(hits ?? []).length === 1 ? '' : 's'} for “${query.trim()}”`}
+                    </h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Ranked by meaning across file names, summaries and content. Name-only files
+                      match on name, type and tags.
+                    </p>
+                  </header>
+                  <div className="flex-1 overflow-y-auto scrollbar-thin">
+                    {(hits ?? []).length === 0 && !searching ? (
+                      <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+                        Nothing matched. Content search needs indexed files — name-only files match
+                        by filename and tags alone.
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-border">
+                        {(hits ?? []).map((h) => {
+                          const d = describeFile(null, h.title);
+                          const HitIcon = d.icon;
+                          // A hit from another workspace (task f26a516e): its
+                          // tag, and opening it switches there first.
+                          const to = jump.target(h);
+                          return (
+                            <li key={h.id}>
+                              <RowButton
+                                onClick={() =>
+                                  // The switch runs inside the guarded open (as
+                                  // the search palette does): kept off it, the
+                                  // workspace stays too.
+                                  guardedNavigate(() => {
+                                    if (to) jump.switchTo(to.id);
+                                    setQuery('');
+                                    const sp = new URLSearchParams();
+                                    sp.set('path', h.path);
+                                    sp.set('file', h.id);
+                                    router.push(`/files?${sp.toString()}`);
+                                  })
+                                }
+                                className="flex w-full items-start gap-3 px-6 py-2.5 text-left hover:bg-muted/30"
+                              >
+                                <HitIcon
+                                  aria-hidden
+                                  className={`mt-0.5 size-4 shrink-0 ${KIND_TINT[d.kind]}`}
+                                />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-medium">
+                                    {h.title}
+                                  </span>
+                                  <span className="block truncate text-xs text-muted-foreground">
+                                    {h.path}
+                                    {h.summary ? ` — ${h.summary}` : ''}
+                                  </span>
+                                </span>
+                                {to && <WorkspaceHitTag workspace={to} className="ml-auto" />}
+                                <span
+                                  className={cn(
+                                    'shrink-0 text-xs text-muted-foreground',
+                                    !to && 'ml-auto',
+                                  )}
+                                >
+                                  {fmtRelative(h.updatedAt)}
+                                </span>
+                              </RowButton>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ) : crossView === 'data' ? (
+                /* ── Data files, whole tree ────────────────────────── */
+                <>
+                  <SetPageTitle title="Data files" />
+                  <DataFilesView
+                    under={dataUnder}
+                    onOpen={(f) => {
+                      setCrossView(null);
+                      const sp = new URLSearchParams();
+                      sp.set('path', f.parentPath);
+                      sp.set('file', f.id);
+                      sp.set('view', 'data');
+                      router.push(`/files?${sp.toString()}`);
+                    }}
+                  />
+                </>
+              ) : crossView === 'unread' ? (
+                <UnreadFilesView
+                  onOpen={(f) => {
+                    setCrossView(null);
+                    const sp = new URLSearchParams();
+                    sp.set('path', f.parentPath);
+                    sp.set('file', f.id);
+                    router.push(`/files?${sp.toString()}`);
+                  }}
+                />
+              ) : recentView ? (
+                /* ── Recent files, whole tree ──────────────────────── */
+                <div className="flex h-full flex-col overflow-hidden">
+                  <SetPageTitle title="Recent files" />
+                  <header className="border-b border-border px-6 py-3">
+                    <h2 className="text-sm font-medium">Recent files</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Newest changes across every folder — an upload or edit puts a file back on
+                      top.
+                    </p>
+                  </header>
+                  <div className="flex-1 overflow-y-auto scrollbar-thin">
                     <ul className="divide-y divide-border">
-                      {(hits ?? []).map((h) => {
-                        const d = describeFile(null, h.title);
-                        const HitIcon = d.icon;
-                        // A hit from another workspace (task f26a516e): its
-                        // tag, and opening it switches there first.
-                        const to = jump.target(h);
+                      {(recentQuery.data ?? []).map((f) => {
+                        const d = describeFile(f.mimeType, f.filename);
+                        const RecentIcon = d.icon;
                         return (
-                          <li key={h.id}>
+                          <li key={f.id}>
                             <RowButton
-                              onClick={() =>
-                                // The switch runs inside the guarded open (as
-                                // the search palette does): kept off it, the
-                                // workspace stays too.
-                                guardedNavigate(() => {
-                                  if (to) jump.switchTo(to.id);
-                                  setQuery('');
-                                  const sp = new URLSearchParams();
-                                  sp.set('path', h.path);
-                                  sp.set('file', h.id);
-                                  router.push(`/files?${sp.toString()}`);
-                                })
-                              }
-                              className="flex w-full items-start gap-3 px-6 py-2.5 text-left hover:bg-muted/30"
+                              onClick={() => {
+                                setCrossView(null);
+                                const sp = new URLSearchParams();
+                                sp.set('path', f.parentPath);
+                                sp.set('file', f.id);
+                                router.push(`/files?${sp.toString()}`);
+                              }}
+                              className="flex w-full items-center gap-3 px-6 py-2 text-left hover:bg-muted/30"
                             >
-                              <HitIcon
+                              <RecentIcon
                                 aria-hidden
-                                className={`mt-0.5 size-4 shrink-0 ${KIND_TINT[d.kind]}`}
+                                className={`size-4 shrink-0 ${KIND_TINT[d.kind]}`}
                               />
-                              <span className="min-w-0">
+                              <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm font-medium">
-                                  {h.title}
+                                  {f.filename}
                                 </span>
                                 <span className="block truncate text-xs text-muted-foreground">
-                                  {h.path}
-                                  {h.summary ? ` — ${h.summary}` : ''}
+                                  {f.parentPath}
                                 </span>
                               </span>
-                              {to && <WorkspaceHitTag workspace={to} className="ml-auto" />}
-                              <span
-                                className={cn(
-                                  'shrink-0 text-xs text-muted-foreground',
-                                  !to && 'ml-auto',
-                                )}
-                              >
-                                {fmtRelative(h.updatedAt)}
+                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                {fmtSize(f.sizeBytes)}
+                              </span>
+                              <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
+                                {fmtRelative(f.updatedAt)}
                               </span>
                             </RowButton>
                           </li>
                         );
                       })}
                     </ul>
-                  )}
+                    {recentQuery.data && recentQuery.data.length === 0 && (
+                      <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+                        No files yet.
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : crossView === 'data' ? (
-              /* ── Data files, whole tree ────────────────────────── */
-              <>
-                <SetPageTitle title="Data files" />
-                <DataFilesView
-                  under={dataUnder}
-                  onOpen={(f) => {
-                    setCrossView(null);
-                    const sp = new URLSearchParams();
-                    sp.set('path', f.parentPath);
-                    sp.set('file', f.id);
-                    sp.set('view', 'data');
-                    router.push(`/files?${sp.toString()}`);
-                  }}
-                />
-              </>
-            ) : crossView === 'unread' ? (
-              <UnreadFilesView
-                onOpen={(f) => {
-                  setCrossView(null);
-                  const sp = new URLSearchParams();
-                  sp.set('path', f.parentPath);
-                  sp.set('file', f.id);
-                  router.push(`/files?${sp.toString()}`);
-                }}
-              />
-            ) : recentView ? (
-              /* ── Recent files, whole tree ──────────────────────── */
-              <div className="flex h-full flex-col overflow-hidden">
-                <SetPageTitle title="Recent files" />
-                <header className="border-b border-border px-6 py-3">
-                  <h2 className="text-sm font-medium">Recent files</h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Newest changes across every folder — an upload or edit puts a file back on top.
-                  </p>
-                </header>
-                <div className="flex-1 overflow-y-auto scrollbar-thin">
-                  <ul className="divide-y divide-border">
-                    {(recentQuery.data ?? []).map((f) => {
-                      const d = describeFile(f.mimeType, f.filename);
-                      const RecentIcon = d.icon;
-                      return (
-                        <li key={f.id}>
-                          <RowButton
-                            onClick={() => {
-                              setCrossView(null);
-                              const sp = new URLSearchParams();
-                              sp.set('path', f.parentPath);
-                              sp.set('file', f.id);
-                              router.push(`/files?${sp.toString()}`);
-                            }}
-                            className="flex w-full items-center gap-3 px-6 py-2 text-left hover:bg-muted/30"
-                          >
-                            <RecentIcon
-                              aria-hidden
-                              className={`size-4 shrink-0 ${KIND_TINT[d.kind]}`}
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium">
-                                {f.filename}
-                              </span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {f.parentPath}
-                              </span>
-                            </span>
-                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                              {fmtSize(f.sizeBytes)}
-                            </span>
-                            <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
-                              {fmtRelative(f.updatedAt)}
-                            </span>
-                          </RowButton>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {recentQuery.data && recentQuery.data.length === 0 && (
-                    <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-                      No files yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <>
-                <SetPageTitle title={currentFolder?.slug ?? 'files'} />
-                {/* The item header (contract 2026-10-21): one row for the open
+              ) : (
+                <>
+                  <SetPageTitle title={currentFolder?.slug ?? 'files'} />
+                  {/* The item header (contract 2026-10-21): one row for the open
                     folder. New and Upload are the word buttons; Upload folder,
                     the view and the indexing switch are its tools; the pencil
                     renames it; the path, the description and Go to path sit
                     behind Info and More. The top level has no Access, rename or
                     delete. */}
-                <ItemHeader
-                  sticky
-                  section="Files"
-                  visual={<Folder className="size-4" aria-hidden />}
-                  title={
-                    pathJump !== null ? (
-                      // Click-to-type path entry: the file-manager address bar,
-                      // for pasting a path from chat or a doc.
-                      <Input
-                        autoFocus
-                        value={pathJump}
-                        onChange={(e) => setPathJump(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') submitPathJump();
-                          if (e.key === 'Escape') setPathJump(null);
-                        }}
-                        onBlur={() => setPathJump(null)}
-                        placeholder="files.work.reports — Enter to jump"
-                        aria-label="Go to path"
-                        className="h-7 w-80 max-w-full font-mono text-xs"
-                      />
-                    ) : (
-                      (breadcrumbs[breadcrumbs.length - 1]?.label ?? 'Files')
-                    )
-                  }
-                  textActions={
-                    <>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="sm">
-                            <Plus /> New <ChevronDown className="opacity-70" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem onSelect={() => setDialog({ kind: 'createFolder' })}>
-                            <FolderPlus /> Folder
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onSelect={() => setDialog({ kind: 'createFile', ext: 'md' })}
-                          >
-                            <FileText /> Markdown file
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => setDialog({ kind: 'createFile', ext: 'txt' })}
-                          >
-                            <FileText /> Text file
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => setDialog({ kind: 'createFile', ext: 'json' })}
-                          >
-                            <FileJson /> JSON file
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <Button size="sm" variant="outline" onClick={triggerUpload}>
-                        <Upload /> Upload
-                      </Button>
-                    </>
-                  }
-                  access={
-                    folder ? (
-                      <AccessSlot type="branch" nodeId={folder.id} canShare shares={folder} />
-                    ) : undefined
-                  }
-                  tools={[
-                    {
-                      key: 'data-files',
-                      label: 'Data files: the files with a database in this folder and below',
-                      icon: <Database />,
-                      onSelect: () => {
-                        setDataUnder(currentPath === FILES_ROOT ? null : currentPath);
-                        setCrossView('data');
+                  <ItemHeader
+                    sticky
+                    section="Files"
+                    visual={<Folder className="size-4" aria-hidden />}
+                    title={
+                      pathJump !== null ? (
+                        // Click-to-type path entry: the file-manager address bar,
+                        // for pasting a path from chat or a doc.
+                        <Input
+                          autoFocus
+                          value={pathJump}
+                          onChange={(e) => setPathJump(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') submitPathJump();
+                            if (e.key === 'Escape') setPathJump(null);
+                          }}
+                          onBlur={() => setPathJump(null)}
+                          placeholder="files.work.reports — Enter to jump"
+                          aria-label="Go to path"
+                          className="h-7 w-80 max-w-full font-mono text-xs"
+                        />
+                      ) : (
+                        (breadcrumbs[breadcrumbs.length - 1]?.label ?? 'Files')
+                      )
+                    }
+                    textActions={
+                      <>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm">
+                              <Plus /> New <ChevronDown className="opacity-70" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem onSelect={() => setDialog({ kind: 'createFolder' })}>
+                              <FolderPlus /> Folder
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => setDialog({ kind: 'createFile', ext: 'md' })}
+                            >
+                              <FileText /> Markdown file
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => setDialog({ kind: 'createFile', ext: 'txt' })}
+                            >
+                              <FileText /> Text file
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => setDialog({ kind: 'createFile', ext: 'json' })}
+                            >
+                              <FileJson /> JSON file
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button size="sm" variant="outline" onClick={triggerUpload}>
+                          <Upload /> Upload
+                        </Button>
+                      </>
+                    }
+                    access={
+                      folder ? (
+                        <AccessSlot type="branch" nodeId={folder.id} canShare shares={folder} />
+                      ) : undefined
+                    }
+                    tools={[
+                      {
+                        key: 'data-files',
+                        label: 'Data files: the files with a database in this folder and below',
+                        icon: <Database />,
+                        onSelect: () => {
+                          setDataUnder(currentPath === FILES_ROOT ? null : currentPath);
+                          setCrossView('data');
+                        },
                       },
-                    },
-                    {
-                      key: 'upload-folder',
-                      label: 'Upload a folder with its sub-folders',
-                      icon: <FolderUp />,
-                      onSelect: () => folderInputRef.current?.click(),
-                    },
-                    {
-                      key: 'view',
-                      label: `View: ${view === 'grid' ? 'Thumbnails' : view === 'dual' ? 'Two panes' : 'Details'}`,
-                      icon:
-                        view === 'grid' ? (
-                          <LayoutGrid />
-                        ) : view === 'dual' ? (
-                          <Columns2 />
-                        ) : (
-                          <List />
-                        ),
-                      choices: [
+                      {
+                        key: 'upload-folder',
+                        label: 'Upload a folder with its sub-folders',
+                        icon: <FolderUp />,
+                        onSelect: () => folderInputRef.current?.click(),
+                      },
+                      {
+                        key: 'view',
+                        label: `View: ${view === 'grid' ? 'Thumbnails' : view === 'dual' ? 'Two panes' : 'Details'}`,
+                        icon:
+                          view === 'grid' ? (
+                            <LayoutGrid />
+                          ) : view === 'dual' ? (
+                            <Columns2 />
+                          ) : (
+                            <List />
+                          ),
+                        choices: [
+                          {
+                            key: 'list',
+                            label: view === 'list' ? 'Details ✓' : 'Details',
+                            icon: <List />,
+                            onSelect: () => switchView('list'),
+                          },
+                          {
+                            key: 'grid',
+                            label: view === 'grid' ? 'Thumbnails ✓' : 'Thumbnails',
+                            icon: <LayoutGrid />,
+                            onSelect: () => switchView('grid'),
+                          },
+                          {
+                            key: 'dual',
+                            label:
+                              view === 'dual'
+                                ? 'Two panes ✓ (F5 copy, F6 move, Tab switches)'
+                                : 'Two panes (F5 copy, F6 move, Tab switches)',
+                            icon: <Columns2 />,
+                            onSelect: () => switchView('dual'),
+                          },
+                        ],
+                      },
+                      ...(folder
+                        ? [
+                            {
+                              // The trigger names the EFFECTIVE mode (own flag
+                              // or inherited); the choices edit the OWN flag.
+                              key: 'indexing',
+                              label:
+                                folderIndexing.mode === 'metadata'
+                                  ? `Name only: content here is not indexed${folderIndexing.from ? ` (inherited from ${folderIndexing.from})` : ''}`
+                                  : 'Indexed: search can read inside files here',
+                              icon: folderIndexing.mode === 'metadata' ? <EyeOff /> : <Eye />,
+                              choices: [
+                                {
+                                  key: 'full',
+                                  label: 'Index content (search can read inside files)',
+                                  icon: <Eye />,
+                                  onSelect: () => setFolderIndexing('full'),
+                                },
+                                {
+                                  key: 'metadata',
+                                  label: "Name only (store and share, don't index content)",
+                                  icon: <EyeOff />,
+                                  onSelect: () => setFolderIndexing('metadata'),
+                                },
+                                ...(folder.indexing
+                                  ? [
+                                      {
+                                        key: 'inherit',
+                                        label: 'Inherit from parent',
+                                        onSelect: () => setFolderIndexing('inherit'),
+                                      },
+                                    ]
+                                  : []),
+                              ],
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onDelete={folder ? () => setDialog({ kind: 'deleteFolder' }) : undefined}
+                    deleteDisabled={busy && !!folder}
+                    deleteLabel="Delete folder"
+                    edit={
+                      folder
+                        ? {
+                            label: 'Rename folder',
+                            onSelect: () =>
+                              setDialog({
+                                kind: 'rename',
+                                target: {
+                                  kind: 'folder',
+                                  id: folder.id,
+                                  slug: folder.slug,
+                                },
+                              }),
+                          }
+                        : undefined
+                    }
+                    more={[
+                      {
+                        key: 'path',
+                        label: 'Go to path…',
+                        icon: <Pencil />,
+                        onSelect: () => setTimeout(() => setPathJump(currentPath), 50),
+                      },
+                    ]}
+                    info={{
+                      description: editingDesc ? (
+                        <div className="flex flex-col gap-2">
+                          <Textarea
+                            value={draftDesc}
+                            onChange={(e) => setDraftDesc(e.target.value)}
+                            rows={3}
+                            placeholder="Describe what lives in this folder…"
+                            aria-label="Folder description"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <Button size="xs" onClick={saveDescription}>
+                              Save
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingDesc(false);
+                                setDraftDesc(currentFolder?.description ?? '');
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <RowButton
+                          onClick={() => {
+                            setDraftDesc(currentFolder?.description ?? '');
+                            setEditingDesc(true);
+                          }}
+                          className="group flex items-center gap-1.5 text-left text-muted-foreground hover:text-foreground"
+                        >
+                          <span>
+                            {currentFolder?.description ? (
+                              currentFolder.description
+                            ) : (
+                              <span className="italic">No description: click to add</span>
+                            )}
+                          </span>
+                          <Pencil
+                            className="size-3 opacity-0 group-hover:opacity-100"
+                            aria-hidden
+                          />
+                        </RowButton>
+                      ),
+                      rows: [
                         {
-                          key: 'list',
-                          label: view === 'list' ? 'Details ✓' : 'Details',
-                          icon: <List />,
-                          onSelect: () => switchView('list'),
-                        },
-                        {
-                          key: 'grid',
-                          label: view === 'grid' ? 'Thumbnails ✓' : 'Thumbnails',
-                          icon: <LayoutGrid />,
-                          onSelect: () => switchView('grid'),
-                        },
-                        {
-                          key: 'dual',
-                          label:
-                            view === 'dual'
-                              ? 'Two panes ✓ (F5 copy, F6 move, Tab switches)'
-                              : 'Two panes (F5 copy, F6 move, Tab switches)',
-                          icon: <Columns2 />,
-                          onSelect: () => switchView('dual'),
+                          label: 'Location',
+                          value: (
+                            <span className="flex flex-wrap items-center gap-1">
+                              {breadcrumbs.map((c, i) => (
+                                <span key={c.path} className="flex items-center gap-1">
+                                  {i > 0 && <ChevronRight className="size-3" aria-hidden />}
+                                  <RowButton
+                                    onClick={() => navigateFolder(c.path)}
+                                    className="hover:text-primary-ink"
+                                  >
+                                    {c.label}
+                                  </RowButton>
+                                </span>
+                              ))}
+                            </span>
+                          ),
                         },
                       ],
-                    },
-                    ...(folder
-                      ? [
-                          {
-                            // The trigger names the EFFECTIVE mode (own flag
-                            // or inherited); the choices edit the OWN flag.
-                            key: 'indexing',
-                            label:
-                              folderIndexing.mode === 'metadata'
-                                ? `Name only: content here is not indexed${folderIndexing.from ? ` (inherited from ${folderIndexing.from})` : ''}`
-                                : 'Indexed: search can read inside files here',
-                            icon: folderIndexing.mode === 'metadata' ? <EyeOff /> : <Eye />,
-                            choices: [
-                              {
-                                key: 'full',
-                                label: 'Index content (search can read inside files)',
-                                icon: <Eye />,
-                                onSelect: () => setFolderIndexing('full'),
-                              },
-                              {
-                                key: 'metadata',
-                                label: "Name only (store and share, don't index content)",
-                                icon: <EyeOff />,
-                                onSelect: () => setFolderIndexing('metadata'),
-                              },
-                              ...(folder.indexing
-                                ? [
-                                    {
-                                      key: 'inherit',
-                                      label: 'Inherit from parent',
-                                      onSelect: () => setFolderIndexing('inherit'),
-                                    },
-                                  ]
-                                : []),
-                            ],
-                          },
-                        ]
-                      : []),
-                  ]}
-                  onDelete={folder ? () => setDialog({ kind: 'deleteFolder' }) : undefined}
-                  deleteDisabled={busy && !!folder}
-                  deleteLabel="Delete folder"
-                  edit={
-                    folder
-                      ? {
-                          label: 'Rename folder',
-                          onSelect: () =>
-                            setDialog({
-                              kind: 'rename',
-                              target: {
-                                kind: 'folder',
-                                id: folder.id,
-                                slug: folder.slug,
-                              },
-                            }),
-                        }
-                      : undefined
-                  }
-                  more={[
-                    {
-                      key: 'path',
-                      label: 'Go to path…',
-                      icon: <Pencil />,
-                      onSelect: () => setTimeout(() => setPathJump(currentPath), 50),
-                    },
-                  ]}
-                  info={{
-                    description: editingDesc ? (
-                      <div className="flex flex-col gap-2">
-                        <Textarea
-                          value={draftDesc}
-                          onChange={(e) => setDraftDesc(e.target.value)}
-                          rows={3}
-                          placeholder="Describe what lives in this folder…"
-                          aria-label="Folder description"
-                          autoFocus
-                        />
-                        <div className="flex gap-2">
-                          <Button size="xs" onClick={saveDescription}>
-                            Save
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingDesc(false);
-                              setDraftDesc(currentFolder?.description ?? '');
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <RowButton
-                        onClick={() => {
-                          setDraftDesc(currentFolder?.description ?? '');
-                          setEditingDesc(true);
-                        }}
-                        className="group flex items-center gap-1.5 text-left text-muted-foreground hover:text-foreground"
-                      >
-                        <span>
-                          {currentFolder?.description ? (
-                            currentFolder.description
-                          ) : (
-                            <span className="italic">No description: click to add</span>
-                          )}
-                        </span>
-                        <Pencil className="size-3 opacity-0 group-hover:opacity-100" aria-hidden />
-                      </RowButton>
-                    ),
-                    rows: [
-                      {
-                        label: 'Location',
-                        value: (
-                          <span className="flex flex-wrap items-center gap-1">
-                            {breadcrumbs.map((c, i) => (
-                              <span key={c.path} className="flex items-center gap-1">
-                                {i > 0 && <ChevronRight className="size-3" aria-hidden />}
-                                <RowButton
-                                  onClick={() => navigateFolder(c.path)}
-                                  className="hover:text-primary-ink"
-                                >
-                                  {c.label}
-                                </RowButton>
-                              </span>
-                            ))}
-                          </span>
-                        ),
-                      },
-                    ],
-                  }}
-                  infoLabel="About this folder"
-                />
-                <input ref={fileInputRef} type="file" multiple hidden onChange={onFileInput} />
-                <input
-                  ref={(el) => {
-                    // Not a React prop: the folder picker is a DOM attribute.
-                    el?.setAttribute('webkitdirectory', '');
-                    folderInputRef.current = el;
-                  }}
-                  type="file"
-                  multiple
-                  hidden
-                  onChange={onFolderInput}
-                />
+                    }}
+                    infoLabel="About this folder"
+                  />
+                  <input ref={fileInputRef} type="file" multiple hidden onChange={onFileInput} />
+                  <input
+                    ref={(el) => {
+                      // Not a React prop: the folder picker is a DOM attribute.
+                      el?.setAttribute('webkitdirectory', '');
+                      folderInputRef.current = el;
+                    }}
+                    type="file"
+                    multiple
+                    hidden
+                    onChange={onFolderInput}
+                  />
 
-                {/* A pick of files has its own bar, in the content. */}
-                <div
-                  className={cn(
-                    'flex items-center gap-2 border-b border-border px-6 py-2',
-                    selectedFileIds.size === 0 && 'hidden',
+                  {/* A pick of files has its own bar, in the content. Move and
+                    Delete show when every picked file allows them (its caps). */}
+                  {view !== 'dual' && (
+                    <SelectionBar
+                      rows={pickedRows}
+                      treeMove={treeMove}
+                      onMove={() => moveFiles(pickedRows)}
+                      onDelete={() => setDialog({ kind: 'bulkDelete' })}
+                      onClear={clearPick}
+                    />
                   )}
-                >
-                  {selectedFileIds.size > 0 &&
-                    // Delete is a Moderator's of each file's home (its caps).
-                    files.every((f) => !selectedFileIds.has(f.id) || itemAccess(f).manage) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-muted-foreground hover:text-destructive-ink"
-                        onClick={() => setDialog({ kind: 'bulkDelete' })}
-                      >
-                        <Trash2 /> Delete {selectedFileIds.size}
-                      </Button>
-                    )}
-                </div>
 
-                {/* Grid */}
-                {/* The pane's ONE scrollbar. `scrollbar-thin` per §8 — there is
+                  {/* Grid */}
+                  {/* The pane's ONE scrollbar. `scrollbar-thin` per §8 — there is
                     no global default, so an element that scrolls without it
                     gets a fat bar and nothing warns you. */}
-                <div className="relative flex-1 overflow-y-auto scrollbar-thin">
-                  {dragOver && (
-                    <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-primary/50 bg-primary/5 text-sm font-medium text-primary-ink">
-                      <span>
-                        Drop to upload to <code className="ml-1 font-mono">{currentPath}</code>
-                      </span>
-                      {visibleTo ? (
-                        <span className="text-xs font-normal">
-                          Also visible to: {visibleTo.join(', ')}
-                        </span>
-                      ) : null}
-                    </div>
-                  )}
+                  <div className="relative flex-1 overflow-y-auto scrollbar-thin">
+                    {/* Child folders: each card takes a drop into it. */}
+                    <ChildFolders
+                      tree={tree}
+                      currentPath={currentPath}
+                      onNavigate={navigateFolder}
+                      dropOver={drop.over}
+                    />
 
-                  {/* Child folders */}
-                  <ChildFolders tree={tree} currentPath={currentPath} onNavigate={navigateFolder} />
-
-                  {/* Files */}
-                  {/* Dual pane FIRST: an empty current folder is exactly where
+                    {/* Files */}
+                    {/* Dual pane FIRST: an empty current folder is exactly where
                       a two-pane view earns its keep (you're moving things INTO
                       it), so the empty state must not shadow it (audit A3). */}
-                  {view === 'dual' ? (
-                    <DualPane
-                      tree={tree}
-                      leftStart={currentPath}
-                      onOpenFile={(id, path) => {
-                        const sp = new URLSearchParams();
-                        sp.set('path', path);
-                        sp.set('file', id);
-                        router.push(`/files?${sp.toString()}`);
-                      }}
-                      onChanged={() => {
-                        refresh();
-                        queryClient.invalidateQueries({ queryKey: ['files'] });
-                      }}
-                    />
-                  ) : files.length === 0 ? (
-                    <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-                      No files in this folder. Drop a file anywhere here, or use{' '}
-                      <span className="font-medium text-foreground">New</span> to create one.
-                    </div>
-                  ) : view === 'grid' ? (
-                    /* Thumbnail tiles. Images load ?thumb=1 (cached 512px JPEG
+                    {view === 'dual' ? (
+                      <DualPane
+                        tree={tree}
+                        leftStart={currentPath}
+                        dropOver={drop.over}
+                        onOpenFile={(id, path) => {
+                          const sp = new URLSearchParams();
+                          sp.set('path', path);
+                          sp.set('file', id);
+                          router.push(`/files?${sp.toString()}`);
+                        }}
+                        onChanged={() => {
+                          refresh();
+                          queryClient.invalidateQueries({ queryKey: ['files'] });
+                        }}
+                      />
+                    ) : files.length === 0 ? (
+                      <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+                        No files in this folder. Drop a file anywhere here, or use{' '}
+                        <span className="font-medium text-foreground">New</span> to create one.
+                      </div>
+                    ) : view === 'grid' ? (
+                      /* Thumbnail tiles. Images load ?thumb=1 (cached 512px JPEG
                        server-side); a 404 — not an image, render failed —
-                       flips the tile to the type icon via onError. Selection
-                       stays a list-view feature; a tile click opens. */
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3 p-4">
-                      {sortedFiles.map((f) => {
-                        const described = describeFile(f.mimeType, f.filename);
-                        const TypeIcon = described.icon;
-                        const isImage = f.mimeType.startsWith('image/');
-                        return (
-                          <RowButton
-                            key={f.id}
-                            onClick={() => openFile(f.id)}
-                            data-mark-id={f.id}
-                            data-mark-kind="file"
-                            data-mark-label={f.filename}
-                            title={`${f.filename} — ${described.label}, ${fmtSize(f.sizeBytes)}`}
-                            className="group flex flex-col overflow-hidden rounded-md border border-border bg-card text-left hover:border-primary/40 hover:shadow-sm"
-                          >
-                            <span className="flex aspect-square w-full items-center justify-center overflow-hidden bg-muted/40">
-                              {isImage ? (
-                                // eslint-disable-next-line @next/next/no-img-element -- authed same-origin thumbnail; next/image can't carry the asset token
-                                <img
-                                  src={toAsset(`/api/files/files/${f.id}?thumb=1`)}
-                                  alt=""
-                                  loading="lazy"
-                                  className="h-full w-full object-cover"
-                                  onError={(e) => {
-                                    // Swap to the icon fallback: hide the img,
-                                    // reveal the sibling icon span.
-                                    e.currentTarget.style.display = 'none';
-                                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                                  }}
-                                />
-                              ) : null}
-                              <span
-                                className={
-                                  isImage
-                                    ? 'hidden items-center justify-center'
-                                    : 'flex items-center justify-center'
-                                }
-                              >
-                                <TypeIcon
-                                  aria-hidden
-                                  className={`size-10 ${KIND_TINT[described.kind]}`}
-                                />
-                              </span>
-                            </span>
-                            <span className="flex flex-col gap-0.5 px-2 py-1.5">
-                              <span className="flex min-w-0 items-center gap-1">
-                                <span className="min-w-0 truncate text-xs font-medium">
-                                  {f.filename}
-                                </span>
-                                <WorkspaceChips item={f} />
-                              </span>
-                              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                {fmtSize(f.sizeBytes)}
-                                {(f.indexing === 'metadata' ||
-                                  f.indexingApplied === 'metadata' ||
-                                  (!f.indexing && folderIndexing.mode === 'metadata')) && (
-                                  <span className="inline-flex items-center gap-0.5">
-                                    <EyeOff className="size-2.5" /> name only
-                                  </span>
-                                )}
-                                <ExtractionBadge x={f.extraction} compact />
-                              </span>
-                            </span>
-                          </RowButton>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
-                        <tr>
-                          <th className="w-8 px-3 py-2">
-                            <Checkbox
-                              aria-label="Select all files"
-                              checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                              onCheckedChange={(v) =>
-                                setSelectedFileIds(v ? new Set(files.map((f) => f.id)) : new Set())
-                              }
-                            />
-                          </th>
-                          {(
-                            [
-                              ['name', 'Name', 'text-left'],
-                              ['type', 'Type', 'text-left'],
-                              ['size', 'Size', 'text-right'],
-                            ] as const
-                          ).map(([key, label, align]) => (
-                            <th key={key} className={`px-3 py-2 ${align}`}>
+                       flips the tile to the type icon via onError. A tile
+                       click opens; cmd/ctrl or shift picks, as in the list,
+                       and its corner box picks too. */
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3 p-4">
+                        {sortedFiles.map((f) => {
+                          const described = describeFile(f.mimeType, f.filename);
+                          const TypeIcon = described.icon;
+                          const isImage = f.mimeType.startsWith('image/');
+                          const picked = selectedFileIds.has(f.id);
+                          return (
+                            <div
+                              key={f.id}
+                              className="group relative"
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setMenuFor(f.id);
+                              }}
+                            >
                               <RowButton
-                                onClick={() => toggleSort(key)}
-                                className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-foreground ${align === 'text-right' ? 'flex-row-reverse' : ''}`}
+                                onClick={(e) => clickFile(f, e)}
+                                onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                                data-mark-id={f.id}
+                                data-mark-kind="file"
+                                data-mark-label={f.filename}
+                                aria-pressed={selectedFileIds.size > 0 ? picked : undefined}
+                                title={`${f.filename} — ${described.label}, ${fmtSize(f.sizeBytes)}`}
+                                className={cn(
+                                  'flex w-full flex-col overflow-hidden rounded-md border bg-card text-left hover:shadow-sm',
+                                  picked
+                                    ? 'border-primary ring-2 ring-primary/40'
+                                    : 'border-border hover:border-primary/40',
+                                )}
                               >
-                                {label}
-                                {sort.key === key &&
+                                <span className="flex aspect-square w-full items-center justify-center overflow-hidden bg-muted/40">
+                                  {isImage ? (
+                                    // eslint-disable-next-line @next/next/no-img-element -- authed same-origin thumbnail; next/image can't carry the asset token
+                                    <img
+                                      src={toAsset(`/api/files/files/${f.id}?thumb=1`)}
+                                      alt=""
+                                      loading="lazy"
+                                      className="h-full w-full object-cover"
+                                      onError={(e) => {
+                                        // Swap to the icon fallback: hide the img,
+                                        // reveal the sibling icon span.
+                                        e.currentTarget.style.display = 'none';
+                                        e.currentTarget.nextElementSibling?.classList.remove(
+                                          'hidden',
+                                        );
+                                      }}
+                                    />
+                                  ) : null}
+                                  <span
+                                    className={
+                                      isImage
+                                        ? 'hidden items-center justify-center'
+                                        : 'flex items-center justify-center'
+                                    }
+                                  >
+                                    <TypeIcon
+                                      aria-hidden
+                                      className={`size-10 ${KIND_TINT[described.kind]}`}
+                                    />
+                                  </span>
+                                </span>
+                                <span className="flex flex-col gap-0.5 px-2 py-1.5">
+                                  <span className="flex min-w-0 items-center gap-1">
+                                    <span className="min-w-0 truncate text-xs font-medium">
+                                      {f.filename}
+                                    </span>
+                                    <WorkspaceChips item={f} />
+                                  </span>
+                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                    {fmtSize(f.sizeBytes)}
+                                    {(f.indexing === 'metadata' ||
+                                      f.indexingApplied === 'metadata' ||
+                                      (!f.indexing && folderIndexing.mode === 'metadata')) && (
+                                      <span className="inline-flex items-center gap-0.5">
+                                        <EyeOff className="size-2.5" /> name only
+                                      </span>
+                                    )}
+                                    <ExtractionBadge x={f.extraction} compact />
+                                  </span>
+                                </span>
+                              </RowButton>
+                              <Checkbox
+                                aria-label={`Select ${f.filename}`}
+                                checked={picked}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  pickFile(f.id, { toggle: true, range: e.shiftKey });
+                                }}
+                                className={cn(
+                                  'absolute left-2 top-2 bg-background shadow-sm',
+                                  !picked &&
+                                    selectedFileIds.size === 0 &&
+                                    'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
+                                )}
+                              />
+                              <FileRowMenu
+                                file={f}
+                                targets={targetsOf(f)}
+                                treeMove={treeMove}
+                                open={menuFor === f.id}
+                                onOpenChange={(o) => setMenuFor(o ? f.id : null)}
+                                onOpen={() => openFile(f.id)}
+                                onRename={() => renameFile(f)}
+                                onMove={() => moveFiles(targetsOf(f))}
+                                onDelete={() =>
+                                  setDialog({
+                                    kind: 'bulkDelete',
+                                    ids: targetsOf(f).map((t) => t.id),
+                                  })
+                                }
+                                className="absolute right-1.5 top-1.5 bg-background/80 shadow-sm"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="w-8 px-3 py-2">
+                              <Checkbox
+                                aria-label="Select all files"
+                                checked={
+                                  allSelected ? true : someSelected ? 'indeterminate' : false
+                                }
+                                onCheckedChange={(v) =>
+                                  v
+                                    ? setSelectedFileIds(new Set(files.map((f) => f.id)))
+                                    : clearPick()
+                                }
+                              />
+                            </th>
+                            {(
+                              [
+                                ['name', 'Name', 'text-left'],
+                                ['type', 'Type', 'text-left'],
+                                ['size', 'Size', 'text-right'],
+                              ] as const
+                            ).map(([key, label, align]) => (
+                              <th key={key} className={`px-3 py-2 ${align}`}>
+                                <RowButton
+                                  onClick={() => toggleSort(key)}
+                                  className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-foreground ${align === 'text-right' ? 'flex-row-reverse' : ''}`}
+                                >
+                                  {label}
+                                  {sort.key === key &&
+                                    (sort.dir === 'asc' ? (
+                                      <ArrowUp className="size-3" />
+                                    ) : (
+                                      <ArrowDown className="size-3" />
+                                    ))}
+                                </RowButton>
+                              </th>
+                            ))}
+                            <th className="px-3 py-2 text-left">Summary</th>
+                            <th className="px-3 py-2 text-left">
+                              <RowButton
+                                onClick={() => toggleSort('modified')}
+                                className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-foreground"
+                              >
+                                Modified
+                                {sort.key === 'modified' &&
                                   (sort.dir === 'asc' ? (
                                     <ArrowUp className="size-3" />
                                   ) : (
@@ -1397,142 +1527,132 @@ function FilesView({
                                   ))}
                               </RowButton>
                             </th>
-                          ))}
-                          <th className="px-3 py-2 text-left">Summary</th>
-                          <th className="px-3 py-2 text-left">
-                            <RowButton
-                              onClick={() => toggleSort('modified')}
-                              className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-foreground"
-                            >
-                              Modified
-                              {sort.key === 'modified' &&
-                                (sort.dir === 'asc' ? (
-                                  <ArrowUp className="size-3" />
-                                ) : (
-                                  <ArrowDown className="size-3" />
-                                ))}
-                            </RowButton>
-                          </th>
-                          <th className="w-10 px-3 py-2" aria-label="Actions" />
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {sortedFiles.map((f) => {
-                          // MIME first, filename as tie-breaker — files uploaded
-                          // before the server's mime map learned audio/video/
-                          // archives are stored as octet-stream, and the
-                          // extension still names them correctly.
-                          const described = describeFile(f.mimeType, f.filename);
-                          const TypeIcon = described.icon;
-                          return (
-                            <tr key={f.id} className="hover:bg-muted/30">
-                              <td className="px-3 py-2">
-                                <Checkbox
-                                  aria-label={`Select ${f.filename}`}
-                                  checked={selectedFileIds.has(f.id)}
-                                  onCheckedChange={(v) =>
-                                    setSelectedFileIds((prev) => {
-                                      const next = new Set(prev);
-                                      if (v) next.add(f.id);
-                                      else next.delete(f.id);
-                                      return next;
-                                    })
-                                  }
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <RowButton
-                                  onClick={() => openFile(f.id)}
-                                  data-mark-id={f.id}
-                                  data-mark-kind="file"
-                                  data-mark-label={f.filename}
-                                  className="flex items-center gap-2 text-left hover:underline"
-                                >
-                                  <TypeIcon
-                                    aria-hidden
-                                    className={`size-4 shrink-0 ${KIND_TINT[described.kind]}`}
+                            <th className="w-10 px-3 py-2" aria-label="Actions" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {sortedFiles.map((f) => {
+                            // MIME first, filename as tie-breaker — files uploaded
+                            // before the server's mime map learned audio/video/
+                            // archives are stored as octet-stream, and the
+                            // extension still names them correctly.
+                            const described = describeFile(f.mimeType, f.filename);
+                            const TypeIcon = described.icon;
+                            const picked = selectedFileIds.has(f.id);
+                            return (
+                              <tr
+                                key={f.id}
+                                aria-selected={picked}
+                                className={cn(
+                                  'group',
+                                  picked ? 'bg-primary/5' : 'hover:bg-muted/30',
+                                )}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  setMenuFor(f.id);
+                                }}
+                              >
+                                <td className="px-3 py-2">
+                                  <Checkbox
+                                    aria-label={`Select ${f.filename}`}
+                                    checked={picked}
+                                    onClick={(e) => {
+                                      // Shift on the box picks the range too.
+                                      e.preventDefault();
+                                      pickFile(f.id, { toggle: true, range: e.shiftKey });
+                                    }}
                                   />
-                                  <span className="font-medium">{f.filename}</span>
-                                  <span
-                                    title={described.label}
-                                    className="text-[10px] uppercase tracking-wider text-muted-foreground"
+                                </td>
+                                <td className="px-3 py-2">
+                                  <RowButton
+                                    onClick={(e) => clickFile(f, e)}
+                                    onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                                    data-mark-id={f.id}
+                                    data-mark-kind="file"
+                                    data-mark-label={f.filename}
+                                    className="flex items-center gap-2 text-left hover:underline"
                                   >
-                                    {f.extension}
-                                  </span>
-                                  {(f.indexing === 'metadata' ||
-                                    f.indexingApplied === 'metadata' ||
-                                    (!f.indexing && folderIndexing.mode === 'metadata')) && (
+                                    <TypeIcon
+                                      aria-hidden
+                                      className={`size-4 shrink-0 ${KIND_TINT[described.kind]}`}
+                                    />
+                                    <span className="font-medium">{f.filename}</span>
                                     <span
-                                      title={
-                                        f.indexing === 'metadata'
-                                          ? 'Name-only: content not indexed (set on this file)'
-                                          : 'Name-only: content not indexed (inherited from the folder)'
-                                      }
-                                      className="inline-flex items-center gap-0.5 rounded-sm bg-muted px-1 text-[10px] text-muted-foreground"
+                                      title={described.label}
+                                      className="text-[10px] uppercase tracking-wider text-muted-foreground"
                                     >
-                                      <EyeOff className="size-3 shrink-0" /> name only
+                                      {f.extension}
                                     </span>
-                                  )}
-                                  <ExtractionBadge x={f.extraction} />
-                                  {f.summary &&
-                                    f.indexingApplied !== 'metadata' &&
-                                    (!f.extraction || f.extraction.state === 'indexed') && (
+                                    {(f.indexing === 'metadata' ||
+                                      f.indexingApplied === 'metadata' ||
+                                      (!f.indexing && folderIndexing.mode === 'metadata')) && (
                                       <span
-                                        title="Indexed — summary ready"
-                                        className="inline-flex items-center text-primary-ink"
+                                        title={
+                                          f.indexing === 'metadata'
+                                            ? 'Name-only: content not indexed (set on this file)'
+                                            : 'Name-only: content not indexed (inherited from the folder)'
+                                        }
+                                        className="inline-flex items-center gap-0.5 rounded-sm bg-muted px-1 text-[10px] text-muted-foreground"
                                       >
-                                        <ChevronsRight className="size-3.5 shrink-0" />
+                                        <EyeOff className="size-3 shrink-0" /> name only
                                       </span>
                                     )}
-                                </RowButton>
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                                {described.label}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                                {fmtSize(f.sizeBytes)}
-                              </td>
-                              <td className="max-w-[40ch] truncate px-3 py-2 text-xs text-muted-foreground">
-                                {f.summary ?? <span className="italic">—</span>}
-                              </td>
-                              <td className="px-3 py-2 text-xs text-muted-foreground">
-                                {fmtRelative(f.updatedAt)}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {itemAccess(f).edit ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0"
-                                    aria-label={`Rename ${f.filename}`}
-                                    onClick={() =>
+                                    <ExtractionBadge x={f.extraction} />
+                                    {f.summary &&
+                                      f.indexingApplied !== 'metadata' &&
+                                      (!f.extraction || f.extraction.state === 'indexed') && (
+                                        <span
+                                          title="Indexed — summary ready"
+                                          className="inline-flex items-center text-primary-ink"
+                                        >
+                                          <ChevronsRight className="size-3.5 shrink-0" />
+                                        </span>
+                                      )}
+                                  </RowButton>
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
+                                  {described.label}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                                  {fmtSize(f.sizeBytes)}
+                                </td>
+                                <td className="max-w-[40ch] truncate px-3 py-2 text-xs text-muted-foreground">
+                                  {f.summary ?? <span className="italic">—</span>}
+                                </td>
+                                <td className="px-3 py-2 text-xs text-muted-foreground">
+                                  {fmtRelative(f.updatedAt)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <FileRowMenu
+                                    file={f}
+                                    targets={targetsOf(f)}
+                                    treeMove={treeMove}
+                                    open={menuFor === f.id}
+                                    onOpenChange={(o) => setMenuFor(o ? f.id : null)}
+                                    onOpen={() => openFile(f.id)}
+                                    onRename={() => renameFile(f)}
+                                    onMove={() => moveFiles(targetsOf(f))}
+                                    onDelete={() =>
                                       setDialog({
-                                        kind: 'rename',
-                                        target: {
-                                          kind: 'file',
-                                          id: f.id,
-                                          filename: f.filename,
-                                          extension: f.extension,
-                                        },
+                                        kind: 'bulkDelete',
+                                        ids: targetsOf(f).map((t) => t.id),
                                       })
                                     }
-                                  >
-                                    <Pencil className="size-3.5" />
-                                  </Button>
-                                ) : null}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        }
-      />
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          }
+        />
+      </div>
 
       {/* ── Create folder dialog ──────────────────────────────────── */}
       <CreateFolderDialog

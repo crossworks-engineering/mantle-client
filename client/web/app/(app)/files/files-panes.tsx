@@ -21,6 +21,8 @@ import { AppTile } from '@/components/app-nav/app-tile';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { FILES_ROOT, fmtSize } from './files-shared';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { DROP_PATH_ATTR } from '@/lib/file-drop';
 import {
   mergeRefusals,
   visibilityRefusal,
@@ -36,10 +38,14 @@ export function ChildFolders({
   tree,
   currentPath,
   onNavigate,
+  dropOver = null,
 }: {
   tree: FolderRow[];
   currentPath: string;
   onNavigate: (path: string) => void;
+  /** The folder files dragged in from the desktop would land in: its card
+   *  is lit. Each card takes a drop into its folder (lib/file-drop.ts). */
+  dropOver?: string | null;
 }) {
   const children = useMemo(
     () =>
@@ -66,14 +72,17 @@ export function ChildFolders({
           it rides as the card's tooltip (and in the folder's own header). */}
       <ul className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
         {children.map((f) => (
-          <li key={f.id} className="flex">
+          <li key={f.id} className="flex" {...{ [DROP_PATH_ATTR]: f.path }}>
             <ListCard
               onClick={() => onNavigate(f.path)}
               data-mark-id={f.id}
               data-mark-kind="folder"
               data-mark-label={f.slug}
               title={f.description ? `${f.slug}: ${f.description}` : f.slug}
-              className="flex h-full items-center gap-2.5"
+              className={cn(
+                'flex h-full items-center gap-2.5',
+                dropOver === f.path && 'border-primary bg-primary/10 ring-2 ring-primary/50',
+              )}
             >
               <AppTile
                 icon={f.icon}
@@ -117,11 +126,15 @@ function folderCounts(f: FolderRow): string {
 export function DualPane({
   tree,
   leftStart,
+  dropOver = null,
   onOpenFile,
   onChanged,
 }: {
   tree: FolderRow[];
   leftStart: string;
+  /** The folder files dragged in from the desktop would land in. A drop
+   *  goes to the pane under the pointer, else the active pane's folder. */
+  dropOver?: string | null;
   onOpenFile: (id: string, parentPath: string) => void;
   onChanged: () => void;
 }) {
@@ -233,6 +246,7 @@ export function DualPane({
     <>
       <div
         className="flex h-full flex-col outline-none"
+        {...{ [DROP_PATH_ATTR]: paths[active] }}
         tabIndex={0}
         onKeyDown={(e) => {
           // The classics. Tab is intercepted only here, inside the manager —
@@ -261,6 +275,7 @@ export function DualPane({
               onNavigate={(p) => setPaneState(i, p)}
               onToggleSelect={(k) => toggleSelect(i, k)}
               onOpenFile={onOpenFile}
+              dropTarget={dropOver !== null && dropOver === paths[i]}
             />
           ))}
         </div>
@@ -307,9 +322,12 @@ export function FilePane({
   onNavigate,
   onToggleSelect,
   onOpenFile,
+  dropTarget = false,
 }: {
   tree: FolderRow[];
   path: string;
+  /** Files dragged in would land here: the pane is lit. */
+  dropTarget?: boolean;
   active: boolean;
   selected: Set<string>;
   onActivate: () => void;
@@ -343,7 +361,15 @@ export function FilePane({
   const parentPath = path.includes('.') ? path.split('.').slice(0, -1).join('.') : null;
 
   return (
-    <div onClick={onActivate} className={`flex min-h-0 flex-col ${active ? '' : 'opacity-80'}`}>
+    <div
+      onClick={onActivate}
+      {...{ [DROP_PATH_ATTR]: path }}
+      className={cn(
+        'flex min-h-0 flex-col',
+        !active && !dropTarget && 'opacity-80',
+        dropTarget && 'bg-primary/5 ring-2 ring-inset ring-primary/50',
+      )}
+    >
       <div
         className={`truncate border-b px-3 py-1.5 font-mono text-xs ${
           active

@@ -19,6 +19,7 @@ import {
   liveFolder,
   placeSiblings,
   mergeFolderPages,
+  moveFailureText,
   pickedAfterMove,
   rangeOfItems,
   refreshFor,
@@ -638,5 +639,36 @@ describe('itemMovable and folderManaged (W6b fix round: the item caps)', () => {
     );
     // A brain before mayMove: mayManage decides.
     expect(folderMovable({ ...folder('f', '1'), mayManage: false } as TreeFolder)).toBe(false);
+  });
+});
+
+describe('moveFailureText', () => {
+  const noun = { one: 'file', many: 'files' };
+  const items = ['a', 'b', 'c', 'd', 'e'].map((x) => ({ id: x, title: `${x}.pdf` }));
+
+  it('names the one item and the brain reason', () => {
+    expect(moveFailureText([items[0]!], [{ id: 'a', error: 'Name taken' }], noun)).toBe(
+      'Could not move “a.pdf”: Name taken',
+    );
+  });
+
+  it('says which of several failed, by name, with the reasons once each', () => {
+    expect(
+      moveFailureText(
+        items,
+        [
+          { id: 'b', error: 'Name taken' },
+          { id: 'd', error: 'Name taken' },
+        ],
+        noun,
+      ),
+    ).toBe('Could not move 2 of 5 files (“b.pdf”, “d.pdf”): Name taken');
+  });
+
+  it('names three and counts the rest', () => {
+    const failed = items.map((i) => ({ id: i.id, error: i.id === 'e' ? 'No right' : 'Gone' }));
+    expect(moveFailureText(items, failed, noun)).toBe(
+      'Could not move 5 of 5 files (“a.pdf”, “b.pdf”, “c.pdf” and 2 more): Gone; No right',
+    );
   });
 });

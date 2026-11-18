@@ -53,6 +53,7 @@ import type { UploadQueue } from '@/lib/upload-queue';
 import { useNoAutoTables } from '@/components/workspaces/use-shell-workspaces';
 import { uploadBatchSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
+import { crumbText, folderCrumbs } from '@/lib/file-drop';
 
 /**
  * App-wide background file uploader. Lives in the persistent app shell so a
@@ -486,8 +487,17 @@ export function UploadDock() {
   const { tasks, active, cancel, retry, retryAll, replace, clearFinished } = useUploads();
   const [collapsed, setCollapsed] = useState(false);
   const noAutoTables = useNoAutoTables();
+  // Each row says where it goes, by the folder titles the Files screen
+  // loaded (a path segment where it has not).
+  const qc = useQueryClient();
 
   if (tasks.length === 0) return null;
+  const folders = qc.getQueryData<{ folders?: Array<{ path: string; title?: string }> }>([
+    'files',
+    'tree',
+  ])?.folders;
+  const titles = new Map((folders ?? []).map((f) => [f.path, f.title]));
+  const whereOf = (path: string) => crumbText(folderCrumbs(path, (p) => titles.get(p)));
 
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === 'done').length;
@@ -533,7 +543,14 @@ export function UploadDock() {
       {!collapsed && (
         <ul className="max-h-56 divide-y divide-border overflow-y-auto scrollbar-thin border-t border-border">
           {tasks.map((t) => (
-            <UploadRow key={t.id} task={t} onCancel={cancel} onRetry={retry} onReplace={replace} />
+            <UploadRow
+              key={t.id}
+              task={t}
+              where={whereOf(t.parentPath)}
+              onCancel={cancel}
+              onRetry={retry}
+              onReplace={replace}
+            />
           ))}
         </ul>
       )}
@@ -629,11 +646,14 @@ export function finishedHeading(c: {
 
 function UploadRow({
   task: t,
+  where,
   onCancel,
   onRetry,
   onReplace,
 }: {
   task: UploadTask;
+  /** The folder it goes to, as a breadcrumb line. */
+  where: string;
   onCancel: (id: string) => void;
   onRetry: (id: string) => void;
   onReplace: (id: string) => void;
@@ -676,8 +696,13 @@ function UploadRow({
           aria-hidden
         />
       )}
-      <span className="min-w-0 flex-1 truncate" title={t.name}>
-        {t.name}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate" title={t.name}>
+          {t.name}
+        </span>
+        <span className="truncate text-[11px] text-muted-foreground" title={`To ${where}`}>
+          to {where}
+        </span>
       </span>
       <span
         className={cn(

@@ -11,11 +11,7 @@
 /** The ids from `anchorId` to `toId`, both included, in the order given.
  *  An anchor no longer on screen picks the clicked row alone; a clicked row
  *  that is not in the list picks nothing. */
-export function rangeBetween(
-  ids: readonly string[],
-  anchorId: string,
-  toId: string,
-): string[] {
+export function rangeBetween(ids: readonly string[], anchorId: string, toId: string): string[] {
   const a = ids.indexOf(anchorId);
   const b = ids.indexOf(toId);
   if (a < 0 || b < 0) return b < 0 ? [] : [toId];

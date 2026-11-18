@@ -135,7 +135,7 @@ import {
   moveFailureText,
   pickedAfterMove,
   placeSiblings,
-  rangeOfItems,
+  movableOrder,
   refreshFor,
   type TreeRow,
 } from './tree-model';
@@ -151,6 +151,7 @@ import {
 } from './tree-rows';
 import { FolderPickerDialog } from './folder-picker';
 import { DROP_PATH_ATTR } from '@/lib/file-drop';
+import { isPickClick, pickClick } from '@/lib/pick-range';
 import { canGrantFolder, seenOf, visibilityRefusal } from './sharing';
 import { itemAccess } from '@/lib/item-access';
 import { VisibilityConfirmDialog, type PendingConfirm } from './visibility-confirm';
@@ -332,9 +333,7 @@ export function ItemTree({
    * below `md` (the member's and client's screens: list OR detail).
    */
   capOnNarrow?: boolean;
-  /** Take files dragged in from the desktop (the Files screen): each folder
-   *  row, and the root row as `rootPath`, names its path as a drop target;
-   *  `over` is lit. The screen's drop zone does the upload. */
+  /** Rows name their folder path as a file drop target (lib/file-drop.ts). */
   fileDrop?: { over: string | null; rootPath: string };
 }) {
   const spec = TREE_KIND_SPECS[kind];
@@ -428,8 +427,7 @@ export function ItemTree({
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   // "Move to folder…" asked from the item header's More menu.
   useEffect(
-    () =>
-      onTreeMoveRequest(kind, (items, from) => setMoveTarget({ type: 'items', items, from })),
+    () => onTreeMoveRequest(kind, (items, from) => setMoveTarget({ type: 'items', items, from })),
     [kind],
   );
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
@@ -636,34 +634,14 @@ export function ItemTree({
   /** A plain click opens; cmd/ctrl adds or drops the item from the pick;
    *  shift picks every movable item from the last one picked to this. */
   const clickItem = (item: TreeItem, where: ItemWhere, e?: MouseEvent) => {
-    const toggle = e && (e.metaKey || e.ctrlKey);
-    const range = e?.shiftKey && anchor.current !== null;
-    if (!manage || !canMove(item) || (!toggle && !e?.shiftKey)) {
-      openItem(item, where);
-      return;
-    }
+    if (!e || !manage || !canMove(item) || !isPickClick(e)) return openItem(item, where);
     e.preventDefault();
-    if (range) {
-      const ids = rangeOfItems(allRows, anchor.current!, item.id, canMove);
-      const byId = new Map<string, TreeItem>();
-      for (const r of allRows) if (r.type === 'item') byId.set(r.item.id, r.item);
-      setPicked((prev) => {
-        const next = new Map(prev);
-        for (const id of ids) {
-          const it = byId.get(id);
-          if (it) next.set(id, it);
-        }
-        return next;
-      });
-      return;
-    }
-    anchor.current = item.id;
-    setPicked((prev) => {
-      const next = new Map(prev);
-      if (next.has(item.id)) next.delete(item.id);
-      else next.set(item.id, item);
-      return next;
-    });
+    const byId = new Map<string, TreeItem>([...picked, [item.id, item]]);
+    for (const r of allRows) if (r.type === 'item') byId.set(r.item.id, r.item);
+    const how = { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey };
+    const next = pickClick(pickedIds, movableOrder(allRows, canMove), anchor.current, item.id, how);
+    anchor.current = next.anchor;
+    setPicked(new Map([...next.picked].map((id) => [id, byId.get(id)!])));
   };
 
   /** Move items (one, or the pick) into a folder; null = the top level. A
@@ -685,10 +663,8 @@ export function ItemTree({
     };
     // W5b: a move that changes who sees the items says so first ("This will
     // also be visible to: ...", 21.8 row 1) and goes through /api/grants.
-    // A move that changes nothing, or a brain before W5b, moves as before.
-    // Above MOVE_BATCH the preview cannot take them all: the move goes in
-    // runs by the tree, and the brain still asks before any run that changes
-    // who sees an item (the visibility confirm).
+    // A move that changes nothing, a brain before W5b, or more than the
+    // preview takes, moves by the tree (which asks on a change, in runs).
     if (writer === 'owner' && items.length <= MOVE_BATCH) {
       const ids = items.map((i) => i.id);
       const to = { toFolderId: dest?.id ?? null };
@@ -1097,10 +1073,10 @@ export function ItemTree({
       if (el) rowEls.current.set(key, el);
       else rowEls.current.delete(key);
     },
+    fileDrop,
     hint,
     dragging,
     showShares,
-    fileDrop,
   };
 
   // ── Rows by view ──────────────────────────────────────────────────────

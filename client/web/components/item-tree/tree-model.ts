@@ -328,6 +328,19 @@ export function flattenTree(
   return { rows, needed };
 }
 
+/** The movable item rows' ids in the order on screen, once each: what a
+ *  shift-click ranges over (lib/pick-range.ts). */
+export function movableOrder(
+  rows: readonly TreeRow[],
+  movable: (item: TreeItem) => boolean,
+): string[] {
+  const ids: string[] = [];
+  for (const r of rows) {
+    if (r.type === 'item' && movable(r.item) && !ids.includes(r.item.id)) ids.push(r.item.id);
+  }
+  return ids;
+}
+
 /** The items a shift-click selects: every movable item row from the anchor
  *  to the clicked one, in the order on screen, once each. */
 export function rangeOfItems(
@@ -336,11 +349,7 @@ export function rangeOfItems(
   toId: string,
   movable: (item: TreeItem) => boolean,
 ): string[] {
-  const ids: string[] = [];
-  for (const r of rows) {
-    if (r.type === 'item' && movable(r.item) && !ids.includes(r.item.id)) ids.push(r.item.id);
-  }
-  return rangeBetween(ids, anchorId, toId);
+  return rangeBetween(movableOrder(rows, movable), anchorId, toId);
 }
 
 /** What stays picked after a move of `items` that partly failed: the ones
