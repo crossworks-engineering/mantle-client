@@ -157,6 +157,7 @@ export function ItemHeader({
   deleteDisabled = false,
   info,
   infoLabel = 'About this',
+  onInfo,
   focus = true,
   edit,
   more = [],
@@ -195,6 +196,9 @@ export function ItemHeader({
   deleteDisabled?: boolean;
   info?: HeaderInfo;
   infoLabel?: string;
+  /** The Info slot opens the kind's own panel (a file's Details sheet)
+   *  instead of the popover; `info` is then not needed. */
+  onInfo?: () => void;
   /** The Focus slot (on unless the screen has no folders to hide). */
   focus?: boolean;
   /** The Edit slot; leave it out on a kind with no editor. */
@@ -307,7 +311,7 @@ export function ItemHeader({
             } as MoreEntry,
           ]
         : []),
-      ...(info
+      ...(info || onInfo
         ? [
             {
               kind: 'action',
@@ -411,7 +415,13 @@ export function ItemHeader({
           ))}
           <div ref={fixedRef} className="flex items-center gap-1" data-testid="item-header-slots">
             {access ? <span data-slot="access">{access}</span> : null}
-            {info ? (
+            {onInfo ? (
+              <span data-slot="info">
+                <HeaderIconButton label={infoLabel} onClick={onInfo}>
+                  <Info />
+                </HeaderIconButton>
+              </span>
+            ) : info ? (
               <span data-slot="info">
                 <HeaderInfoButton label={infoLabel}>
                   <InfoBody info={info} />

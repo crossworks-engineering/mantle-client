@@ -9,6 +9,7 @@ import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 import type { HitWorkspaceField } from '@mantle/client-types';
 import { isItemWorkspaceRefusal } from '@/lib/item-access';
 import type { RunTarget } from '@/lib/pipeline-run';
+import type { FileStatus } from './file-status';
 
 export const FILES_ROOT = 'files';
 
@@ -46,6 +47,9 @@ export type FileRow = {
   /** Whether the content was read (the brain's FileRow.extraction, task
    *  8d40932a). A brain before it sends none. */
   extraction?: FileExtraction;
+  /** What the brain did with it (P4, file-status.ts): the icon's corner
+   *  badge. A brain before P4 sends none. */
+  status?: FileStatus;
   createdAt: string;
   updatedAt: string;
 };

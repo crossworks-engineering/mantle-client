@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsRight,
+  CircleQuestionMark,
   Columns2,
   Database,
   Eye,
@@ -29,6 +30,7 @@ import {
   FileText,
   FolderPlus,
   FolderUp,
+  Info,
   LayoutGrid,
   List,
   Pencil,
@@ -44,6 +46,8 @@ import { useAssetUrl } from '@mantle/web-ui/hooks/use-asset-url';
 import { FileEditor } from './file-editor';
 import { DataFilesView } from './file-data';
 import { ExtractionBadge } from './extraction-badge';
+import { FileDetailsSheet } from './file-details';
+import { FileStatusBadge, FileStatusLegend } from './file-status-badge';
 import { UnreadFilesView } from './unread-files';
 import { oneOf, usePersistedState } from '@/lib/use-persisted-state';
 import { useFileSearch } from './use-file-search';
@@ -301,6 +305,10 @@ function FilesView({
   const runGone = useRunRouteGone();
   // Narrowed once here rather than at each of its six reads below.
   const cascade = dialog?.kind === 'cascade' ? dialog : null;
+  // P4: the Details sheet of one file (list, grid or tree), and the legend
+  // of the status icons (More menu).
+  const [details, setDetails] = useState<{ id: string; filename: string } | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   // Sync local file state when server re-fetches. The pick keeps the files
   // still listed (a live update elsewhere does not drop it); another folder
@@ -731,6 +739,12 @@ function FilesView({
                   }}
                   itemActions={(item) => (
                     <>
+                      <DropdownMenuItem
+                        onSelect={() => setDetails({ id: item.id, filename: item.title })}
+                      >
+                        <Info />
+                        Details
+                      </DropdownMenuItem>
                       {showRunEntry(itemAccess(item).edit, runGone) ? (
                         <DropdownMenuItem
                           onSelect={() =>
@@ -1241,6 +1255,12 @@ function FilesView({
                         icon: <Pencil />,
                         onSelect: () => setTimeout(() => setPathJump(currentPath), 50),
                       },
+                      {
+                        key: 'status-icons',
+                        label: 'Status icons…',
+                        icon: <CircleQuestionMark />,
+                        onSelect: () => setTimeout(() => setLegendOpen(true), 50),
+                      },
                     ]}
                     info={{
                       description: editingDesc ? (
@@ -1411,7 +1431,13 @@ function FilesView({
                                     : 'border-border hover:border-primary/40',
                                 )}
                               >
-                                <span className="flex aspect-square w-full items-center justify-center overflow-hidden bg-muted/40">
+                                <span className="relative flex aspect-square w-full items-center justify-center overflow-hidden bg-muted/40">
+                                  <FileStatusBadge
+                                    status={f.status}
+                                    extraction={f.extraction}
+                                    size="lg"
+                                    className="bottom-1.5 right-1.5 z-10"
+                                  />
                                   {isImage ? (
                                     // eslint-disable-next-line @next/next/no-img-element -- authed same-origin thumbnail; next/image can't carry the asset token
                                     <img
@@ -1487,6 +1513,7 @@ function FilesView({
                                 onOpen={() => openFile(f.id)}
                                 onRename={() => renameFile(f)}
                                 onMove={() => moveFiles(targetsOf(f))}
+                                onDetails={() => setDetails({ id: f.id, filename: f.filename })}
                                 onDelete={() =>
                                   setDialog({
                                     kind: 'bulkDelete',
@@ -1598,10 +1625,13 @@ function FilesView({
                                     data-mark-label={f.filename}
                                     className="flex items-center gap-2 text-left hover:underline"
                                   >
-                                    <TypeIcon
-                                      aria-hidden
-                                      className={`size-4 shrink-0 ${KIND_TINT[described.kind]}`}
-                                    />
+                                    <span className="relative inline-flex shrink-0">
+                                      <TypeIcon
+                                        aria-hidden
+                                        className={`size-4 shrink-0 ${KIND_TINT[described.kind]}`}
+                                      />
+                                      <FileStatusBadge status={f.status} extraction={f.extraction} />
+                                    </span>
                                     <span className="font-medium">{f.filename}</span>
                                     <span
                                       title={described.label}
@@ -1658,6 +1688,7 @@ function FilesView({
                                     onOpen={() => openFile(f.id)}
                                     onRename={() => renameFile(f)}
                                     onMove={() => moveFiles(targetsOf(f))}
+                                    onDetails={() => setDetails({ id: f.id, filename: f.filename })}
                                     onDelete={() =>
                                       setDialog({
                                         kind: 'bulkDelete',
@@ -1698,6 +1729,14 @@ function FilesView({
           openFile(id);
         }}
       />
+
+      {/* ── P4: a file's Details, and what the status icons mean ──── */}
+      <FileDetailsSheet
+        fileId={details?.id ?? null}
+        filename={details?.filename}
+        onOpenChange={(open) => !open && setDetails(null)}
+      />
+      <FileStatusLegend open={legendOpen} onOpenChange={setLegendOpen} />
 
       {/* ── Run a pipeline on a tree file or folder ───────────────── */}
       <RunPipelineDialog
