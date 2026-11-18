@@ -2,8 +2,12 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { DndContext } from '@dnd-kit/core';
+import { useQueryClient } from '@tanstack/react-query';
+import { FolderPlus } from 'lucide-react';
+import { ApiError } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import {
   Dialog,
@@ -15,7 +19,7 @@ import {
 import type { TreeFolder, TreeKind, TreeSort } from '@mantle/web-ui/types/tree';
 import { TREE_ROW_PAD } from '@/components/app-nav/tree-guides';
 import type { TreeKindAdapter } from './kinds/types';
-import type { TreeSource } from './tree-api';
+import { createTreeFolder, treeKey, type TreeSource } from './tree-api';
 import type { TreeRow } from './tree-model';
 import { TreeContext, type TreeCtx } from './tree-context';
 import { FolderTile, FolderTreeRow, useFolderRows, VirtualRows } from './tree-rows';
@@ -62,6 +66,12 @@ export function FolderPickerDialog({
   // undefined = nothing chosen yet; null = the root.
   const [chosen, setChosen] = useState<TreeFolder | null | undefined>(undefined);
   const scrollRoot = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+  // "New folder": a name typed in place, made in the chosen folder (or the
+  // root), then chosen. null = not asked.
+  const [newName, setNewName] = useState<string | null>(null);
+  const [making, setMaking] = useState(false);
+  const [newError, setNewError] = useState<string | null>(null);
 
   const setOpen = useCallback((id: string, o: boolean) => {
     setOpenIds((prev) => {
@@ -105,8 +115,32 @@ export function FolderPickerDialog({
   const all: TreeRow[] = [{ type: 'root', key: 'root' }, ...rows];
 
   const close = (o: boolean) => {
-    if (!o) setChosen(undefined);
+    if (!o) {
+      setChosen(undefined);
+      setNewName(null);
+      setNewError(null);
+    }
     onOpenChange(o);
+  };
+
+  const parent = chosen ?? null;
+  const parentName = parent ? parent.name : rootLabel;
+  const makeFolder = async () => {
+    const name = newName?.trim();
+    if (!name || making) return;
+    setMaking(true);
+    setNewError(null);
+    try {
+      const made = await createTreeFolder(kind, parent?.id ?? null, name, source);
+      await qc.invalidateQueries({ queryKey: treeKey(kind, source) });
+      if (parent) setOpen(parent.id, true);
+      setChosen(made);
+      setNewName(null);
+    } catch (err) {
+      setNewError(err instanceof ApiError ? err.message : 'Could not create the folder');
+    } finally {
+      setMaking(false);
+    }
   };
 
   return (
@@ -156,7 +190,50 @@ export function FolderPickerDialog({
             </DndContext>
           </TreeContext.Provider>
         </div>
+        {newName !== null ? (
+          <form
+            className="flex flex-col gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void makeFolder();
+            }}
+          >
+            <label htmlFor="picker-new-folder" className="text-xs text-muted-foreground">
+              New folder in <span className="font-medium text-foreground">{parentName}</span>
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="picker-new-folder"
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  // Escape drops the name, not the whole dialog.
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setNewName(null);
+                    setNewError(null);
+                  }
+                }}
+                placeholder="Folder name"
+                aria-invalid={newError ? true : undefined}
+                className="h-8"
+                disabled={making}
+              />
+              <Button type="submit" size="sm" disabled={!newName.trim() || making}>
+                Create
+              </Button>
+            </div>
+            {newError && <p className="text-xs text-destructive-ink">{newError}</p>}
+          </form>
+        ) : null}
         <div className="flex justify-end gap-2">
+          {newName === null && (
+            <Button variant="ghost" className="mr-auto" onClick={() => setNewName('')}>
+              <FolderPlus /> New folder
+            </Button>
+          )}
           <Button variant="outline" onClick={() => close(false)}>
             Cancel
           </Button>

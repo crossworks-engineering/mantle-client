@@ -242,6 +242,44 @@ export const moveTreeItems = (
     ...(confirm ? { confirm: true, ...(seen !== undefined ? { seen } : {}) } : {}),
   });
 
+/** The most ids one move call takes (the brain's own cap, and the cap of
+ *  its move preview). */
+export const MOVE_BATCH = 200;
+
+/** `list` in runs of at most `size`, in order. */
+export function batchesOf<T>(list: readonly T[], size = MOVE_BATCH): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+}
+
+/**
+ * A move of any number of items, MOVE_BATCH per call, one call after the
+ * other; what failed is gathered. `done` keeps the runs that went through,
+ * so a repeat (after the visibility confirm a later run asked for) sends
+ * only the runs still to go.
+ */
+export async function moveTreeItemsBatched(
+  kind: TreeKind,
+  ids: readonly string[],
+  folderId: string | null,
+  done: Set<number>,
+  confirm = false,
+  source: TreeWriter = 'owner',
+  seen?: number,
+): Promise<TreeMoveResult> {
+  const out: TreeMoveResult = { moved: 0, failed: [] };
+  const runs = batchesOf(ids);
+  for (let i = 0; i < runs.length; i++) {
+    if (done.has(i)) continue;
+    const res = await moveTreeItems(kind, runs[i]!, folderId, confirm, source, seen);
+    out.moved += res.moved;
+    out.failed.push(...res.failed);
+    done.add(i);
+  }
+  return out;
+}
+
 /** Put an item in its folder's custom order, right after another item of
  *  that folder (null = first). One order for everyone: Write on the folder
  *  (an Admin at the top level), else a 403 in the brain's words. */

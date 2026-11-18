@@ -94,6 +94,11 @@ export type TreeCtx = {
    *  ca907a89). Off or absent (the picker): each workspace's icon beside
    *  the name. */
   showShares?: boolean;
+  /** Files dragged in from the desktop (the Files screen): each folder row
+   *  names its path as a drop target (lib/file-drop.ts), and `over` is the
+   *  one a drop would land in now, lit while the drag is over it. Absent:
+   *  the tree takes no file drop. */
+  fileDrop?: { over: string | null };
 };
 
 /** A row's `tabIndex` under the roving tab stop, when the tree has one. */

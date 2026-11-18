@@ -47,6 +47,7 @@ import {
 } from './tree-model';
 import { rowTabIndex, useTreeCtx, type DragData } from './tree-context';
 import { itemAccess } from '@/lib/item-access';
+import { DROP_PATH_ATTR } from '@/lib/file-drop';
 
 /**
  * The rows of the item tree. Every row is one line, 32px high: an optional
@@ -607,6 +608,7 @@ function FolderRow({ row }: { row: Extract<TreeRow, { type: 'folder' }> }) {
     !folder.system &&
     (ctx.canMoveFolder?.(folder) !== false || (ctx.mode === 'manage' && mayOrder));
   const tall = useRowHeight(folder);
+  const dropOver = !picker && ctx.fileDrop?.over === folder.path;
   return (
     <TreeRowShell
       rowKey={row.key}
@@ -628,6 +630,7 @@ function FolderRow({ row }: { row: Extract<TreeRow, { type: 'folder' }> }) {
             aria-selected={selected}
             aria-current={selected ? 'true' : undefined}
             data-row-key={row.key}
+            {...(ctx.fileDrop && !picker ? { [DROP_PATH_ATTR]: folder.path } : {})}
             tabIndex={rowTabIndex(ctx, row.key)}
             onFocus={() => ctx.onRowFocus?.(row.key)}
             disabled={disabled}
@@ -637,9 +640,11 @@ function FolderRow({ row }: { row: Extract<TreeRow, { type: 'folder' }> }) {
               ROW_BUTTON,
               tall,
               'pr-14',
-              selected
-                ? 'bg-accent font-medium text-accent-foreground'
-                : 'font-medium text-foreground/85 hover:bg-foreground/[0.06]',
+              dropOver
+                ? 'bg-primary/10 font-medium text-foreground ring-2 ring-inset ring-primary/60'
+                : selected
+                  ? 'bg-accent font-medium text-accent-foreground'
+                  : 'font-medium text-foreground/85 hover:bg-foreground/[0.06]',
             )}
           >
             <FolderTile folder={folder} />

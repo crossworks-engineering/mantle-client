@@ -6,6 +6,7 @@
 import type { TreeCrumb, TreeFolder, TreeFolderPage, TreeItem } from '@mantle/web-ui/types/tree';
 import { TREE_MAX_DEPTH } from '@mantle/web-ui/types/tree';
 import { itemAccess } from '@/lib/item-access';
+import { rangeBetween } from '@/lib/pick-range';
 import { ELSEWHERE_MAX } from '@/lib/workspace-hits';
 import type { ElsewhereCount } from '@mantle/client-types';
 
@@ -339,10 +340,7 @@ export function rangeOfItems(
   for (const r of rows) {
     if (r.type === 'item' && movable(r.item) && !ids.includes(r.item.id)) ids.push(r.item.id);
   }
-  const a = ids.indexOf(anchorId);
-  const b = ids.indexOf(toId);
-  if (a < 0 || b < 0) return b < 0 ? [] : [toId];
-  return ids.slice(Math.min(a, b), Math.max(a, b) + 1);
+  return rangeBetween(ids, anchorId, toId);
 }
 
 /** What stays picked after a move of `items` that partly failed: the ones
@@ -353,6 +351,31 @@ export function pickedAfterMove(
 ): Map<string, TreeItem> {
   const left = new Set(failed.map((f) => f.id));
   return new Map(items.filter((i) => left.has(i.id)).map((i) => [i.id, i]));
+}
+
+/** How many failed items a move error names before "and N more". */
+const FAILED_NAMED = 3;
+
+/**
+ * What a move that partly failed says: which items stayed, by name, and the
+ * brain's reason (the first one; a second reason, if any, too).
+ * One: `Could not move “a.pdf”: <reason>`. Several: `Could not move 2 of 5
+ * files (“a.pdf”, “b.pdf”): <reason>`.
+ */
+export function moveFailureText(
+  items: readonly Pick<TreeItem, 'id' | 'title'>[],
+  failed: readonly { id: string; error: string }[],
+  noun: { one: string; many: string },
+): string {
+  const title = new Map(items.map((i) => [i.id, i.title]));
+  const names = failed.map((f) => `“${title.get(f.id) ?? `a ${noun.one}`}”`);
+  const reasons = [...new Set(failed.map((f) => f.error).filter(Boolean))];
+  const why = reasons.length ? `: ${reasons.slice(0, 2).join('; ')}` : '.';
+  if (items.length === 1) return `Could not move ${names[0] ?? `the ${noun.one}`}${why}`;
+  const shown = names.slice(0, FAILED_NAMED).join(', ');
+  const rest = names.length - FAILED_NAMED;
+  const list = rest > 0 ? `${shown} and ${rest} more` : shown;
+  return `Could not move ${failed.length} of ${items.length} ${noun.many} (${list})${why}`;
 }
 
 /** The open-folder set after "Collapse all": every folder shut, at every

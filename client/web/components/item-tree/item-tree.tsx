@@ -99,7 +99,8 @@ import {
   fetchSearch,
   fetchTags,
   marksKey,
-  moveTreeItems,
+  MOVE_BATCH,
+  moveTreeItemsBatched,
   patchTreeFolder,
   placeTreeItem,
   recordTreeItemOpened,
@@ -131,6 +132,7 @@ import {
   folderMovable,
   itemMovable,
   itemPlaceAt,
+  moveFailureText,
   pickedAfterMove,
   placeSiblings,
   rangeOfItems,
@@ -148,6 +150,7 @@ import {
   VirtualRows,
 } from './tree-rows';
 import { FolderPickerDialog } from './folder-picker';
+import { DROP_PATH_ATTR } from '@/lib/file-drop';
 import { canGrantFolder, seenOf, visibilityRefusal } from './sharing';
 import { itemAccess } from '@/lib/item-access';
 import { VisibilityConfirmDialog, type PendingConfirm } from './visibility-confirm';
@@ -282,6 +285,7 @@ export function ItemTree({
   onUnsupported,
   newItemInFolder,
   capOnNarrow = true,
+  fileDrop,
 }: {
   kind: TreeKind;
   /** Who it is read as: the owner (default), a member (manage mode covers
@@ -328,6 +332,10 @@ export function ItemTree({
    * below `md` (the member's and client's screens: list OR detail).
    */
   capOnNarrow?: boolean;
+  /** Take files dragged in from the desktop (the Files screen): each folder
+   *  row, and the root row as `rootPath`, names its path as a drop target;
+   *  `over` is lit. The screen's drop zone does the upload. */
+  fileDrop?: { over: string | null; rootPath: string };
 }) {
   const spec = TREE_KIND_SPECS[kind];
   const qc = useQueryClient();
@@ -421,9 +429,7 @@ export function ItemTree({
   // "Move to folder…" asked from the item header's More menu.
   useEffect(
     () =>
-      onTreeMoveRequest(kind, (item) =>
-        setMoveTarget({ type: 'items', items: [item], from: undefined }),
-      ),
+      onTreeMoveRequest(kind, (items, from) => setMoveTarget({ type: 'items', items, from })),
     [kind],
   );
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
@@ -680,7 +686,10 @@ export function ItemTree({
     // W5b: a move that changes who sees the items says so first ("This will
     // also be visible to: ...", 21.8 row 1) and goes through /api/grants.
     // A move that changes nothing, or a brain before W5b, moves as before.
-    if (writer === 'owner') {
+    // Above MOVE_BATCH the preview cannot take them all: the move goes in
+    // runs by the tree, and the brain still asks before any run that changes
+    // who sees an item (the visibility confirm).
+    if (writer === 'owner' && items.length <= MOVE_BATCH) {
       const ids = items.map((i) => i.id);
       const to = { toFolderId: dest?.id ?? null };
       try {
@@ -712,13 +721,16 @@ export function ItemTree({
     items: readonly TreeItem[],
     dest: Pick<TreeFolder, 'id' | 'name'> | null,
     action: string,
-  ) =>
-    guarded(
+  ) => {
+    // The runs that went through, kept across a confirm's repeat.
+    const done = new Set<number>();
+    return guarded(
       async (confirm, seen) => {
-        const res = await moveTreeItems(
+        const res = await moveTreeItemsBatched(
           kind,
           items.map((i) => i.id),
           dest?.id ?? null,
+          done,
           confirm,
           writer,
           seen,
@@ -727,11 +739,7 @@ export function ItemTree({
           refresh();
           onChanged?.();
           if (items.length > 1) setPicked(pickedAfterMove(items, res.failed));
-          const what =
-            items.length === 1
-              ? `the ${adapter.noun.one}`
-              : `${res.failed.length} of ${items.length} ${adapter.noun.many}`;
-          throw new ApiError(`Could not move ${what}: ${res.failed[0]!.error}`, 409);
+          throw new ApiError(moveFailureText(items, res.failed, adapter.noun), 409);
         }
         if (items.length > 1) clearPicked();
         if (dest) setOpen(dest.id, true);
@@ -739,6 +747,7 @@ export function ItemTree({
       `Could not move the ${items.length === 1 ? adapter.noun.one : adapter.noun.many}`,
       { action, verb: 'Move' },
     );
+  };
 
   /** Put an item right after `after` in its folder's custom order (null =
    *  first). The brain refuses (403, in its words) a login that may not
@@ -1091,6 +1100,7 @@ export function ItemTree({
     hint,
     dragging,
     showShares,
+    fileDrop,
   };
 
   // ── Rows by view ──────────────────────────────────────────────────────
@@ -1332,14 +1342,17 @@ export function ItemTree({
                 aria-selected={rootSelected}
                 aria-current={rootSelected ? 'true' : undefined}
                 data-row-key="root"
+                {...(fileDrop ? { [DROP_PATH_ATTR]: fileDrop.rootPath } : {})}
                 tabIndex={tabStop === 'root' ? 0 : -1}
                 onFocus={() => ctx.onRowFocus?.('root')}
                 style={style}
                 className={cn(
                   'flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md pr-2 text-left text-sm',
-                  rootSelected
-                    ? 'bg-accent font-medium text-accent-foreground'
-                    : 'text-foreground/90 hover:bg-foreground/[0.06]',
+                  fileDrop && fileDrop.over === fileDrop.rootPath
+                    ? 'bg-primary/10 font-medium ring-2 ring-inset ring-primary/60'
+                    : rootSelected
+                      ? 'bg-accent font-medium text-accent-foreground'
+                      : 'text-foreground/90 hover:bg-foreground/[0.06]',
                 )}
               >
                 <FolderTile folder={null} />
