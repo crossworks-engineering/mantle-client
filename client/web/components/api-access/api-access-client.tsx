@@ -7,8 +7,8 @@
  * Bearer on the public API (/api/v1) and on /api/mcp. The secret is shown
  * once, right after it is made.
  *
- * Every login makes and revokes its own keys. An admin also sees, and may
- * revoke, every key on the brain. Not the outbound "API keys" screen
+ * Every login makes and revokes its own keys. A System user (the keys area)
+ * also sees, and may revoke, every key on the brain. Not the outbound "API keys" screen
  * (/settings/keys): those are keys this brain uses to call other services.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -163,8 +163,10 @@ export function ApiAccessClient() {
   };
 
   const data = query.data;
-  const isAdmin = data?.role === 'admin';
   const keys = data ? sortKeys(data.keys) : [];
+  // Name the owner only when the list holds other logins' keys (a System
+  // user, who holds the keys area, sees every key; everyone else their own).
+  const showOwner = new Set(keys.map((k) => k.login.id)).size > 1;
 
   return (
     <div className="space-y-4">
@@ -202,7 +204,7 @@ export function ApiAccessClient() {
         ) : (
           <ul className="divide-y divide-border">
             {keys.map((k) => (
-              <KeyRow key={k.id} k={k} showOwner={isAdmin} onRevoke={() => setRevoking(k)} />
+              <KeyRow key={k.id} k={k} showOwner={showOwner} onRevoke={() => setRevoking(k)} />
             ))}
           </ul>
         )}
