@@ -56,7 +56,7 @@ export function ChildFolders({
           const rest = f.path.slice(currentPath.length + 1);
           return !rest.includes('.');
         })
-        .sort((a, b) => a.slug.localeCompare(b.slug)),
+        .sort((a, b) => folderName(a).localeCompare(folderName(b))),
     [tree, currentPath],
   );
 
@@ -77,8 +77,8 @@ export function ChildFolders({
               onClick={() => onNavigate(f.path)}
               data-mark-id={f.id}
               data-mark-kind="folder"
-              data-mark-label={f.slug}
-              title={f.description ? `${f.slug}: ${f.description}` : f.slug}
+              data-mark-label={folderName(f)}
+              title={f.description ? `${folderName(f)}: ${f.description}` : folderName(f)}
               className={cn(
                 'flex h-full items-center gap-2.5',
                 dropOver === f.path && 'border-primary bg-primary/10 ring-2 ring-primary/50',
@@ -92,7 +92,7 @@ export function ChildFolders({
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <ListCardTitle className="min-w-0">{f.slug}</ListCardTitle>
+                  <ListCardTitle className="min-w-0">{folderName(f)}</ListCardTitle>
                   {/* A folder shared itself is read at its share too, and one
                       below a shared folder at that folder's. */}
                   <WorkspaceChips item={f} />
@@ -105,6 +105,11 @@ export function ChildFolders({
       </ul>
     </div>
   );
+}
+
+/** A folder by its title, as the tree shows it; its slug only when it has none. */
+function folderName(f: FolderRow): string {
+  return f.title || f.slug;
 }
 
 /** "3 folders · 12 files", dropping a zero part; "Empty" when both are. */
@@ -356,7 +361,7 @@ export function FilePane({
             f.path.startsWith(`${path}.`) &&
             f.path.split('.').length === path.split('.').length + 1,
         )
-        .sort((a, b) => a.slug.localeCompare(b.slug)),
+        .sort((a, b) => folderName(a).localeCompare(folderName(b))),
     [tree, path],
   );
   const parentPath = path.includes('.') ? path.split('.').slice(0, -1).join('.') : null;
@@ -404,7 +409,7 @@ export function FilePane({
               )}
             >
               <Checkbox
-                aria-label={`Select folder ${f.slug}`}
+                aria-label={`Select folder ${folderName(f)}`}
                 checked={selected.has(`folder:${f.id}`)}
                 onCheckedChange={() => onToggleSelect(`folder:${f.id}`)}
               />
@@ -416,10 +421,10 @@ export function FilePane({
                   if (e.detail === 1) onToggleSelect(`folder:${f.id}`);
                 }}
                 className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left"
-                title={`${f.slug} — double-click to open`}
+                title={`${folderName(f)}: double-click to open`}
               >
                 <Folder className="size-4 shrink-0 text-warning-ink" />
-                <span className="truncate">{f.slug}</span>
+                <span className="truncate">{folderName(f)}</span>
                 <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                   {f.fileCount} file{f.fileCount === 1 ? '' : 's'}
                 </span>

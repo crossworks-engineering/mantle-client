@@ -5,10 +5,17 @@ import { finishedHeading } from './upload-provider';
 const none = { done: 0, exists: 0, conflicts: 0, failed: 0, cancelled: 0 };
 
 describe('finishedHeading', () => {
-  it('counts files already there as uploaded', () => {
+  it('counts only files sent as uploaded', () => {
     expect(finishedHeading({ ...none, done: 1, exists: 2 })).toBe(
-      'Uploaded 3 files · 2 already there',
+      'Uploaded 1 file · 2 already there',
     );
+    expect(finishedHeading({ ...none, done: 2, exists: 1, conflicts: 1 })).toBe(
+      'Uploaded 2 files · 1 already there · 1 not replaced',
+    );
+  });
+  it('names a file already there alone when nothing was sent', () => {
+    expect(finishedHeading({ ...none, exists: 1 })).toBe('1 already there');
+    expect(finishedHeading({ ...none, exists: 2, failed: 1 })).toBe('2 already there · 1 failed');
   });
   it('leads with what happened when nothing was uploaded', () => {
     expect(finishedHeading({ ...none, conflicts: 1 })).toBe('1 not replaced');

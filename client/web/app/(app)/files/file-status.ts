@@ -169,6 +169,33 @@ export function reindexUrgent(s: FileStatus | undefined | null): boolean {
   return k === 'failed' || k === 'partial' || k === 'stale';
 }
 
+/** The brain's reason codes (packages/files extraction-status.ts) in plain
+ *  words, lower case so they follow "Could not be read: ". */
+const REASON_WORDS: Record<string, string> = {
+  document_unreadable: 'the reader could not open it',
+  pdf_too_large: 'the PDF is too large to read',
+  encrypted_pdf: 'the PDF is password-protected',
+  bytes_unavailable: 'its bytes are not on the server',
+  parked: 'its index could not be written',
+  needs_export: 'this format cannot be read directly',
+  unsupported_media: 'audio and video are kept, not read',
+  no_parser: 'no reader takes this file type',
+  body_too_short: 'it holds too little text to index',
+  no_text_layer: 'the scan gave no text',
+  no_vision_text: 'the picture gave no text',
+  type_not_in_allowlist: 'this file type is not read here',
+  local_only: 'read on this box with no model',
+  not_read_no_model: 'no assistant reads its workspace',
+};
+
+/** A reason code in plain words; null for a code this client does not know
+ *  (never shown raw: the caller says "Could not be read" and the hint). */
+export function reasonWords(reason: string | undefined | null): string | null {
+  return reason && Object.hasOwn(REASON_WORDS, reason) ? REASON_WORDS[reason]! : null;
+}
+
+const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
 /** The line about the brain's read of the content. */
 export function ingestLine(ingest: FileIngest, x: FileExtraction | undefined): string {
   switch (ingest) {
@@ -178,8 +205,10 @@ export function ingestLine(ingest: FileIngest, x: FileExtraction | undefined): s
       return x?.pages ? `Read in part: ${x.pages.read} of ${x.pages.total} pages` : 'Read in part';
     case 'waiting':
       return 'Not read yet';
-    case 'failed':
-      return x?.reason ? `Could not be read: ${x.reason}` : 'Could not be read';
+    case 'failed': {
+      const words = reasonWords(x?.reason);
+      return words ? `Could not be read: ${words}` : 'Could not be read';
+    }
     case 'none':
       return x?.state === 'name_only'
         ? 'Kept to its name: the content is not read'
@@ -260,13 +289,32 @@ function readLine(p: FileProcessing): DetailRow {
       tone: 'muted',
     };
   }
-  const how =
-    p.readMode === 'metadata'
-      ? 'Name only'
-      : p.readMode === 'local'
-        ? 'Read on this box, no model'
-        : 'Read whole';
-  return { label: 'Read', value: `${how}, ${formatDateTime(p.readAt)}` };
+  const { how, tone } = readHow(p);
+  return { label: 'Read', value: `${how}, ${formatDateTime(p.readAt)}`, tone };
+}
+
+/** How the last read went, from extraction.state (the source of truth for
+ *  a read in part) and then readMode (the folder's indexing when it ran:
+ *  'full' says how it was asked, not that every page was read). */
+export function readHow(p: Pick<FileProcessing, 'extraction' | 'readMode' | 'images'>): {
+  how: string;
+  tone?: DetailTone;
+} {
+  const x = p.extraction;
+  if (x.state === 'partial') {
+    const left = p.images && p.images.kept < p.images.found ? p.images : null;
+    const how = x.pages
+      ? `Read in part: ${x.pages.read} of ${x.pages.total} pages`
+      : left
+        ? `Read in part: ${left.kept} of ${left.found} pictures`
+        : 'Read in part';
+    return { how, tone: 'warning' };
+  }
+  if (x.state === 'failed') return { how: 'Last tried', tone: 'muted' };
+  if (x.state === 'name_only' || p.readMode === 'metadata') return { how: 'Name only' };
+  if (p.readMode === 'local') return { how: 'Read on this box, no model' };
+  if (x.state === 'indexed') return { how: 'Read whole' };
+  return { how: 'Read' };
 }
 
 /** The "Read by" row: the reader and its version, and the current version
@@ -315,7 +363,11 @@ export function detailsView(p: FileProcessing): DetailsView {
   const brain: DetailRow[] = [
     {
       label: 'Status',
-      value: ingestLine(p.status.ingest, p.extraction),
+      // A failure's words are in the card at the top, once.
+      value:
+        p.status.ingest === 'failed'
+          ? 'Could not be read'
+          : ingestLine(p.status.ingest, p.extraction),
       tone:
         p.status.ingest === 'failed'
           ? 'error'
@@ -394,20 +446,33 @@ export function detailsView(p: FileProcessing): DetailsView {
         }
       : null;
 
-  const problem = p.error
-    ? { reason: p.error.reason, hint: p.error.hint }
-    : p.extraction.state === 'failed' && p.extraction.reason
-      ? { reason: p.extraction.reason, hint: p.extraction.hint ?? null }
-      : null;
+  // A failed read says why in its badge card (title, reason, hint); the
+  // red block is for the rest (a skip), so the words show once.
+  const problem = p.status.ingest === 'failed' ? null : problemOf(p);
 
   return {
-    badge: statusBadge(p.status, p.extraction),
+    // The badge card carries a failure's hint: the extraction's, else the error's.
+    badge: statusBadge(p.status, {
+      ...p.extraction,
+      ...(p.extraction.hint || !p.error?.hint ? {} : { hint: p.error.hint }),
+    }),
     file,
     brain,
     pipeline,
     problem,
     derived: { items: p.derived.items, more: p.derived.truncated },
   };
+}
+
+/** Why a file was not read, in plain words: the known reason, else a
+ *  plain "Could not be read" with the brain's hint. */
+export function problemOf(
+  p: Pick<FileProcessing, 'error' | 'extraction'>,
+): null | { reason: string; hint: string | null } {
+  const raw = p.error ?? (p.extraction.state === 'failed' ? p.extraction : null);
+  if (!raw?.reason) return null;
+  const words = reasonWords(raw.reason);
+  return { reason: words ? capital(words) : 'Could not be read', hint: raw.hint ?? null };
 }
 
 /** Where a derived item opens: a file in its own folder, anything else

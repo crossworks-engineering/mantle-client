@@ -19,6 +19,7 @@ import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { useFolderWhere } from '@/lib/use-folder-where';
 import { FileStatusBadge } from './file-status-badge';
 import { ATTENTION_KEY, useReindex } from './file-reindex-ui';
 import { ATTENTION_TABS, attentionHint, stalePath, type FileStaleState } from './file-reindex';
@@ -27,7 +28,6 @@ import { fmtRelative, fmtSize, type FileRow } from './files-shared';
 type StaleAnswer = { files: FileRow[]; next: string | null; total: number };
 
 const n = (x: number) => x.toLocaleString('en-GB');
-const where = (path: string) => path.split('.').filter(Boolean).join(' / ');
 
 /** One list's total, for a tab not shown (one row asked, the total comes
  *  with it). The tab shown takes the total from its own list. */
@@ -66,6 +66,7 @@ export function NeedsAttentionView({
 }) {
   const qc = useQueryClient();
   const reindex = useReindex();
+  const where = useFolderWhere();
   const [state, setState] = useState<FileStaleState>(initial);
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const totals: Record<FileStaleState, number | undefined> = {

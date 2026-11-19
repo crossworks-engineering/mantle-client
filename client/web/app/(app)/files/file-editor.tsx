@@ -416,21 +416,21 @@ export function FileEditor({
             ? [
                 {
                   // Every trace that touched this file (ingest, extractor, …).
+                  // Named Activity, so it is never taken for File history.
                   key: 'history',
-                  label: 'History: what the system did with this file',
+                  label: 'Activity: what the system did with this file',
                   icon: <Activity />,
                   href: `/nodes/${file.id}/history`,
                 },
               ]
             : []),
-          ...(typeof file.versions === 'number'
+          ...(hasHistory(file.versions)
             ? [
                 {
-                  // Its kept versions, to download or restore (file history).
+                  // Its kept versions, to download or restore (file history),
+                  // only when there are some (as the history mark).
                   key: 'versions',
-                  label: hasHistory(file.versions)
-                    ? `File history: ${historyMarkLabel(file.versions)}`
-                    : 'File history: no earlier versions',
+                  label: `File history: ${historyMarkLabel(file.versions)}`,
                   icon: <History />,
                   onSelect: () => setHistoryOpen(true),
                 },
@@ -475,7 +475,7 @@ export function FileEditor({
         filename={file.filename}
         fallback={detailsFallback(file)}
         extra={note ? [{ label: 'Access', value: note }] : []}
-        onHistory={typeof file.versions === 'number' ? () => setHistoryOpen(true) : undefined}
+        onHistory={hasHistory(file.versions) ? () => setHistoryOpen(true) : undefined}
         canReindex={canEdit}
         onOpenChange={setDetailsOpen}
       />

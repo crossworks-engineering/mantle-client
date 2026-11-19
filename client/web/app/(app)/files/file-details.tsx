@@ -22,6 +22,7 @@ import { describeFile, fileTypeLabel, KIND_TINT } from '@mantle/web-ui/lib/mime-
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@mantle/web-ui/ui/sheet';
+import { useFolderWhere } from '@/lib/use-folder-where';
 import { StatusIcon } from './file-status-badge';
 import { useReindex } from './file-reindex-ui';
 import {
@@ -49,13 +50,16 @@ export function detailsFallback(file: {
 }): DetailsExtraRow[] {
   const rows: DetailsExtraRow[] = [];
   if (typeof file.parentPath === 'string') {
-    rows.push({
-      label: 'Location',
-      value: file.parentPath.split('.').filter(Boolean).join(' / ') || 'Top level',
-    });
+    rows.push({ label: 'Location', value: <FolderLocation path={file.parentPath} /> });
   }
   rows.push({ label: 'Type', value: fileTypeLabel(file.mimeType, file.filename) });
   return rows;
+}
+
+/** A folder by its titles, as the tree names it ("Files › Alpha › Beta"). */
+function FolderLocation({ path }: { path: string }) {
+  const where = useFolderWhere();
+  return <>{where(path)}</>;
 }
 
 /**
@@ -178,7 +182,6 @@ function Body({
   onNavigate: () => void;
 }) {
   const v = detailsView(p);
-  const location = p.file.parentPath.split('.').filter(Boolean).join(' / ') || 'Top level';
   return (
     <div className="space-y-5">
       {v.badge ? (
@@ -211,7 +214,7 @@ function Body({
       <Section title="File">
         <Rows
           rows={[
-            { label: 'Location', value: location },
+            { label: 'Location', value: <FolderLocation path={p.file.parentPath} /> },
             { label: 'Type', value: fileTypeLabel(p.file.mimeType, p.file.filename) },
             ...v.file,
             ...extra,

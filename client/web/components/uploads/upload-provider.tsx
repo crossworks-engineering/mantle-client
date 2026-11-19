@@ -67,7 +67,7 @@ import { UploadClashPrompt } from './upload-clash-prompt';
 import { useNoAutoTables } from '@/components/workspaces/use-shell-workspaces';
 import { uploadBatchSound } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
-import { useUploadWhere } from './use-upload-where';
+import { useFolderWhere } from '@/lib/use-folder-where';
 
 /**
  * App-wide background file uploader. Lives in the persistent app shell so a
@@ -609,7 +609,7 @@ export function UploadDock() {
   const noAutoTables = useNoAutoTables();
   // Each row says where it goes, by the folder titles the Files screen
   // loaded (a path segment where it has not).
-  const whereOf = useUploadWhere();
+  const whereOf = useFolderWhere();
 
   if (tasks.length === 0) return null;
 
@@ -737,8 +737,8 @@ export function UploadProgressBar({ progress: p }: { progress: AggregateProgress
   );
 }
 
-/** The dock title once nothing is moving. Files already there count as
- *  uploaded; only a different version left in place is called out. */
+/** The dock title once nothing is moving. Only files sent count as
+ *  uploaded; a file already there was not sent, so it is named on its own. */
 export function finishedHeading(c: {
   done: number;
   exists: number;
@@ -746,14 +746,14 @@ export function finishedHeading(c: {
   failed: number;
   cancelled: number;
 }): string {
-  const uploaded = c.done + c.exists;
+  const uploaded = c.done;
   const rest: string[] = [];
   if (c.exists > 0) rest.push(`${c.exists} already there`);
   if (c.conflicts > 0) rest.push(`${c.conflicts} not replaced`);
   if (c.failed > 0) rest.push(`${c.failed} failed`);
   if (c.cancelled > 0) rest.push(`${c.cancelled} cancelled`);
-  // "Uploaded 0 files · 1 not replaced" read as a failure count; lead with
-  // what did happen.
+  // "Uploaded 0 files · 1 already there" says nothing; lead with what did
+  // happen.
   if (uploaded === 0 && rest.length > 0) return rest.join(' · ');
   return [`Uploaded ${uploaded} file${uploaded === 1 ? '' : 's'}`, ...rest].join(' · ');
 }

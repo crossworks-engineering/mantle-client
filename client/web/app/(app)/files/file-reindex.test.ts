@@ -316,7 +316,11 @@ describe('Needs attention helpers', () => {
     expect(
       attentionHint({ extraction: { reason: 'encrypted', hint: 'Upload it open.' } }, 'failed'),
     ).toBe('Upload it open.');
-    expect(attentionHint({ extraction: { reason: 'encrypted' } }, 'failed')).toBe('encrypted');
+    // No hint: the reason in plain words, never the raw code.
+    expect(attentionHint({ extraction: { reason: 'encrypted_pdf' } }, 'failed')).toBe(
+      'the PDF is password-protected',
+    );
+    expect(attentionHint({ extraction: { reason: 'brand_new_code' } }, 'failed')).toBe('');
     expect(attentionHint({}, 'partial')).toBe('');
   });
 });

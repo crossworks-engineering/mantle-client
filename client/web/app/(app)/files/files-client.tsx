@@ -125,7 +125,7 @@ import { FileDropOverlay, useFileDrop } from './file-drop-zone';
 import { FileRowMenu, SelectionBar } from './files-selection';
 import { FileListRow, FileTile } from './files-rows';
 import { HistoryMenuItem, useHistorySheet } from '@/components/file-history/file-history-sheet';
-import { treeItemVersions } from '@/lib/file-history';
+import { hasHistory, treeItemVersions } from '@/lib/file-history';
 
 /** The three shapes the file list can take; anything else in storage is stale. */
 const VIEW_CHOICES = oneOf('list', 'grid', 'dual');
@@ -837,7 +837,7 @@ function FilesView({
                           Reindex
                         </DropdownMenuItem>
                       ) : null}
-                      {treeItemVersions(item) !== undefined ? (
+                      {hasHistory(treeItemVersions(item)) ? (
                         <HistoryMenuItem
                           onSelect={() => fileHistory.open({ id: item.id, filename: item.title })}
                         />

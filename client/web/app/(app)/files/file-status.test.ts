@@ -5,7 +5,10 @@ import {
   derivedNoun,
   detailsView,
   pipelineReadRow,
+  problemOf,
   readByRow,
+  readHow,
+  reasonWords,
   reindexUrgent,
   STALE_LINE,
   statusBadge,
@@ -70,9 +73,14 @@ describe('statusBadge: the tooltip words', () => {
     ]);
   });
 
-  it('names the reason of a failed read', () => {
-    const b = statusBadge({ ingest: 'failed' }, { state: 'failed', reason: 'password protected' });
-    expect(b?.lines[0]).toBe('Could not be read: password protected');
+  it('names the reason of a failed read in plain words, never the code', () => {
+    const b = statusBadge({ ingest: 'failed' }, { state: 'failed', reason: 'document_unreadable' });
+    expect(b?.lines[0]).toBe('Could not be read: the reader could not open it');
+    const odd = statusBadge(
+      { ingest: 'failed' },
+      { state: 'failed', reason: 'some_new_code', hint: 'Try again later.' },
+    );
+    expect(odd?.lines).toEqual(['Could not be read', 'Try again later.']);
   });
 
   it('is null with no status', () => {
@@ -157,6 +165,19 @@ describe('detailsView: the Details panel in plain words', () => {
     });
   });
 
+  it('a partial read never says Read whole on its Read line', () => {
+    const v = detailsView(
+      processing({
+        status: { ingest: 'partial' },
+        extraction: { state: 'partial', pages: { read: 2, total: 5 } },
+        readMode: 'full',
+      }),
+    );
+    const read = v.brain.find((r) => r.label === 'Read');
+    expect(read?.value).toMatch(/^Read in part: 2 of 5 pages, /);
+    expect(read?.tone).toBe('warning');
+  });
+
   it('every picture kept is no warning', () => {
     const v = detailsView(processing({ images: { kept: 3, found: 3 } }));
     expect(v.brain.find((r) => r.label === 'Pictures')).toEqual({
@@ -203,22 +224,54 @@ describe('detailsView: the Details panel in plain words', () => {
     expect(v.pipeline?.tables).toEqual([]);
   });
 
-  it('a failed read: the problem with its hint', () => {
+  it('a failed read says why once: in the badge card, plain words and the hint', () => {
+    const hint = 'The parser could not read this file. Only its name is in search.';
     const v = detailsView(
       processing({
         status: { ingest: 'failed' },
-        extraction: { state: 'failed', reason: 'encrypted' },
+        extraction: { state: 'failed', reason: 'document_unreadable', hint },
         readAt: null,
         readMode: null,
-        error: { reason: 'The file is encrypted', hint: 'Upload it without a password.' },
+        error: { reason: 'document_unreadable', hint },
       }),
     );
     expect(v.badge?.kind).toBe('failed');
-    expect(v.problem).toEqual({
-      reason: 'The file is encrypted',
-      hint: 'Upload it without a password.',
-    });
+    expect(v.badge?.lines).toEqual(['Could not be read: the reader could not open it', hint]);
+    // No second block with the same words, and no raw code anywhere.
+    expect(v.problem).toBeNull();
+    expect(value(v.brain, 'Status')).toBe('Could not be read');
+    expect(JSON.stringify(v)).not.toContain('document_unreadable');
     expect(value(v.brain, 'Read')).toBe('Not read yet');
+  });
+
+  it('a failed read with the hint on the error only keeps it in the card', () => {
+    const v = detailsView(
+      processing({
+        status: { ingest: 'failed' },
+        extraction: { state: 'failed', reason: 'encrypted_pdf' },
+        error: { reason: 'encrypted_pdf', hint: 'Add its password.' },
+      }),
+    );
+    expect(v.badge?.lines).toEqual([
+      'Could not be read: the PDF is password-protected',
+      'Add its password.',
+    ]);
+    expect(value(v.brain, 'Read')).toMatch(/^Last tried, /);
+  });
+
+  it('a skip shows its reason once, in plain words', () => {
+    const v = detailsView(
+      processing({
+        status: { ingest: 'none' },
+        extraction: { state: 'skipped', reason: 'no_parser' },
+        error: { reason: 'no_parser', hint: 'Only its name is in search.' },
+      }),
+    );
+    expect(v.badge).toBeNull();
+    expect(v.problem).toEqual({
+      reason: 'No reader takes this file type',
+      hint: 'Only its name is in search.',
+    });
   });
 
   it('a job in the queue or running says so on the Read line', () => {
@@ -366,5 +419,57 @@ describe('P5: Read by and Pipeline in Details', () => {
   it('a brain before P5 shows no Read by row', () => {
     const v = detailsView(processing());
     expect(v.brain.some((r) => r.label === 'Read by')).toBe(false);
+  });
+});
+
+describe('readHow: how the last read went, from extraction.state first', () => {
+  const p = (
+    extraction: FileProcessing['extraction'],
+    readMode: FileProcessing['readMode'] = 'full',
+    images: FileProcessing['images'] = null,
+  ) => ({ extraction, readMode, images });
+
+  it('a read in part names the pages, else the pictures, whatever readMode says', () => {
+    expect(readHow(p({ state: 'partial', pages: { read: 2, total: 5 } }))).toEqual({
+      how: 'Read in part: 2 of 5 pages',
+      tone: 'warning',
+    });
+    expect(readHow(p({ state: 'partial' }, 'full', { kept: 3, found: 9 })).how).toBe(
+      'Read in part: 3 of 9 pictures',
+    );
+    expect(readHow(p({ state: 'partial' }, 'local')).how).toBe('Read in part');
+  });
+
+  it('a whole read, a name only, a local read, a failure', () => {
+    expect(readHow(p({ state: 'indexed' })).how).toBe('Read whole');
+    expect(readHow(p({ state: 'indexed' }, 'local')).how).toBe('Read on this box, no model');
+    expect(readHow(p({ state: 'name_only' }, null)).how).toBe('Name only');
+    expect(readHow(p({ state: 'indexed' }, 'metadata')).how).toBe('Name only');
+    expect(readHow(p({ state: 'failed', reason: 'pdf_too_large' })).how).toBe('Last tried');
+    expect(readHow(p({ state: 'skipped' }, null)).how).toBe('Read');
+  });
+});
+
+describe('reasonWords and problemOf: never a raw code', () => {
+  it('maps the known codes, and only own keys', () => {
+    expect(reasonWords('document_unreadable')).toBe('the reader could not open it');
+    expect(reasonWords('bytes_unavailable')).toBe('its bytes are not on the server');
+    expect(reasonWords('toString')).toBeNull();
+    expect(reasonWords('brand_new_code')).toBeNull();
+    expect(reasonWords(undefined)).toBeNull();
+  });
+
+  it('an unknown code reads "Could not be read" with the hint', () => {
+    expect(
+      problemOf({
+        error: { reason: 'brand_new_code', hint: 'Ask an Admin.' },
+        extraction: { state: 'skipped' },
+      }),
+    ).toEqual({ reason: 'Could not be read', hint: 'Ask an Admin.' });
+    expect(problemOf({ error: null, extraction: { state: 'failed', reason: 'parked' } })).toEqual({
+      reason: 'Its index could not be written',
+      hint: null,
+    });
+    expect(problemOf({ error: null, extraction: { state: 'indexed' } })).toBeNull();
   });
 });

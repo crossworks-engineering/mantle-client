@@ -41,6 +41,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import {
   HISTORY_EMPTY,
+  hasHistory,
   announceFileRestored,
   historyKey,
   historyLoadError,
@@ -69,7 +70,8 @@ export function HistoryMenuItem({ onSelect }: { onSelect: () => void }) {
 
 /**
  * A list's History sheet: `open` (a tree row) and `of` (a list row: its
- * opener, none from a brain before file history), and the sheet to render.
+ * opener, none when it has no earlier versions or the brain predates file
+ * history), and the sheet to render.
  * The sheet reads the listed row, so a restore's refresh shows in it.
  */
 export function useHistorySheet(rows: readonly (HistoryFile & { versions?: number })[]) {
@@ -78,7 +80,7 @@ export function useHistorySheet(rows: readonly (HistoryFile & { versions?: numbe
   return {
     open,
     of: (f: HistoryFile & { versions?: number }) =>
-      typeof f.versions === 'number' ? () => open(f) : undefined,
+      hasHistory(f.versions) ? () => open(f) : undefined,
     sheet: (
       <FileHistorySheet
         file={shown ? (rows.find((r) => r.id === shown.id) ?? shown) : null}

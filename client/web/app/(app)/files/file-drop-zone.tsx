@@ -98,9 +98,11 @@ export function useFileDrop({
 
 /**
  * The drop zone over the content pane while files are dragged: a dashed
- * edge round the pane, and a card at its foot with an upload mark, the
+ * edge round the pane, and a card near its top with an upload mark, the
  * destination as a breadcrumb, and who else reads that folder. The pane
  * stays readable under it, so a lit folder card or pane shows through.
+ * The card sits at the top, below the header row, because the upload dock
+ * takes the foot of the screen (bottom right) and would cover it there.
  */
 export function FileDropOverlay({
   crumbs,
@@ -110,7 +112,7 @@ export function FileDropOverlay({
   visibleTo?: readonly string[] | null;
 }) {
   return (
-    <div className="pointer-events-none absolute inset-2 z-30 flex items-end justify-center rounded-lg border-2 border-dashed border-primary/60 bg-primary/[0.04] p-4">
+    <div className="pointer-events-none absolute inset-2 z-30 flex items-start justify-center rounded-lg border-2 border-dashed border-primary/60 bg-primary/[0.04] p-4 pt-12">
       <div
         role="status"
         aria-live="polite"

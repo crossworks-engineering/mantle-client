@@ -12,7 +12,7 @@ import {
 import { clashQuestion } from '@/lib/upload-clash';
 import type { ClashAnswer, WaitingClash } from '@/lib/upload-clash';
 import { formatBytes } from '@/lib/upload-progress';
-import { useUploadWhere } from './use-upload-where';
+import { useFolderWhere } from '@/lib/use-folder-where';
 
 /**
  * The one question of an upload whose name is taken by other bytes
@@ -36,7 +36,7 @@ export function UploadClashPrompt({
   clashMore: number;
   answerClash: (answer: ClashAnswer) => void;
 }) {
-  const whereOf = useUploadWhere();
+  const whereOf = useFolderWhere();
   if (!clash) return null;
   const there = clash.existing;
   // A double click's second click (detail 2) would answer the next clash.
