@@ -57,6 +57,16 @@ import {
   onboardingExit,
   goesToOnboarding,
   PATH_AREAS,
+  REMOVE_SYSTEM_USERS_ONLY_TEXT,
+  SYSTEM_ADD_TEXT,
+  SYSTEM_NOT_ADMIN_TEXT,
+  SYSTEM_REMOVE_PAIRED_TEXT,
+  SYSTEM_WORKSPACE_ALL_MODERATE_TEXT,
+  ADMIN_WORKSPACE_ALL_MODERATE_TEXT,
+  allModerateText,
+  isSystemUser,
+  isSystemWorkspace,
+  switcherWorkspaces,
   resolveCurrentWorkspace,
   shellAreasOf,
   shellWorkspacesOf,
@@ -111,7 +121,9 @@ describe('areas', () => {
     expect(areaForPath('/settings/agents')).toBe('assistants');
     expect(areaForPath('/settings/connectors')).toBe('connectors');
     expect(areaForPath('/settings/keys')).toBe('keys');
-    expect(areaForPath('/settings/appearance')).toBe('settings');
+    // Branding is every Admin user's (System workspace, owner 2026-11-19).
+    expect(areaForPath('/settings/appearance')).toBe('users');
+    expect(areaForPath('/settings/appearance/drift')).toBe('users');
     expect(areaForPath('/settings')).toBe('settings');
     expect(areaForPath('/settings/workspaces')).toBeNull();
     expect(areaForPath('/pages')).toBeNull();
@@ -120,18 +132,59 @@ describe('areas', () => {
   });
 
   // Phase W5c: one table for every screen (PATH_AREAS).
+  // The System workspace (owner, 2026-11-19): the content screens, mail
+  // reading and approvals are every Admin user's (users); the keys screen
+  // is keys; the technical screens stay settings (the System user's).
   it.each([
     '/journal',
-    '/inbox',
-    '/recall',
-    '/formulas',
-    '/events',
     '/contacts',
-    '/secrets',
+    '/recall',
+    '/nodes',
+    '/tasks',
+    '/events',
+    '/formulas',
+    '/inbox',
+    '/pending',
+  ])('%s and what is under it need the users area', (p) => {
+    expect(areaForPath(p)).toBe('users');
+    expect(areaForPath(`${p}/x/y`)).toBe('users');
+    expect(mayOpenPath(['users'], p)).toBe(true);
+    expect(mayOpenPath(['settings', 'assistants', 'connectors', 'keys'], p)).toBe(false);
+    expect(mayOpenPath([], p)).toBe(false);
+    // A brain before System gives an Admin user every area: still open.
+    expect(mayOpenPath(['settings', 'users', 'assistants', 'connectors', 'keys'], p)).toBe(true);
+    expect(mayOpenPath(undefined, p)).toBe(true);
+  });
+
+  it('/secrets needs the keys area', () => {
+    expect(areaForPath('/secrets')).toBe('keys');
+    expect(areaForPath('/secrets/x')).toBe('keys');
+    expect(mayOpenPath(['users'], '/secrets')).toBe(false);
+    expect(mayOpenPath(['keys'], '/secrets')).toBe(true);
+  });
+
+  it('an Admin-only user (users) opens the content screens, not the technical ones', () => {
+    const adminOnly = ['users'];
+    for (const p of ['/journal', '/inbox', '/pending', '/settings/appearance', '/settings/users'])
+      expect(mayOpenPath(adminOnly, p), p).toBe(true);
+    for (const p of [
+      '/settings',
+      '/settings/agents',
+      '/settings/connectors',
+      '/settings/keys',
+      '/secrets',
+      '/models',
+      '/runs',
+      '/traces',
+      '/sandboxes',
+      '/status',
+    ])
+      expect(mayOpenPath(adminOnly, p), p).toBe(false);
+  });
+
+  it.each([
     '/docs',
     '/models',
-    '/pending',
-    '/nodes',
     '/heartbeats',
     '/studio',
     '/dev-tools',
@@ -141,7 +194,6 @@ describe('areas', () => {
     '/traces',
     '/debug',
     '/changelog',
-    '/tasks',
     '/onboarding',
   ])('%s and what is under it need the settings area', (p) => {
     expect(areaForPath(p)).toBe('settings');
@@ -768,5 +820,109 @@ describe('the Admin workspace Moderator lock', () => {
     const last = new ApiError('This is the last Moderator.', 409, { code: 'last_moderator' });
     expect(moderatorErrorText(last)).toBe('This is the last Moderator.');
     expect(moderatorErrorText(new Error('x'))).toBe('Could not save.');
+  });
+});
+
+// The System workspace (owner, 2026-11-19): a subset of the Admin users who
+// hold the technical areas. The brain decides; these only hide.
+describe('the System workspace', () => {
+  const me = (member: boolean) => ({ member, moderator: member });
+  const system = (member: boolean) =>
+    ws({ name: 'System', isSystem: true, builtIn: true, me: me(member) });
+
+  it("is System only by the brain's mark, never by name; absent reads as false", () => {
+    expect(isSystemWorkspace({ isSystem: true })).toBe(true);
+    expect(isSystemWorkspace({ isSystem: false })).toBe(false);
+    expect(isSystemWorkspace({})).toBe(false);
+    expect(isSystemWorkspace(ws({ name: 'System' }))).toBe(false);
+  });
+
+  it('a System user is a user of System', () => {
+    expect(isSystemUser(system(true))).toBe(true);
+    expect(isSystemUser(system(false))).toBe(false);
+    expect(isSystemUser(ws({ me: me(true) }))).toBe(false);
+  });
+
+  it('no Moderator switch on System, as on Admin; one line each', () => {
+    expect(moderatorLockedByAdmin(system(true))).toBe(true);
+    expect(moderatorLockedByAdmin({ isAdmin: false })).toBe(false);
+    expect(allModerateText(system(true))).toBe(SYSTEM_WORKSPACE_ALL_MODERATE_TEXT);
+    expect(allModerateText({})).toBe(ADMIN_WORKSPACE_ALL_MODERATE_TEXT);
+  });
+
+  it('only a System user adds, whatever their areas', () => {
+    expect(canAddToWorkspace(system(true), ['users'])).toBe(true);
+    expect(canAddToWorkspace(system(false), ['users'])).toBe(false);
+    expect(canAddToWorkspace(system(false), undefined)).toBe(false);
+  });
+
+  it('only a System user removes; leaving is their own row', () => {
+    const viewer = { loginId: 'l-me' };
+    const other = { loginId: 'l-other', email: 'o@x.test', adminViaArea: false, moderator: true };
+    const own = { ...other, loginId: 'l-me' };
+    const areas = ['users', 'settings'];
+    expect(removeBlockedReason(system(true), other, viewer, areas)).toBeNull();
+    expect(removeBlockedReason(system(true), own, viewer, areas)).toBeNull();
+    expect(removeBlockedReason(system(false), other, viewer, ['users'])).toBe(
+      REMOVE_SYSTEM_USERS_ONLY_TEXT,
+    );
+  });
+
+  it('is built in: no Archive', () => {
+    expect(isBuiltIn(system(true))).toBe(true);
+    expect(canArchiveWorkspace(system(true), ['users'])).toBe(false);
+  });
+
+  it('the remove confirm warns that what they paired stops working', () => {
+    const text = removeUserText(system(true), 'Ann');
+    expect(text).toContain(SYSTEM_REMOVE_PAIRED_TEXT);
+    expect(text).toMatch(/^Ann stops managing/);
+    expect(removeUserText(ws(), 'Ann')).not.toContain(SYSTEM_REMOVE_PAIRED_TEXT);
+  });
+
+  it('says its refusals in plain words', () => {
+    const notAdmin = new ApiError('Only an Admin user can be added.', 409, {
+      code: 'not_admin_user',
+    });
+    expect(addUserErrorText(notAdmin, system(true), 'Bo')).toBe(
+      `Bo is not an Admin user. ${SYSTEM_NOT_ADMIN_TEXT}`,
+    );
+    expect(SYSTEM_NOT_ADMIN_TEXT).toBe('Make them an Admin user first.');
+    const usersOnly = new ApiError('x', 403, { code: 'system_users_only' });
+    expect(addUserErrorText(usersOnly, system(false))).toBe(SYSTEM_ADD_TEXT);
+    for (const t of [
+      SYSTEM_ADD_TEXT,
+      SYSTEM_NOT_ADMIN_TEXT,
+      SYSTEM_REMOVE_PAIRED_TEXT,
+      REMOVE_SYSTEM_USERS_ONLY_TEXT,
+      SYSTEM_WORKSPACE_ALL_MODERATE_TEXT,
+    ])
+      expect(t).not.toMatch(/[\u2013\u2014]/);
+  });
+
+  it('sorts Admin, then System, then by name', () => {
+    const list = [
+      ws({ id: 'b', name: 'Board' }),
+      ws({ id: 's', name: 'System', isSystem: true }),
+      ws({ id: 'a', name: 'Admin', isAdmin: true }),
+    ];
+    expect(sortWorkspaces(list).map((w) => w.id)).toEqual(['a', 's', 'b']);
+  });
+
+  it('the switcher leaves System out, and only System', () => {
+    const shell = [
+      { id: 'a', name: 'Admin', isAdmin: true, moderator: true },
+      { id: 's', name: 'System', isAdmin: false, isSystem: true as const, moderator: true },
+      { id: 't', name: 'Team', isAdmin: false, moderator: false },
+    ];
+    expect(switcherWorkspaces(shell).map((w) => w.id)).toEqual(['a', 't']);
+    // An older brain sends no mark: nothing is left out.
+    const older = shell.map((w) => ({
+      id: w.id,
+      name: w.name,
+      isAdmin: w.isAdmin,
+      moderator: w.moderator,
+    }));
+    expect(switcherWorkspaces(older)).toHaveLength(3);
   });
 });

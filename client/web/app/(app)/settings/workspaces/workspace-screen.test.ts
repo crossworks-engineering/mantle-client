@@ -24,6 +24,9 @@ import {
   REMOVE_ADMIN_KEPT_TEXT,
   REMOVE_SELF_ADMIN_TEXT,
   REMOVE_MODERATOR_ADMIN_ONLY_TEXT,
+  REMOVE_SYSTEM_USERS_ONLY_TEXT,
+  SYSTEM_ADD_TEXT,
+  SYSTEM_WORKSPACE_ALL_MODERATE_TEXT,
   workspaceKey,
   type Workspace,
   type WorkspaceDetail,
@@ -117,7 +120,7 @@ const options = (c: QueryClient) => {
   );
   // The brain's list (GET /api/workspaces/:id/connector-options), for each
   // workspace the cells render: MCP and API connectors alike.
-  for (const id of ['w-team', 'w-admin']) {
+  for (const id of ['w-team', 'w-admin', 'w-system']) {
     c.setQueryData(connectorOptionsKey(id), [
       { slug: 'drive', name: 'Drive', kind: 'mcp', held: true },
       { slug: 'mail', name: 'Mail', kind: 'mcp', held: true },
@@ -501,6 +504,101 @@ describe('WorkspaceSections, the Admin workspace', () => {
   });
 });
 
+// The System workspace (owner, 2026-11-19): no Moderator switch, as on
+// Admin; Add and Remove only for a System user (a user of System); an Admin
+// user outside it reads the list.
+describe('WorkspaceSections, the System workspace', () => {
+  const system = (member: boolean) =>
+    detail(
+      {
+        id: 'w-system',
+        name: 'System',
+        isAdmin: false,
+        isSystem: true,
+        builtIn: true,
+        adminModerated: false,
+        me: { member, moderator: member },
+      },
+      { users: detail().users.map((u) => ({ ...u, adminViaArea: false, moderator: true })) },
+    );
+  const rowsOf = (html: string) =>
+    html
+      .split('data-testid="workspace-user"')
+      .slice(1)
+      .map((r) => r.slice(0, r.indexOf('</li>')));
+
+  describe('a System user', () => {
+    const html = render(
+      createElement(WorkspaceSections, { detail: system(true), manage: true, areas: ADMIN_AREAS }),
+      options,
+    );
+
+    it('no Moderator switch or column, one System line instead', () => {
+      const rows = rowsOf(html);
+      expect(rows).toHaveLength(3);
+      for (const row of rows) {
+        expect(row).not.toContain('role="switch"');
+        expect(row).not.toContain('aria-label="Moderator: ');
+      }
+      const head = html.match(/data-testid="workspace-columns"[\s\S]*?<\/div>/)?.[0];
+      expect(head).not.toContain('Moderator');
+      expect(html).toContain(
+        `data-testid="workspace-admin-moderators">${SYSTEM_WORKSPACE_ALL_MODERATE_TEXT}</p>`,
+      );
+      expect(html).not.toContain(ADMIN_WORKSPACE_ALL_MODERATE_TEXT);
+    });
+
+    it('may add, with the System line as the hint', () => {
+      expect(html).toContain('id="workspace-user-search"');
+      expect(html).toContain(SYSTEM_ADD_TEXT);
+      expect(html).not.toContain(ADMIN_ADD_TEXT);
+      expect(html).not.toContain('data-testid="workspace-add-blocked"');
+    });
+
+    it('may remove anyone (the brain keeps the owner and the last one)', () => {
+      expect(html).toContain('aria-label="Remove Ann Lee"');
+      expect(html).toContain('aria-label="Remove bo@x.test"');
+      expect(html).not.toContain(REMOVE_SYSTEM_USERS_ONLY_TEXT);
+    });
+  });
+
+  describe('an Admin user outside System', () => {
+    const html = render(
+      createElement(WorkspaceSections, { detail: system(false), manage: true, areas: ['users'] }),
+      options,
+    );
+
+    it('reads the list: no add, the System line says why', () => {
+      expect(html).not.toContain('id="workspace-user-search"');
+      expect(html).toContain(`data-testid="workspace-add-blocked">${SYSTEM_ADD_TEXT}</p>`);
+    });
+
+    it('every Remove is off, with why', () => {
+      const rows = rowsOf(html);
+      expect(rows).toHaveLength(3);
+      for (const row of rows) {
+        expect(row).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Remove [^"]+: /);
+        expect(row).toContain(REMOVE_SYSTEM_USERS_ONLY_TEXT);
+        expect(row).not.toContain('role="switch"');
+      }
+    });
+  });
+
+  it('an older brain (no isSystem): a workspace named System is an ordinary one', () => {
+    const html = render(
+      createElement(WorkspaceSections, {
+        detail: detail({ name: 'System' }),
+        manage: true,
+        areas: ADMIN_AREAS,
+      }),
+      options,
+    );
+    expect(html).toContain('aria-label="Moderator: Ann Lee"');
+    expect(html).not.toContain(SYSTEM_ADD_TEXT);
+    expect(html).not.toContain(SYSTEM_WORKSPACE_ALL_MODERATE_TEXT);
+  });
+});
+
 describe('WorkspaceScreen header', () => {
   const seed = (d: WorkspaceDetail) => (c: QueryClient) =>
     c.setQueryData(workspaceKey(d.workspace.id), d);
@@ -533,6 +631,31 @@ describe('WorkspaceScreen header', () => {
     );
     expect(html).not.toContain('aria-label="Archive workspace"');
     expect(html).toContain('>Admin<');
+  });
+
+  it('System has its pill, no Archive, and keeps its name', () => {
+    const d = detail({
+      id: 'w-system',
+      name: 'System',
+      isSystem: true,
+      builtIn: true,
+      adminModerated: false,
+    });
+    const html = render(
+      createElement(WorkspaceScreen, {
+        workspace: d.workspace,
+        areas: ADMIN_AREAS,
+        onArchived: () => {},
+      }),
+      (c) => {
+        seed(d)(c);
+        options(c);
+      },
+    );
+    expect(html).toContain('>System<');
+    expect(html).not.toContain('aria-label="Archive workspace"');
+    expect(html).toContain(BUILT_IN_NAME_HINT);
+    expect(html).toMatch(/<input[^>]*id="workspace-name"[^>]*readOnly=""/);
   });
 
   it('a plain user gets no Archive and no controls', () => {

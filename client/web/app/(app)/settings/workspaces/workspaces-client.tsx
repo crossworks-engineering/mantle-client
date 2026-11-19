@@ -22,6 +22,7 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import {
+  isSystemWorkspace,
   sortWorkspaces,
   workspaceErrorText,
   workspaceMeta,
@@ -176,6 +177,11 @@ function WorkspaceCard({
         {w.isAdmin ? (
           <Badge variant="secondary" className="shrink-0">
             Admin
+          </Badge>
+        ) : null}
+        {isSystemWorkspace(w) ? (
+          <Badge variant="secondary" className="shrink-0">
+            System
           </Badge>
         ) : null}
         {w.me.moderator && !w.archived ? (

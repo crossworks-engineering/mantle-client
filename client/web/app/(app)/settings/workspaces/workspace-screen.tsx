@@ -56,7 +56,9 @@ import {
   archiveBlocked,
   archiveConfirmText,
   canArchiveWorkspace,
-  ADMIN_WORKSPACE_ALL_MODERATE_TEXT,
+  allModerateText,
+  isSystemWorkspace,
+  SYSTEM_ADD_TEXT,
   canChangeUser,
   canManageWorkspace,
   canPickAssistant,
@@ -148,6 +150,7 @@ export function WorkspaceScreen({
         badges={
           <>
             {ws.isAdmin ? <Badge variant="secondary">Admin</Badge> : null}
+            {isSystemWorkspace(ws) ? <Badge variant="secondary">System</Badge> : null}
             {ws.me.moderator && !ws.archived ? <Badge variant="outline">Moderator</Badge> : null}
             {ws.archived ? <Badge variant="outline">Archived</Badge> : null}
           </>
@@ -161,6 +164,12 @@ export function WorkspaceScreen({
               </p>
               {ws.isAdmin ? (
                 <p>The users of Admin manage the brain: settings, users and workspaces.</p>
+              ) : null}
+              {isSystemWorkspace(ws) ? (
+                <p>
+                  The users of System are Admin users who also manage the brain&apos;s settings,
+                  assistants, connectors and keys.
+                </p>
               ) : null}
             </HeaderInfoButton>
             {canArchiveWorkspace(ws, areas) ? (
@@ -519,9 +528,8 @@ function UsersSection({
   // id, the email only from a shell that sends no id.
   const shell = useShellWorkspaces();
   const viewer = shell ? { loginId: shell.loginId, email: shell.login } : null;
-  // On Admin there is no Moderator switch (owner, 2026-11-19): every user
-  // there is an Admin user and the brain keeps them all ticked. One line
-  // says so instead.
+  // On Admin and System there is no Moderator switch (owner, 2026-11-19):
+  // the brain keeps every user there ticked. One line says so instead.
   const adminLocked = moderatorLockedByAdmin(ws);
   return (
     <Section
@@ -543,7 +551,7 @@ function UsersSection({
           className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
           data-testid="workspace-admin-moderators"
         >
-          {ADMIN_WORKSPACE_ALL_MODERATE_TEXT}
+          {allModerateText(ws)}
         </p>
       ) : null}
       {users.length === 0 ? (
@@ -571,10 +579,11 @@ function UsersSection({
       {manage && canAddToWorkspace(ws, areas) ? (
         <AddUser detail={detail} min={userSearchMin(areas)} paged={userSearchPaged(areas)} />
       ) : manage ? (
-        // Admin without the Users area (F4 audit M1): Add is not offered,
-        // and the screen says why.
+        // Admin without the Users area (F4 audit M1), or System for an
+        // Admin user who is not a System user: Add is not offered, and the
+        // screen says why.
         <p className="text-sm text-muted-foreground" data-testid="workspace-add-blocked">
-          {ADMIN_ADD_AREA_TEXT}
+          {isSystemWorkspace(ws) ? SYSTEM_ADD_TEXT : ADMIN_ADD_AREA_TEXT}
         </p>
       ) : null}
       {removing ? (
@@ -726,10 +735,10 @@ function AddUser({
   const hits = addableHits(search.hits ?? [], detail.users);
   const ready = opened && userSearchReady(q, min);
 
-  // On Admin an add is always one with the Moderator tick (task b8eea6cf):
-  // sent so no brain default decides it, and said once over the list (no
-  // box here). Only a caller with the Users area gets here on Admin
-  // (canAddToWorkspace).
+  // On Admin and System an add is always one with the Moderator tick (task
+  // b8eea6cf): sent so no brain default decides it, and said once over the
+  // list (no box here). Only a caller with the Users area gets here on
+  // Admin, only a System user on System (canAddToWorkspace).
   const adminLocked = moderatorLockedByAdmin(detail.workspace);
   const add = async (loginId: string, name: string) => {
     setAdding(loginId);
@@ -738,7 +747,7 @@ function AddUser({
       toast.success(`${name} added`);
       setQ('');
     } catch (err) {
-      toast.error(addUserErrorText(err, detail.workspace));
+      toast.error(addUserErrorText(err, detail.workspace, name));
     } finally {
       setAdding(null);
     }
@@ -761,9 +770,11 @@ function AddUser({
       />
       <FieldHint id="workspace-user-search">
         {min > 0 ? `Type at least ${min} letters. ` : 'Type to narrow the list. '}
-        {detail.workspace.isAdmin
-          ? ADMIN_ADD_TEXT
-          : 'A new user reads every item shared with this workspace.'}
+        {isSystemWorkspace(detail.workspace)
+          ? SYSTEM_ADD_TEXT
+          : detail.workspace.isAdmin
+            ? ADMIN_ADD_TEXT
+            : 'A new user reads every item shared with this workspace.'}
       </FieldHint>
       {ready && search.isError ? (
         <p className="text-sm text-muted-foreground">

@@ -105,20 +105,28 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/settings/tools', 'connectors'],
   ['/settings/peers', 'connectors'],
   ['/settings/keys', 'keys'],
+  // Branding stays with every Admin user (System workspace, owner
+  // 2026-11-19).
+  ['/settings/appearance', 'users'],
   // Every other settings screen.
   ['/settings', 'settings'],
-  // The brain's own screens: whoever manages the brain's settings.
-  ['/journal', 'settings'],
-  ['/inbox', 'settings'],
-  ['/recall', 'settings'],
-  ['/formulas', 'settings'],
-  ['/events', 'settings'],
-  ['/contacts', 'settings'],
-  ['/secrets', 'settings'],
+  // The brain's content screens, mail reading and approvals: every Admin
+  // user (the users area). The technical screens below are the System
+  // workspace's (settings). A brain before System gives an Admin user every
+  // area, so nothing changes there.
+  ['/journal', 'users'],
+  ['/contacts', 'users'],
+  ['/recall', 'users'],
+  ['/nodes', 'users'],
+  ['/tasks', 'users'],
+  ['/events', 'users'],
+  ['/formulas', 'users'],
+  ['/inbox', 'users'],
+  ['/pending', 'users'],
+  ['/secrets', 'keys'],
+  // The brain's own technical screens: whoever manages the brain's settings.
   ['/docs', 'settings'],
   ['/models', 'settings'],
-  ['/pending', 'settings'],
-  ['/nodes', 'settings'],
   ['/heartbeats', 'settings'],
   ['/studio', 'settings'],
   ['/dev-tools', 'settings'],
@@ -135,7 +143,6 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   // admin only: the rail shows a login without this area the build as
   // plain text (components/layout/changelog-link.tsx).
   ['/changelog', 'settings'],
-  ['/tasks', 'settings'],
   // The first-run wizard sets up the brain (outside the shell: onboardingExit).
   ['/onboarding', 'settings'],
 ];
@@ -203,9 +210,23 @@ export function canManageWorkspace(
   return ws.me.moderator || hasArea(areas, 'users');
 }
 
-/** The built-in workspace: the brain's `builtIn` (Admin only since brain
- *  migration 0286; Admin and Team before), else (a brain before contract
- *  change 20) the two marks only they carried. */
+/** The System workspace (owner, 2026-11-19): the Admin users who also hold
+ *  the technical areas. Absent from a brain before it: false. */
+export function isSystemWorkspace(ws: { isSystem?: boolean }): boolean {
+  return ws.isSystem === true;
+}
+
+/** A workspace as the System rules read it: `me` names the viewer's place. */
+type SystemAware = Pick<Workspace, 'isAdmin'> & { isSystem?: boolean; me?: Workspace['me'] };
+
+/** Whether the viewer is a System user: a user of System (on its screen). */
+export function isSystemUser(ws: SystemAware): boolean {
+  return isSystemWorkspace(ws) && ws.me?.member === true;
+}
+
+/** The built-in workspace: the brain's `builtIn` (Admin, and System since
+ *  the System workspace; Admin and Team before migration 0286), else (a
+ *  brain before contract change 20) the two marks only they carried. */
 export function isBuiltIn(
   ws: Pick<Workspace, 'isAdmin' | 'adminModerated'> & { builtIn?: boolean },
 ): boolean {
@@ -313,6 +334,10 @@ export const REMOVE_ADMIN_KEPT_TEXT =
 /** The viewer's own row in Admin: why their Remove is off. */
 export const REMOVE_SELF_ADMIN_TEXT = 'You cannot remove yourself from the Admin workspace.';
 
+/** On System, for an Admin user who is not a System user: why every
+ *  Remove is off (the brain's 403 system_users_only). */
+export const REMOVE_SYSTEM_USERS_ONLY_TEXT = 'Only a System user can remove someone here.';
+
 /** Another Moderator's row, for a Moderator who is not an Admin user: why
  *  their Remove is off (removing a Moderator takes the tick away, so the
  *  brain asks the same as for the tick: 403 admin_only). */
@@ -329,12 +354,15 @@ export const REMOVE_MODERATOR_ADMIN_ONLY_TEXT = 'Only an Admin user can remove a
  * admin_only).
  */
 export function removeBlockedReason(
-  ws: Pick<Workspace, 'isAdmin'>,
+  ws: SystemAware,
   user: Pick<WorkspaceUser, 'adminViaArea' | 'loginId' | 'email' | 'moderator'>,
   viewer: WorkspaceViewer | null | undefined,
   areas: readonly string[] | null | undefined,
 ): string | null {
   if (!canChangeUser(user)) return REMOVE_ADMIN_KEPT_TEXT;
+  // On System only a System user removes anyone (an Admin user outside it
+  // reads the list). Leaving is a System user's own row, so it stays open.
+  if (isSystemWorkspace(ws) && !isSystemUser(ws)) return REMOVE_SYSTEM_USERS_ONLY_TEXT;
   if (!canRemoveUser(ws, user, viewer)) return REMOVE_SELF_ADMIN_TEXT;
   if (user.moderator && !canTickModerator(areas) && isViewerRow(user, viewer) === false) {
     return REMOVE_MODERATOR_ADMIN_ONLY_TEXT;
@@ -358,12 +386,12 @@ export function canChangeUser(user: Pick<WorkspaceUser, 'adminViaArea'>): boolea
  * Every Admin user moderates the Admin workspace, always (brain F4 fix
  * round 1, migration 0298; task b8eea6cf): the brain refuses to clear the
  * tick there (409 admin_workspace), and an add to Admin is one with the
- * tick. Every user of Admin is an Admin user (W5a), so on Admin each row's
- * switch is on and fixed, labelled Admin; Remove is unchanged (leaving
- * Admin is the change to a member login). Other workspaces: false.
+ * tick. System is the same: every System user is a Moderator there. So
+ * neither shows a Moderator switch, and an add there sends the tick.
+ * Remove is unchanged. Other workspaces: false.
  */
-export function moderatorLockedByAdmin(ws: Pick<Workspace, 'isAdmin'>): boolean {
-  return ws.isAdmin;
+export function moderatorLockedByAdmin(ws: Pick<Workspace, 'isAdmin' | 'isSystem'>): boolean {
+  return ws.isAdmin || isSystemWorkspace(ws);
 }
 
 /**
@@ -371,13 +399,15 @@ export function moderatorLockedByAdmin(ws: Pick<Workspace, 'isAdmin'>): boolean 
  * decision 2026-10-16): an add to the Admin workspace makes the person an
  * Admin user, so the brain asks for the Users and workspaces area
  * (canTickModerator) for any add there, and answers 403 admin_only
- * without it. Other workspaces: open (canManageWorkspace still decides
- * whether the screen offers Add at all).
+ * without it. On System only a System user adds (403 system_users_only).
+ * Other workspaces: open (canManageWorkspace still decides whether the
+ * screen offers Add at all).
  */
 export function canAddToWorkspace(
-  ws: Pick<Workspace, 'isAdmin'>,
+  ws: SystemAware,
   areas: readonly string[] | null | undefined,
 ): boolean {
+  if (isSystemWorkspace(ws)) return isSystemUser(ws);
   return !ws.isAdmin || canTickModerator(areas);
 }
 
@@ -385,10 +415,29 @@ export function canAddToWorkspace(
 export const ADMIN_ADD_AREA_TEXT =
   'Only an Admin user with the Users area can add people to the Admin workspace.';
 
+/** What the System workspace says where users are added, and in place of
+ *  Add for an Admin user who is not a System user. */
+export const SYSTEM_ADD_TEXT =
+  'Only a System user adds someone here, and only an Admin user can be added.';
+
+/** The fix for a 409 not_admin_user (the person picked for System is not
+ *  an Admin user). */
+export const SYSTEM_NOT_ADMIN_TEXT = 'Make them an Admin user first.';
+
 /** What a failed add says: on Admin, the brain's 403 admin_only in plain
- *  words (ADMIN_ADD_AREA_TEXT); else as moderatorErrorText. */
-export function addUserErrorText(err: unknown, ws: Pick<Workspace, 'isAdmin'>): string {
-  if (ws.isAdmin && workspaceErrorCode(err) === 'admin_only') return ADMIN_ADD_AREA_TEXT;
+ *  words (ADMIN_ADD_AREA_TEXT); on System, its two refusals; else as
+ *  moderatorErrorText. `name`: who was being added. */
+export function addUserErrorText(
+  err: unknown,
+  ws: Pick<Workspace, 'isAdmin'>,
+  name?: string,
+): string {
+  const code = workspaceErrorCode(err);
+  if (ws.isAdmin && code === 'admin_only') return ADMIN_ADD_AREA_TEXT;
+  if (code === 'not_admin_user') {
+    return `${name ?? 'This person'} is not an Admin user. ${SYSTEM_NOT_ADMIN_TEXT}`;
+  }
+  if (code === 'system_users_only') return SYSTEM_ADD_TEXT;
   return moderatorErrorText(err);
 }
 
@@ -399,6 +448,16 @@ export const ADMIN_WORKSPACE_MODERATOR_TEXT = 'Admin users always moderate the A
  *  Moderator switch per user (owner, 2026-11-19: only Admin users are in
  *  Admin, and the brain keeps every one ticked there). */
 export const ADMIN_WORKSPACE_ALL_MODERATE_TEXT = 'Every Admin user is a Moderator here.';
+
+/** The same line on the System workspace. */
+export const SYSTEM_WORKSPACE_ALL_MODERATE_TEXT = 'Every System user is a Moderator here.';
+
+/** The line over a users list with no Moderator switch (moderatorLockedByAdmin). */
+export function allModerateText(ws: Pick<Workspace, 'isSystem'>): string {
+  return isSystemWorkspace(ws)
+    ? SYSTEM_WORKSPACE_ALL_MODERATE_TEXT
+    : ADMIN_WORKSPACE_ALL_MODERATE_TEXT;
+}
 
 /** What a Moderator change or an add says when it fails: the brain's 409
  *  admin_workspace in plain words (the same code also refuses archiving
@@ -492,13 +551,14 @@ export function userLabel(u: { name: string | null; email: string }): string {
 
 // ── Lists ──────────────────────────────────────────────────────────────────
 
-/** Admin first, then by name; archived last. */
-export function sortWorkspaces<T extends Pick<Workspace, 'name' | 'isAdmin' | 'archived'>>(
-  list: readonly T[],
-): T[] {
+/** Admin first, then System, then by name; archived last. */
+export function sortWorkspaces<
+  T extends Pick<Workspace, 'name' | 'isAdmin' | 'archived'> & { isSystem?: boolean },
+>(list: readonly T[]): T[] {
   return [...list].sort((a, b) => {
     if (a.archived !== b.archived) return a.archived ? 1 : -1;
     if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+    if (isSystemWorkspace(a) !== isSystemWorkspace(b)) return isSystemWorkspace(a) ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
 }
@@ -633,6 +693,14 @@ export function olderBrainConnectorOptions(
 /** The switcher's value for "All my workspaces". */
 export const ALL_WORKSPACES = 'all';
 
+/** The workspaces the switcher offers: all but System (it holds the brain's
+ *  technical areas, never items to list). */
+export function switcherWorkspaces<T extends { id: string; isSystem?: boolean }>(
+  list: readonly T[],
+): T[] {
+  return list.filter((w) => !isSystemWorkspace(w));
+}
+
 /** The choice to show: the stored one while it is still one of the login's
  *  workspaces, else All. */
 export function resolveCurrentWorkspace(
@@ -753,9 +821,21 @@ export function navWithAreas<
 export const ADMIN_ADD_TEXT =
   'A user added here is an Admin user: they manage the brain and every workspace.';
 
+/** What the System remove confirm adds: a pairing resolves only while its
+ *  login holds the keys area, which leaving System takes away. */
+export const SYSTEM_REMOVE_PAIRED_TEXT =
+  'API tools, connectors, mail accounts and model routes this person paired stop working until someone re-pairs them.';
+
 /** What the remove confirm says. Leaving Admin is the change back to a
- *  member login, and it ends that login's sessions. */
-export function removeUserText(ws: Pick<Workspace, 'name' | 'isAdmin'>, name: string): string {
+ *  member login, and it ends that login's sessions. Leaving System takes
+ *  the brain's technical areas away. */
+export function removeUserText(
+  ws: Pick<Workspace, 'name' | 'isAdmin' | 'isSystem'>,
+  name: string,
+): string {
+  if (isSystemWorkspace(ws)) {
+    return `${name} stops managing the brain's settings, assistants, connectors and keys. ${SYSTEM_REMOVE_PAIRED_TEXT}`;
+  }
   if (ws.isAdmin) {
     return `${name} stops being an Admin user and cannot manage the brain. Their sessions end, so they sign in again.`;
   }

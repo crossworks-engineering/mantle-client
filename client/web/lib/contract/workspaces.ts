@@ -9,8 +9,9 @@
  */
 import type { AppTint } from '@mantle/client-types/app-nav';
 
-/** The Admin areas (plan 1.4). An Admin workspace user has all of them
- *  unless a per-user switch turns one off (none can be switched off yet). */
+/** The Admin areas (plan 1.4). An Admin workspace user holds `users`; the
+ *  other four (settings, assistants, connectors, keys) only while they are
+ *  also a user of the System workspace (a brain before System: all five). */
 export type WorkspaceArea = 'settings' | 'users' | 'assistants' | 'connectors' | 'keys';
 
 export const WORKSPACE_AREAS: readonly WorkspaceArea[] = [
@@ -50,9 +51,15 @@ export type Workspace = WorkspaceLook & {
   assistant: { id: string; name: string } | null;
   /** The Admin workspace: its users manage the brain (requireArea). */
   isAdmin: boolean;
-  /** Admin or Team, the built-in workspaces: they cannot be renamed or
-   *  archived (hide Rename and Archive there). Their connectors are
-   *  attached here like any workspace's since W5b2. */
+  /** The System workspace: a subset of the Admin users who hold the
+   *  technical areas (settings, assistants, connectors, keys). Only a
+   *  System user adds someone, and only an Admin user can be added; there
+   *  is no Moderator tick to set (every user is one). Absent (read it as
+   *  false) on any other workspace and from a brain before it. */
+  isSystem?: boolean;
+  /** The built-in workspaces: Admin, and System (Team too before 0286).
+   *  They cannot be renamed or archived (hide Rename and Archive there).
+   *  Their connectors are attached here like any workspace's. */
   builtIn: boolean;
   /** Every Admin workspace user is a Moderator here (the Team workspace);
    *  only an Admin user may remove or demote one of them. */
@@ -218,6 +225,8 @@ export type ShellWorkspace = WorkspaceLook & {
   id: string;
   name: string;
   isAdmin: boolean;
+  /** The System workspace (see Workspace.isSystem). Absent on any other. */
+  isSystem?: true;
   moderator: boolean;
   /** The login's own private workspace ("<name> (only you)", W6b): match
    *  on this, never on the name (W6b fix round 1). Absent on any other. */
@@ -273,6 +282,8 @@ export type WorkspaceErrorCode =
   | 'resource_exists'
   | 'landing_app_not_held'
   | 'landing_app_not_ready'
-  | 'rate_limited';
+  | 'rate_limited'
+  | 'system_users_only'
+  | 'not_admin_user';
 
 export type WorkspaceError = { error: string; code: WorkspaceErrorCode };

@@ -24,6 +24,7 @@ import {
   isPrivateWorkspace,
   resolveCurrentWorkspace,
   sortWorkspaces,
+  switcherWorkspaces,
   workspaceLabel,
   type ShellWorkspace,
 } from '@/lib/workspaces';
@@ -36,9 +37,11 @@ export type SwitcherOption = { value: string; label: string; hint: string | null
 /** The menu's choices, top to bottom: All my workspaces, the login's private
  *  workspace ("Only you", W6b: unmarked, it is always the login's own), then
  *  each other workspace (Admin first, then by name), each Moderator one
- *  marked. */
+ *  marked. System is not offered (switcherWorkspaces). */
 export function switcherOptions(workspaces: readonly ShellWorkspace[]): SwitcherOption[] {
-  const sorted = sortWorkspaces(workspaces.map((w) => ({ ...w, archived: false })));
+  const sorted = sortWorkspaces(
+    switcherWorkspaces(workspaces).map((w) => ({ ...w, archived: false })),
+  );
   const own = sorted.filter(isPrivateWorkspace);
   const rest = sorted.filter((w) => !isPrivateWorkspace(w));
   return [

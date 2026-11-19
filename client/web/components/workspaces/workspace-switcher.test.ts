@@ -33,6 +33,18 @@ describe('switcherOptions', () => {
   });
 });
 
+describe('the System workspace (owner, 2026-11-19)', () => {
+  const withSystem = [
+    ...WORKSPACES,
+    { id: 'y', name: 'System', isAdmin: false, isSystem: true as const, moderator: true },
+  ];
+
+  it('is not offered in the switcher', () => {
+    expect(switcherOptions(withSystem)).toEqual(switcherOptions(WORKSPACES));
+    expect(switcherOptions(withSystem).some((o) => o.value === 'y')).toBe(false);
+  });
+});
+
 describe('the private workspace (W6b)', () => {
   const withPrivate = [
     ...WORKSPACES,
