@@ -718,6 +718,20 @@ export function switcherWorkspaces<T extends { id: string; isSystem?: boolean }>
   return list.filter((w) => !isSystemWorkspace(w));
 }
 
+/** The System workspace's id from the lists the client has (the shell's,
+ *  then GET /api/workspaces), or null when none names it (an older brain,
+ *  or a login that sees no System). For lists that carry only an id, such
+ *  as the Grant Access panel's "Add workspace". */
+export function systemWorkspaceId(
+  ...lists: (readonly { id: string; isSystem?: boolean }[] | null | undefined)[]
+): string | null {
+  for (const list of lists) {
+    const hit = list?.find(isSystemWorkspace);
+    if (hit) return hit.id;
+  }
+  return null;
+}
+
 /** The choice to show: the stored one while it is still one of the login's
  *  workspaces, else All. */
 export function resolveCurrentWorkspace(

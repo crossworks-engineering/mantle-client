@@ -10,6 +10,7 @@
 import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { DropdownMenuItem } from '@mantle/web-ui/ui/dropdown-menu';
 import { RadioGroup } from '@mantle/web-ui/ui/radio-group';
 import {
   APP_MCP_HINT,
@@ -471,5 +472,65 @@ describe('GrantAccessView for a Moderator of one row only (contract 10)', () => 
     expect(html).not.toContain('Add workspace');
     expect(html).not.toContain('Change here');
     expect(html).not.toContain('Move…');
+  });
+});
+
+// The System workspace (owner, 2026-11-19): "Add workspace" never offers it,
+// as the switcher leaves it out; a grant already there stays a row, so it
+// can be revoked. The brain keeps no guard (KISS).
+describe('GrantAccessView and the System workspace', () => {
+  const SYS = { wsId: 'sys', name: 'System' };
+
+  /** The names "Add workspace" offers, read from the element tree (the menu
+   *  is closed in static markup). */
+  function offered(v: GrantsView, systemWsId: string | null): string[] {
+    const tree = GrantAccessView({
+      view: v,
+      busy: false,
+      adminWsId: 'admin',
+      systemWsId,
+      moderated: MODERATES_ALL,
+      ...handlers,
+    });
+    const names: string[] = [];
+    const walk = (n: ReactNode): void => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!isValidElement(n)) return;
+      const props = n.props as { children?: ReactNode };
+      if (n.type === DropdownMenuItem) names.push(String(props.children));
+      walk(props.children);
+    };
+    walk(tree);
+    return names;
+  }
+
+  it('is not offered in Add workspace', () => {
+    const v = view({ addable: [...view().addable, SYS] });
+    expect(offered(v, 'sys')).toEqual(['Admin', 'Xylo']);
+  });
+
+  it('only System addable: the panel says there is nothing to add', () => {
+    const html = render(view({ addable: [SYS] }), { systemWsId: 'sys' });
+    expect(html).toContain(NO_ADDABLE_TEXT);
+    expect(html).not.toContain('Add workspace');
+  });
+
+  it('an older brain (no System known): nothing is left out', () => {
+    const v = view({ addable: [...view().addable, SYS] });
+    expect(offered(v, null)).toEqual(['Admin', 'System', 'Xylo']);
+  });
+
+  it('a grant already to System stays in the rows, with its Revoke', () => {
+    const base = view();
+    const v = view({
+      rows: [
+        ...base.rows,
+        { ...SYS, write: false, isHome: false, viaFolder: null, excluded: false },
+      ],
+    });
+    const html = render(v, { systemWsId: 'sys', moderated: new Set([...MODERATES_ALL, 'sys']) });
+    const sys = rowsOf(html).find((r) => r.includes('>System<'));
+    expect(sys).toBeDefined();
+    expect(on(sys!, 'Revoke System')).toBe(true);
   });
 });

@@ -52,6 +52,7 @@ import {
 import { invalidateLinkQueries, revokeShareLink } from '@/lib/shared-links';
 import { useShellWorkspaces, useIsAdminUser } from '@/components/workspaces/use-shell-workspaces';
 import { useWorkspaces } from '@/components/workspaces/workspace-queries';
+import { systemWorkspaceId } from '@/lib/workspaces';
 import { looksById } from '@/lib/workspace-look';
 import { AccessLinkBox } from './access-link-box';
 import { AccessStack, accessStackLabel } from './access-stack';
@@ -260,6 +261,9 @@ function GrantAccessPanel({
   // them for an Admin user). The grant rows carry no look of their own.
   const listed = useWorkspaces();
   const looks = looksById(shell?.workspaces, listed.data);
+  // System is not offered in "Add workspace" (as in the switcher): it holds
+  // the brain's technical areas, never items. A grant there still lists.
+  const systemWsId = systemWorkspaceId(shell?.workspaces, listed.data);
   const [busy, setBusy] = useState(false);
   const q = useQuery({
     queryKey: grantsKey(nodeId),
@@ -452,6 +456,7 @@ function GrantAccessPanel({
       view={view}
       busy={busy}
       adminWsId={adminWsId}
+      systemWsId={systemWsId}
       type={type}
       hint={hint}
       onWrite={onWrite}

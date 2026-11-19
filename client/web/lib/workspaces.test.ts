@@ -69,6 +69,7 @@ import {
   isSystemUser,
   isSystemWorkspace,
   switcherWorkspaces,
+  systemWorkspaceId,
   resolveCurrentWorkspace,
   shellAreasOf,
   shellWorkspacesOf,
@@ -953,5 +954,17 @@ describe('the System workspace', () => {
       moderator: w.moderator,
     }));
     expect(switcherWorkspaces(older)).toHaveLength(3);
+  });
+
+  it('finds the System id in the first list that names it, else null', () => {
+    const shell = [{ id: 'a', isAdmin: true }];
+    const listed = [
+      { id: 't', isSystem: false },
+      { id: 's', isSystem: true },
+    ];
+    expect(systemWorkspaceId(shell, listed)).toBe('s');
+    expect(systemWorkspaceId([{ id: 'y', isSystem: true }], listed)).toBe('y');
+    expect(systemWorkspaceId(shell, undefined)).toBeNull();
+    expect(systemWorkspaceId(undefined, null)).toBeNull();
   });
 });

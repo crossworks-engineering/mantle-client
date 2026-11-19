@@ -77,6 +77,7 @@ export function GrantAccessView({
   view,
   busy,
   adminWsId,
+  systemWsId = null,
   type,
   hint,
   link,
@@ -89,6 +90,10 @@ export function GrantAccessView({
   busy: boolean;
   /** The Admin workspace, offered first to an Admin user (21.8). */
   adminWsId: string | null;
+  /** The System workspace (systemWorkspaceId): never offered in "Add
+   *  workspace", as the switcher leaves it out. A grant already there stays
+   *  in the rows, so it can be revoked. */
+  systemWsId?: string | null;
   /** The item's kind, when known ('app' words its Writable switch). */
   type?: string;
   hint?: string;
@@ -107,7 +112,10 @@ export function GrantAccessView({
 } & GrantAccessHandlers) {
   const manage = view.mayManage;
   const rows = sortRows(view.rows);
-  const addable = sortAddable(view.addable, adminWsId);
+  const addable = sortAddable(
+    view.addable.filter((w) => w.wsId !== systemWsId),
+    adminWsId,
+  );
   const embeds = view.embedsNotGranted;
   const homeWsId = rows.find((r) => r.isHome)?.wsId ?? '';
 
