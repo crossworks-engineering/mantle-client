@@ -14,6 +14,7 @@ describe('the decider uses on the form', () => {
       'journal_recall',
       'rule_reconcile',
       'pdf_kind',
+      'scan_read_check',
       'model_routing',
     ]);
   });
@@ -24,5 +25,12 @@ describe('the decider uses on the form', () => {
     expect(u.threshold).toBeUndefined();
     expect(u.pool).toBeUndefined();
     expect(u.description).toMatch(/shadow/);
+  });
+
+  it('scan_read_check has a probability threshold of 0.5, the brain default', () => {
+    const u = DECISION_USES.find((x) => x.id === 'scan_read_check')!;
+    expect(u.label).toBe('Scan read check');
+    expect(u.threshold).toBe(0.5);
+    expect(u.scale).toBe('probability');
   });
 });

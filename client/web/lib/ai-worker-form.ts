@@ -96,6 +96,19 @@ export function paramsFromForm(kind: AiWorkerKind, fd: FormData): Record<string,
         max_tokens: num(fd.get('max_tokens')),
         huggingface_routing: str(fd.get('huggingface_routing')),
       };
+    case 'translator': {
+      // The models are ids on the worker's own provider; blank clears one.
+      // part_tokens is a whole number of 1 or more, or not set.
+      const part = num(fd.get('part_tokens'));
+      return {
+        temperature: num(fd.get('temperature')),
+        max_tokens: num(fd.get('max_tokens')),
+        fallback_model: str(fd.get('fallback_model')),
+        high_model: str(fd.get('high_model')),
+        part_tokens: part !== undefined && part >= 1 ? Math.floor(part) : undefined,
+        huggingface_routing: str(fd.get('huggingface_routing')),
+      };
+    }
     case 'decider': {
       // Experimental per-use switches (see worker-fields-decider.tsx). A use
       // whose checkbox is off is written as enabled:false so the operator's

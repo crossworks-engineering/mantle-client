@@ -57,6 +57,18 @@ export type FileDerivedItem = {
   path: string;
 };
 
+/** How a PDF book's pages were read, counted from its database. */
+export type FileBookPages = {
+  text: number;
+  ocr: number;
+  blank: number;
+  scanReader: number;
+  vision: number;
+  unread: number;
+  /** Unread pages, and the brain has no Scan reader: that is why. */
+  noScanReader?: true;
+};
+
 /** GET /api/files/files/:id/processing */
 export type FileProcessing = {
   file: {
@@ -75,6 +87,9 @@ export type FileProcessing = {
   readAt: string | null;
   readMode: 'full' | 'metadata' | 'local' | null;
   pages: number | null;
+  /** A PDF book: how its pages were read (brain v0.708). Absent for any
+   *  other file and from a brain before it. */
+  bookPages?: FileBookPages;
   textChars: number;
   summarized: boolean;
   embedded: boolean;
@@ -343,6 +358,35 @@ export function pipelineReadRow(r: FilePipelineRead): DetailRow {
   return { label: 'Pipeline', value: `${was}, current`, tone: 'ok' };
 }
 
+/** A book's "Pages read" row: each way a page was read, the ones with pages
+ *  only; unread is a warning. With no Scan reader, a row says why. */
+export function bookPagesRows(b: FileBookPages): DetailRow[] {
+  const parts = (
+    [
+      [b.text, 'text'],
+      [b.scanReader, 'Scan reader'],
+      [b.ocr, 'OCR'],
+      [b.vision, 'vision'],
+      [b.blank, 'blank'],
+      [b.unread, 'unread'],
+    ] as const
+  )
+    .filter(([n]) => n > 0)
+    .map(([n, w]) => `${n} ${w}`);
+  if (parts.length === 0) return [];
+  const rows: DetailRow[] = [
+    { label: 'Pages read', value: parts.join(', '), tone: b.unread > 0 ? 'warning' : undefined },
+  ];
+  if (b.noScanReader && b.unread > 0) {
+    rows.push({
+      label: 'Unread',
+      value: 'No Scan reader: add an OpenRouter key and the Scan reader worker',
+      tone: 'warning',
+    });
+  }
+  return rows;
+}
+
 /** The Details panel's rows: plain words, no React. */
 export function detailsView(p: FileProcessing): DetailsView {
   const file: DetailRow[] = [
@@ -359,6 +403,8 @@ export function detailsView(p: FileProcessing): DetailsView {
       tone: read && read.read < read.total ? 'warning' : undefined,
     });
   }
+
+  if (p.bookPages) file.push(...bookPagesRows(p.bookPages));
 
   const brain: DetailRow[] = [
     {

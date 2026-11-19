@@ -94,6 +94,10 @@ export const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
   suggester: 'openrouter',
   // The decider reaches TypeSafe Jev through OpenRouter's decisions endpoint.
   decider: 'openrouter',
+  // Both ship on OpenRouter: the translator's chat models, the Scan reader's
+  // PDF parser (no other provider has one wired).
+  translator: 'openrouter',
+  scan_reader: 'openrouter',
 };
 
 /** Suggested model per kind, used as the placeholder. */
@@ -205,7 +209,8 @@ export function staticCatalogFor(
     forKind === 'extractor' ||
     forKind === 'summarizer' ||
     forKind === 'narrator' ||
-    forKind === 'suggester'
+    forKind === 'suggester' ||
+    forKind === 'translator'
   ) {
     if (forProvider === 'xai') return [...XAI_CHAT_MODELS];
     if (forProvider === 'huggingface') return [...HUGGINGFACE_CHAT_MODELS];

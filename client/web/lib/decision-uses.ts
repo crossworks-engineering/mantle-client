@@ -93,6 +93,15 @@ export const DECISION_USES: ReadonlyArray<{
       'For a PDF that reads as a drawing but that the rules could not name, asks once which kind it is (P&ID, process flow diagram, isometric, equipment drawing, datasheet, table, document or other drawing). When live, a confident answer picks which reader fills the file’s database. Starts in shadow: the answer only sits beside the rules’ kind in the File tab.',
   },
   {
+    id: 'scan_read_check',
+    label: 'Scan read check',
+    description:
+      'For each scanned page of a PDF book, asks whether the Scan reader’s text is a true reading of the page picture. When live, a read it rejects is stored as unread, never as text. Needs a model that takes pictures (Jev does). About $0.27 per 1,000 pages.',
+    threshold: 0.5,
+    scale: 'probability',
+    thresholdHint: 'A “faithful” yes under this leaves the page unread when live.',
+  },
+  {
     id: 'model_routing',
     label: 'Model routing (not built yet)',
     description: 'Sizes each request so a cheaper model can take the simple ones.',

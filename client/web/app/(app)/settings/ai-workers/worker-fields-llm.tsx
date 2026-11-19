@@ -24,7 +24,7 @@ export function LlmWorkerFields({
 }: {
   params: Record<string, unknown>;
   systemPrompt: string | null | undefined;
-  kind: 'reflector' | 'extractor' | 'summarizer' | 'narrator' | 'suggester';
+  kind: 'reflector' | 'extractor' | 'summarizer' | 'narrator' | 'suggester' | 'translator';
   provider: string;
 }) {
   return (
@@ -47,6 +47,14 @@ export function LlmWorkerFields({
           turn’s critical path; if it’s slow or fails, the plain grounded line stays.
         </p>
       )}
+      {kind === 'translator' && (
+        <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          The translator runs the <strong>translate</strong> tool, only when a person or an agent
+          asks. The text goes in parts sized by the model&apos;s own limits, and every part is
+          translated; code blocks are never sent. The model above runs every part. The built-in
+          translation rules always apply: a system prompt here only adds to them.
+        </p>
+      )}
       <Field>
         <FieldLabel htmlFor="systemPrompt">System prompt</FieldLabel>
         <Textarea
@@ -64,7 +72,9 @@ export function LlmWorkerFields({
         <p className="text-xs text-muted-foreground">
           {kind === 'narrator'
             ? 'Leave blank for the built-in concise voice (a short phrase). Write your own to control how much it says.'
-            : 'Leave blank to use the built-in default for this worker kind.'}
+            : kind === 'translator'
+              ? 'Leave blank for the built-in rules alone. Text here is added to them (terms, style).'
+              : 'Leave blank to use the built-in default for this worker kind.'}
         </p>
       </Field>
       <div className="grid grid-cols-2 gap-4">
@@ -93,12 +103,23 @@ export function LlmWorkerFields({
             id="max_tokens"
             name="max_tokens"
             type="number"
-            defaultValue={(params.max_tokens as number) ?? 1500}
+            // The translator's parts are sized by the model's own output
+            // limit: blank keeps it. A low number here makes many small parts.
+            defaultValue={
+              (params.max_tokens as number | undefined) ?? (kind === 'translator' ? '' : 1500)
+            }
+            placeholder={kind === 'translator' ? 'blank = the model’s limit' : undefined}
             aria-describedby={hintId('max_tokens')}
           />
-          <FieldHint id="max_tokens" warn="Too low truncates the output mid-way.">
-            Ceiling on each run&apos;s output. 1500 suits a summary or a note.
-          </FieldHint>
+          {kind === 'translator' ? (
+            <FieldHint id="max_tokens" warn="A low cap means many small parts, and more calls.">
+              Ceiling on each part&apos;s answer. Blank uses the model&apos;s own output limit.
+            </FieldHint>
+          ) : (
+            <FieldHint id="max_tokens" warn="Too low truncates the output mid-way.">
+              Ceiling on each run&apos;s output. 1500 suits a summary or a note.
+            </FieldHint>
+          )}
         </Field>
       </div>
       {kind === 'reflector' && (
@@ -240,6 +261,61 @@ export function LlmWorkerFields({
             </FieldHint>
           </Field>
         </div>
+      )}
+      {kind === 'translator' && (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="fallback_model">Fallback model</FieldLabel>
+              <Input
+                id="fallback_model"
+                name="fallback_model"
+                defaultValue={(params.fallback_model as string | undefined) ?? ''}
+                placeholder="blank = none"
+                className="font-mono"
+                aria-describedby={hintId('fallback_model')}
+              />
+              <FieldHint id="fallback_model">
+                Takes a part only when the main model fails it (an error, a refusal, an empty or cut
+                answer). A model id on this worker&apos;s provider.
+              </FieldHint>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="high_model">High-quality model</FieldLabel>
+              <Input
+                id="high_model"
+                name="high_model"
+                defaultValue={(params.high_model as string | undefined) ?? ''}
+                placeholder="blank = none"
+                className="font-mono"
+                aria-describedby={hintId('high_model')}
+              />
+              <FieldHint
+                id="high_model"
+                warn="Blank means a call that asks for high quality fails."
+              >
+                Runs a call that asks for high quality, instead of the main model. A model id on
+                this worker&apos;s provider.
+              </FieldHint>
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel htmlFor="part_tokens">Part size (tokens)</FieldLabel>
+            <Input
+              id="part_tokens"
+              name="part_tokens"
+              type="number"
+              min={1}
+              defaultValue={(params.part_tokens as number | undefined) ?? ''}
+              placeholder="blank = the model’s own"
+              className="w-48"
+              aria-describedby={hintId('part_tokens')}
+            />
+            <FieldHint id="part_tokens">
+              Asks for smaller parts than the model&apos;s limits allow, never larger.
+            </FieldHint>
+          </Field>
+        </>
       )}
       {provider === 'huggingface' && (
         <Field>

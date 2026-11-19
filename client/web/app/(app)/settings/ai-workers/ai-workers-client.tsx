@@ -100,6 +100,16 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
     description:
       'Experimental. A typed-decision model (TypeSafe Jev) that returns a choice, a score or a yes/no with probabilities instead of text. Each use — passage scoring, context pruning, delegation hint — has its own switch and starts in shadow (log only). Off until you turn it on.',
   },
+  translator: {
+    label: 'Translator',
+    description:
+      'Runs the translate tool: a text or an item, in parts sized by the model, every part translated. Runs only when a person or an agent asks. A fallback model takes a part the main model fails; a high-quality model runs a call that asks for it.',
+  },
+  scan_reader: {
+    label: 'Scan reader',
+    description:
+      'Reads the text of each scanned page of a PDF book with OpenRouter’s PDF parser (mistral-ocr), at about half the vision price. Without it, scanned pages stay unread. Needs an OpenRouter key.',
+  },
 };
 
 // Note: this is a plain string[] (not a Record key set), so TS doesn't
@@ -110,11 +120,13 @@ const KIND_ORDER: AiWorkerKind[] = [
   'stt',
   'vision',
   'document',
+  'scan_reader',
   'extractor',
   'summarizer',
   'reflector',
   'narrator',
   'suggester',
+  'translator',
   // 'embedding' is retired as a worker kind — the embedder lives at
   // /settings/embedding (one config row, migration 0061). Hidden here.
   'image_gen',

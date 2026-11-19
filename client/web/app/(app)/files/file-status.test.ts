@@ -127,6 +127,40 @@ const value = (rows: { label: string; value: string }[], label: string) =>
   rows.find((r) => r.label === label)?.value;
 
 describe('detailsView: the Details panel in plain words', () => {
+  it('a PDF book: how its pages were read, unread a warning, and why with no Scan reader', () => {
+    const v = detailsView(
+      processing({
+        bookPages: {
+          text: 40,
+          ocr: 0,
+          blank: 2,
+          scanReader: 12,
+          vision: 1,
+          unread: 3,
+          noScanReader: true,
+        },
+      }),
+    );
+    const row = v.file.find((r) => r.label === 'Pages read');
+    expect(row).toEqual({
+      label: 'Pages read',
+      value: '40 text, 12 Scan reader, 1 vision, 2 blank, 3 unread',
+      tone: 'warning',
+    });
+    expect(value(v.file, 'Unread')).toMatch(/No Scan reader/);
+  });
+
+  it('a book read whole has no warning; any other file no Pages read row', () => {
+    const book = detailsView(
+      processing({
+        bookPages: { text: 5, ocr: 0, blank: 0, scanReader: 0, vision: 0, unread: 0 },
+      }),
+    );
+    expect(book.file.find((r) => r.label === 'Pages read')?.tone).toBeUndefined();
+    expect(value(book.file, 'Unread')).toBeUndefined();
+    expect(value(detailsView(processing()).file, 'Pages read')).toBeUndefined();
+  });
+
   it('a whole read: size, pages, embedded and the counts', () => {
     const v = detailsView(processing());
     expect(v.badge?.kind).toBe('done');

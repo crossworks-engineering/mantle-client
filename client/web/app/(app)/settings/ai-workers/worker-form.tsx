@@ -112,6 +112,11 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   suggester: 'google/gemini-3.1-flash-lite',
   // The only typed-decision model on OpenRouter (alpha decisions endpoint).
   decider: 'typesafe/jev-1.13',
+  // The brain's shipped models (mantle manifest, 2026-11-19).
+  translator: 'google/gemini-3.1-flash-lite',
+  // Only the text model the parsed page is handed to: the text is the
+  // mistral-ocr parser's own.
+  scan_reader: 'meta-llama/llama-3.1-8b-instruct',
 };
 
 export function WorkerForm({
@@ -211,7 +216,11 @@ export function WorkerForm({
     kind === 'extractor' ||
     kind === 'summarizer' ||
     kind === 'narrator' ||
-    kind === 'suggester';
+    kind === 'suggester' ||
+    kind === 'translator';
+  // The translator has its own fallback model (its params), not the backup
+  // route: the translate tool never fails over to it.
+  const hasBackup = chatShaped && kind !== 'translator';
   // Whether to show a model dropdown (vs. free-text) is gated on the SAME
   // wired-provider table that drives the "not wired yet" hint — WIRED_PROVIDERS
   // from @mantle/voice (the static mirror of the adapter registry). One source
@@ -623,7 +632,7 @@ export function WorkerForm({
           Unlike embeddings, a chat backup may be a DIFFERENT provider +
           model — when the primary is unreachable (route-down / 429 / 5xx)
           chatWithFailover answers here. See docs/chat-failover.md. */}
-      {chatShaped && (
+      {hasBackup && (
         <section className="space-y-4 border-t border-border pt-6">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
@@ -766,6 +775,8 @@ export function WorkerForm({
           {kind === 'suggester' && 'Suggester settings'}
           {kind === 'embedding' && 'Embedding settings'}
           {kind === 'decider' && 'Decider settings (experimental)'}
+          {kind === 'translator' && 'Translator settings'}
+          {kind === 'scan_reader' && 'Scan reader settings'}
         </h2>
 
         {kind === 'tts' && (
@@ -825,6 +836,22 @@ export function WorkerForm({
           />
         )}
         {kind === 'decider' && <DeciderFields params={params} />}
+        {kind === 'translator' && (
+          <LlmWorkerFields
+            params={params}
+            systemPrompt={worker?.systemPrompt}
+            kind="translator"
+            provider={provider}
+          />
+        )}
+        {kind === 'scan_reader' && (
+          <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            The Scan reader reads the text of each scanned page of a PDF book with OpenRouter&apos;s
+            PDF parser, <strong>mistral-ocr</strong>. The parser is fixed. The model above is only
+            the small text model the parsed page is handed to; its answer is not used. It needs an
+            OpenRouter key. About $2 per 1,000 pages. There is nothing else to set.
+          </p>
+        )}
       </section>
 
       {/* ── Priority ─────────────────────────────────────────────── */}
@@ -896,6 +923,17 @@ export function WorkerForm({
             Use it to dial in the prompt before feeding it real invoices.
             {!nativeDocProviders.includes(provider) &&
               ' (This provider has no native-PDF adapter — at ingest it would rasterize instead.)'}
+          </p>
+          <DocumentTestButton workerId={worker.id} />
+        </section>
+      )}
+      {mode === 'edit' && worker && kind === 'scan_reader' && (
+        <section className="space-y-2 border-t border-border pt-6">
+          <h3 className="text-sm font-semibold">Test a scanned page</h3>
+          <p className="text-xs text-muted-foreground">
+            Pick a PDF of one scanned page. It goes through the PDF parser with the saved model and
+            key, the same path a book&apos;s page takes, and you see the text it read. A PDF of more
+            pages is read whole and costs per page. Save first to test a change.
           </p>
           <DocumentTestButton workerId={worker.id} />
         </section>

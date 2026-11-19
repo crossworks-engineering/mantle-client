@@ -67,6 +67,59 @@ describe('decider params from the form', () => {
   });
 });
 
+describe('scan_read_check from the form', () => {
+  it('writes it as the brain seeds it: on, live, threshold 0.5', () => {
+    const p = paramsFromForm(
+      'decider',
+      form({
+        use_scan_read_check_enabled: 'on',
+        use_scan_read_check_mode: 'live',
+        use_scan_read_check_threshold: '0.5',
+      }),
+    );
+    expect((p.uses as Record<string, unknown>).scan_read_check).toEqual({
+      enabled: true,
+      mode: 'live',
+      threshold: 0.5,
+    });
+  });
+});
+
+describe('translator params from the form', () => {
+  it('writes the two models and the part size', () => {
+    const p = paramsFromForm(
+      'translator',
+      form({
+        fallback_model: ' mistralai/mistral-small-2603 ',
+        high_model: 'mistralai/mistral-medium-3-5',
+        part_tokens: '4000.7',
+        max_tokens: '',
+      }),
+    );
+    expect(wire(p)).toEqual({
+      fallback_model: 'mistralai/mistral-small-2603',
+      high_model: 'mistralai/mistral-medium-3-5',
+      part_tokens: 4000,
+    });
+  });
+
+  it('a blank model or part size clears it on save, and 0 is no part size', () => {
+    const p = paramsFromForm(
+      'translator',
+      form({ fallback_model: '', high_model: '', part_tokens: '0' }),
+    );
+    const merged = mergeParams(
+      { fallback_model: 'a/b', high_model: 'c/d', part_tokens: 2000, temperature: 0.2 },
+      p,
+    );
+    expect(wire(merged)).toEqual({});
+  });
+
+  it('the Scan reader has no params', () => {
+    expect(paramsFromForm('scan_reader', form({ engine: 'x' }))).toEqual({});
+  });
+});
+
 describe('mergeParams: a save keeps what the form does not show', () => {
   const saved = {
     uses: {
