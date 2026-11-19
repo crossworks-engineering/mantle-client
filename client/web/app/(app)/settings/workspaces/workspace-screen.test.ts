@@ -17,7 +17,7 @@ import {
   ADMIN_ADD_TEXT,
   ADMIN_MODERATED_TEXT,
   ADMIN_USER_MODERATOR_TEXT,
-  ADMIN_WORKSPACE_MODERATOR_TEXT,
+  ADMIN_WORKSPACE_ALL_MODERATE_TEXT,
   BUILT_IN_NAME_HINT,
   HAS_HISTORY_TEXT,
   MODERATOR_TICK_ADMIN_ONLY_TEXT,
@@ -440,7 +440,9 @@ describe('WorkspaceSections, the Admin workspace', () => {
     expect(html).toContain(ADMIN_ADD_TEXT);
   });
 
-  // Task b8eea6cf: every Admin user moderates Admin, always (brain F4).
+  // Task b8eea6cf: every Admin user moderates Admin, always (brain F4). So
+  // the screen shows no Moderator switch there, one line instead (owner,
+  // 2026-11-19).
   const admin = detail(
     { id: 'w-admin', name: 'Admin', isAdmin: true, adminModerated: false },
     {
@@ -452,19 +454,26 @@ describe('WorkspaceSections, the Admin workspace', () => {
     options,
   );
 
-  it('every row: the switch on and off-limits, labelled Admin, with why', () => {
-    const rows = adminHtml.split('data-testid="workspace-user"').slice(1);
+  it('no Moderator switch or column on any row, one line instead', () => {
+    // Each row up to its own end (the last one runs on to the Connectors).
+    const rows = adminHtml
+      .split('data-testid="workspace-user"')
+      .slice(1)
+      .map((r) => r.slice(0, r.indexOf('</li>')));
     expect(rows).toHaveLength(3);
     for (const row of rows) {
-      // On, even for a user whose tick the brain had not set yet.
-      expect(row).toMatch(/<button[^>]*role="switch"[^>]*aria-checked="true"/);
-      expect(row).toMatch(/<button[^>]*disabled=""[^>]*id="workspace-moderator-/);
-      expect(row).toMatch(/aria-label="Admin: [^"]+"/);
+      expect(row).not.toContain('role="switch"');
+      expect(row).not.toContain('id="workspace-moderator-');
       expect(row).not.toContain('aria-label="Moderator: ');
-      expect(row).toContain('>Admin</span>');
-      expect(row).toContain(`title="${ADMIN_WORKSPACE_MODERATOR_TEXT}"`);
-      expect(row).toContain(`class="sr-only">${ADMIN_WORKSPACE_MODERATOR_TEXT}</span>`);
+      expect(row).not.toContain('aria-label="Admin: ');
     }
+    const head = adminHtml.match(/data-testid="workspace-columns"[\s\S]*?<\/div>/)?.[0];
+    expect(head).toBeDefined();
+    expect(head).not.toContain('Moderator');
+    expect(head).toContain('Remove');
+    expect(adminHtml).toContain(
+      `data-testid="workspace-admin-moderators">${ADMIN_WORKSPACE_ALL_MODERATE_TEXT}</p>`,
+    );
   });
 
   it('Remove stays as it was (leaving Admin is the change to a member login)', () => {
@@ -472,25 +481,23 @@ describe('WorkspaceSections, the Admin workspace', () => {
     expect(adminHtml).toContain('aria-label="Remove bo@x.test"');
   });
 
-  it('the add says Moderator, ticked and fixed', () => {
-    const box = adminHtml.match(/<button[^>]*data-testid="workspace-add-moderator"[^>]*>/)?.[0];
-    expect(box).toBeDefined();
-    expect(box).toContain('aria-checked="true"');
-    expect(box).toContain('disabled=""');
-    expect(adminHtml).toContain(
-      `id="workspace-add-moderator-why" class="sr-only">${ADMIN_WORKSPACE_MODERATOR_TEXT}`,
-    );
+  it('the add keeps its search, with no Moderator box', () => {
+    expect(adminHtml).toContain('id="workspace-user-search"');
+    expect(adminHtml).not.toContain('workspace-add-moderator');
   });
 
-  it('other workspaces are unchanged: no Admin label, no fixed add tick', () => {
+  it('other workspaces are unchanged: the Moderator switch, no Admin line', () => {
     const team = render(
       createElement(WorkspaceSections, { detail: detail(), manage: true, areas: ADMIN_AREAS }),
       options,
     );
     expect(team).not.toContain('aria-label="Admin: ');
     expect(team).not.toContain('workspace-add-moderator');
-    expect(team).not.toContain(ADMIN_WORKSPACE_MODERATOR_TEXT);
+    expect(team).not.toContain(ADMIN_WORKSPACE_ALL_MODERATE_TEXT);
+    expect(team).not.toContain('workspace-admin-moderators');
     expect(team).toContain('aria-label="Moderator: Ann Lee"');
+    const head = team.match(/data-testid="workspace-columns"[\s\S]*?<\/div>/)?.[0];
+    expect(head).toContain('Moderator');
   });
 });
 

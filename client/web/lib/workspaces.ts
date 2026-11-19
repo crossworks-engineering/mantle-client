@@ -395,6 +395,11 @@ export function addUserErrorText(err: unknown, ws: Pick<Workspace, 'isAdmin'>): 
 /** Why the Moderator switch is fixed on the Admin workspace. */
 export const ADMIN_WORKSPACE_MODERATOR_TEXT = 'Admin users always moderate the Admin workspace.';
 
+/** The one line the Admin workspace's users list shows in place of a
+ *  Moderator switch per user (owner, 2026-11-19: only Admin users are in
+ *  Admin, and the brain keeps every one ticked there). */
+export const ADMIN_WORKSPACE_ALL_MODERATE_TEXT = 'Every Admin user is a Moderator here.';
+
 /** What a Moderator change or an add says when it fails: the brain's 409
  *  admin_workspace in plain words (the same code also refuses archiving
  *  Admin, so it is mapped here, where only the tick can cause it), else

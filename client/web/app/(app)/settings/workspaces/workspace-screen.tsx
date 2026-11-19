@@ -18,7 +18,6 @@ import {
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Switch } from '@mantle/web-ui/ui/switch';
-import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@mantle/web-ui/ui/field';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
@@ -57,7 +56,7 @@ import {
   archiveBlocked,
   archiveConfirmText,
   canArchiveWorkspace,
-  ADMIN_WORKSPACE_MODERATOR_TEXT,
+  ADMIN_WORKSPACE_ALL_MODERATE_TEXT,
   canChangeUser,
   canManageWorkspace,
   canPickAssistant,
@@ -113,7 +112,8 @@ const NO_ASSISTANT = 'none';
  * The ONE workspace screen (plan 1.4, 7.1): the same screen for every
  * workspace. Its sections, top to bottom: name, description, look (colour
  * and icon, task 5edc9149: whoever may rename it) and contact;
- * users with a Moderator switch; the assistant (at most one); then one section
+ * users with a Moderator switch (none on Admin: one line says every Admin
+ * user moderates it); the assistant (at most one); then one section
  * per resource type (connectors in W5a), each row with a Writable switch. The
  * built-in Team workspace ends with the Team settings, for an Admin user.
  *
@@ -479,17 +479,24 @@ function LookField({ workspace: ws }: { workspace: Workspace }) {
  *  the name, then a control column, then Remove, so the controls line up on
  *  every row and across the Users and Connectors sections. */
 export const WORKSPACE_GRID = 'grid grid-cols-[minmax(0,1fr)_5rem_3rem] items-center gap-x-2';
+/** The same grid with no control column (the Admin workspace's users: no
+ *  Moderator switch there), Remove still at the right edge. */
+export const WORKSPACE_GRID_NO_CONTROL = 'grid grid-cols-[minmax(0,1fr)_3rem] items-center gap-x-2';
 
-/** The small muted labels over a section's control columns. */
-function ColumnHeader({ control }: { control: string }) {
+/** The small muted labels over a section's control columns; with no
+ *  control, only Remove. */
+function ColumnHeader({ control }: { control: string | null }) {
   return (
     <div
       aria-hidden
       data-testid="workspace-columns"
-      className={cn(WORKSPACE_GRID, 'text-xs text-muted-foreground')}
+      className={cn(
+        control ? WORKSPACE_GRID : WORKSPACE_GRID_NO_CONTROL,
+        'text-xs text-muted-foreground',
+      )}
     >
       <span />
-      <span className="text-center">{control}</span>
+      {control ? <span className="text-center">{control}</span> : null}
       <span className="text-center">Remove</span>
     </div>
   );
@@ -512,6 +519,10 @@ function UsersSection({
   // id, the email only from a shell that sends no id.
   const shell = useShellWorkspaces();
   const viewer = shell ? { loginId: shell.loginId, email: shell.login } : null;
+  // On Admin there is no Moderator switch (owner, 2026-11-19): every user
+  // there is an Admin user and the brain keeps them all ticked. One line
+  // says so instead.
+  const adminLocked = moderatorLockedByAdmin(ws);
   return (
     <Section
       title="Users"
@@ -527,11 +538,19 @@ function UsersSection({
           {ADMIN_MODERATED_TEXT}
         </p>
       ) : null}
+      {adminLocked ? (
+        <p
+          className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
+          data-testid="workspace-admin-moderators"
+        >
+          {ADMIN_WORKSPACE_ALL_MODERATE_TEXT}
+        </p>
+      ) : null}
       {users.length === 0 ? (
         <p className="text-sm text-muted-foreground">No users.</p>
       ) : (
         <div>
-          {manage ? <ColumnHeader control="Moderator" /> : null}
+          {manage ? <ColumnHeader control={adminLocked ? null : 'Moderator'} /> : null}
           <ul className="divide-y divide-border">
             {users.map((u) => (
               <UserRow
@@ -540,7 +559,7 @@ function UsersSection({
                 user={u}
                 manage={manage}
                 changeable={manage && canChangeUser(u)}
-                adminLocked={moderatorLockedByAdmin(ws)}
+                showTick={!adminLocked}
                 tickBlocked={canTickModerator(areas) ? null : MODERATOR_TICK_ADMIN_ONLY_TEXT}
                 removeBlocked={removeBlockedReason(ws, u, viewer, areas)}
                 onRemove={() => setRemoving(u)}
@@ -574,7 +593,7 @@ function UserRow({
   user: u,
   manage,
   changeable,
-  adminLocked,
+  showTick,
   tickBlocked,
   removeBlocked,
   onRemove,
@@ -585,9 +604,9 @@ function UserRow({
   /** Its tick and Remove: never on an Admin user kept in Team (a brain
    *  before migration 0286). */
   changeable: boolean;
-  /** On the Admin workspace: the switch is on and fixed, labelled Admin
-   *  (every Admin user moderates it, task b8eea6cf). */
-  adminLocked: boolean;
+  /** The Moderator switch (or, read only, its badge). Not on the Admin
+   *  workspace: every Admin user moderates it, said once over the list. */
+  showTick: boolean;
   /** Why the Moderator switch is off (only an Admin user turns it), or null:
    *  it may be used. */
   tickBlocked: string | null;
@@ -601,16 +620,10 @@ function UserRow({
   const label = userLabel(u);
   const added = addedText(u);
   const tickId = `workspace-moderator-${u.loginId}`;
-  // Why the switch is off: on Admin every Admin user moderates it; an Admin
-  // user kept in Team is a Moderator by being one (its switch never
-  // changes); else only an Admin user turns it.
-  const tickWhy = adminLocked
-    ? ADMIN_WORKSPACE_MODERATOR_TEXT
-    : changeable
-      ? tickBlocked
-      : ADMIN_USER_MODERATOR_TEXT;
-  const moderates = adminLocked || u.moderator || u.adminViaArea;
-  const tickName = adminLocked ? 'Admin' : 'Moderator';
+  // Why the switch is off: an Admin user kept in Team is a Moderator by
+  // being one (its switch never changes); else only an Admin user turns it.
+  const tickWhy = changeable ? tickBlocked : ADMIN_USER_MODERATOR_TEXT;
+  const moderates = u.moderator || u.adminViaArea;
 
   const setModerator = async (moderator: boolean) => {
     setPending(true);
@@ -625,7 +638,11 @@ function UserRow({
 
   return (
     <li
-      className={manage ? cn(WORKSPACE_GRID, 'py-2') : 'flex items-center gap-3 py-2'}
+      className={
+        manage
+          ? cn(showTick ? WORKSPACE_GRID : WORKSPACE_GRID_NO_CONTROL, 'py-2')
+          : 'flex items-center gap-3 py-2'
+      }
       data-testid="workspace-user"
     >
       <div className="min-w-0 flex-1">
@@ -638,7 +655,7 @@ function UserRow({
           <div className="text-xs text-muted-foreground">{ADMIN_USER_MODERATOR_TEXT}</div>
         ) : null}
       </div>
-      {manage ? (
+      {!showTick ? null : manage ? (
         // The Moderator column: the switch centred under its label on every
         // row (task 19790beb). Off for anyone but an Admin user, with why as
         // its tooltip (on the cell: a disabled switch takes no pointer) and
@@ -651,15 +668,10 @@ function UserRow({
             id={tickId}
             checked={moderates}
             disabled={pending || tickWhy !== null}
-            aria-label={`${tickName}: ${label}`}
+            aria-label={`Moderator: ${label}`}
             aria-describedby={tickWhy ? `${tickId}-why` : undefined}
             onCheckedChange={(v) => void setModerator(v)}
           />
-          {adminLocked ? (
-            <span aria-hidden className="text-xs text-muted-foreground">
-              Admin
-            </span>
-          ) : null}
           {tickWhy ? (
             <span id={`${tickId}-why`} className="sr-only">
               {tickWhy}
@@ -668,7 +680,7 @@ function UserRow({
         </span>
       ) : moderates ? (
         <Badge variant="outline" className="shrink-0">
-          {tickName}
+          Moderator
         </Badge>
       ) : null}
       {manage ? (
@@ -715,8 +727,9 @@ function AddUser({
   const ready = opened && userSearchReady(q, min);
 
   // On Admin an add is always one with the Moderator tick (task b8eea6cf):
-  // said by a ticked, fixed box, and sent so no brain default decides it.
-  // Only a caller with the Users area gets here on Admin (canAddToWorkspace).
+  // sent so no brain default decides it, and said once over the list (no
+  // box here). Only a caller with the Users area gets here on Admin
+  // (canAddToWorkspace).
   const adminLocked = moderatorLockedByAdmin(detail.workspace);
   const add = async (loginId: string, name: string) => {
     setAdding(loginId);
@@ -752,23 +765,6 @@ function AddUser({
           ? ADMIN_ADD_TEXT
           : 'A new user reads every item shared with this workspace.'}
       </FieldHint>
-      {adminLocked ? (
-        <label
-          className="flex items-center gap-2 text-sm text-muted-foreground"
-          title={ADMIN_WORKSPACE_MODERATOR_TEXT}
-        >
-          <Checkbox
-            checked
-            disabled
-            aria-describedby="workspace-add-moderator-why"
-            data-testid="workspace-add-moderator"
-          />
-          <span>Moderator</span>
-          <span id="workspace-add-moderator-why" className="sr-only">
-            {ADMIN_WORKSPACE_MODERATOR_TEXT}
-          </span>
-        </label>
-      ) : null}
       {ready && search.isError ? (
         <p className="text-sm text-muted-foreground">
           {workspaceErrorText(search.error, 'Search failed.')}
