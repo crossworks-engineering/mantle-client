@@ -8,7 +8,7 @@
  * (contract-p5), not published yet. TODO(p5): import FileReindexAnswer and
  * FILE_REINDEX_MAX from @mantle/client-types once a release carries them.
  */
-import { reasonWords } from './file-status';
+import { capital, reasonWords } from './file-status';
 
 /** The most ids one call takes; more go in pages. */
 export const FILE_REINDEX_MAX = 200;
@@ -238,5 +238,6 @@ export function attentionHint(
     return parts.length ? parts.join('; ') : 'Read by an older reader';
   }
   // Never the raw code: the hint, else the reason in plain words.
-  return f.extraction?.hint ?? reasonWords(f.extraction?.reason) ?? '';
+  const words = reasonWords(f.extraction?.reason);
+  return f.extraction?.hint ?? (words ? capital(words) : '');
 }

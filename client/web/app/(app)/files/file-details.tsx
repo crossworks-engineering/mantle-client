@@ -9,6 +9,7 @@ import {
   FileText,
   History,
   Image as ImageIcon,
+  Info,
   Loader2,
   NotebookPen,
   RefreshCw,
@@ -201,9 +202,18 @@ function Body({
       {v.problem ? (
         <div
           role="note"
-          className="flex items-start gap-2 rounded-md bg-destructive/10 p-2.5 text-xs text-destructive-ink"
+          className={cn(
+            'flex items-start gap-2 rounded-md p-2.5 text-xs',
+            v.problem.tone === 'error'
+              ? 'bg-destructive/10 text-destructive-ink'
+              : 'bg-muted text-muted-foreground',
+          )}
         >
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          {v.problem.tone === 'error' ? (
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          ) : (
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          )}
           <div className="space-y-0.5">
             <p className="font-medium">{v.problem.reason}</p>
             {v.problem.hint ? <p>{v.problem.hint}</p> : null}

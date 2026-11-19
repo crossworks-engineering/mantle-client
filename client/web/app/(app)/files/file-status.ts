@@ -170,7 +170,8 @@ export function reindexUrgent(s: FileStatus | undefined | null): boolean {
 }
 
 /** The brain's reason codes (packages/files extraction-status.ts) in plain
- *  words, lower case so they follow "Could not be read: ". */
+ *  words, lower case so they follow "Could not be read: " (`capital` for
+ *  words shown alone). */
 const REASON_WORDS: Record<string, string> = {
   document_unreadable: 'the reader could not open it',
   pdf_too_large: 'the PDF is too large to read',
@@ -186,6 +187,11 @@ const REASON_WORDS: Record<string, string> = {
   type_not_in_allowlist: 'this file type is not read here',
   local_only: 'read on this box with no model',
   not_read_no_model: 'no assistant reads its workspace',
+  // Skips the brain stamps on its own items (packages/db extract-exempt.ts).
+  snapshot_copy: 'a read-only copy; it is not read again',
+  conversation_digest: 'a chat record; kept, not read as a document',
+  chat_archive: 'a chat record; kept, not read as a document',
+  derived_mixed_unrefolded: 'indexed from its own text, with no model; its next edit summarises it',
 };
 
 /** A reason code in plain words; null for a code this client does not know
@@ -194,7 +200,7 @@ export function reasonWords(reason: string | undefined | null): string | null {
   return reason && Object.hasOwn(REASON_WORDS, reason) ? REASON_WORDS[reason]! : null;
 }
 
-const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+export const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** The line about the brain's read of the content. */
 export function ingestLine(ingest: FileIngest, x: FileExtraction | undefined): string {
@@ -271,8 +277,9 @@ export type DetailsView = {
     rows: DetailRow[];
     tables: { name: string; rows: string }[];
   };
-  /** Something went wrong, in plain words. */
-  problem: null | { reason: string; hint: string | null };
+  /** Why it was not read, in plain words: 'error' for a failed read,
+   *  'muted' for a skip (nothing failed). */
+  problem: null | FileProblem;
   /** Where it went: the items made from it. */
   derived: { items: FileDerivedItem[]; more: boolean };
 };
@@ -296,21 +303,14 @@ function readLine(p: FileProcessing): DetailRow {
 /** How the last read went, from extraction.state (the source of truth for
  *  a read in part) and then readMode (the folder's indexing when it ran:
  *  'full' says how it was asked, not that every page was read). */
-export function readHow(p: Pick<FileProcessing, 'extraction' | 'readMode' | 'images'>): {
+export function readHow(p: Pick<FileProcessing, 'extraction' | 'readMode'>): {
   how: string;
   tone?: DetailTone;
 } {
   const x = p.extraction;
-  if (x.state === 'partial') {
-    const left = p.images && p.images.kept < p.images.found ? p.images : null;
-    const how = x.pages
-      ? `Read in part: ${x.pages.read} of ${x.pages.total} pages`
-      : left
-        ? `Read in part: ${left.kept} of ${left.found} pictures`
-        : 'Read in part';
-    return { how, tone: 'warning' };
-  }
-  if (x.state === 'failed') return { how: 'Last tried', tone: 'muted' };
+  // The counts are in Status, Pages and Pictures: the Read line says when.
+  if (x.state === 'partial') return { how: 'Read in part', tone: 'warning' };
+  if (x.state === 'failed' || x.state === 'skipped') return { how: 'Last tried', tone: 'muted' };
   if (x.state === 'name_only' || p.readMode === 'metadata') return { how: 'Name only' };
   if (p.readMode === 'local') return { how: 'Read on this box, no model' };
   if (x.state === 'indexed') return { how: 'Read whole' };
@@ -464,15 +464,21 @@ export function detailsView(p: FileProcessing): DetailsView {
   };
 }
 
-/** Why a file was not read, in plain words: the known reason, else a
- *  plain "Could not be read" with the brain's hint. */
-export function problemOf(
-  p: Pick<FileProcessing, 'error' | 'extraction'>,
-): null | { reason: string; hint: string | null } {
-  const raw = p.error ?? (p.extraction.state === 'failed' ? p.extraction : null);
+export type FileProblem = { reason: string; hint: string | null; tone: 'error' | 'muted' };
+
+/** Why a file was not read, in plain words: the known reason, else "Could
+ *  not be read" for a failed read and a neutral "Not read" for a skip (a
+ *  code this client does not know yet), with the brain's hint. */
+export function problemOf(p: Pick<FileProcessing, 'error' | 'extraction'>): null | FileProblem {
+  const failed = p.extraction.state === 'failed';
+  const raw = p.error ?? (failed ? p.extraction : null);
   if (!raw?.reason) return null;
   const words = reasonWords(raw.reason);
-  return { reason: words ? capital(words) : 'Could not be read', hint: raw.hint ?? null };
+  return {
+    reason: words ? capital(words) : failed ? 'Could not be read' : 'Not read',
+    hint: raw.hint ?? null,
+    tone: failed ? 'error' : 'muted',
+  };
 }
 
 /** Where a derived item opens: a file in its own folder, anything else

@@ -318,7 +318,7 @@ describe('Needs attention helpers', () => {
     ).toBe('Upload it open.');
     // No hint: the reason in plain words, never the raw code.
     expect(attentionHint({ extraction: { reason: 'encrypted_pdf' } }, 'failed')).toBe(
-      'the PDF is password-protected',
+      'The PDF is password-protected',
     );
     expect(attentionHint({ extraction: { reason: 'brand_new_code' } }, 'failed')).toBe('');
     expect(attentionHint({}, 'partial')).toBe('');

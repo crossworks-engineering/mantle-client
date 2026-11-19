@@ -165,7 +165,7 @@ describe('detailsView: the Details panel in plain words', () => {
     });
   });
 
-  it('a partial read never says Read whole on its Read line', () => {
+  it('a partial read says Read in part and when; the counts stay in Status and Pages', () => {
     const v = detailsView(
       processing({
         status: { ingest: 'partial' },
@@ -174,8 +174,11 @@ describe('detailsView: the Details panel in plain words', () => {
       }),
     );
     const read = v.brain.find((r) => r.label === 'Read');
-    expect(read?.value).toMatch(/^Read in part: 2 of 5 pages, /);
+    expect(read?.value).toMatch(/^Read in part, /);
+    expect(read?.value).not.toContain('2 of 5');
     expect(read?.tone).toBe('warning');
+    expect(value(v.brain, 'Status')).toBe('Read in part: 2 of 5 pages');
+    expect(value(v.file, 'Pages')).toBe('2 of 5 read');
   });
 
   it('every picture kept is no warning', () => {
@@ -271,7 +274,37 @@ describe('detailsView: the Details panel in plain words', () => {
     expect(v.problem).toEqual({
       reason: 'No reader takes this file type',
       hint: 'Only its name is in search.',
+      tone: 'muted',
     });
+  });
+
+  it('a skip with a code this client does not know is a neutral Not read, never red', () => {
+    const v = detailsView(
+      processing({
+        status: { ingest: 'none' },
+        extraction: { state: 'skipped', reason: 'brand_new_skip' },
+        error: { reason: 'brand_new_skip', hint: null },
+      }),
+    );
+    expect(v.problem).toEqual({ reason: 'Not read', hint: null, tone: 'muted' });
+    expect(JSON.stringify(v)).not.toContain('Could not be read');
+    expect(JSON.stringify(v)).not.toContain('brand_new_skip');
+  });
+
+  it('a snapshot copy says it is a copy, muted', () => {
+    const v = detailsView(
+      processing({
+        status: { ingest: 'none' },
+        extraction: { state: 'skipped', reason: 'snapshot_copy' },
+        error: { reason: 'snapshot_copy', hint: null },
+      }),
+    );
+    expect(v.problem).toEqual({
+      reason: 'A read-only copy; it is not read again',
+      hint: null,
+      tone: 'muted',
+    });
+    expect(value(v.brain, 'Read')).toMatch(/^Last tried, /);
   });
 
   it('a job in the queue or running says so on the Read line', () => {
@@ -429,13 +462,13 @@ describe('readHow: how the last read went, from extraction.state first', () => {
     images: FileProcessing['images'] = null,
   ) => ({ extraction, readMode, images });
 
-  it('a read in part names the pages, else the pictures, whatever readMode says', () => {
+  it('a read in part says so whatever readMode says (the counts are in other rows)', () => {
     expect(readHow(p({ state: 'partial', pages: { read: 2, total: 5 } }))).toEqual({
-      how: 'Read in part: 2 of 5 pages',
+      how: 'Read in part',
       tone: 'warning',
     });
     expect(readHow(p({ state: 'partial' }, 'full', { kept: 3, found: 9 })).how).toBe(
-      'Read in part: 3 of 9 pictures',
+      'Read in part',
     );
     expect(readHow(p({ state: 'partial' }, 'local')).how).toBe('Read in part');
   });
@@ -446,7 +479,12 @@ describe('readHow: how the last read went, from extraction.state first', () => {
     expect(readHow(p({ state: 'name_only' }, null)).how).toBe('Name only');
     expect(readHow(p({ state: 'indexed' }, 'metadata')).how).toBe('Name only');
     expect(readHow(p({ state: 'failed', reason: 'pdf_too_large' })).how).toBe('Last tried');
-    expect(readHow(p({ state: 'skipped' }, null)).how).toBe('Read');
+    // A skip read nothing: Last tried and muted, as for a failure.
+    expect(readHow(p({ state: 'skipped', reason: 'snapshot_copy' }, null))).toEqual({
+      how: 'Last tried',
+      tone: 'muted',
+    });
+    expect(readHow(p({ state: 'pending' }, null)).how).toBe('Read');
   });
 });
 
@@ -459,16 +497,39 @@ describe('reasonWords and problemOf: never a raw code', () => {
     expect(reasonWords(undefined)).toBeNull();
   });
 
-  it('an unknown code reads "Could not be read" with the hint', () => {
+  it('the skips the brain stamps on its own items have plain words', () => {
+    for (const code of [
+      'snapshot_copy',
+      'conversation_digest',
+      'chat_archive',
+      'derived_mixed_unrefolded',
+    ]) {
+      const p = problemOf({
+        error: { reason: code, hint: null },
+        extraction: { state: 'skipped' },
+      });
+      expect(p?.tone).toBe('muted');
+      expect(p?.reason).not.toMatch(/_|Could not be read|^Not read$/);
+    }
+  });
+
+  it('an unknown code: "Could not be read" when it failed, a neutral "Not read" when skipped', () => {
+    expect(
+      problemOf({
+        error: { reason: 'brand_new_code', hint: 'Ask an Admin.' },
+        extraction: { state: 'failed' },
+      }),
+    ).toEqual({ reason: 'Could not be read', hint: 'Ask an Admin.', tone: 'error' });
     expect(
       problemOf({
         error: { reason: 'brand_new_code', hint: 'Ask an Admin.' },
         extraction: { state: 'skipped' },
       }),
-    ).toEqual({ reason: 'Could not be read', hint: 'Ask an Admin.' });
+    ).toEqual({ reason: 'Not read', hint: 'Ask an Admin.', tone: 'muted' });
     expect(problemOf({ error: null, extraction: { state: 'failed', reason: 'parked' } })).toEqual({
       reason: 'Its index could not be written',
       hint: null,
+      tone: 'error',
     });
     expect(problemOf({ error: null, extraction: { state: 'indexed' } })).toBeNull();
   });
