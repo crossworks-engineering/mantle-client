@@ -1,6 +1,6 @@
 {
   "name": "mantle-client",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "description": "MantleOS Desktop: the web + desktop interface for MantleOS brains.",
   "license": "SEE LICENSE IN LICENSE.md",
