@@ -14,6 +14,7 @@
  * caller decides what a 401 means. Pure outcome mapping, pinned by a test.
  */
 import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
+import { bodyReason, formerClientText } from './login-refusals';
 
 /** What the confirm dialog says before a login signs itself out everywhere. */
 export const EVERYWHERE_CONFIRM = 'This signs you out on every device, this one too.';
@@ -43,6 +44,9 @@ export function everywhereOutcome(status: number, body: unknown): EverywhereOutc
   if (status === 400 && error === 'Nothing to update.') {
     return { kind: 'error', message: 'This brain cannot do that yet. Update it first.' };
   }
+  // A known refusal (a System user's login, by an Admin user outside System).
+  const known = status < 500 ? formerClientText(bodyReason(body)) : null;
+  if (known) return { kind: 'error', message: known };
   if (error && status < 500) return { kind: 'error', message: error };
   return { kind: 'error', message: 'Could not sign out everywhere. Try again.' };
 }

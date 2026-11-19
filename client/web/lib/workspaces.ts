@@ -125,6 +125,10 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   // Branding stays with every Admin user (System workspace, owner
   // 2026-11-19).
   ['/settings/appearance', 'users'],
+  // Entity merge and share links: the brain serves them to every Admin user
+  // (the users area), as the content screens below.
+  ['/settings/entities', 'users'],
+  ['/settings/shared-links', 'users'],
   // Every other settings screen.
   ['/settings', 'settings'],
   // The brain's content screens, mail reading and approvals: every Admin

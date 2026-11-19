@@ -10,6 +10,7 @@
  */
 import { ApiError } from '@mantle/web-ui/api-fetch';
 import type { PasswordResetRefused } from '@mantle/client-types';
+import { knownRefusalText } from './login-refusals';
 
 /** Reset password is offered for these roles only. */
 export function canResetPassword(role: string): boolean {
@@ -34,5 +35,8 @@ export function resetPasswordErrorMessage(err: unknown): string {
     const body = (err as ApiError).body as Partial<PasswordResetRefused> | undefined;
     return body?.message || (err as ApiError).message || NOT_A_PASSWORD_LOGIN;
   }
+  // A System user's login, reset by an Admin user outside System.
+  const known = knownRefusalText(err);
+  if (known) return known;
   return err instanceof ApiError && err.message ? err.message : 'Could not reset password';
 }

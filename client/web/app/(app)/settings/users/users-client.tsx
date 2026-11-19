@@ -753,7 +753,7 @@ function DevicesCard({ user, isSelf }: { user: UserRow; isSelf: boolean }) {
       toast.success(`Signed out “${device.label}”.`);
       void queryClient.invalidateQueries({ queryKey: ['users', user.id, 'devices'] });
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not revoke that device.');
+      toast.error(loginRefusalText(err, 'Could not revoke that device.'));
     }
   };
 

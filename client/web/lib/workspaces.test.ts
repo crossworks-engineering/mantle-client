@@ -169,6 +169,25 @@ describe('areas', () => {
     },
   );
 
+  // Audit L5: the brain serves entity merge and share links to any Admin user.
+  it.each(['/settings/entities', '/settings/shared-links'])(
+    "%s is every Admin user's (users)",
+    (p) => {
+      expect(areaForPath(p)).toBe('users');
+      expect(areaForPath(`${p}/x`)).toBe('users');
+      expect(mayOpenPath(['users'], p)).toBe(true);
+      expect(mayOpenPath([], p)).toBe(false);
+    },
+  );
+
+  // The activity column links to Journey only for a login that may open it.
+  it('/debug/journey is a settings screen: no Journey link for an Admin user outside System', () => {
+    expect(areaForPath('/debug/journey')).toBe('settings');
+    expect(mayOpenPath(['users'], '/debug/journey')).toBe(false);
+    expect(mayOpenPath(['users', 'settings'], '/debug/journey/t-1')).toBe(true);
+    expect(mayOpenPath(undefined, '/debug/journey')).toBe(true);
+  });
+
   it('an Admin seat is any Admin area; a brain with no areas is an admin', () => {
     expect(holdsAdminSeat(['users'])).toBe(true);
     expect(holdsAdminSeat(['settings', 'users'])).toBe(true);

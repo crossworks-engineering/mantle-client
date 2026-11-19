@@ -22,7 +22,15 @@ import { RailHandle } from '@mantle/web-ui/ui/rail-handle';
 import { ACTIVITY_W_MAX, ACTIVITY_W_MIN } from '@/lib/nav-width';
 import { activityChanges } from '@/lib/sounds/events';
 import { play } from '@/lib/sounds/play';
+import { useViewerAreas } from '@/components/workspaces/use-shell-workspaces';
+import { mayOpenPath } from '@/lib/workspaces';
 import { formatElapsed } from './elapsed';
+
+/** The Journey screen (/debug/journey) is a settings screen: its links show
+ *  only for a login that may open it (an Admin user outside System may not). */
+function useJourneyLinks(): boolean {
+  return mayOpenPath(useViewerAreas(), '/debug/journey');
+}
 
 /**
  * Always-on Activity column in the app shell. Shows what's processing right now
@@ -192,6 +200,7 @@ export function LiveColumn({
   const recent = data?.recent ?? [];
   const live = active.length > 0;
   const hasAny = active.length + failures.length + recent.length > 0;
+  const journeyLinks = useJourneyLinks();
 
   return (
     <aside
@@ -241,12 +250,16 @@ export function LiveColumn({
             {live && (
               <span className="shrink-0 text-xs text-success-ink">{active.length} live</span>
             )}
-            <Link
-              href="/debug/journey"
-              className="ml-auto shrink-0 text-xs text-muted-foreground hover:text-foreground"
-            >
-              View all
-            </Link>
+            {journeyLinks ? (
+              <Link
+                href="/debug/journey"
+                className="ml-auto shrink-0 text-xs text-muted-foreground hover:text-foreground"
+              >
+                View all
+              </Link>
+            ) : (
+              <span className="ml-auto" />
+            )}
             {/* Collapse lives on the column it collapses. It used to sit in the
                 shell's footer bar, which spanned the whole window and could
                 reasonably hold both rails' toggles; with the footer gone its
@@ -471,22 +484,25 @@ function Row({
   indent?: boolean;
   children: React.ReactNode;
 }) {
+  const linked = useJourneyLinks();
+  const rowClass = cn('flex flex-col gap-0.5 px-4 py-2.5', indent && 'pl-8');
   return (
     <li>
-      <Link
-        href={`/debug/journey/${it.traceId}`}
-        // Neutral foreground-overlay hover (not a colour tint): the column is
-        // bg-sidebar (== muted in some themes, so bg-muted would be invisible),
-        // and a coloured accent tint blends with the grey muted-foreground meta
-        // text. A faint neutral overlay stays visible over any sidebar value in
-        // light + dark while keeping the grey text legible.
-        className={cn(
-          'flex flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-foreground/[0.06]',
-          indent && 'pl-8',
-        )}
-      >
-        {children}
-      </Link>
+      {linked ? (
+        <Link
+          href={`/debug/journey/${it.traceId}`}
+          // Neutral foreground-overlay hover (not a colour tint): the column is
+          // bg-sidebar (== muted in some themes, so bg-muted would be invisible),
+          // and a coloured accent tint blends with the grey muted-foreground meta
+          // text. A faint neutral overlay stays visible over any sidebar value in
+          // light + dark while keeping the grey text legible.
+          className={cn(rowClass, 'transition-colors hover:bg-foreground/[0.06]')}
+        >
+          {children}
+        </Link>
+      ) : (
+        <div className={rowClass}>{children}</div>
+      )}
     </li>
   );
 }

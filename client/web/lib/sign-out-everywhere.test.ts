@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SYSTEM_USER_TARGET_TEXT } from './login-refusals';
 import {
   EVERYWHERE_CONFIRM,
   EVERYWHERE_CONFIRM_TEXT,
@@ -81,6 +82,15 @@ describe('everywhereOutcome', () => {
     expect(everywhereOutcome(500, { error: 'boom' })).toEqual({
       kind: 'error',
       message: 'Could not sign out everywhere. Try again.',
+    });
+  });
+});
+
+describe("a System user's login (403 system_user_target)", () => {
+  it('says only a System user can sign it out', () => {
+    expect(everywhereOutcome(403, { error: 'brain words', code: 'system_user_target' })).toEqual({
+      kind: 'error',
+      message: SYSTEM_USER_TARGET_TEXT,
     });
   });
 });

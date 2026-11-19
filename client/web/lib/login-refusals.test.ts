@@ -4,7 +4,10 @@ import {
   CONTACT_WAS_CLIENT_TEXT,
   EMAIL_WAS_CLIENT_TEXT,
   FORMER_CLIENT_ENABLE_TEXT,
+  SYSTEM_USER_TARGET_TEXT,
+  bodyReason,
   formerClientText,
+  knownRefusalText,
   loginRefusalText,
   refusalReason,
 } from './login-refusals';
@@ -43,8 +46,34 @@ describe('the former client refusals (W8), in plain words', () => {
     expect(formerClientText(undefined)).toBeNull();
   });
 
+  it("a System user's login changed by an Admin user outside System (403 system_user_target)", () => {
+    expect(SYSTEM_USER_TARGET_TEXT).toBe("Only a System user can change a System user's login.");
+    const coded = new ApiError('brain words', 403, {
+      error: 'brain words',
+      code: 'system_user_target',
+    });
+    const reasoned = new ApiError('brain words', 403, {
+      error: 'brain words',
+      reason: 'system_user_target',
+    });
+    for (const err of [coded, reasoned]) {
+      expect(refusalReason(err)).toBe('system_user_target');
+      expect(knownRefusalText(err)).toBe(SYSTEM_USER_TARGET_TEXT);
+      expect(loginRefusalText(err, 'Could not change the login')).toBe(SYSTEM_USER_TARGET_TEXT);
+    }
+    expect(bodyReason({ code: 'system_user_target' })).toBe('system_user_target');
+    expect(bodyReason({ reason: 'former-client', code: 'x' })).toBe('former-client');
+    expect(bodyReason(null)).toBeNull();
+    expect(knownRefusalText(new ApiError('x', 403, { code: 'forbidden' }))).toBeNull();
+  });
+
   it('says it plainly: no dashes, no codes', () => {
-    for (const t of [FORMER_CLIENT_ENABLE_TEXT, EMAIL_WAS_CLIENT_TEXT, CONTACT_WAS_CLIENT_TEXT]) {
+    for (const t of [
+      FORMER_CLIENT_ENABLE_TEXT,
+      EMAIL_WAS_CLIENT_TEXT,
+      CONTACT_WAS_CLIENT_TEXT,
+      SYSTEM_USER_TARGET_TEXT,
+    ]) {
       expect(t).not.toMatch(/[\u2013\u2014]|-client|former-/);
     }
   });

@@ -8,6 +8,7 @@ import {
   isNotAPasswordLogin,
   resetPasswordErrorMessage,
 } from './password-reset';
+import { SYSTEM_USER_TARGET_TEXT } from './login-refusals';
 
 /**
  * Settings > Logins, Reset password (audit A29, decision a): offered for an
@@ -35,6 +36,12 @@ describe('Reset password', () => {
     // Without words of its own, it still says why.
     const bare = new ApiError('', 400, { reason: 'not-a-password-login' });
     expect(resetPasswordErrorMessage(bare)).toBe(NOT_A_PASSWORD_LOGIN);
+  });
+
+  it("a System user's login: Only a System user can change it", () => {
+    const err = new ApiError('x', 403, { error: 'x', code: 'system_user_target' });
+    expect(isNotAPasswordLogin(err)).toBe(false);
+    expect(resetPasswordErrorMessage(err)).toBe(SYSTEM_USER_TARGET_TEXT);
   });
 
   it('any other failure: its message, or a plain fallback', () => {
