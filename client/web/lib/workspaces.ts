@@ -53,6 +53,18 @@ export function hasArea(areas: readonly string[] | null | undefined, area: Area)
 }
 
 /**
+ * Whether the login holds an Admin seat: ANY Admin area (System workspace,
+ * owner 2026-11-19). The admin shell keys on this, not on `settings`: an
+ * Admin user outside System holds only `users` and keeps the admin rail,
+ * search, activity, Profile and changelog. What reads System matter (the
+ * usage card, a banner whose route or screen is the settings area's) keeps
+ * hasArea(areas, 'settings'). A brain that names no areas: an admin.
+ */
+export function holdsAdminSeat(areas: readonly string[] | null | undefined): boolean {
+  return areas == null ? true : areas.length > 0;
+}
+
+/**
  * THE table of which area each screen needs (phase W5c: one shell for every
  * login). A row is a path prefix, matched as whole segments (`/settings/users`
  * covers `/settings/users/x`, not `/settings/usersx`); the first match wins,
@@ -105,6 +117,11 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/settings/tools', 'connectors'],
   ['/settings/peers', 'connectors'],
   ['/settings/keys', 'keys'],
+  // The admin shell's own screens (holdsAdminSeat): every Admin user. Their
+  // routes are the login's own (/api/profile, /api/changelog; the logins
+  // list is this device's).
+  ['/settings/profile', 'users'],
+  ['/settings/sessions', 'users'],
   // Branding stays with every Admin user (System workspace, owner
   // 2026-11-19).
   ['/settings/appearance', 'users'],
@@ -140,9 +157,9 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/status', 'settings'],
   ['/dashboard', 'settings'],
   // /changelog reads GET /api/changelog, which the brain answers for an
-  // admin only: the rail shows a login without this area the build as
+  // admin only: the rail shows a login with no Admin seat the build as
   // plain text (components/layout/changelog-link.tsx).
-  ['/changelog', 'settings'],
+  ['/changelog', 'users'],
   // The first-run wizard sets up the brain (outside the shell: onboardingExit).
   ['/onboarding', 'settings'],
 ];
@@ -821,6 +838,11 @@ export function navWithAreas<
 export const ADMIN_ADD_TEXT =
   'A user added here is an Admin user: they manage the brain and every workspace.';
 
+/** What the Admin remove confirm adds: leaving Admin takes the person out
+ *  of System too (the same call on the brain). */
+export const ADMIN_REMOVE_SYSTEM_TEXT =
+  'If this person is also a System user, they leave System too.';
+
 /** What the System remove confirm adds: a pairing resolves only while its
  *  login holds the keys area, which leaving System takes away. */
 export const SYSTEM_REMOVE_PAIRED_TEXT =
@@ -837,7 +859,7 @@ export function removeUserText(
     return `${name} stops managing the brain's settings, assistants, connectors and keys. ${SYSTEM_REMOVE_PAIRED_TEXT}`;
   }
   if (ws.isAdmin) {
-    return `${name} stops being an Admin user and cannot manage the brain. Their sessions end, so they sign in again.`;
+    return `${name} stops being an Admin user and cannot manage the brain. Their sessions end, so they sign in again. ${ADMIN_REMOVE_SYSTEM_TEXT}`;
   }
   return `${name} stops reading the items shared with ${ws.name}, unless another of their workspaces has them.`;
 }

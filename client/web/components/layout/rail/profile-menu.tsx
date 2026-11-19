@@ -57,7 +57,7 @@ import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { themeLabel } from '@mantle/web-ui/lib/themes';
 import { RandomThemeItems } from '@/components/random-theme-toggle';
 import { agentInitials } from '@/lib/agent-color';
-import { hasArea } from '@/lib/workspaces';
+import { holdsAdminSeat } from '@/lib/workspaces';
 import { useViewerAreas } from '@/components/workspaces/use-shell-workspaces';
 import { useShellRole } from '@/components/layout/shell-role';
 import {
@@ -156,10 +156,10 @@ export function ProfileMenu({
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const toast = useToast();
-  // The Profile screen, its photo route and Manage logins are the
-  // settings area's (phase W5c: one shell for every login). A brain that
-  // names no areas leaves them all on.
-  const manages = hasArea(useViewerAreas(), 'settings');
+  // The Profile screen, its photo route and Manage logins are an Admin
+  // user's (any Admin area: holdsAdminSeat). A brain that names no areas
+  // leaves them all on.
+  const manages = holdsAdminSeat(useViewerAreas());
   // A member's account is its password (POST /api/auth/change-password
   // serves every login): no owner screen offers a self-serve change.
   const member = useShellRole() === 'member';
@@ -411,7 +411,7 @@ export function ProfileMenu({
             </a>
           </DropdownMenuItem>
         )}
-        {/* /settings/sessions is the settings area's. */}
+        {/* /settings/sessions is an Admin user's (holdsAdminSeat). */}
         {manages ? (
           <DropdownMenuItem asChild>
             <Link href="/settings/sessions" onClick={onNavigate} className="cursor-pointer">

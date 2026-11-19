@@ -45,18 +45,21 @@ describe('ChangelogLink', () => {
     expect(html).toMatch(/Brain (…|unavailable)/);
   });
 
-  it('links the changelog for a login with the settings area', () => {
-    const client = new QueryClient();
-    client.setQueryData(['shell'], { areas: ['settings'] });
-    const html = renderToStaticMarkup(
-      createElement(QueryClientProvider, { client, children: createElement(ChangelogLink) }),
-    );
-    expect(html).toContain('href="/changelog"');
-  });
+  it.each([[['settings']], [['users']]])(
+    'links the changelog for an Admin user (any Admin area: %j)',
+    (areas) => {
+      const client = new QueryClient();
+      client.setQueryData(['shell'], { areas });
+      const html = renderToStaticMarkup(
+        createElement(QueryClientProvider, { client, children: createElement(ChangelogLink) }),
+      );
+      expect(html).toContain('href="/changelog"');
+    },
+  );
 
-  it('a login without the settings area gets the line as plain text, no link and no dot', () => {
-    // GET /api/changelog answers an admin only: /changelog stays the
-    // settings area's, so the rail does not offer it.
+  it('a login with no Admin area gets the line as plain text, no link and no dot', () => {
+    // GET /api/changelog answers an admin only, so the rail does not offer
+    // it to a member.
     const client = new QueryClient();
     client.setQueryData(['shell'], { areas: [] });
     const html = renderToStaticMarkup(

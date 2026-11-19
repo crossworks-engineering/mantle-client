@@ -4,7 +4,13 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { shellProbeFailure } from '@/lib/shell-probe';
 import { installSoundUnlock } from '@/lib/sounds/play';
 import { pullSoundPrefs } from '@/lib/sounds/sync';
-import { goesToOnboarding, hasArea, shellAreasOf, shellRoleOf } from '@/lib/workspaces';
+import {
+  goesToOnboarding,
+  hasArea,
+  holdsAdminSeat,
+  shellAreasOf,
+  shellRoleOf,
+} from '@/lib/workspaces';
 import { CreateWorkspaceSync } from '@/components/workspaces/create-workspace-sync';
 import type { Shell } from '@mantle/client-types';
 import { usePathname, useRouter } from 'next/navigation';
@@ -240,13 +246,16 @@ function ShellFrame({
   initialActivityCollapsed?: boolean;
   children: React.ReactNode;
 }) {
-  // Every login runs in this one shell (phase W5c). The owner chrome (usage
-  // card, update and provider banners, the activity column, the question
-  // watcher, the search palette) needs the settings area: without
-  // it each would only collect 403s. A brain that names no areas leaves them
-  // all on. The role (the brain's) picks only the assistant: the owner one
-  // for an admin, a member's own chat for a member, none for a client, until
-  // phase W7.
+  // Every login runs in this one shell (phase W5c). The admin chrome (the
+  // activity column, the question watcher, the search palette) is any Admin
+  // user's (holdsAdminSeat: an Admin user outside System keeps it). What
+  // reads System matter needs the settings area: the usage card (model
+  // spend) and the update and provider banners (their routes and screens
+  // are the settings area's); without it each would only collect 403s. A
+  // brain that names no areas leaves them all on. The role (the brain's)
+  // picks only the assistant: the owner one for an admin, a member's own
+  // chat for a member, none for a client, until phase W7.
+  const adminSeat = holdsAdminSeat(shellAreasOf(shell));
   const manages = hasArea(shellAreasOf(shell), 'settings');
   const role = shellRoleOf(shell);
   // Every login reads bytes on the owner routes, in its own scope (W7e):
@@ -484,7 +493,7 @@ function ShellFrame({
       const typing =
         t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
       if (k === 'k') {
-        if (!manages) return; // no palette: brain search is the settings area's
+        if (!adminSeat) return; // no palette: brain search is an Admin user's
         // Toggle from anywhere except a real editor/input — unless the input is
         // the palette's own, where ⌘K should still close it.
         if (typing && !t.closest('[data-slot=command-input-wrapper]')) return;
@@ -508,7 +517,7 @@ function ShellFrame({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [manages]);
+  }, [adminSeat]);
 
   // Who the profile row names. Undefined until /api/shell lands, at which point
   // the row fills in — it renders a neutral "Signed in" in the meantime rather
@@ -542,7 +551,7 @@ function ShellFrame({
       <RailControls
         identity={identity}
         onSearchClick={
-          manages
+          adminSeat
             ? () => {
                 onNavigate?.();
                 setSearchOpen(true);
@@ -612,7 +621,7 @@ function ShellFrame({
             // offered on the expanded rail, so a drag can never fight a toggle.
             '--nav-w': zen ? '0px' : navCollapsed ? '3.5rem' : `${navWidth}px`,
             '--activity-w':
-              zen || !manages ? '0px' : activityCollapsed ? '3.5rem' : `${activityWidth}px`,
+              zen || !adminSeat ? '0px' : activityCollapsed ? '3.5rem' : `${activityWidth}px`,
             '--assistant-w': assistantW,
             '--help-w': helpW,
           } as React.CSSProperties
@@ -626,14 +635,14 @@ function ShellFrame({
             logoVersion={brand.logoVersion ?? null}
             logoDarkVersion={brand.logoDarkVersion ?? null}
             onMenuClick={() => setMobileOpen(true)}
-            onSearchClick={manages ? () => setSearchOpen(true) : undefined}
+            onSearchClick={adminSeat ? () => setSearchOpen(true) : undefined}
             switcher={<WorkspaceSwitcher variant="bar" />}
           />
         )}
 
         {/* Global search palette — one instance for the whole shell, summoned by
             ⌘K or the header magnifier. */}
-        {manages ? <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} /> : null}
+        {adminSeat ? <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} /> : null}
 
         {/* The rail. Full window height now that nothing brackets it: it owns
             the brand, the account/theme/search controls, the nav and the
@@ -682,9 +691,9 @@ function ShellFrame({
           </SheetContent>
         </Sheet>
 
-        {/* Right live-activity column (the settings area's: it polls the
+        {/* Right live-activity column (an Admin user's: it polls the
             brain's activity) */}
-        {zen || !manages ? null : (
+        {zen || !adminSeat ? null : (
           <LiveColumn
             collapsed={activityCollapsed}
             onToggle={toggleActivity}
@@ -758,7 +767,7 @@ function ShellFrame({
 
         {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}
-        {manages ? <PendingQuestionWatcher /> : null}
+        {adminSeat ? <PendingQuestionWatcher /> : null}
         <DesktopBridge />
         {/* A create names the switcher's workspace (W6b). */}
         <CreateWorkspaceSync />

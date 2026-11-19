@@ -13,7 +13,7 @@ import {
   versionDetail,
 } from '@mantle/web-ui/version';
 import { useServerVersion } from '@/lib/server-version';
-import { hasArea } from '@/lib/workspaces';
+import { holdsAdminSeat } from '@/lib/workspaces';
 import { useViewerAreas } from '@/components/workspaces/use-shell-workspaces';
 import { MantleBadge } from './rail/mantle-mark';
 
@@ -67,7 +67,7 @@ export function ChangelogLink({ onNavigate }: { onNavigate?: () => void }) {
   }, []);
 
   const active = pathname === '/changelog' || pathname.startsWith('/changelog/');
-  const linked = hasArea(useViewerAreas(), 'settings');
+  const linked = holdsAdminSeat(useViewerAreas());
   // The full detail the line drops, one half per line.
   const detail = `MantleOS Desktop ${versionDetail()}\nBrain ${brainLabel}`;
 

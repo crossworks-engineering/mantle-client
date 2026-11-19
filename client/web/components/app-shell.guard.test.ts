@@ -63,18 +63,24 @@ describe('no role routing in the shell itself', () => {
     );
   });
 
-  it('owner chrome needs the settings area, read from the same answer', () => {
+  // System workspace (owner, 2026-11-19): an Admin user outside System
+  // keeps the admin shell; only System matter needs the settings area.
+  it('admin chrome needs an Admin seat; System matter the settings area; one answer', () => {
+    expect(shell).toContain('const adminSeat = holdsAdminSeat(shellAreasOf(shell));');
     expect(shell).toContain("const manages = hasArea(shellAreasOf(shell), 'settings');");
     for (const chrome of [
+      '{adminSeat ? <PendingQuestionWatcher /> : null}',
+      '{adminSeat ? <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} /> : null}',
+      '{zen || !adminSeat ? null : (',
+      // System matter: model spend, and banners whose route or screen is settings.
       '{manages ? contextCard : null}',
       '{manages ? <UpdateBanner onNavigate={onNavigate} /> : null}',
       '{manages ? <ProviderAlertBanner onNavigate={onNavigate} /> : null}',
-      '{manages ? <PendingQuestionWatcher /> : null}',
-      '{manages ? <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} /> : null}',
     ]) {
       expect(shell, chrome).toContain(chrome);
     }
-    expect(shell).toContain('{zen || !manages ? null : (');
+    expect(shell).not.toContain('{manages ? <SearchPalette');
+    expect(shell).not.toContain('{manages ? <PendingQuestionWatcher');
   });
 
   it('the first-run gate sends only a settings login to /onboarding', () => {

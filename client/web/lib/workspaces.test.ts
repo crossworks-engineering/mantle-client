@@ -30,6 +30,8 @@ import {
   canSetConnectors,
   canSetContact,
   removeUserText,
+  ADMIN_REMOVE_SYSTEM_TEXT,
+  holdsAdminSeat,
   BUILT_IN_NAME_HINT,
   canRemoveUser,
   isViewerRow,
@@ -156,6 +158,24 @@ describe('areas', () => {
     expect(mayOpenPath(undefined, p)).toBe(true);
   });
 
+  // The admin shell's own screens: any Admin user (holdsAdminSeat chrome).
+  it.each(['/settings/profile', '/settings/sessions', '/changelog'])(
+    "%s is an Admin user's (users), never a member's",
+    (p) => {
+      expect(areaForPath(p)).toBe('users');
+      expect(mayOpenPath(['users'], p)).toBe(true);
+      expect(mayOpenPath([], p)).toBe(false);
+    },
+  );
+
+  it('an Admin seat is any Admin area; a brain with no areas is an admin', () => {
+    expect(holdsAdminSeat(['users'])).toBe(true);
+    expect(holdsAdminSeat(['settings', 'users'])).toBe(true);
+    expect(holdsAdminSeat([])).toBe(false);
+    expect(holdsAdminSeat(undefined)).toBe(true);
+    expect(holdsAdminSeat(null)).toBe(true);
+  });
+
   it('/secrets needs the keys area', () => {
     expect(areaForPath('/secrets')).toBe('keys');
     expect(areaForPath('/secrets/x')).toBe('keys');
@@ -193,7 +213,6 @@ describe('areas', () => {
     '/sandboxes',
     '/traces',
     '/debug',
-    '/changelog',
     '/onboarding',
   ])('%s and what is under it need the settings area', (p) => {
     expect(areaForPath(p)).toBe('settings');
@@ -513,6 +532,16 @@ describe('who may change what', () => {
       'Bo stops being an Admin user',
     );
     expect(removeUserText({ name: 'Admin', isAdmin: true }, 'Bo')).toContain('sessions end');
+    // Leaving Admin takes the person out of System too (owner, 2026-11-19).
+    expect(removeUserText({ name: 'Admin', isAdmin: true }, 'Bo')).toContain(
+      ADMIN_REMOVE_SYSTEM_TEXT,
+    );
+    expect(ADMIN_REMOVE_SYSTEM_TEXT).toBe(
+      'If this person is also a System user, they leave System too.',
+    );
+    expect(removeUserText({ name: 'Team', isAdmin: false }, 'Bo')).not.toContain(
+      ADMIN_REMOVE_SYSTEM_TEXT,
+    );
     expect(removeUserText({ name: 'Team', isAdmin: false }, 'Bo')).toBe(
       'Bo stops reading the items shared with Team, unless another of their workspaces has them.',
     );
