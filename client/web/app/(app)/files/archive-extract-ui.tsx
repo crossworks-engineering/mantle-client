@@ -85,8 +85,9 @@ export function ArchiveExtractSection({
       toast.error(err instanceof ApiError ? err.message : 'Could not start the extraction.');
     } finally {
       setAsking(false);
-      // The new folder shows in the tree and the list.
-      void qc.invalidateQueries({ queryKey: ['files', 'extract', fileId] });
+      // The new folder shows in the tree and the list ('files' holds the
+      // Files page's tree, list and this extract state).
+      void qc.invalidateQueries({ queryKey: ['files'] });
       void qc.invalidateQueries({ queryKey: ['tree', 'files'] });
     }
   };
