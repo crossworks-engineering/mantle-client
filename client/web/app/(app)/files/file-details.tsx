@@ -26,6 +26,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@mantle/web-u
 import { useFolderWhere } from '@/lib/use-folder-where';
 import { StatusIcon } from './file-status-badge';
 import { useReindex } from './file-reindex-ui';
+import { ArchiveExtractSection } from './archive-extract-ui';
 import {
   derivedHref,
   derivedNoun,
@@ -176,10 +177,12 @@ function DerivedList({
 function Body({
   p,
   extra,
+  canEdit,
   onNavigate,
 }: {
   p: FileProcessing;
   extra: DetailsExtraRow[];
+  canEdit: boolean;
   onNavigate: () => void;
 }) {
   const v = detailsView(p);
@@ -220,6 +223,13 @@ function Body({
           </div>
         </div>
       ) : null}
+
+      <ArchiveExtractSection
+        fileId={p.file.id}
+        filename={p.file.filename}
+        canEdit={canEdit}
+        onNavigate={onNavigate}
+      />
 
       <Section title="File">
         <Rows
@@ -286,7 +296,8 @@ export function FileDetailsSheet({
   extra?: DetailsExtraRow[];
   /** Opens the file's History sheet; none from a brain before file history. */
   onHistory?: () => void;
-  /** The login may change the file (its edit right): Reindex shows. */
+  /** The login may change the file (its edit right): Reindex and Extract
+   *  contents show. */
   canReindex?: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -300,7 +311,7 @@ export function FileDetailsSheet({
 
   let body: ReactNode;
   if (q.data) {
-    body = <Body p={q.data} extra={extra} onNavigate={close} />;
+    body = <Body p={q.data} extra={extra} canEdit={canReindex} onNavigate={close} />;
   } else if (q.gone) {
     body = (
       <div className="space-y-3">
