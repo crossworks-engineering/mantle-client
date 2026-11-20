@@ -10,6 +10,8 @@
  * before P4 sends no `status`, and then no badge shows.
  */
 
+// The job and its wait come from the contract, so they cannot drift.
+import type { FileJob, FileJobWait } from '@mantle/client-types';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { fmtSize, type FileExtraction } from './files-shared';
 
@@ -17,22 +19,6 @@ import { fmtSize, type FileExtraction } from './files-shared';
 
 /** Was the content read into the brain (search, facts, mentions). */
 export type FileIngest = 'done' | 'partial' | 'waiting' | 'failed' | 'none';
-/** An extract job for the file in the queue now: waiting its turn, being
- *  read, or held until the AI provider answers again or, for an Agent's
- *  run, the day cap of paid asks has room (`waiting`, brain v0.709). */
-export type FileJob = 'queued' | 'running' | 'waiting';
-/** Why a job waits and until when (FileProcessing.wait, brain v0.709).
- *  Nothing is dropped: the brain tries again by itself. */
-export type FileJobWait = {
-  for: 'provider' | 'day_cap';
-  reason?: 'rate_limit' | 'quota' | 'overloaded';
-  /** The Agent pipeline whose run waits, when it is a run. */
-  run?: string;
-  /** When it is tried again (ISO). */
-  until: string;
-  /** One sentence for a person. */
-  hint: string;
-};
 /** The state of the file's own database (its Data view). */
 export type FileDbState = 'ready' | 'too-large' | 'no-rows' | 'unreadable' | 'not-built';
 
