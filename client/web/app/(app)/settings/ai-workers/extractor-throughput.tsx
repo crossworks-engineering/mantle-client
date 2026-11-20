@@ -10,17 +10,31 @@ import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { play } from '@/lib/sounds/play';
 
+/** One lane setting: saved (null: the env value, then the default), in use,
+ *  and (brain v0.709) its source and its least. */
+export type LaneSetting = {
+  saved: number | null;
+  effective: number;
+  default: number;
+  max: number;
+  min?: number;
+  source?: 'saved' | 'env' | 'default';
+};
+
 /** GET /api/embedding/extraction. Local type: the brain route is new and the
  *  shape is small, so it does not need a contract package bump. */
 export type ExtractionStatus = {
-  concurrency: { saved: number | null; effective: number; default: number; max: number };
+  concurrency: LaneSetting;
+  /** Books at once, the book lane (brain v0.709); absent from an older brain. */
+  book_concurrency?: LaneSetting;
+  /** null when the queue could not be read (brain v0.709). */
   queue: {
     running: number;
     waiting: number;
     retrying: number;
     doneLast10Min: number;
     deadLettered: number;
-  };
+  } | null;
 };
 
 export const EXTRACTION_STATUS_KEY = ['embedding', 'extraction'] as const;
@@ -35,8 +49,8 @@ export function useExtractionStatus() {
 
 /** One line: what the extractor is doing now. */
 export function ExtractorQueueStatus({ status }: { status: ExtractionStatus | undefined }) {
-  if (!status) return null;
-  const q = status.queue;
+  const q = status?.queue;
+  if (!q) return null;
   const parts = [
     `${q.running} working now`,
     `${q.waiting} waiting`,

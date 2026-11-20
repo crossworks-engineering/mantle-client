@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -18,7 +18,12 @@ import {
 } from '@mantle/web-ui/ui/select';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { ExtractorQueueStatus, useExtractionStatus } from '../../ai-workers/extractor-throughput';
+import {
+  EXTRACTION_STATUS_KEY,
+  ExtractorQueueStatus,
+  useExtractionStatus,
+  type LaneSetting,
+} from '../../ai-workers/extractor-throughput';
 import { ProviderAlertCard } from '@/components/needs-you/provider-alert-card';
 import { play } from '@/lib/sounds/play';
 
@@ -169,6 +174,15 @@ function EmbeddingForm({
   const [perfBudget, setPerfBudget] = useState(num(config?.extractionTimeBudgetMinutes));
   const [perfBatch, setPerfBatch] = useState(num(config?.localEmbedBatchSize));
   const [perfTimeout, setPerfTimeout] = useState(num(config?.localEmbedRequestTimeoutMs));
+  // Books at once lives on the extraction route (brain v0.709), not on this
+  // form's POST: seed it once its answer arrives; later polls leave edits.
+  const books = extractionStatus.data?.book_concurrency;
+  const booksSaved = books?.saved;
+  const booksLoaded = books !== undefined;
+  const [perfBooks, setPerfBooks] = useState('');
+  useEffect(() => {
+    if (booksLoaded) setPerfBooks(booksSaved == null ? '' : String(booksSaved));
+  }, [booksLoaded, booksSaved]);
   const currentPreset =
     (Object.keys(PERF_PRESETS) as (keyof typeof PERF_PRESETS)[]).find((name) => {
       const p = PERF_PRESETS[name];
@@ -235,6 +249,34 @@ function EmbeddingForm({
     });
   }
 
+  /** Save books at once when it changed (PATCH /api/embedding/extraction,
+   *  after the form's POST so the embedder row exists). */
+  async function saveBooks() {
+    if (!books) return;
+    const trimmed = perfBooks.trim();
+    const want = trimmed === '' ? null : Number.parseInt(trimmed, 10);
+    if (want === books.saved) return;
+    if (want !== null && Number.isNaN(want)) {
+      toast.error('Books at once not saved: give a whole number, or leave it blank.');
+      return;
+    }
+    try {
+      const res = await apiSend<
+        { ok: true; book_concurrency: LaneSetting } | { ok: false; error: string }
+      >('/api/embedding/extraction', 'PATCH', { book_concurrency: want });
+      if (res.ok) {
+        toast.success(
+          `Books at once set to ${res.book_concurrency.effective}. It applies within 30 seconds.`,
+        );
+      } else {
+        toast.error(`Books at once not saved: ${res.error}`);
+      }
+    } catch (err) {
+      toast.error(`Books at once not saved: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    await queryClient.invalidateQueries({ queryKey: EXTRACTION_STATUS_KEY });
+  }
+
   function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.currentTarget));
@@ -255,6 +297,7 @@ function EmbeddingForm({
           // A save also tells the brain to try a failing provider again and
           // to catch up on what waits (no restart needed).
           queryClient.invalidateQueries({ queryKey: ['embedding'] });
+          await saveBooks();
         } else {
           play('danger');
           toast.error(`Save failed: ${res.error}`);
@@ -452,6 +495,31 @@ function EmbeddingForm({
               </FieldHint>
               <ExtractorQueueStatus status={extractionStatus.data} />
             </div>
+            {books ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="extraction_book_concurrency">Books at once</Label>
+                {/* No `name`: the form's POST does not take it; Save sends it
+                    to the extraction route when it changed. */}
+                <Input
+                  id="extraction_book_concurrency"
+                  type="number"
+                  min={books.min ?? 1}
+                  max={books.max}
+                  value={perfBooks}
+                  onChange={(e) => setPerfBooks(e.target.value)}
+                  placeholder={`default ${books.default}`}
+                  aria-describedby={hintId('extraction_book_concurrency')}
+                />
+                <FieldHint
+                  id="extraction_book_concurrency"
+                  warn="Each book holds the reader for hours; more helps only a box with room."
+                >
+                  How many books (a PDF of 10 MB or more, or more than 200 pages) read at once,{' '}
+                  {books.min ?? 1} to {books.max}, beside the count above. Blank uses the box&apos;s
+                  value. Running with {books.effective}.
+                </FieldHint>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="extraction_time_budget_minutes">Time budget (min)</Label>
               <Input
@@ -516,9 +584,9 @@ function EmbeddingForm({
           </div>
 
           <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            ℹ All four apply without a restart: batch size and timeout at once, concurrency and the
-            time budget within 30 seconds. You can also set concurrency on Settings, AI workers,
-            Extractor.
+            ℹ All apply without a restart: batch size and timeout at once, concurrency, books at
+            once and the time budget within 30 seconds. You can also set concurrency on Settings, AI
+            workers, Extractor.
           </p>
         </fieldset>
 
