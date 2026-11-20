@@ -68,7 +68,8 @@ function FolderLocation({ path }: { path: string }) {
  * GET /api/files/files/:id/processing. `gone`: the brain answered 404 (a
  * brain before P4, or a file this login cannot read): the panel falls back
  * to what the caller knows. While a job is queued or running it asks again
- * every few seconds (a plain read, no model run).
+ * every few seconds, and every 30 s while it waits on the AI provider (a
+ * plain read, no model run).
  */
 export function useFileProcessing(fileId: string | null) {
   const q = useQuery({
@@ -76,7 +77,11 @@ export function useFileProcessing(fileId: string | null) {
     enabled: !!fileId,
     queryFn: () => apiFetch<FileProcessing>(`/api/files/files/${fileId}/processing`),
     retry: (n, err) => !(err instanceof ApiError && err.status === 404) && n < 2,
-    refetchInterval: (query) => (query.state.data?.job ? 5_000 : false),
+    // A wait on the provider lasts minutes: ask less often while it waits.
+    refetchInterval: (query) => {
+      const job = query.state.data?.job;
+      return job === 'waiting' ? 30_000 : job ? 5_000 : false;
+    },
   });
   const gone = q.error instanceof ApiError && q.error.status === 404;
   return { ...q, gone };

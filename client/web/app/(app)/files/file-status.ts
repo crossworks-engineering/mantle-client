@@ -17,8 +17,22 @@ import { fmtSize, type FileExtraction } from './files-shared';
 
 /** Was the content read into the brain (search, facts, mentions). */
 export type FileIngest = 'done' | 'partial' | 'waiting' | 'failed' | 'none';
-/** An extract job for the file in the queue now. */
-export type FileJob = 'queued' | 'running';
+/** An extract job for the file in the queue now: waiting its turn, being
+ *  read, or held until the AI provider answers again or, for an Agent's
+ *  run, the day cap of paid asks has room (`waiting`, brain v0.709). */
+export type FileJob = 'queued' | 'running' | 'waiting';
+/** Why a job waits and until when (FileProcessing.wait, brain v0.709).
+ *  Nothing is dropped: the brain tries again by itself. */
+export type FileJobWait = {
+  for: 'provider' | 'day_cap';
+  reason?: 'rate_limit' | 'quota' | 'overloaded';
+  /** The Agent pipeline whose run waits, when it is a run. */
+  run?: string;
+  /** When it is tried again (ISO). */
+  until: string;
+  /** One sentence for a person. */
+  hint: string;
+};
 /** The state of the file's own database (its Data view). */
 export type FileDbState = 'ready' | 'too-large' | 'no-rows' | 'unreadable' | 'not-built';
 
@@ -104,6 +118,8 @@ export type FileProcessing = {
     tables?: { name: string; rows: number }[];
   };
   job: FileJob | null;
+  /** Why the job waits (`job` is `waiting`); absent otherwise. */
+  wait?: FileJobWait;
   /** true stale, false current, null no stamp (unknown). */
   stale: boolean | null;
   /** P5; absent from a brain before it. */
@@ -136,7 +152,11 @@ export const BADGE_LEGEND: { kind: StatusBadgeKind; title: string; meaning: stri
     meaning: 'Could not be read, or its database could not be built',
   },
   { kind: 'running', title: 'Being read', meaning: 'The brain is reading it now' },
-  { kind: 'waiting', title: 'Waiting', meaning: 'In the queue, or not read yet' },
+  {
+    kind: 'waiting',
+    title: 'Waiting',
+    meaning: 'In the queue, not read yet, or waiting for the AI provider to try again',
+  },
   {
     kind: 'partial',
     title: 'Read in part',
@@ -169,7 +189,8 @@ export function statusBadgeKind(s: FileStatus | undefined | null): StatusBadgeKi
   if (!s) return null;
   if (s.ingest === 'failed' || s.db === 'unreadable') return 'failed';
   if (s.job === 'running') return 'running';
-  if (s.job === 'queued' || s.ingest === 'waiting' || s.db === 'not-built') return 'waiting';
+  if (s.job === 'queued' || s.job === 'waiting') return 'waiting';
+  if (s.ingest === 'waiting' || s.db === 'not-built') return 'waiting';
   if (s.ingest === 'partial') return 'partial';
   if (s.stale) return 'stale';
   if (s.db === 'ready') return 'pipeline';
@@ -237,8 +258,31 @@ export function ingestLine(ingest: FileIngest, x: FileExtraction | undefined): s
   }
 }
 
-export function jobLine(job: FileJob): string {
-  return job === 'running' ? 'Being read now' : 'In the queue to be read';
+/** The line about the job. A wait says what it waits for when the
+ *  processing answer says so (a row only knows it waits). */
+export function jobLine(job: FileJob, wait?: FileJobWait): string {
+  switch (job) {
+    case 'running':
+      return 'Being read now';
+    case 'waiting':
+      return wait?.for === 'day_cap'
+        ? 'Waiting for room in the day cap of paid AI asks, will try again'
+        : wait
+          ? 'Waiting for the AI provider, will try again'
+          : 'Waiting for the AI provider or the day cap, will try again';
+    default:
+      return 'In the queue to be read';
+  }
+}
+
+/** The Details row of a wait: the brain's sentence and when it tries again. */
+export function waitRow(w: FileJobWait): DetailRow {
+  const at = formatDateTime(w.until, '');
+  return {
+    label: 'Waiting',
+    value: at ? `${w.hint} Tries again ${at}.` : w.hint,
+    tone: 'muted',
+  };
 }
 
 /** The words for an older read: the stale mark's tooltip. No end stop:
@@ -264,11 +308,12 @@ export function dbLine(db: FileDbState, pipeline?: string): string {
 export function statusBadge(
   s: FileStatus | undefined | null,
   x?: FileExtraction,
+  wait?: FileJobWait,
 ): StatusBadge | null {
   const kind = statusBadgeKind(s);
   if (!kind || !s) return null;
   const lines = [ingestLine(s.ingest, x)];
-  if (s.job) lines.push(jobLine(s.job));
+  if (s.job) lines.push(jobLine(s.job, wait));
   if (s.db) lines.push(dbLine(s.db, s.pipeline));
   if (s.stale) lines.push(STALE_LINE);
   if (x?.hint) lines.push(x.hint);
@@ -307,7 +352,12 @@ function readLine(p: FileProcessing): DetailRow {
   if (!p.readAt) {
     return {
       label: 'Read',
-      value: p.status.job === 'queued' ? 'In the queue' : 'Not read yet',
+      value:
+        p.status.job === 'queued'
+          ? 'In the queue'
+          : p.status.job === 'waiting'
+            ? 'Waiting to try again'
+            : 'Not read yet',
       tone: 'muted',
     };
   }
@@ -452,6 +502,7 @@ export function detailsView(p: FileProcessing): DetailsView {
       tone: left > 0 ? 'warning' : undefined,
     });
   }
+  if (p.status.job === 'waiting' && p.wait) brain.push(waitRow(p.wait));
   if (p.readBy) brain.push(readByRow(p.readBy));
   else if (p.stale) brain.push({ label: 'Read by', value: STALE_LINE, tone: 'warning' });
 
@@ -498,10 +549,14 @@ export function detailsView(p: FileProcessing): DetailsView {
 
   return {
     // The badge card carries a failure's hint: the extraction's, else the error's.
-    badge: statusBadge(p.status, {
-      ...p.extraction,
-      ...(p.extraction.hint || !p.error?.hint ? {} : { hint: p.error.hint }),
-    }),
+    badge: statusBadge(
+      p.status,
+      {
+        ...p.extraction,
+        ...(p.extraction.hint || !p.error?.hint ? {} : { hint: p.error.hint }),
+      },
+      p.wait,
+    ),
     file,
     brain,
     pipeline,

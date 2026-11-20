@@ -33,6 +33,10 @@ describe('statusBadgeKind: which corner badge a file shows', () => {
     [{ ingest: 'waiting' }, 'waiting'],
     [{ ingest: 'done', db: 'not-built' }, 'waiting'],
     [{ ingest: 'done', job: 'queued' }, 'waiting'],
+    // A job held by the AI provider's "not now" (brain v0.709) is a wait.
+    [{ ingest: 'waiting', job: 'waiting' }, 'waiting'],
+    [{ ingest: 'done', job: 'waiting' }, 'waiting'],
+    [{ ingest: 'failed', job: 'waiting' }, 'failed'],
     [{ ingest: 'waiting', job: 'running' }, 'running'],
     [{ ingest: 'partial', job: 'running' }, 'running'],
     // Failed beats everything, also a job in the queue.
@@ -71,6 +75,21 @@ describe('statusBadge: the tooltip words', () => {
       'In the queue to be read',
       'Database ready, built by a pipeline',
     ]);
+  });
+
+  it('says a waiting job waits for the provider, or the day cap when Details knows it', () => {
+    expect(statusBadge({ ingest: 'waiting', job: 'waiting' })?.lines).toEqual([
+      'Not read yet',
+      'Waiting for the AI provider or the day cap, will try again',
+    ]);
+    const wait = { for: 'provider', until: '2026-11-20T12:00:00Z', hint: 'Busy.' } as const;
+    expect(statusBadge({ ingest: 'waiting', job: 'waiting' }, undefined, wait)?.lines[1]).toBe(
+      'Waiting for the AI provider, will try again',
+    );
+    expect(
+      statusBadge({ ingest: 'waiting', job: 'waiting' }, undefined, { ...wait, for: 'day_cap' })
+        ?.lines[1],
+    ).toBe('Waiting for room in the day cap of paid AI asks, will try again');
   });
 
   it('names the reason of a failed read in plain words, never the code', () => {
@@ -159,6 +178,32 @@ describe('detailsView: the Details panel in plain words', () => {
     expect(book.file.find((r) => r.label === 'Pages read')?.tone).toBeUndefined();
     expect(value(book.file, 'Unread')).toBeUndefined();
     expect(value(detailsView(processing()).file, 'Pages read')).toBeUndefined();
+  });
+
+  it('a job waiting on the provider: the badge, the Read line and a Waiting row', () => {
+    const v = detailsView(
+      processing({
+        status: { ingest: 'waiting', job: 'waiting' },
+        extraction: { state: 'pending' },
+        readAt: null,
+        job: 'waiting',
+        wait: {
+          for: 'provider',
+          reason: 'rate_limit',
+          until: '2026-11-20T12:00:00.000Z',
+          hint: 'The AI provider asked for a pause.',
+        },
+      }),
+    );
+    expect(v.badge?.kind).toBe('waiting');
+    expect(v.badge?.lines).toContain('Waiting for the AI provider, will try again');
+    expect(value(v.brain, 'Read')).toBe('Waiting to try again');
+    expect(value(v.brain, 'Waiting')).toMatch(/^The AI provider asked for a pause\. Tries again /);
+    // No wait in the answer (an older brain): no Waiting row.
+    const bare = detailsView(
+      processing({ status: { ingest: 'waiting', job: 'waiting' }, readAt: null, job: 'waiting' }),
+    );
+    expect(value(bare.brain, 'Waiting')).toBeUndefined();
   });
 
   it('a whole read: size, pages, embedded and the counts', () => {
