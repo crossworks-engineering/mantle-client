@@ -26,6 +26,7 @@ import {
 } from '../../ai-workers/extractor-throughput';
 import { ProviderAlertCard } from '@/components/needs-you/provider-alert-card';
 import { play } from '@/lib/sounds/play';
+import { parseBooksAtOnce } from './books-at-once';
 
 /**
  * "No key" as a Select item value. Radix reserves `''` for "nothing selected"
@@ -253,13 +254,12 @@ function EmbeddingForm({
    *  after the form's POST so the embedder row exists). */
   async function saveBooks() {
     if (!books) return;
-    const trimmed = perfBooks.trim();
-    const want = trimmed === '' ? null : Number.parseInt(trimmed, 10);
-    if (want === books.saved) return;
-    if (want !== null && Number.isNaN(want)) {
+    const want = parseBooksAtOnce(perfBooks);
+    if (want === undefined) {
       toast.error('Books at once not saved: give a whole number, or leave it blank.');
       return;
     }
+    if (want === books.saved) return;
     try {
       const res = await apiSend<
         { ok: true; book_concurrency: LaneSetting } | { ok: false; error: string }
