@@ -111,8 +111,8 @@ export function ArchiveExtractSection({
           ))}
           {x && x.state === 'done' && x.refused.length > 0 ? (
             <ul className="max-h-32 space-y-0.5 overflow-auto scrollbar-thin text-muted-foreground">
-              {x.refused.map((r) => (
-                <li key={r.name} className="truncate" title={r.name}>
+              {x.refused.map((r, i) => (
+                <li key={`${i}:${r.name}`} className="truncate" title={r.name}>
                   <span className="font-mono">{r.name}</span>: {refusalWords(r.reason)}
                 </li>
               ))}
