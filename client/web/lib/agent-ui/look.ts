@@ -27,6 +27,7 @@
  * Nothing is saved: the picture goes to the brain as the call's answer.
  */
 import { canvasCrop, captureDesktop, desktopCanCapture, type Rect } from '../area-capture';
+import { frameSpots, paintFrames, toPicture } from '../frame-pictures';
 import { isSecretField } from './dom';
 import { refuse, type AgentResult } from './model';
 
@@ -36,8 +37,9 @@ export const LOOK_MAX_SIDE = 1568;
 export const LOOK_MAX_PIXELS = 1_150_000;
 /** The picture's most bytes (the brain refuses more). */
 export const LOOK_MAX_BYTES = 1024 * 1024;
-/** How long an app frame has to draw itself. */
-export const FRAME_WAIT_MS = 2000;
+// The app frame's own picture lives in ../frame-pictures.ts (the area
+// capture uses it too); these stay importable from here.
+export { FRAME_WAIT_MS, askFrame, overlap, toPicture, type FrameSpot } from '../frame-pictures';
 
 export type LookScope = 'work' | 'window' | 'ref';
 
@@ -77,24 +79,6 @@ export function onScreen(r: Rect, view: { w: number; h: number }): Rect | null {
 /** Whether two boxes share any area. */
 export function meets(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-}
-
-/** The area two boxes share (empty when they do not meet). */
-export function overlap(a: Rect, b: Rect): Rect {
-  const x = Math.max(a.x, b.x);
-  const y = Math.max(a.y, b.y);
-  return {
-    x,
-    y,
-    w: Math.max(0, Math.min(a.x + a.w, b.x + b.w) - x),
-    h: Math.max(0, Math.min(a.y + a.h, b.y + b.h) - y),
-  };
-}
-
-/** `r` (viewport CSS pixels) in the picture's pixels: `box` maps to the
- *  whole picture at `k` picture pixels per CSS pixel. */
-export function toPicture(r: Rect, box: Rect, k: number): Rect {
-  return { x: (r.x - box.x) * k, y: (r.y - box.y) * k, w: r.w * k, h: r.h * k };
 }
 
 const rectOf = (el: Element): Rect => {
@@ -164,96 +148,6 @@ async function capture(box: Rect, out: HTMLCanvasElement) {
   const bitmap = await createImageBitmap(png);
   out.getContext('2d')!.drawImage(bitmap, 0, 0, out.width, out.height);
   bitmap.close?.();
-}
-
-/** One app frame's picture of itself (a PNG data URL), or null when it does
- *  not answer in `waitMs`. */
-export function askFrame(
-  frame: HTMLIFrameElement,
-  scale: number,
-  waitMs = FRAME_WAIT_MS,
-): Promise<string | null> {
-  const win = frame.contentWindow;
-  if (!win) return Promise.resolve(null);
-  const id = `look-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-  return new Promise((resolve) => {
-    const done = (v: string | null) => {
-      window.removeEventListener('message', onMessage);
-      clearTimeout(timer);
-      resolve(v);
-    };
-    const onMessage = (e: MessageEvent) => {
-      const m = e.data as Record<string, unknown> | null;
-      if (e.source !== win || !m || m.v !== 1 || m.kind !== 'look.res' || m.id !== id) return;
-      const url = m.ok === true && typeof m.dataUrl === 'string' ? m.dataUrl : '';
-      done(url.startsWith('data:image/png;base64,') ? url : null);
-    };
-    const timer = setTimeout(() => done(null), waitMs);
-    window.addEventListener('message', onMessage);
-    win.postMessage({ v: 1, kind: 'look', id, scale }, '*');
-  });
-}
-
-const loadImage = (src: string) =>
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('the frame picture did not load'));
-    img.src = src;
-  });
-
-/** An app frame in the picture: its box, and the part of it on show (cut
- *  to the scope box and to the scrolling work area it sits in). */
-export type FrameSpot = { frame: HTMLIFrameElement; rect: Rect; shown: Rect };
-
-/** The frames in `box`, read before the pixels are taken: not the agent's
- *  own layers, and for `work` and `ref` not the assistant panel. */
-function frameSpots(box: Rect, scope: LookScope): FrameSpot[] {
-  const left =
-    scope === 'window' ? '[data-agent-host]' : '[data-agent-host], [data-assistant-panel]';
-  const spots: FrameSpot[] = [];
-  for (const frame of document.querySelectorAll('iframe')) {
-    if (frame.closest(left)) continue;
-    const rect = rectOf(frame);
-    const main = frame.closest('main');
-    const shown = overlap(overlap(rect, box), main ? rectOf(main) : box);
-    if (shown.w > 0 && shown.h > 0) spots.push({ frame, rect, shown });
-  }
-  return spots;
-}
-
-/** Each app frame's own picture painted into the part of its box on show;
- *  any other frame, or one that does not answer, stays blank. Returns how
- *  many stayed blank. */
-async function paintFrames(
-  spots: FrameSpot[],
-  box: Rect,
-  k: number,
-  out: HTMLCanvasElement,
-): Promise<number> {
-  const ctx = out.getContext('2d')!;
-  const drawn = await Promise.all(
-    spots.map(async ({ frame, rect, shown }) => {
-      if (frame.getAttribute('sandbox') !== 'allow-scripts') return false;
-      const url = await askFrame(frame, k);
-      if (!url) return false;
-      try {
-        const img = await loadImage(url);
-        const p = toPicture(rect, box, k);
-        const c = toPicture(shown, box, k);
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(c.x, c.y, c.w, c.h);
-        ctx.clip();
-        ctx.drawImage(img, p.x, p.y, p.w, p.h);
-        ctx.restore();
-        return true;
-      } catch {
-        return false;
-      }
-    }),
-  );
-  return drawn.filter((ok) => !ok).length;
 }
 
 /** The secret fields in `box` (`isSecretField`), read before the pixels
@@ -331,7 +225,10 @@ export async function lookAt(
   if (desktopCanCapture() && (scope === 'window' || !panelOver(box))) {
     await capture(box, out);
   } else {
-    const spots = frameSpots(box, scope);
+    const spots = frameSpots(
+      box,
+      scope === 'window' ? '[data-agent-host]' : '[data-agent-host], [data-assistant-panel]',
+    );
     await redraw(box, k, scope, out);
     blankFrames = await paintFrames(spots, box, k, out);
   }

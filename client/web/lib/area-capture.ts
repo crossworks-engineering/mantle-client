@@ -9,9 +9,13 @@
  *    Electron's capturePage).
  *  - A browser redraws the app's own page into a canvas (modern-screenshot's
  *    domToCanvas) and crops it. No screen share: Mantle only ever pictures
- *    its own page. Known limits, by design: a cross-origin frame or image
- *    can come out blank, a playing video or a WebGL canvas (the Desk's Drift)
- *    black, and backdrop-filter can look different.
+ *    its own page. The redraw cannot read inside a sandboxed mini app frame,
+ *    so each app frame in the area is asked to draw itself and its picture
+ *    is painted in (lib/frame-pictures.ts, as `ui_look` does). Known limits,
+ *    by design: any other cross-origin frame (a present's canvas frame
+ *    included, it does not answer yet) or image can come out blank, a
+ *    playing video or a WebGL canvas (the Desk's Drift) black, and
+ *    backdrop-filter can look different.
  *
  * A screenshot is saved as if the user had taken the picture to Files and
  * uploaded it: a plain file at the top of Files in the workspace the
@@ -25,6 +29,7 @@
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 import { APP_VERSION } from '@mantle/web-ui/version';
+import { frameSpots, paintFrames } from './frame-pictures';
 
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -165,11 +170,13 @@ export async function captureDesktop(rect: Rect): Promise<Blob> {
 
 /** The page's own capture of a viewport rectangle, as a PNG: the body is
  *  redrawn at the device scale, leaving out the selection layer, and cut to
- *  the rectangle. */
+ *  the rectangle; then each app frame in it paints its own picture in. */
 export async function captureWeb(rect: Rect): Promise<Blob> {
   const { domToCanvas } = await import('modern-screenshot');
   const root = document.body;
   const box = root.getBoundingClientRect();
+  // Read before the pixels, so each frame's picture lands where it was.
+  const spots = frameSpots(rect, '[data-capture-layer]');
   const drawn = await domToCanvas(root, {
     scale: window.devicePixelRatio || 1,
     // The page's own background under everything, so a band the redraw
@@ -191,6 +198,7 @@ export async function captureWeb(rect: Rect): Promise<Blob> {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('This browser cannot draw the capture.');
   ctx.drawImage(drawn, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+  if (spots.length > 0) await paintFrames(spots, rect, crop.w / rect.w, canvas);
   return new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('The capture could not be saved as PNG.'))),
