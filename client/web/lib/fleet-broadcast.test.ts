@@ -24,6 +24,9 @@ describe('the broadcast form', () => {
   it('asks for a message, and holds the caps', () => {
     expect(broadcastIssue('', '   ')).toBe('Write the message first.');
     expect(broadcastIssue('', 'x'.repeat(8001))).toMatch(/at most 8000/);
+    // The title and a blank line share the box's one chat line.
+    expect(broadcastIssue('Tonight', 'x'.repeat(7991))).toBeNull();
+    expect(broadcastIssue('Tonight', 'x'.repeat(7992))).toMatch(/With this title.*7991/);
     expect(broadcastIssue('y'.repeat(201), 'x')).toMatch(/title is at most 200/);
     expect(broadcastIssue('', 'Hello')).toBeNull();
   });
@@ -40,11 +43,17 @@ describe('the broadcast form', () => {
 
 describe('the marks', () => {
   const at = { at: '2026-11-21T10:01:00.000Z', was: 'new' as const };
-  it('counts the boxes that took it, and waits while one has not', () => {
+  it('counts the boxes that took it, and reads again only while a linked box has had no try', () => {
+    const linked = [{ id: 'b1' }, { id: 'b2' }];
     expect(takenCount(b({ b1: at }))).toBe(1);
-    expect(broadcastPending([b({ b1: at })])).toBe(true);
-    expect(broadcastPending([b({ b1: at, b2: { ...at, was: 'already' } })])).toBe(false);
-    expect(broadcastPending(undefined)).toBe(false);
+    expect(broadcastPending([b({ b1: at })], linked)).toBe(true);
+    expect(broadcastPending([b({ b1: at, b2: { ...at, was: 'already' } })], linked)).toBe(false);
+    // A failure waits for the next run; a removed box never answers.
+    expect(
+      broadcastPending([b({ b1: at, b2: { reason: 'unreachable', tried: 'x' } })], linked),
+    ).toBe(false);
+    expect(broadcastPending([b({ b1: at })], [{ id: 'b1' }])).toBe(false);
+    expect(broadcastPending(undefined, linked)).toBe(false);
   });
 
   it('says delivered, waiting, or the failure with its reason', () => {

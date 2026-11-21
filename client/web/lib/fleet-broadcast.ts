@@ -44,14 +44,24 @@ export type FleetBroadcastsAnswer = {
 
 export type FleetBroadcastRequest = { title?: string; text: string; boxIds: string[] };
 
+/** The longest message with this title: the box's one chat line holds
+ *  the title, a blank line and the message (the brain's broadcastTextMax). */
+export function broadcastTextMax(title: string): number {
+  const t = title.trim();
+  return BROADCAST_TEXT_MAX - (t ? t.length + 2 : 0);
+}
+
 /** What is wrong with the text and title before a send, or null. */
 export function broadcastIssue(title: string, text: string): string | null {
   if (text.trim() === '') return 'Write the message first.';
-  if (text.trim().length > BROADCAST_TEXT_MAX) {
-    return `The message is at most ${BROADCAST_TEXT_MAX} characters.`;
-  }
   if (title.trim().length > BROADCAST_TITLE_MAX) {
     return `The title is at most ${BROADCAST_TITLE_MAX} characters.`;
+  }
+  const max = broadcastTextMax(title);
+  if (text.trim().length > max) {
+    return title.trim()
+      ? `With this title the message is at most ${max} characters.`
+      : `The message is at most ${max} characters.`;
   }
   return null;
 }
@@ -74,9 +84,16 @@ export function takenCount(b: FleetBroadcast): number {
   return b.boxIds.filter((id) => took(b.marks[id])).length;
 }
 
-/** Whether a box of any broadcast still waits (the screen reads again). */
-export function broadcastPending(list: readonly FleetBroadcast[] | undefined): boolean {
-  return (list ?? []).some((b) => takenCount(b) < b.boxIds.length);
+/** Whether a linked box of any broadcast has had no try yet (the screen
+ *  reads again until each has). A box that failed is tried again only at
+ *  each run, minutes apart, and a removed box never answers: neither keeps
+ *  the screen reading. */
+export function broadcastPending(
+  list: readonly FleetBroadcast[] | undefined,
+  linked: readonly { id: string }[] | undefined,
+): boolean {
+  const ids = new Set((linked ?? []).map((b) => b.id));
+  return (list ?? []).some((b) => b.boxIds.some((id) => ids.has(id) && !b.marks[id]));
 }
 
 /** What one box's mark says. */

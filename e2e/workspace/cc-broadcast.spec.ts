@@ -82,9 +82,16 @@ test('an Admin writes a broadcast, picks the boxes, confirms, and sees each box'
   await expect(target(page, 'Box A')).toContainText('Last broadcast: Delivered');
   await shot(page, 'cc-broadcast-sent');
 
-  // Box B answers again: the next read shows it delivered.
+  // A failure waits for the next run: the screen stops reading. Box B
+  // answers again; a reload shows it delivered.
+  const reads = () =>
+    api.requests.filter((r) => r.path === '/api/fleet/broadcasts' && r.method === 'GET').length;
+  const before = reads();
+  await page.waitForTimeout(6_000);
+  expect(reads()).toBe(before);
   delete api.fleet.broadcastAnswers[FLEET_BOX_B.id];
-  await expect(sent).toContainText('2 of 2 delivered', { timeout: 15_000 });
+  await page.reload();
+  await expect(main.getByTestId('broadcast-sent')).toContainText('2 of 2 delivered');
 });
 
 test('a brain before the broadcast says so in the Sent list', async ({ page }) => {

@@ -17,6 +17,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import type { FleetOverview } from '@/lib/fleet';
 import {
   BROADCAST_TEXT_MAX,
+  broadcastTextMax,
   BROADCAST_TITLE_MAX,
   boxBroadcastLine,
   broadcastBoxName,
@@ -94,10 +95,10 @@ function Broadcast({ data, refresh }: { data: FleetOverview; refresh: () => void
   const list = useQuery({
     queryKey: FLEET_BROADCASTS_KEY,
     queryFn: () => apiFetch<FleetBroadcastsAnswer>(FLEET_BROADCASTS_PATH),
-    // While a box has not taken one, read again (the run is every 5 minutes,
-    // or at once after a send).
+    // While a linked box has had no try yet, read again (the run is at once
+    // after a send). A failure waits for the next run, minutes apart: no poll.
     refetchInterval: (q: { state: { data?: FleetBroadcastsAnswer } }) =>
-      broadcastPending(q.state.data?.broadcasts) ? 5000 : false,
+      broadcastPending(q.state.data?.broadcasts, q.state.data?.boxes) ? 5000 : false,
   });
   const issue = broadcastIssue(title, text);
   const send = async () => {
@@ -171,7 +172,7 @@ function Broadcast({ data, refresh }: { data: FleetOverview; refresh: () => void
                     onChange={(e) => setText(e.target.value)}
                   />
                   <FieldDescription>
-                    {text.trim().length} of {BROADCAST_TEXT_MAX} characters. Text only.
+                    {text.trim().length} of {broadcastTextMax(title)} characters. Text only.
                   </FieldDescription>
                 </Field>
                 <SendBar count={pick.chosen.length}>
