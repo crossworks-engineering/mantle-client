@@ -1,15 +1,51 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { AtSign, SendHorizontal, Smile } from 'lucide-react';
+import {
+  AtSign,
+  FileText,
+  Loader2,
+  Paperclip,
+  Reply,
+  SendHorizontal,
+  Smile,
+  X,
+} from 'lucide-react';
+import { desktopShell } from '@mantle/web-ui/desktop-shell';
+import { APP_VERSION } from '@mantle/web-ui/version';
 import { Button } from '@mantle/web-ui/ui/button';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { EmojiPicker } from '@/components/emoji-picker';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
 import { useChatFaces } from '@/components/messenger/chat-faces';
-import type { MessengerMention, MessengerParticipant } from '@/lib/messenger/dto';
+import type {
+  MessengerAttachment,
+  MessengerMention,
+  MessengerParticipant,
+} from '@/lib/messenger/dto';
+import { clientErrors } from '@/lib/client-errors';
+import {
+  addDraftFiles,
+  clearDraftFiles,
+  draftPayload,
+  draftSettled,
+  removeDraftFile,
+  useDraftFiles,
+} from '@/lib/messenger/draft-files';
+import {
+  addedLines,
+  addressLabel,
+  addressesOf,
+  bodyWithLines,
+  answersToSend,
+  formatBytes,
+  intakeOf,
+  type AddedLine,
+  type AddressPick,
+} from '@/lib/messenger/fleet';
 import {
   applyMention,
   mentionAt,
@@ -17,13 +53,29 @@ import {
   mentionsInBody,
   type PickedMention,
 } from '@/lib/messenger/mentions';
-import { BODY_MAX, sendableBody } from '@/lib/messenger/transcript';
+import { BODY_MAX, sendableBody, type SendExtra } from '@/lib/messenger/transcript';
 import { getDraft, setDraft } from '@/lib/messenger/drafts';
+import { SendPreview, TOO_BIG } from './send-preview';
 
 /** The text area's tallest, in lines, before it scrolls. */
 const MAX_ROWS = 8;
 /** At most this many people in the mention picker. */
 const MENTION_ROWS = 6;
+
+/** A row of the mention picker: one of the chat's people, or (fleet chat)
+ *  a handle or an IT desk of the box. */
+type Candidate =
+  | { key: string; name: string; person: MessengerParticipant }
+  | { key: string; name: string; address: AddressPick };
+
+/** The line a Reply answers, shown over the composer. */
+export type ReplyTarget = {
+  seq: number;
+  name: string;
+  snippet: string;
+  /** Where the reply also goes (a copy line's sender), or null. */
+  note: string | null;
+};
 
 /**
  * The composer under the transcript, on the boxed composer surface (style
@@ -34,8 +86,15 @@ const MENTION_ROWS = 6;
  * (composing) never sends.
  *
  * Typing "@" (or the @ button) opens the mention picker over the box: the
- * chat's other people, narrowed as the name is typed; arrows move, Enter or
- * Tab picks, Escape closes. A send carries the mentions still written in it.
+ * chat's other people, and the box's handles and IT desks, narrowed as the
+ * name is typed; arrows move, Enter or Tab picks, Escape closes. A send
+ * carries the mentions still written in it.
+ *
+ * Fleet chat: the paperclip (or a pasted picture) adds files to the draft
+ * (draft-files.ts); a file over 10 MB is marked and named in `leftOut`. A
+ * Reply shows its line over the box. A line that names a handle or a desk,
+ * or any line of my own "To @qa" thread (`target`), opens the send screen
+ * first (send-preview.tsx).
  */
 export function ChatComposer({
   onSend,
@@ -47,10 +106,20 @@ export function ChatComposer({
   id = 'chat-composer-text',
   onTextChange,
   draftKey,
+  addresses = [],
+  target = null,
+  site,
+  upload,
+  replyTo = null,
+  onCancelReply,
 }: {
   /** A promise keeps the text until it answers, and keeps it on false
    *  (the New message form: nothing was created). */
-  onSend: (body: string, mentions: MessengerMention[]) => void | Promise<boolean>;
+  onSend: (
+    body: string,
+    mentions: MessengerMention[],
+    extra?: SendExtra,
+  ) => void | Promise<boolean>;
   onTyping?: () => void;
   /** Who may be mentioned: the chat's other people. */
   people?: readonly MessengerParticipant[];
@@ -66,8 +135,19 @@ export function ChatComposer({
    *  (lib/messenger/drafts.ts), so the room can unmount and come back to
    *  it (the Chats window's back, Open in Chats, another chat). */
   draftKey?: string;
+  /** The box's handles and IT desks, for the @ list. */
+  addresses?: readonly AddressPick[];
+  /** My own "To @qa" thread: the address every send here names. */
+  target?: MessengerMention | null;
+  /** The desks' site (the Control Center's name). */
+  site?: string;
+  /** Files: upload one to this chat (no files without it, or a draftKey). */
+  upload?: (file: File) => Promise<MessengerAttachment>;
+  replyTo?: ReplyTarget | null;
+  onCancelReply?: () => void;
 }) {
   const faceOf = useChatFaces();
+  const toast = useToast();
   const [sending, setSending] = useState(false);
   const [text, setText] = useState(() => (draftKey && getDraft(draftKey)?.text) || '');
   const [caret, setCaret] = useState(0);
@@ -80,14 +160,28 @@ export function ChatComposer({
   const [active, setActive] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const body = sendableBody(text);
   const tooLong = text.length > BODY_MAX;
+  const filesOn = !!upload && !!draftKey;
+  const files = useDraftFiles(filesOn ? draftKey : undefined);
+  const settled = draftSettled(files);
+  const [preview, setPreview] = useState<{
+    to: string;
+    intake: AddressPick['intake'];
+    lines: AddedLine[];
+    mentions: MessengerMention[];
+  } | null>(null);
 
   const typing = mentionAt(text, caret);
-  const candidates = useMemo(
-    () => (typing ? mentionCandidates(people, typing.query).slice(0, MENTION_ROWS) : []),
-    [people, typing],
-  );
+  const candidates = useMemo<Candidate[]>(() => {
+    if (!typing) return [];
+    const all: Candidate[] = [
+      ...people.map((p) => ({ key: `p:${p.id}`, name: p.name, person: p })),
+      ...addresses.map((a) => ({ key: `${a.kind}:${a.id}`, name: a.name, address: a })),
+    ];
+    return mentionCandidates(all, typing.query).slice(0, MENTION_ROWS);
+  }, [people, addresses, typing]);
   const pickerOpen = !!typing && candidates.length > 0 && dismissedAt !== typing.start;
 
   const grow = () => {
@@ -122,11 +216,23 @@ export function ChatComposer({
   const clear = () => {
     setPicked([]);
     setDismissedAt(null);
+    if (filesOn) clearDraftFiles(draftKey);
+    onCancelReply?.();
     place('', 0);
   };
-  const submit = () => {
-    if (!body || disabled || !canSend || sending || tooLong) return;
-    const out = onSend(body, mentionsInBody(body, picked));
+  const hasContent = !!body || files.length > 0 || !!target;
+  const blocked = disabled || !canSend || sending || tooLong || !settled;
+  /** The send itself: the text (with the lines kept), the mentions, the
+   *  reply, the files and the answers. */
+  const go = (text: string, mentions: MessengerMention[], answers?: Record<string, string>) => {
+    const { attachments, leftOut } = draftPayload(files);
+    const extra: SendExtra = {
+      ...(replyTo ? { replyToSeq: replyTo.seq } : {}),
+      ...(attachments.length ? { attachments } : {}),
+      ...(leftOut.length ? { leftOut } : {}),
+      ...(answers && Object.keys(answers).length ? { answers } : {}),
+    };
+    const out = onSend(text, mentions, Object.keys(extra).length ? extra : undefined);
     if (!out) {
       clear();
       return;
@@ -134,11 +240,52 @@ export function ChatComposer({
     setSending(true);
     void out.then((ok) => ok && clear()).finally(() => setSending(false));
   };
+  const submit = () => {
+    if (!hasContent || blocked) return;
+    const mentions = mentionsInBody(body ?? '', picked);
+    if (target && !mentions.some((m) => m.kind === target.kind && m.id === target.id)) {
+      mentions.push(target);
+    }
+    const named = addressesOf(mentions);
+    if (named.length > 0) {
+      // A line that leaves this chat: the send screen shows the package.
+      const intake = intakeOf(mentions, addresses);
+      setPreview({
+        to: named.map((m) => addressLabel(m, addresses, site)).join(', '),
+        intake,
+        lines: intake
+          ? addedLines({
+              appVersion: APP_VERSION,
+              shell: desktopShell() ? 'desktop' : 'web',
+              route: window.location.pathname,
+              screen: document.title,
+              errors: clientErrors(),
+            })
+          : [],
+        mentions,
+      });
+      return;
+    }
+    go(body ?? '', mentions);
+  };
 
-  const pick = (p: MessengerParticipant) => {
+  const addFiles = (list: FileList | readonly File[] | null) => {
+    if (!filesOn || !list || list.length === 0) return;
+    const { refused } = addDraftFiles(draftKey, [...list], (_chat, f) => upload(f));
+    if (refused > 0) toast.error(`A line takes at most 5 files. ${refused} not added.`);
+  };
+
+  const pick = (c: Candidate) => {
     if (!typing) return;
-    const out = applyMention(text, typing.start, caret, p.name);
-    setPicked((cur) => [...cur, { kind: p.kind, id: p.id, name: p.name }]);
+    const out = applyMention(text, typing.start, caret, c.name);
+    setPicked((cur) => [
+      ...cur,
+      'person' in c
+        ? { kind: c.person.kind, id: c.person.id, name: c.name }
+        : c.address.kind === 'desk'
+          ? { kind: 'desk', id: c.address.id as 'bug' | 'feature' | 'request', name: c.name }
+          : { kind: 'handle', id: c.address.id, name: c.name },
+    ]);
     setActive(0);
     // The space after the name ends the mention (mentionAt), so the picker
     // shuts without a dismissal that would keep it shut at this "@".
@@ -192,30 +339,122 @@ export function ChatComposer({
           aria-label="Mention someone"
           className="absolute inset-x-2 bottom-full mb-1 space-y-0.5 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          {candidates.map((p, i) => (
-            <li key={p.id} id={`${id}-mention-${p.id}`} role="option" aria-selected={i === active}>
+          {candidates.map((c, i) => (
+            <li
+              key={c.key}
+              id={`${id}-mention-${optionId(c.key)}`}
+              role="option"
+              aria-selected={i === active}
+            >
               <RowButton
                 tabIndex={-1}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(p)}
+                onClick={() => pick(c)}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm',
                   i === active ? 'bg-muted' : 'hover:bg-foreground/[0.04]',
                 )}
               >
-                <ChatAvatar
-                  name={p.name}
-                  kind={p.kind === 'agent' ? 'agent' : 'person'}
-                  face={faceOf({
-                    kind: p.kind,
-                    id: p.id,
-                    avatar: p.avatar,
-                    photoVersion: p.photoVersion,
-                  })}
-                  size="sm"
-                />
-                {p.name}
+                {'person' in c ? (
+                  <>
+                    <ChatAvatar
+                      name={c.name}
+                      kind={c.person.kind === 'agent' ? 'agent' : 'person'}
+                      face={faceOf({
+                        kind: c.person.kind,
+                        id: c.person.id,
+                        avatar: c.person.avatar,
+                        photoVersion: c.person.photoVersion,
+                      })}
+                      size="sm"
+                    />
+                    {c.name}
+                  </>
+                ) : (
+                  <>
+                    <span
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                      aria-hidden
+                    >
+                      <AtSign className="size-3.5" />
+                    </span>
+                    <span className="font-medium">@{c.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {c.address.title}
+                    </span>
+                  </>
+                )}
               </RowButton>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {replyTo ? (
+        <div
+          className="flex items-start gap-2 border-b border-border px-3 py-2 text-xs"
+          data-testid="composer-reply"
+        >
+          <Reply className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">Reply to {replyTo.name}</span>
+            <span className="block truncate text-muted-foreground">{replyTo.snippet}</span>
+            {replyTo.note ? <span className="block text-primary-ink">{replyTo.note}</span> : null}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Cancel the reply"
+            onClick={onCancelReply}
+          >
+            <X />
+          </Button>
+        </div>
+      ) : null}
+      {files.length > 0 ? (
+        <ul className="flex flex-wrap gap-2 px-3 pt-2" aria-label="Files to send">
+          {files.map((f) => (
+            <li
+              key={f.key}
+              className="flex max-w-60 items-center gap-2 rounded-md border border-border bg-background px-2 py-1 text-xs"
+              data-testid="composer-file"
+            >
+              {f.url ? (
+                // A local blob: next/image cannot optimise it.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={f.url} alt="" className="size-8 shrink-0 rounded object-cover" />
+              ) : (
+                <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{f.name}</span>
+                <span
+                  className={cn(
+                    'block',
+                    f.state === 'too-big' || f.state === 'failed'
+                      ? 'text-destructive-ink'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  {f.state === 'too-big'
+                    ? TOO_BIG
+                    : f.state === 'failed'
+                      ? (f.error ?? 'Not uploaded')
+                      : formatBytes(f.bytes)}
+                </span>
+              </span>
+              {f.state === 'uploading' ? (
+                <Loader2 className="size-3.5 animate-spin" aria-label="Uploading" />
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => removeDraftFile(draftKey!, f.key)}
+              >
+                <X />
+              </Button>
             </li>
           ))}
         </ul>
@@ -254,9 +493,15 @@ export function ChatComposer({
         aria-expanded={pickerOpen}
         aria-activedescendant={
           pickerOpen
-            ? `${id}-mention-${candidates[Math.min(active, candidates.length - 1)]!.id}`
+            ? `${id}-mention-${optionId(candidates[Math.min(active, candidates.length - 1)]!.key)}`
             : undefined
         }
+        onPaste={(e) => {
+          // A pasted picture (a snippet tool's) goes in as a file.
+          if (!filesOn || e.clipboardData.files.length === 0) return;
+          e.preventDefault();
+          addFiles(e.clipboardData.files);
+        }}
         className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-4 pt-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-0.75rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
       />
       {/* One action row under the text: the emoji and mention buttons at
@@ -286,7 +531,32 @@ export function ChatComposer({
             </Button>
           }
         />
-        {people.length > 0 ? (
+        {filesOn ? (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add files"
+              disabled={disabled}
+              onClick={() => fileInput.current?.click()}
+            >
+              <Paperclip />
+            </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              hidden
+              data-testid="composer-file-input"
+              onChange={(e) => {
+                addFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </>
+        ) : null}
+        {people.length > 0 || addresses.length > 0 ? (
           <Button
             type="button"
             variant="ghost"
@@ -312,17 +582,30 @@ export function ChatComposer({
           >
             {text.length} / {BODY_MAX}
           </span>
-          <Button
-            type="button"
-            size="sm"
-            onClick={submit}
-            disabled={!body || disabled || !canSend || sending || tooLong}
-          >
+          <Button type="button" size="sm" onClick={submit} disabled={!hasContent || blocked}>
             <SendHorizontal />
             Send
           </Button>
         </span>
       </div>
+      {preview ? (
+        <SendPreview
+          to={preview.to}
+          intake={preview.intake}
+          text={body ?? ''}
+          files={files}
+          lines={preview.lines}
+          onRemoveFile={(key) => draftKey && removeDraftFile(draftKey, key)}
+          onCancel={() => setPreview(null)}
+          onSend={({ answers, lines }) => {
+            setPreview(null);
+            go(bodyWithLines(body ?? '', lines), preview.mentions, answersToSend(answers));
+          }}
+        />
+      ) : null}
     </div>
   );
 }
+
+/** A picker row's DOM id part (a key holds a colon). */
+const optionId = (key: string) => key.replace(/[^a-zA-Z0-9_-]/g, '-');

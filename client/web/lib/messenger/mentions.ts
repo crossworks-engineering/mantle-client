@@ -2,8 +2,8 @@
  * Mentions in the composer (Messenger V1 Phase 2), the pure half. Pinned by
  * mentions.test.ts.
  *
- * Typing "@" starts a mention: the picker lists the chat's people whose name
- * starts with what follows, and picking one writes "@Name " into the text and
+ * Typing "@" starts a mention: the picker lists the chat's people, and (fleet
+ * chat) the box's handles and IT desks, whose name starts with what follows, and picking one writes "@Name " into the text and
  * remembers who it was. On send, a remembered mention counts only while its
  * "@Name" is still in the body (the writer may have deleted it).
  */
@@ -59,14 +59,22 @@ export function mentionCandidates<T extends { name: string }>(
   });
 }
 
-/** The mentions a body still carries (one per person). */
+/** The mentions a body still carries (one per person, handle or desk). */
 export function mentionsInBody(body: string, picked: readonly PickedMention[]): MessengerMention[] {
   const seen = new Set<string>();
   const out: MessengerMention[] = [];
   for (const m of picked) {
-    if (seen.has(m.id) || !body.includes(`@${m.name}`)) continue;
-    seen.add(m.id);
-    out.push({ kind: m.kind, id: m.id });
+    const key = `${m.kind}:${m.id}`;
+    if (seen.has(key) || !body.includes(`@${m.name}`)) continue;
+    seen.add(key);
+    // Only who it is: the brain fills a handle's copy and a desk's task.
+    out.push(
+      m.kind === 'desk'
+        ? { kind: 'desk', id: m.id }
+        : m.kind === 'handle'
+          ? { kind: 'handle', id: m.id }
+          : { kind: m.kind, id: m.id },
+    );
   }
   return out;
 }

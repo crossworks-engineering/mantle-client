@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { installClientErrors } from '@/lib/client-errors';
 import { shellProbeFailure } from '@/lib/shell-probe';
 import { installSoundUnlock } from '@/lib/sounds/play';
 import { pullSoundPrefs } from '@/lib/sounds/sync';
@@ -323,6 +324,8 @@ function ShellFrame({
   // A browser holds sound back until the page's first click or key press:
   // that gesture readies it, so a chime later can play (lib/sounds/play.ts).
   useEffect(() => installSoundUnlock(), []);
+  // The last client errors, for a bug report's added lines (fleet chat).
+  useEffect(() => installClientErrors(), []);
   // The login's sound choice, from the brain (this browser's copy until then).
   useEffect(() => {
     void pullSoundPrefs();

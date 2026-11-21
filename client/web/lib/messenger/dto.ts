@@ -28,11 +28,23 @@
  * release ships them in client-types; optional here, so a brain before it
  * shows no description.
  *
+ * LOCAL COPY (fleet chat): handles, intake forms, IT desks and files on
+ * lines (mantle branch claude/fleet-chat-3-579456, M1 to M3): the
+ * `handle` and `desk` mentions, the fleet events, `files` on a message,
+ * `handle` and `intake` on a group, the send's `answers` and `leftOut`,
+ * the directory's handle and desk rows, `MessengerAttachment` and
+ * `MessengerOpenToResponse`. Copied from that branch's `dto/messenger.ts`;
+ * they go once a client-types release after 0.709.0 ships them. Every
+ * field is optional, so a brain before it fits.
+ *
  * client-types 0.400.34 ships these, with `event` on a message and `info` on
  * a conversation REQUIRED. Both are omitted from the base below so they stay
  * optional here: a brain before calls or 0343 still sends neither.
  */
+import type { MessengerIntakeKind } from './intake';
 import type {
+  MessengerParticipantKind,
+  MessengerSendRequest as BaseSendRequest,
   MessengerConversation as BaseConversation,
   MessengerCreateRequest as BaseCreateRequest,
   MessengerDirectoryEntry as BaseDirectoryEntry,
@@ -47,12 +59,10 @@ export type {
   MessengerAuthorKind,
   MessengerConversationKind,
   MessengerFavouriteKind,
-  MessengerMention,
   MessengerMessageStatus,
   MessengerParticipantKind,
   MessengerReaction,
   MessengerRowKind,
-  MessengerSendRequest,
   MessengerSendResponse,
   MessengerStreamEvent,
   MessengerUnreadResponse,
@@ -95,7 +105,12 @@ export type MessengerParticipant = BaseParticipant & Face & DescriptionField;
 export type MessengerPreview = BasePreview & { via?: string | null };
 
 export type MessengerListRow = Omit<BaseListRow, 'participants' | 'preview'> &
-  GroupLookFields & { participants: MessengerParticipant[]; preview: MessengerPreview | null };
+  GroupLookFields & {
+    participants: MessengerParticipant[];
+    preview: MessengerPreview | null;
+    /** A group's handle (fleet chat), shown as @qa; null or absent: none. */
+    handle?: string | null;
+  };
 
 export type MessengerListResponse = { rows: MessengerListRow[] };
 
@@ -106,7 +121,16 @@ type GroupInfoField = { info?: string | null };
 
 export type MessengerConversation = Omit<BaseConversation, 'participants' | 'info'> &
   GroupLookFields &
-  GroupInfoField & { participants: MessengerParticipant[] };
+  GroupInfoField &
+  GroupHandleFields & { participants: MessengerParticipant[] };
+
+/** A group's handle (its address on the box, shown as @qa; every login may
+ *  post to it) and its intake form (fleet chat, migration 0394). null: none;
+ *  absent: a brain before it. Groups only; its admins set them. */
+type GroupHandleFields = {
+  handle?: string | null;
+  intake?: MessengerIntakeKind | null;
+};
 
 /** POST /api/messenger/conversations; a brain before the look drops the
  *  look, one before 0343 drops the info. */
@@ -129,10 +153,25 @@ export type MessengerPatchRequest = {
   icon?: string | null;
   color?: string | null;
   info?: string | null;
+  /** null clears it; a taken handle is 409. */
+  handle?: string | null;
+  intake?: MessengerIntakeKind | null;
   muted?: boolean;
 };
 
-export type MessengerDirectoryEntry = BaseDirectoryEntry & Face & DescriptionField;
+/** A directory row: a login, an agent, or (fleet chat) a handle, a group on
+ *  this box every login may post to (`id` its conversation id, `name` its
+ *  title, `member` whether I am in it), or an IT desk on a box linked to a
+ *  Control Center (`id` its kind, `site` the Control Center's name). */
+export type MessengerDirectoryEntry = Omit<BaseDirectoryEntry, 'kind'> &
+  Face &
+  DescriptionField & {
+    kind: MessengerParticipantKind | 'handle' | 'desk';
+    handle?: string;
+    intake?: MessengerIntakeKind | null;
+    member?: boolean;
+    site?: string;
+  };
 
 export type MessengerDirectoryResponse = { entries: MessengerDirectoryEntry[] };
 
@@ -159,14 +198,86 @@ export type PersonCard = {
 
 /** What a system line marks (calls plan section 8): a call started, ended,
  *  or cut at the cap. `callId` names the call (GET .../calls). */
-export type MessengerEvent =
+export type MessengerCallEvent =
   | { type: 'call_started'; callId: string }
   | { type: 'call_ended'; callId: string; seconds: number; participants: number }
   | { type: 'call_cap'; callId: string; seconds: number; participants: number };
 
-/** A message, with the event a call's system line carries (null on every
- *  other row; absent on a brain before calls). */
-export type MessengerMessage = Omit<BaseMessage, 'event'> & { event?: MessengerEvent | null };
+/** Every event a system line carries: a call's, or (fleet chat) a copy
+ *  line's, a line back's, a thread's first line. */
+export type MessengerEvent =
+  | MessengerCallEvent
+  /** A copy line in a handle's group: message `from.seq` of chat
+   *  `from.conversationId` named the handle. A Reply here goes back. */
+  | { type: 'intake'; from: { conversationId: string; seq: number }; by: string | null }
+  /** The line back in the first chat: a Reply on the copy line. */
+  | {
+      type: 'intake_answer';
+      group: { conversationId: string; handle: string; seq: number };
+      by: string | null;
+    }
+  /** In the group: the sender left the first chat, the answer stays here. */
+  | { type: 'intake_sender_left'; seq: number }
+  /** The first line of my own thread to a handle or an IT desk. */
+  | { type: 'to_thread'; to: { conversationId: string } | { desk: MessengerDeskKind } }
+  /** On a box: the IT desk's answer to the report this line replies to. */
+  | { type: 'desk_answer'; desk: MessengerDeskKind; taskId: string }
+  /** On the Control Center: a report from a box; a Reply here answers it. */
+  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } };
+
+/** The kind of an IT desk: its Send to IT kind. */
+export type MessengerDeskKind = MessengerIntakeKind;
+
+/** Where a report to an IT desk stands. */
+export type MessengerDeskStatus = 'sent' | 'received' | 'answered';
+
+/** A mention: a person or agent of the chat; a handle (`id` the group, the
+ *  send fills `handle` and `seq`, the copy line); an IT desk (`id` its kind,
+ *  the send fills `taskId`, a read fills `status`). A client sends `kind`
+ *  and `id` only. */
+export type MessengerMention =
+  | { kind: MessengerParticipantKind; id: string }
+  | { kind: 'handle'; id: string; handle?: string; seq?: number }
+  | { kind: 'desk'; id: MessengerDeskKind; taskId?: string; status?: MessengerDeskStatus };
+
+/** A file on a line: open it at GET /api/messenger/attachments/:id; an
+ *  image shows inline. */
+export type MessengerAttachment = {
+  id: string;
+  name: string;
+  mime: string;
+  bytes: number;
+  kind: 'image' | 'file';
+};
+
+/** POST /api/messenger/c/:id/attachments. */
+export type MessengerAttachmentResponse = { attachment: MessengerAttachment };
+
+/** POST /api/messenger/to {handle, site?}: the chat a post to the handle
+ *  goes in (the group for a member, else my own "To @qa" thread). */
+export type MessengerOpenToResponse = {
+  conversationId: string;
+  groupId: string | null;
+  member: boolean;
+  desk?: MessengerDeskKind;
+};
+
+/** A send, with the fleet chat fields: the answers to the intake form of
+ *  the one handle or desk named, and the files over the cap left out. */
+export type MessengerSendRequest = Omit<BaseSendRequest, 'mentions'> & {
+  mentions?: MessengerMention[];
+  answers?: Record<string, string>;
+  leftOut?: { name: string; bytes: number }[];
+};
+
+/** A message, with the event a system line carries (null on every other
+ *  row; absent on a brain before calls), and its files (absent on a brain
+ *  before fleet chat). */
+export type MessengerMessage = Omit<BaseMessage, 'event' | 'mentions'> & {
+  event?: MessengerEvent | null;
+  mentions: MessengerMention[];
+  files?: MessengerAttachment[];
+};
 
 export type MessengerMessagesResponse = Omit<BaseMessagesResponse, 'messages'> & {
   messages: MessengerMessage[];

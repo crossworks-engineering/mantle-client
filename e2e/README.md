@@ -115,6 +115,12 @@ else is a plain 404.
   stubbed): drag an area, see it, then Attach to chat (an Admin user) or
   Save (a member, no attach); Esc saves nothing, and the save never names
   the switcher's workspace (`POST /api/screenshots`).
+- `fleet-chat.spec.ts`: fleet chat phase 1 in the chat screen
+  (`mock-chats.ts`): the @ list's handles, the send screen with the intake
+  form and the added lines, the chips (sent to @qa, a desk's status), a
+  copy line as a card whose Reply goes back, files (upload, too big as
+  `leftOut`, inline, Save to Files), a group's handle and form, my own
+  "To @bugs (IT)" thread from New chat, and the capture's Send to chat.
 - `desk.spec.ts`: the Desk saved on the login's profile (`GET`/`PUT
 /api/profile/home-desk`, compare-and-set on a version): a change is saved
   once, read back after a reload, and when another device saved first its

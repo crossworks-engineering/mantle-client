@@ -22,10 +22,12 @@ export type MockChatLine = {
   body: string;
   attachments: string[];
   mentions: unknown[];
-  replyToSeq: null;
+  replyToSeq: number | null;
   clientMsgId: null;
   status: 'complete';
-  event: null;
+  event: unknown;
+  /** Fleet chat: the line's files. */
+  files?: unknown[];
   editedAt: null;
   deletedAt: string | null;
   createdAt: string;
@@ -45,7 +47,15 @@ type MockRow = {
   favourite: boolean;
   participants: unknown[];
   agentSlug?: string;
+  /** Fleet chat: a group's handle and intake form. */
+  handle?: string | null;
+  intake?: string | null;
+  /** My own "To @qa" thread: a group of just me. */
+  solo?: boolean;
 };
+
+/** A request this login sent, as the brain got it (fleet chat specs). */
+type Sent = { chat: string; req: Record<string, unknown> };
 
 type MockToolStats = {
   calls: number;
@@ -110,6 +120,20 @@ export type MockChats = {
   /** The reactions this login has on now, `chat:seq:emoji`. */
   reactionsOn: Set<string>;
   threadReads: { agentSlug: string; at: string | null }[];
+  /** Fleet chat: the box's IT desks show in the directory (site IT). */
+  desks: boolean;
+  /** Each send's whole body (POST /api/messenger/c/:id/messages). */
+  sentRequests: Sent[];
+  /** Each PATCH of a chat's settings. */
+  patched: Sent[];
+  /** Each upload: the chat and the file's name. */
+  uploads: { chat: string; name: string }[];
+  /** Each Save to Files. */
+  saved: { id: string; parentPath: string }[];
+  /** Each POST /api/messenger/to. */
+  opened: { handle: string; site?: string }[];
+  /** A line as given (a system line with an event, a line with files). */
+  addLine(chat: string, line: Partial<MockChatLine>): void;
   /** Serve the routes this module owns. False: not one of them. */
   handle(
     req: IncomingMessage,
@@ -121,6 +145,12 @@ export type MockChats = {
     readBody: (req: IncomingMessage) => Promise<string>,
   ): Promise<boolean>;
 };
+
+/** A 1x1 PNG, for a chat file read back. */
+const PIXEL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 export function createMockChats(): MockChats {
   const lines = new Map<string, MockChatLine[]>();
@@ -164,6 +194,42 @@ export function createMockChats(): MockChats {
     reacted: [],
     reactionsOn: new Set(),
     readOnly: new Set(),
+    desks: false,
+    sentRequests: [],
+    patched: [],
+    uploads: [],
+    saved: [],
+    opened: [],
+    addLine(chat, partial) {
+      const row = rowOf(chat);
+      const list = lines.get(chat) ?? [];
+      const seq = (row.lastSeq ?? 0) + 1;
+      const createdAt = tick();
+      list.push({
+        id: `${chat}-${seq}`,
+        conversationId: chat,
+        authorKind: 'login',
+        authorId: 'ann-id',
+        authorName: 'Ann',
+        via: null,
+        body: '',
+        attachments: [],
+        mentions: [],
+        replyToSeq: null,
+        clientMsgId: null,
+        status: 'complete',
+        event: null,
+        editedAt: null,
+        deletedAt: null,
+        createdAt,
+        reactions: [],
+        ...partial,
+        seq,
+      });
+      lines.set(chat, list);
+      row.lastSeq = seq;
+      row.lastMessageAt = createdAt;
+    },
     addChat(id, title, kind = 'direct') {
       chats.rows.push({
         kind,
@@ -353,6 +419,32 @@ export function createMockChats(): MockChats {
               slug: r.agentSlug,
             })),
           { kind: 'login', id: 'ann-id', name: 'Ann', online: false },
+          ...chats.rows
+            .filter((r) => r.kind === 'group' && r.handle)
+            .map((r) => ({
+              kind: 'handle',
+              id: r.id,
+              name: r.title,
+              online: false,
+              handle: r.handle,
+              intake: r.intake ?? null,
+              member: true,
+            })),
+          ...(chats.desks
+            ? [
+                ['bugs', 'bug'],
+                ['feature', 'feature'],
+                ['requests', 'request'],
+              ].map(([handle, kind]) => ({
+                kind: 'desk',
+                id: kind,
+                name: handle,
+                online: false,
+                handle,
+                intake: kind,
+                site: 'IT',
+              }))
+            : []),
         ];
         json(res, 200, { entries });
         return true;
@@ -413,6 +505,9 @@ export function createMockChats(): MockChats {
             icon: null,
             color: null,
             info: null,
+            ...(row.kind === 'group'
+              ? { handle: row.handle ?? null, intake: row.intake ?? null }
+              : {}),
             createdBy: null,
             createdAt: new Date(0).toISOString(),
             archivedAt: null,
@@ -420,15 +515,17 @@ export function createMockChats(): MockChats {
             lastMessageAt: row.lastMessageAt,
             workspaceId: null,
             agentId: null,
-            participants: [
-              {
-                kind: 'login',
-                id: 'ann-id',
-                name: row.kind === 'group' ? 'Ann' : row.title,
-                admin: false,
-                leftAt: null,
-              },
-            ],
+            participants: row.solo
+              ? [{ kind: 'login', id: 'me', name: 'Me', admin: true, leftAt: null }]
+              : [
+                  {
+                    kind: 'login',
+                    id: 'ann-id',
+                    name: row.kind === 'group' ? 'Ann' : row.title,
+                    admin: false,
+                    leftAt: null,
+                  },
+                ],
             me: {
               admin: true,
               lastReadSeq: 0,
@@ -438,6 +535,68 @@ export function createMockChats(): MockChats {
             },
           },
         });
+        return true;
+      }
+      if (one && method === 'PATCH') {
+        const id = decodeURIComponent(one[1]!);
+        const row = rowOf(id);
+        const patch = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        chats.patched.push({ chat: id, req: patch });
+        if ('handle' in patch) row.handle = (patch.handle as string | null) ?? null;
+        if ('intake' in patch) row.intake = (patch.intake as string | null) ?? null;
+        json(res, 200, { conversation: { id } });
+        return true;
+      }
+      // Fleet chat: a file for the next send, read back, Save to Files.
+      const up = /^\/api\/messenger\/c\/([^/]+)\/attachments$/.exec(path);
+      if (up && method === 'POST') {
+        const chat = decodeURIComponent(up[1]!);
+        const raw = await readBody(req);
+        const name = /filename="([^"]+)"/.exec(raw)?.[1] ?? 'file';
+        chats.uploads.push({ chat, name });
+        const image = /\.png$/i.test(name);
+        json(res, 200, {
+          attachment: {
+            id: `att-${chats.uploads.length}`,
+            name,
+            mime: image ? 'image/png' : 'text/plain',
+            bytes: raw.length,
+            kind: image ? 'image' : 'file',
+          },
+        });
+        return true;
+      }
+      const att = /^\/api\/messenger\/attachments\/([^/]+)(\/save)?$/.exec(path);
+      if (att && method === 'GET' && !att[2]) {
+        res.writeHead(200, { ...cors, 'content-type': 'image/png' });
+        res.end(PIXEL);
+        return true;
+      }
+      if (att && method === 'POST' && att[2]) {
+        const { parentPath } = JSON.parse(await readBody(req)) as { parentPath: string };
+        chats.saved.push({ id: decodeURIComponent(att[1]!), parentPath });
+        json(res, 201, { file: { id: 'saved-1', filename: 'shot.png' } });
+        return true;
+      }
+      if (method === 'POST' && path === '/api/messenger/to') {
+        const to = JSON.parse(await readBody(req)) as { handle: string; site?: string };
+        chats.opened.push(to);
+        const thread = `d0000000-0000-4000-8000-${String(chats.opened.length).padStart(12, '0')}`;
+        const label = to.site ? `@${to.handle} (${to.site})` : `@${to.handle}`;
+        if (!chats.rows.some((r) => r.id === thread)) {
+          chats.addChat(thread, `To ${label}`, 'group');
+          rowOf(thread).solo = true;
+          const desk = { bugs: 'bug', feature: 'feature', requests: 'request' }[to.handle];
+          const group = chats.rows.find((r) => r.handle === to.handle)?.id;
+          chats.addLine(thread, {
+            authorKind: 'system',
+            authorId: null,
+            authorName: null,
+            body: `Your messages to ${label}. The answers come back here.`,
+            event: { type: 'to_thread', to: desk ? { desk } : { conversationId: group } },
+          });
+        }
+        json(res, 200, { conversationId: thread, groupId: null, member: false });
         return true;
       }
       if (method === 'POST' && /^\/api\/messenger\/c\/[^/]+\/typing$/.test(path)) {
@@ -481,15 +640,14 @@ export function createMockChats(): MockChats {
           json(res, 404, { error: 'not found' });
           return true;
         }
-        const { body, clientMsgId } = JSON.parse(await readBody(req)) as {
-          body: string;
-          clientMsgId?: string;
-        };
+        const sentReq = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        const { body, clientMsgId } = sentReq as { body: string; clientMsgId?: string };
         if (chats.readOnly.has(chat)) {
           json(res, 403, { error: 'You can read this chat, not write in it.' });
           return true;
         }
         chats.sent.push({ chat, body });
+        chats.sentRequests.push({ chat, req: sentReq });
         const row = rowOf(chat);
         const seq = (row.lastSeq ?? 0) + 1;
         const createdAt = tick();
@@ -504,7 +662,7 @@ export function createMockChats(): MockChats {
           body,
           attachments: [],
           mentions: [],
-          replyToSeq: null,
+          replyToSeq: (sentReq.replyToSeq as number | undefined) ?? null,
           clientMsgId: null,
           status: 'complete',
           event: null,

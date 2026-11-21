@@ -38,6 +38,7 @@ import { HeaderPill } from '@/components/layout/item-header';
 import { ItemSearch } from '@/components/item-list/item-list-header';
 import { AppLookPicker, type AppLook } from '@/components/app-nav/app-look-picker';
 import { ChatAvatar } from '@/components/messenger/chat-avatar';
+import { GroupHandleSection } from '@/components/messenger/group-handle-section';
 import { GroupInfoField } from '@/components/messenger/group-info-field';
 import { useChatFaces } from '@/components/messenger/chat-faces';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
@@ -458,6 +459,18 @@ export function ChatInspector({
               </p>
             )}
           </section>
+          {'handle' in conversation ? (
+            <>
+              <Separator />
+              <GroupHandleSection
+                conversation={conversation}
+                editable={admin && !left}
+                onSave={(patch) =>
+                  act('handle', () => messengerApi.update(id, patch), 'Handle saved')
+                }
+              />
+            </>
+          ) : null}
         </>
       ) : null}
 

@@ -14,6 +14,9 @@ import {
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { createWorkspace } from '@/lib/create-workspace';
+import { messengerApi } from '@/lib/messenger/api';
+import { addDraftFiles } from '@/lib/messenger/draft-files';
+import { useOpenChat, type OpenChat } from '@/lib/messenger/open-chat';
 import {
   captureDesktop,
   captureErrorMessage,
@@ -48,11 +51,16 @@ const afterPaint = () =>
  * opens: the dimmed drag-to-select layer, the capture (lib/area-capture.ts)
  * and the preview where the user adds a note and picks Attach to chat or
  * Save only. Nothing is saved or sent until one of those two is pressed.
+ *
+ * Fleet chat: while a chat of people is open (lib/messenger/open-chat.ts),
+ * "Send to chat" puts the picture in that chat's draft instead, as a file
+ * of the next line (not saved to Files). Nothing goes until its Send.
  */
 export function CaptureButton({ canAttach }: { canAttach: boolean }) {
   const toast = useToast();
   const { attachContext, openAssistant } = useDockActions();
   const { pinnedContext } = useDockSession();
+  const openChat = useOpenChat();
   const [phase, setPhase] = useState<Phase>({ at: 'idle' });
   /** The preview's object URL, revoked if the button goes with it open. */
   const previewUrl = useRef<string | null>(null);
@@ -124,6 +132,17 @@ export function CaptureButton({ canAttach }: { canAttach: boolean }) {
     [attachContext, openAssistant, end, toast],
   );
 
+  const toChat = useCallback(
+    (shot: Shot, chat: OpenChat) => {
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const file = new File([shot.png], `screenshot-${stamp}.png`, { type: 'image/png' });
+      addDraftFiles(chat.id, [file], (c, f) => messengerApi.upload(c, f));
+      toast.success(`In the draft of ${chat.title}. Check it, then press Send.`);
+      end();
+    },
+    [end, toast],
+  );
+
   return (
     <>
       <Button
@@ -140,7 +159,14 @@ export function CaptureButton({ canAttach }: { canAttach: boolean }) {
       </Button>
       {phase.at === 'selecting' && <SelectLayer onPick={grab} onCancel={end} />}
       {phase.at === 'preview' && (
-        <CapturePreview shot={phase.shot} canAttach={canAttach} onSave={save} onCancel={end} />
+        <CapturePreview
+          shot={phase.shot}
+          canAttach={canAttach}
+          chat={openChat}
+          onSave={save}
+          onSendToChat={toChat}
+          onCancel={end}
+        />
       )}
     </>
   );
@@ -229,10 +255,16 @@ function SelectLayer({ onPick, onCancel }: { onPick: (rect: Rect) => void; onCan
 function CapturePreview({
   shot,
   canAttach,
+  chat,
   onSave,
+  onSendToChat,
   onCancel,
 }: {
   shot: Shot;
+  /** The chat of people open on screen: "Send to chat" puts the picture
+   *  in its draft. */
+  chat: OpenChat | null;
+  onSendToChat: (shot: Shot, chat: OpenChat) => void;
   /** Whether the chat takes attachments (an Admin user's; a workspace chat
    *  takes text only, and its assistant cannot read the private file). */
   canAttach: boolean;
@@ -262,6 +294,7 @@ function CapturePreview({
             It shows whatever was in the area, so check it first. Nothing is saved or sent until you
             choose below. It is saved to Files in the workspace you are in, where its people can see
             it, and the brain&apos;s image model reads it to make it searchable.
+            {chat ? ' Send to chat puts it in the open chat’s draft instead, not in Files.' : ''}
           </DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[50vh] justify-center overflow-auto rounded-md border border-border bg-muted/40 p-2 scrollbar-thin">
@@ -295,6 +328,16 @@ function CapturePreview({
             {busy === 'save' && <Loader2 className="animate-spin" aria-hidden />}
             {canAttach ? 'Save only' : 'Save'}
           </Button>
+          {chat && (
+            <Button
+              variant="outline"
+              onClick={() => onSendToChat(shot, chat)}
+              disabled={!!busy}
+              title={`Put it in the draft of ${chat.title}`}
+            >
+              Send to chat
+            </Button>
+          )}
           {canAttach && (
             <Button autoFocus onClick={() => void run(true)} disabled={!!busy}>
               {busy === 'attach' && <Loader2 className="animate-spin" aria-hidden />}

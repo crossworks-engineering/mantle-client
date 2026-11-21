@@ -5,16 +5,16 @@
  * window. The pure half: which line rings, its words, and the call lines
  * the transcript shows. Pinned by ring.test.ts.
  */
-import type { MessengerEvent, MessengerMessage } from '@/lib/messenger/dto';
+import type { MessengerCallEvent, MessengerMessage } from '@/lib/messenger/dto';
 import { RING_MS } from './session';
 
 type EventLine = Pick<MessengerMessage, 'authorKind' | 'event'>;
 
 /** The call event a system line carries, or null for every other row. */
-export function callEventOf(m: EventLine | null | undefined): MessengerEvent | null {
+export function callEventOf(m: EventLine | null | undefined): MessengerCallEvent | null {
   if (!m || m.authorKind !== 'system') return null;
   const e = m.event;
-  if (!e || typeof e !== 'object' || typeof e.callId !== 'string') return null;
+  if (!e || typeof e !== 'object' || !('callId' in e) || typeof e.callId !== 'string') return null;
   switch (e.type) {
     case 'call_started':
       return { type: 'call_started', callId: e.callId };
@@ -213,7 +213,7 @@ export function peopleLabel(n: number): string {
  */
 export function callLine(
   m: Pick<MessengerMessage, 'authorKind' | 'event' | 'body'>,
-): { kind: MessengerEvent['type']; text: string } | null {
+): { kind: MessengerCallEvent['type']; text: string } | null {
   const e = callEventOf(m);
   if (!e) return null;
   if (e.type === 'call_started') return { kind: e.type, text: m.body || 'A call started.' };

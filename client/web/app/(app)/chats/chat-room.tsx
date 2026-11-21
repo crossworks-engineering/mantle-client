@@ -51,11 +51,14 @@ import {
 } from '@/components/messenger/messenger-live';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type {
+  MessengerAttachment,
   MessengerConversation,
   MessengerListRow,
   MessengerMention,
   MessengerMessage,
 } from '@/lib/messenger/dto';
+import { addressPicks, deskSite, replyNote, threadTarget } from '@/lib/messenger/fleet';
+import { openChat } from '@/lib/messenger/open-chat';
 import { authorVia, otherPeople, presenceLine, stampLabel } from '@/lib/messenger/format';
 import { groupLook } from '@/lib/messenger/faces';
 import { shouldSendTyping, typingLine } from '@/lib/messenger/live';
@@ -77,9 +80,11 @@ import {
   withOutbox,
   withoutOutbox,
   type OutboxLine,
+  type SendExtra,
   type Transcript,
 } from '@/lib/messenger/transcript';
-import { ChatComposer } from './chat-composer';
+import { ChatComposer, type ReplyTarget } from './chat-composer';
+import { SaveToFilesDialog } from './save-to-files';
 import { ChatInspector } from './chat-inspector';
 import { ChatMessage, MessageEditor, OutboxMessage } from './chat-message';
 
@@ -493,13 +498,19 @@ export function ChatRoom({
 
   // ── Sending ───────────────────────────────────────────────────────────
   const send = useCallback(
-    async (body: string, mentions: MessengerMention[] = [], clientMsgId = newClientMsgId()) => {
+    async (
+      body: string,
+      mentions: MessengerMention[] = [],
+      clientMsgId = newClientMsgId(),
+      extra?: SendExtra,
+    ) => {
       const line: OutboxLine = {
         clientMsgId,
         body,
         createdAt: new Date().toISOString(),
         state: 'sending',
         mentions,
+        ...(extra ? { extra } : {}),
       };
       scrollToBottom.current = true;
       setT((cur) => withOutbox(cur, line));
@@ -508,6 +519,7 @@ export function ChatRoom({
           body,
           clientMsgId,
           ...(mentions.length ? { mentions } : {}),
+          ...extra,
         });
         const top = contiguousTop(tRef.current.messages);
         scrollToBottom.current = true;
@@ -577,6 +589,8 @@ export function ChatRoom({
   // ── Message actions ───────────────────────────────────────────────────
   const toast = useToast();
   const [editingSeq, setEditingSeq] = useState<number | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  const [saving, setSaving] = useState<MessengerAttachment | null>(null);
   const [deleting, setDeleting] = useState<MessengerMessage | null>(null);
   const failed = (err: unknown, what: string) =>
     toast.error(err instanceof Error ? err.message : what);
@@ -722,7 +736,53 @@ export function ChatRoom({
   const isAdmin = group && !!conversation?.me.admin;
   const muted = conversation?.me.muted ?? row?.muted ?? false;
   const pinned = row?.favourite ?? false;
-  const mentionNames = useMemo(() => people.map((p) => p.name), [people]);
+  // Fleet chat: the box's handles and IT desks for the @ list, and the
+  // address of my own "To @qa" thread (its first line names it).
+  const directoryQuery = useQuery({
+    queryKey: messengerKeys.directory,
+    queryFn: () => messengerApi.directory(),
+    staleTime: 60_000,
+  });
+  const addresses = useMemo(
+    () => addressPicks(directoryQuery.data ?? [], id),
+    [directoryQuery.data, id],
+  );
+  const site = deskSite(directoryQuery.data ?? []);
+  const alone = group && people.filter((p) => p.leftAt === null).length === 1;
+  const firstQuery = useQuery({
+    queryKey: ['messenger', 'first', id],
+    queryFn: () => messengerApi.messages(id, { afterSeq: 0, limit: 1 }).then((p) => p.messages[0]),
+    enabled: alone,
+    staleTime: Infinity,
+  });
+  const target = alone ? threadTarget(firstQuery.data) : null;
+  const mentionNames = useMemo(
+    () => [...people.map((p) => p.name), ...addresses.map((a) => a.name)],
+    [people, addresses],
+  );
+  const composerId = inWindow ? 'chat-composer-text-window' : 'chat-composer-text';
+  const startReply = (m: MessengerMessage) => {
+    setReplyTo({
+      seq: m.seq,
+      name: m.authorName ?? 'Someone',
+      snippet: m.body.slice(0, 120),
+      note: replyNote(m),
+    });
+    requestAnimationFrame(() => document.getElementById(composerId)?.focus());
+  };
+  const quoteOf = (m: MessengerMessage) => {
+    if (m.replyToSeq == null) return null;
+    const r = t.messages.find((x) => x.seq === m.replyToSeq);
+    return r && !r.deletedAt
+      ? { name: r.authorName ?? 'Someone', snippet: r.body.slice(0, 120) }
+      : null;
+  };
+  // The area capture's "Send to chat" puts its picture in this chat's draft
+  // while its composer shows.
+  useEffect(() => {
+    if (!conversation || left) return;
+    return openChat({ id, title });
+  }, [conversation, left, id, title]);
 
   // The Call button (calls plan P1): only when the brain says calls are on,
   // and never once I have left. Start the chat's call or join the open one;
@@ -1000,11 +1060,16 @@ export function ChatRoom({
                           }
                           read={it.mine && readByAll >= it.message.seq}
                           mentionNames={mentionNames}
+                          site={site}
+                          handle={conversation?.handle}
+                          quote={quoteOf(it.message)}
                           actions={
                             left
                               ? undefined
                               : {
                                   onReact: (emoji) => react(it.message.seq, emoji),
+                                  onReply: () => startReply(it.message),
+                                  onSaveFile: setSaving,
                                   onEdit: it.mine ? () => setEditingSeq(it.message.seq) : undefined,
                                   onDelete:
                                     it.mine || isAdmin ? () => setDeleting(it.message) : undefined,
@@ -1025,7 +1090,12 @@ export function ChatRoom({
                           key={it.key}
                           line={it.line}
                           onRetry={() =>
-                            void send(it.line.body, it.line.mentions ?? [], it.line.clientMsgId)
+                            void send(
+                              it.line.body,
+                              it.line.mentions ?? [],
+                              it.line.clientMsgId,
+                              it.line.extra,
+                            )
                           }
                           onDiscard={() => setT((cur) => withoutOutbox(cur, it.line.clientMsgId))}
                         />
@@ -1060,11 +1130,19 @@ export function ChatRoom({
                   </p>
                 ) : (
                   <ChatComposer
-                    onSend={(body, mentions) => void send(body, mentions)}
+                    onSend={(body, mentions, extra) =>
+                      void send(body, mentions, newClientMsgId(), extra)
+                    }
                     onTyping={onTyping}
                     people={others}
                     draftKey={id}
-                    id={inWindow ? 'chat-composer-text-window' : undefined}
+                    id={composerId}
+                    addresses={addresses}
+                    target={target}
+                    site={site}
+                    upload={(file) => messengerApi.upload(id, file)}
+                    replyTo={replyTo}
+                    onCancelReply={() => setReplyTo(null)}
                   />
                 )}
               </div>
@@ -1120,6 +1198,7 @@ export function ChatRoom({
           </div>
         ) : null}
       </div>
+      {saving ? <SaveToFilesDialog file={saving} onClose={() => setSaving(null)} /> : null}
       <AlertDialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -2,7 +2,17 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, ChevronDown, ListFilter, SquarePen, User, Users, X } from 'lucide-react';
+import {
+  AtSign,
+  Bot,
+  Check,
+  ChevronDown,
+  ListFilter,
+  SquarePen,
+  User,
+  Users,
+  X,
+} from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { Field, FieldError, FieldLabel } from '@mantle/web-ui/ui/field';
@@ -26,6 +36,7 @@ import { GroupInfoField } from '@/components/messenger/group-info-field';
 import { messengerApi, messengerKeys } from '@/lib/messenger/api';
 import type { MessengerDirectoryEntry, MessengerMention } from '@/lib/messenger/dto';
 import { keepsGroupLook, type ChatFace, type FaceOf, type GroupLook } from '@/lib/messenger/faces';
+import { addressPicks, type AddressPick } from '@/lib/messenger/fleet';
 import { rowAddress } from '@/lib/messenger/format';
 import {
   droppedOnCreate,
@@ -133,6 +144,24 @@ export function NewChatPane({
         .sort((a, b) => a.name.localeCompare(b.name)),
     [directory],
   );
+  // Fleet chat: the box's handles and IT desks. A pick opens the group (a
+  // member) or my own "To @qa" thread, where every line goes to the address.
+  const addresses = useMemo(() => addressPicks(directory ?? []), [directory]);
+  const shownAddresses = addresses.filter(
+    (a) => !q || a.name.includes(q) || a.title.toLowerCase().includes(q),
+  );
+  const openAddress = async (a: AddressPick) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const out = await messengerApi.to(a.to.handle, a.to.site);
+      void queryClient.invalidateQueries({ queryKey: messengerKeys.list });
+      if (alive.current) onCreated(out.conversationId, null);
+    } catch (err) {
+      setBusy(false);
+      toast.error(err instanceof Error ? err.message : 'Could not open that address');
+    }
+  };
   const shownPeople = people.filter(matches);
   const shownAgents = agents.filter(matches);
   const grouping = filter === 'groups';
@@ -140,7 +169,7 @@ export function NewChatPane({
 
   const face = (e: MessengerDirectoryEntry) =>
     faceOf({
-      kind: e.kind,
+      kind: e.kind === 'agent' ? 'agent' : 'login',
       id: e.id,
       avatar: e.avatar,
       photoVersion: e.photoVersion,
@@ -257,6 +286,31 @@ export function NewChatPane({
     );
   };
 
+  const addressRow = (a: AddressPick) => (
+    <li key={`${a.kind}:${a.id}`}>
+      <RowButton
+        onClick={() => void openAddress(a)}
+        disabled={busy}
+        className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-foreground/[0.06]"
+        data-testid="address-row"
+      >
+        <span
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          aria-hidden
+        >
+          <AtSign className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">@{a.name}</span>
+          <span className="block truncate text-xs text-muted-foreground">{a.title}</span>
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {a.kind === 'desk' ? 'IT desk' : 'Handle'}
+        </span>
+      </RowButton>
+    </li>
+  );
+
   const section = (label: string, entries: MessengerDirectoryEntry[]) =>
     entries.length > 0 ? (
       <section aria-label={label} className="space-y-1">
@@ -291,11 +345,19 @@ export function NewChatPane({
         ) : null}
         {filter !== 'people' ? section('Agents', shownAgents) : null}
         {filter !== 'agents' ? section('People', shownPeople) : null}
+        {filter === 'all' && shownAddresses.length > 0 ? (
+          <section aria-label="Handles and IT desks" className="space-y-1">
+            <h3 className="px-2 pt-2 text-xs font-medium text-muted-foreground">
+              Handles and IT desks
+            </h3>
+            <ul className="space-y-px">{shownAddresses.map(addressRow)}</ul>
+          </section>
+        ) : null}
         {(filter === 'agents'
           ? shownAgents
           : filter === 'people'
             ? shownPeople
-            : [...shownAgents, ...shownPeople]
+            : [...shownAgents, ...shownPeople, ...shownAddresses]
         ).length === 0 ? (
           <p className="px-2 py-6 text-center text-sm text-muted-foreground">
             {q

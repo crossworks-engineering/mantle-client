@@ -4,7 +4,9 @@
  */
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import type {
+  MessengerAttachmentResponse,
   MessengerConversation,
+  MessengerOpenToResponse,
   MessengerCreateRequest,
   MessengerCreateResponse,
   MessengerFavouriteKind,
@@ -29,6 +31,11 @@ export const messengerKeys = {
   directory: ['messenger', 'directory'] as const,
   unread: ['messenger', 'unread'] as const,
 };
+
+/** Where a chat file is read (an `<img src>` takes it through useAssetUrl,
+ *  which adds the login's `?at=` token). */
+export const attachmentPath = (attachmentId: string) =>
+  `${BASE}/attachments/${encodeURIComponent(attachmentId)}`;
 
 export const messengerApi = {
   list: () => apiFetch<MessengerListResponse>(`${BASE}/conversations`).then((r) => r.rows ?? []),
@@ -68,6 +75,28 @@ export const messengerApi = {
   remove: (id: string, seq: number) => apiSend<unknown>(`${one(id)}/messages/${seq}`, 'DELETE'),
   react: (id: string, seq: number, emoji: string) =>
     apiSend<unknown>(`${one(id)}/messages/${seq}/reactions`, 'POST', { emoji }),
+  /** A file for the next send (fleet chat): multipart, one `file`; at most
+   *  10 MB (413). The send's `attachments` names its id. */
+  upload: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.set('file', file);
+    // FormData body: apiFetch (not apiSend) so the multipart boundary survives.
+    return apiFetch<MessengerAttachmentResponse>(`${one(id)}/attachments`, {
+      method: 'POST',
+      body: fd,
+    }).then((r) => r.attachment);
+  },
+  /** Save to Files: a copy of a chat file into folder `parentPath`. */
+  saveAttachment: (attachmentId: string, parentPath: string) =>
+    apiSend<{ file: { id: string; filename: string } }>(
+      `${BASE}/attachments/${encodeURIComponent(attachmentId)}/save`,
+      'POST',
+      { parentPath },
+    ).then((r) => r.file),
+  /** The chat a post to a handle or an IT desk goes in: the group for a
+   *  member, else my own "To @qa" thread (made once). */
+  to: (handle: string, site?: string) =>
+    apiSend<MessengerOpenToResponse>(`${BASE}/to`, 'POST', site ? { handle, site } : { handle }),
   pin: (kind: MessengerFavouriteKind, id: string, on: boolean) =>
     apiSend<unknown>(
       `${BASE}/favourites/${kind}/${encodeURIComponent(id)}`,

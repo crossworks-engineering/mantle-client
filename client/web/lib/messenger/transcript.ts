@@ -7,7 +7,12 @@
  * seq wins: an edit, a delete, a reaction), and the catch-up after a stream
  * event asks for what is above the highest seq held. Clocks only label.
  */
-import type { MessengerMention, MessengerMessage, MessengerMessagesResponse } from './dto';
+import type {
+  MessengerMention,
+  MessengerMessage,
+  MessengerMessagesResponse,
+  MessengerSendRequest,
+} from './dto';
 
 /** A send of mine the brain has not answered yet (or refused). */
 export type OutboxLine = {
@@ -19,7 +24,16 @@ export type OutboxLine = {
   error?: string;
   /** The mentions it carries (a retry sends them again). */
   mentions?: MessengerMention[];
+  /** The rest of the send (fleet chat): a reply, files, the answers. A
+   *  retry sends them again. */
+  extra?: SendExtra;
 };
+
+/** What a send carries besides its text and mentions (fleet chat). */
+export type SendExtra = Pick<
+  MessengerSendRequest,
+  'replyToSeq' | 'attachments' | 'leftOut' | 'answers'
+>;
 
 export type Transcript = {
   /** Sorted by seq, one per seq. */
