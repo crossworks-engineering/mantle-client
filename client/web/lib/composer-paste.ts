@@ -73,7 +73,7 @@ export function decideComposerPaste<F extends PastedFileLike>(
   // and the file is just that app's picture of it. With no plain text, there
   // is nothing to paste as text: the picture is what was copied.
   const rich = types.some((t) => RICH_TEXT_FLAVOURS.includes(t.toLowerCase()));
-  if (rich && (plainText === undefined || plainText.trim() !== '')) return { kind: 'text' };
+  if (rich && (plainText === undefined || plainText !== '')) return { kind: 'text' };
 
   const ok = files.filter((f) => fileMatchesAccept(f, accept));
   if (ok.length > 0) return { kind: 'attach', files: ok };

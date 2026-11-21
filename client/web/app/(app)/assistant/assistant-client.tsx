@@ -1495,7 +1495,14 @@ export function AssistantClient({
                     if (sending) return;
                     if (!features.attachments) setError(TURN_REFUSAL_TEXT.textOnly);
                     else if (d.kind === 'reject') setError(d.reason);
-                    else addFiles(d.files);
+                    else {
+                      const left = Array.from(e.clipboardData.files).filter(
+                        (f) => !d.files.includes(f),
+                      );
+                      addFiles(d.files);
+                      if (left.length)
+                        setError(`Not added: ${left.map((f) => f.name).join(', ')}.`);
+                    }
                   }}
                   placeholder={
                     !agentReady

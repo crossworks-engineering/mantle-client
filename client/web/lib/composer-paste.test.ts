@@ -68,6 +68,10 @@ describe('decideComposerPaste', () => {
       kind: 'attach',
       files: [picture],
     });
+    // Blank cells from Excel are whitespace, not nothing: still text.
+    expect(
+      decideComposerPaste(['text/plain', 'text/html', 'Files'], [picture], accept, '\t\n'),
+    ).toEqual({ kind: 'text' });
     // Word or Excel carry the words too: still text.
     expect(
       decideComposerPaste(['text/plain', 'text/html', 'Files'], [picture], accept, 'A1 B1'),

@@ -140,7 +140,8 @@ export function TaskDetail({
       // Ours either way: else a Finder paste types the file's name.
       e.preventDefault();
       if (d.kind === 'reject') toast.error(d.reason);
-      else upload(d.files);
+      // Every file: the check names one of a type a task does not take.
+      else upload(Array.from(e.clipboardData.files));
     };
     document.addEventListener('paste', onPaste);
     return () => document.removeEventListener('paste', onPaste);
