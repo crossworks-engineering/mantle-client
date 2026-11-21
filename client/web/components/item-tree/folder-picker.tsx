@@ -44,6 +44,7 @@ export function FolderPickerDialog({
   currentFolderId,
   disabled,
   onPick,
+  pickLabel = 'Move here',
 }: {
   kind: TreeKind;
   /** Whose tree it browses (a member picks among the folders it sees). */
@@ -61,6 +62,8 @@ export function FolderPickerDialog({
   /** Folders it cannot go into (itself, its own subfolders, too deep). */
   disabled?: (folder: TreeFolder) => boolean;
   onPick: (folder: TreeFolder | null) => void;
+  /** The pick button's words (a copy into a folder says "Save here"). */
+  pickLabel?: string;
 }) {
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   // undefined = nothing chosen yet; null = the root.
@@ -246,7 +249,7 @@ export function FolderPickerDialog({
               close(false);
             }}
           >
-            Move here
+            {pickLabel}
           </Button>
         </div>
       </DialogContent>
