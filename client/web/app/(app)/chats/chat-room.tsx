@@ -766,7 +766,9 @@ export function ChatRoom({
   const target = alone ? threadTarget(firstQuery.data) : null;
   // A group of one may be my "To @qa" thread: until its first line says
   // where its lines go, Send waits (a line sent before would go nowhere).
-  const routePending = alone && !firstQuery.isSuccess;
+  // Before the chat itself is read (a "To @bugs" thread just opened, a deep
+  // link), nobody knows yet whether it is one: Send waits too.
+  const routePending = (!conversation && !row) || (alone && !firstQuery.isSuccess);
   // Files on lines need a brain with fleet chat (its conversation names a
   // handle, null or not; the inspector asks the same).
   const fleetOn = !!conversation && 'handle' in conversation;
@@ -795,9 +797,11 @@ export function ChatRoom({
   // while its composer shows (the room used last, `raiseChat`).
   const shown = !!conversation;
   useEffect(() => {
-    if (!shown || left) return;
+    // Not on a brain without fleet chat: it takes no chat files, so a
+    // picture sent here would be lost.
+    if (!shown || left || !fleetOn) return;
     return openChat({ id, title });
-  }, [shown, left, id, title]);
+  }, [shown, left, fleetOn, id, title]);
   // A desk's answer arrived: the line it answers is read again, so its
   // status chip says Answered (the status is filled on a read).
   const deskAnswersSeen = useRef<Set<number> | null>(null);
