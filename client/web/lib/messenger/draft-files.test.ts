@@ -89,6 +89,15 @@ describe('draft files', () => {
     expect(upload.mock.calls[0]![1].name).toBe('image.png');
   });
 
+  it('names at most 20 files left out', () => {
+    const upload = vi.fn(() => Promise.resolve(attachment('x')));
+    const big = Array.from({ length: 21 }, (_, i) => file(`${i}.log`, FILE_MAX_BYTES + 1));
+    const out = addDraftFiles(CHAT, big, upload);
+    expect(out.added).toBe(20);
+    expect(out.refused).toEqual(['A line names at most 20 files left out. Not added: 20.log.']);
+    expect(draftPayload(draftFiles(CHAT)).leftOut).toHaveLength(20);
+  });
+
   it('marks a failed upload, which holds the send until removed', async () => {
     addDraftFiles(CHAT, [file('a.txt', 1)], () => Promise.reject(new Error('No room')));
     await flush();

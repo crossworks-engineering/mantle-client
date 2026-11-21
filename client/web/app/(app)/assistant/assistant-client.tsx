@@ -1483,6 +1483,8 @@ export function AssistantClient({
                     const d = decideComposerPaste(
                       Array.from(e.clipboardData.types),
                       Array.from(e.clipboardData.files),
+                      COMPOSER_ATTACH_ACCEPT,
+                      e.clipboardData.getData('text/plain'),
                     );
                     if (d.kind === 'text') return;
                     // Ours either way: without this a Finder paste also types the

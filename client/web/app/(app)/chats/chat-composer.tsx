@@ -46,6 +46,7 @@ import {
   answersToSend,
   formatBytes,
   intakeOf,
+  leftOutNote,
   type AddedLine,
   type AddressPick,
 } from '@/lib/messenger/fleet';
@@ -165,10 +166,14 @@ export function ChatComposer({
   const area = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const body = sendableBody(text);
-  const tooLong = text.length > BODY_MAX;
   const filesOn = !!upload && !!draftKey;
   const files = useDraftFiles(filesOn ? draftKey : undefined);
   const settled = draftSettled(files);
+  // The brain adds the note for files left out to the text: the cap counts
+  // the line as it will be stored.
+  const note = leftOutNote(draftPayload(files).leftOut);
+  const lineLength = text.length + (note ? note.length + 2 : 0);
+  const tooLong = lineLength > BODY_MAX;
   const [preview, setPreview] = useState<{
     to: string;
     intake: AddressPick['intake'];
@@ -513,12 +518,15 @@ export function ChatComposer({
             [...e.clipboardData.types],
             [...e.clipboardData.files],
             TASK_PASTE_ACCEPT,
+            e.clipboardData.getData('text/plain'),
           );
           if (d.kind === 'text') return;
           e.preventDefault();
           if (d.kind === 'reject')
             toast.error(`That file cannot go in a chat. Use ${TASK_FILE_TYPES_TEXT}.`);
-          else addFiles(d.files);
+          // Every file of the paste: one of a type a chat does not take is
+          // named, not dropped.
+          else addFiles([...e.clipboardData.files]);
         }}
         className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-4 pt-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-0.75rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
       />
@@ -595,11 +603,11 @@ export function ChatComposer({
             className={cn(
               'mr-1 text-xs tabular-nums',
               tooLong ? 'text-destructive-ink' : 'text-muted-foreground',
-              text.length < BODY_MAX - 500 && 'invisible',
+              lineLength < BODY_MAX - 500 && 'invisible',
             )}
             aria-live="polite"
           >
-            {text.length} / {BODY_MAX}
+            {lineLength} / {BODY_MAX}
           </span>
           <Button type="button" size="sm" onClick={submit} disabled={!hasContent || blocked}>
             <SendHorizontal />

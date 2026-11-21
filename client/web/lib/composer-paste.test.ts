@@ -60,6 +60,20 @@ describe('decideComposerPaste', () => {
     });
   });
 
+  it('a browser\'s "Copy image" (an <img> tag and the picture, no plain text) is the picture', () => {
+    const picture = f('image.png', 'image/png');
+    const accept = COMPOSER_ATTACH_ACCEPT;
+    // What Chromium gives (checked in the e2e browser): text/html + Files, '' plain.
+    expect(decideComposerPaste(['text/html', 'Files'], [picture], accept, '')).toEqual({
+      kind: 'attach',
+      files: [picture],
+    });
+    // Word or Excel carry the words too: still text.
+    expect(
+      decideComposerPaste(['text/plain', 'text/html', 'Files'], [picture], accept, 'A1 B1'),
+    ).toEqual({ kind: 'text' });
+  });
+
   it('takes every ATTACHABLE file when several were copied, in order', () => {
     const bad = f('setup.exe', 'application/x-msdownload');
     const a = f('data.csv', 'text/csv');

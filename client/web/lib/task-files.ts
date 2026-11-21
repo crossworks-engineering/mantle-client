@@ -133,8 +133,9 @@ export function checkTaskUploads<F extends TaskUploadLike>(
 export function decideTaskPaste<F extends PastedFileLike>(
   types: readonly string[],
   files: readonly F[],
+  plainText?: string,
 ): PasteDecision<F> {
-  const d = decideComposerPaste(types, files, TASK_PASTE_ACCEPT);
+  const d = decideComposerPaste(types, files, TASK_PASTE_ACCEPT, plainText);
   if (d.kind !== 'reject') return d;
   const first = files[0];
   const label = first?.name || first?.type || 'That file';

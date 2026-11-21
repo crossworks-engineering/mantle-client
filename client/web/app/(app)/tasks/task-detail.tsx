@@ -134,6 +134,7 @@ export function TaskDetail({
       const d = decideTaskPaste(
         Array.from(e.clipboardData.types),
         Array.from(e.clipboardData.files),
+        e.clipboardData.getData('text/plain'),
       );
       if (d.kind === 'text') return;
       // Ours either way: else a Finder paste types the file's name.

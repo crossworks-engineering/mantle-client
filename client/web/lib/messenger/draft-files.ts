@@ -30,6 +30,8 @@ export type DraftFile = {
 type Upload = (chat: string, file: File) => Promise<MessengerAttachment>;
 
 const EMPTY: readonly DraftFile[] = [];
+/** The most files over the cap one line names (the brain's cap). */
+export const LEFT_OUT_MAX = 20;
 const files = new Map<string, readonly DraftFile[]>();
 const listeners = new Set<() => void>();
 let seq = 0;
@@ -103,6 +105,10 @@ export function addDraftFiles(
     const big = picked1.size > FILE_MAX_BYTES;
     if (!big && sendable(list).length >= FILES_PER_LINE) {
       full.push(name);
+      continue;
+    }
+    if (big && list.length - sendable(list).length >= LEFT_OUT_MAX) {
+      refused.push(`A line names at most ${LEFT_OUT_MAX} files left out. Not added: ${name}.`);
       continue;
     }
     const key = `f${(seq += 1)}`;
