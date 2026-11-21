@@ -146,6 +146,8 @@ export function fleetCard(message: MessengerMessage, handle?: string | null): Fl
       return { label: `Answer from @${e.group.handle}`, goesBack: false };
     case 'desk_answer':
       return { label: 'Answer from the IT desk', goesBack: false };
+    case 'announcement':
+      return { label: `Announcement from ${who}`, goesBack: false };
     default:
       return null;
   }

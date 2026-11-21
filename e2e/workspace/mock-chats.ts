@@ -52,6 +52,8 @@ type MockRow = {
   intake?: string | null;
   /** My own "To @qa" thread: a group of just me. */
   solo?: boolean;
+  /** The box's Announcements group (CC broadcast): read-only. */
+  announcements?: boolean;
 };
 
 /** A request this login sent, as the brain got it (fleet chat specs). */
@@ -539,6 +541,7 @@ export function createMockChats(): MockChats {
                   intake: row.kind === 'group' ? (row.intake ?? null) : null,
                 }
               : {}),
+            ...(row.announcements ? { announcements: true } : {}),
             createdBy: null,
             createdAt: new Date(0).toISOString(),
             archivedAt: null,

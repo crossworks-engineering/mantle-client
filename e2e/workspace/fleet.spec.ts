@@ -6,7 +6,7 @@ import { CC_SCOPE, rowsInAnyScope, scopedNav } from './shell-nav';
 /**
  * The Control Center screens (the CC tab of the rail: Overview, Linked boxes,
  * Fleet status, Fleet matrix, Bans, Provider keys, Fleet sign-in, Agent models, Pool entry, Worker groups,
- * Update notice, Fleet changes) and the Users screen's Archived list
+ * Update notice, Broadcast, Fleet changes) and the Users screen's Archived list
  * (docs/control-center.md in the mantle repo). A box is a Control Center when
  * GET /api/fleet answers 200 (`api.fleet` set); off one it answers 404 and
  * nothing shows. Every screen is a card list with its detail beside it: none
@@ -46,6 +46,7 @@ const SCREENS = [
   'Pool entry',
   'Worker groups',
   'Update notice',
+  'Broadcast',
   'Fleet changes',
 ];
 

@@ -594,7 +594,7 @@ export function ChatInspector({
         >
           Clear for me
         </Button>
-        {group && !left ? (
+        {group && !left && !conversation.announcements ? (
           <Button
             variant="outline"
             size="sm"

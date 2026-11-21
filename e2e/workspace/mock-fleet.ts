@@ -166,6 +166,25 @@ export type MockFleet = {
   ssoSent: Record<string, unknown>[];
   /** Every ask for this box (the target `self`), kept apart from ssoSent. */
   ssoSelfSent: Record<string, unknown>[];
+  /** The CC broadcast: false is a brain before it (the route answers 404). */
+  broadcastOn: boolean;
+  /** The broadcasts, newest first, as GET /api/fleet/broadcasts lists them. */
+  broadcasts: MockBroadcast[];
+  /** What each box answers a broadcast, by box id; absent: it takes it. A
+   *  reason keeps the broadcast waiting there, as a run would. */
+  broadcastAnswers: Record<string, string>;
+  /** Every POST /api/fleet/broadcasts body. */
+  broadcastSent: Record<string, unknown>[];
+};
+
+type MockBroadcast = {
+  id: string;
+  title: string | null;
+  body: string;
+  madeBy: string;
+  madeAt: string;
+  boxIds: string[];
+  marks: Record<string, { at: string; was: 'new' } | { reason: string; tried: string }>;
 };
 
 type SsoStatus = {
@@ -453,7 +472,51 @@ export const newMockFleet = (): MockFleet => ({
   ssoView: {},
   ssoSent: [],
   ssoSelfSent: [],
+  broadcastOn: false,
+  broadcasts: [],
+  broadcastAnswers: {},
+  broadcastSent: [],
 });
+
+/** The broadcast route: a send is stored, then each box's mark is made at
+ *  the next read, as a run would. */
+function broadcastAnswer(
+  f: MockFleet,
+  method: string,
+  body: Record<string, unknown>,
+): { status: number; body: unknown } {
+  if (!f.broadcastOn) return { status: 404, body: { error: 'not found' } };
+  const boxes = f.boxes.map((b) => ({ id: b.id, url: b.url, label: b.label }));
+  if (method === 'GET') {
+    for (const b of f.broadcasts) {
+      for (const id of b.boxIds) {
+        if (b.marks[id] && 'at' in b.marks[id]) continue;
+        const reason = f.broadcastAnswers[id];
+        b.marks[id] = reason ? { reason, tried: AT } : { at: AT, was: 'new' };
+      }
+    }
+    return { status: 200, body: { broadcasts: f.broadcasts, boxes } };
+  }
+  if (method !== 'POST') return { status: 405, body: { error: 'method' } };
+  f.broadcastSent.push(body);
+  const text = typeof body.text === 'string' ? body.text.trim() : '';
+  if (!text) return { status: 400, body: { error: 'Write the text of the broadcast.' } };
+  const ids = Array.isArray(body.boxIds)
+    ? body.boxIds.filter((id) => boxes.some((b) => b.id === id))
+    : boxes.map((b) => b.id);
+  if (ids.length === 0) return { status: 400, body: { error: 'No linked box.' } };
+  const made: MockBroadcast = {
+    id: `bc-${f.broadcasts.length + 1}`,
+    title: typeof body.title === 'string' ? body.title : null,
+    body: text,
+    madeBy: 'admin@example.com',
+    madeAt: AT,
+    boxIds: ids as string[],
+    marks: {},
+  };
+  f.broadcasts.unshift(made);
+  return { status: 200, body: { broadcast: made } };
+}
 
 /** The ids of the Fleet users data: logins and workspaces on each box. */
 export const PEOPLE = {
@@ -778,6 +841,7 @@ export function fleetAnswer(
     return { status: 200, body: { boxes } };
   }
   if (path === '/api/fleet/sso' && method === 'POST') return ssoAnswer(f, body);
+  if (path === '/api/fleet/broadcasts') return broadcastAnswer(f, method, body);
   if (path === '/api/fleet/invite' && method === 'POST') return inviteAnswer(f, body);
   if (path === '/api/fleet/tool' && method === 'POST') {
     if (!f.toolOn) return { status: 404, body: { error: 'not found' } };

@@ -37,6 +37,11 @@
  * they go once a client-types release after 0.709.0 ships them. Every
  * field is optional, so a brain before it fits.
  *
+ * LOCAL COPY (CC broadcast): `announcements` on a conversation and a list
+ * row, and the `announcement` event (mantle branch claude/cc-broadcast-29b7cb,
+ * migration 0395). They go once a client-types release ships them. Optional:
+ * a brain before it sends neither, and no chat is read-only there.
+ *
  * client-types 0.400.34 ships these, with `event` on a message and `info` on
  * a conversation REQUIRED. Both are omitted from the base below so they stay
  * optional here: a brain before calls or 0343 still sends neither.
@@ -110,6 +115,8 @@ export type MessengerListRow = Omit<BaseListRow, 'participants' | 'preview'> &
     preview: MessengerPreview | null;
     /** A group's handle (fleet chat), shown as @qa; null or absent: none. */
     handle?: string | null;
+    /** The box's Announcements group (CC broadcast): read-only. */
+    announcements?: boolean;
   };
 
 export type MessengerListResponse = { rows: MessengerListRow[] };
@@ -130,6 +137,9 @@ export type MessengerConversation = Omit<BaseConversation, 'participants' | 'inf
 type GroupHandleFields = {
   handle?: string | null;
   intake?: MessengerIntakeKind | null;
+  /** The box's Announcements group (CC broadcast, migration 0395): only the
+   *  Control Center posts; a send, a reply and a leave are refused there. */
+  announcements?: boolean;
 };
 
 /** POST /api/messenger/conversations; a brain before the look drops the
@@ -223,7 +233,10 @@ export type MessengerEvent =
   /** On a box: the IT desk's answer to the report this line replies to. */
   | { type: 'desk_answer'; desk: MessengerDeskKind; taskId: string }
   /** On the Control Center: a report from a box; a Reply here answers it. */
-  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } };
+  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } }
+  /** On a box: a Control Center broadcast in Announcements; the line's
+   *  author name is who sent it. */
+  | { type: 'announcement'; broadcastId: string; title: string | null };
 
 /** The kind of an IT desk: its Send to IT kind. */
 export type MessengerDeskKind = MessengerIntakeKind;

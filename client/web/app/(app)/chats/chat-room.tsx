@@ -739,6 +739,9 @@ export function ChatRoom({
     });
   };
   const left = conversation?.me.leftSeq != null;
+  // The box's Announcements group (CC broadcast): only the Control Center
+  // posts, so there is no composer and no Reply.
+  const readOnly = conversation?.announcements === true;
   const isAdmin = group && !!conversation?.me.admin;
   const muted = conversation?.me.muted ?? row?.muted ?? false;
   const pinned = row?.favourite ?? false;
@@ -1104,7 +1107,7 @@ export function ChatRoom({
                               ? undefined
                               : {
                                   onReact: (emoji) => react(it.message.seq, emoji),
-                                  onReply: () => startReply(it.message),
+                                  onReply: readOnly ? undefined : () => startReply(it.message),
                                   onSaveFile: setSaving,
                                   onEdit: it.mine ? () => setEditingSeq(it.message.seq) : undefined,
                                   onDelete:
@@ -1163,6 +1166,13 @@ export function ChatRoom({
                 {left ? (
                   <p className="rounded-lg border border-border bg-card/70 p-3 text-center text-sm text-muted-foreground">
                     You left this chat.
+                  </p>
+                ) : readOnly ? (
+                  <p
+                    className="rounded-lg border border-border bg-card/70 p-3 text-center text-sm text-muted-foreground"
+                    data-testid="chat-read-only"
+                  >
+                    Only IT posts in Announcements. To answer, message the sender.
                   </p>
                 ) : (
                   <>

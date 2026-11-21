@@ -169,6 +169,7 @@ describe('the Admin group (owner, 2026-11-09)', () => {
       'Pool entry',
       'Worker groups',
       'Update notice',
+      'Broadcast',
       'Fleet changes',
     ]);
     // Every screen sits under the Overview's address, and each lights its own row.
