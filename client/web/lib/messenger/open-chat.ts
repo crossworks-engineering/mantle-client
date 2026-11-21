@@ -1,8 +1,9 @@
 /**
  * The chat open on screen (fleet chat, plan section 4): the area capture's
  * "Send to chat" puts its picture in the draft of this chat. A room says
- * it is open while it shows its composer; the room opened last wins (the
- * Chats screen and the Chats window can both hold one). In memory only.
+ * it is open while it shows its composer; the room used last wins (the
+ * Chats screen and the Chats window can both hold one): opened last, or
+ * clicked or typed in last (`raiseChat`). In memory only.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -27,6 +28,14 @@ export function openChat(chat: OpenChat): () => void {
     if (i !== -1) open.splice(i, 1);
     emit();
   };
+}
+
+/** Room `id` was used (a click or a key in it): it is the open one now. */
+export function raiseChat(id: string): void {
+  const i = open.findLastIndex((c) => c.id === id);
+  if (i === -1 || i === open.length - 1) return;
+  open.push(...open.splice(i, 1));
+  emit();
 }
 
 export function currentChat(): OpenChat | null {

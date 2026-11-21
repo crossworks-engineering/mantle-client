@@ -136,7 +136,13 @@ export function CaptureButton({ canAttach }: { canAttach: boolean }) {
     (shot: Shot, chat: OpenChat) => {
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       const file = new File([shot.png], `screenshot-${stamp}.png`, { type: 'image/png' });
-      addDraftFiles(chat.id, [file], (c, f) => messengerApi.upload(c, f));
+      const { refused } = addDraftFiles(chat.id, [file], (c, f) => messengerApi.upload(c, f));
+      if (refused.length > 0) {
+        // Not added (the draft holds 5 files): the preview stays, so the
+        // picture can still be saved, or sent once a file is removed.
+        toast.error(refused.join(' '));
+        return;
+      }
       toast.success(`In the draft of ${chat.title}. Check it, then press Send.`);
       end();
     },
