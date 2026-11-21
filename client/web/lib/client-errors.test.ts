@@ -6,6 +6,7 @@ import {
   clientErrors,
   errorSource,
   recordClientError,
+  withoutQueries,
 } from './client-errors';
 
 afterEach(() => clearClientErrors());
@@ -28,4 +29,14 @@ it('a source is the file and line, never the query', () => {
   expect(errorSource('https://box/app.js?at=token#h', 12)).toBe('https://box/app.js:12');
   expect(errorSource('https://box/app.js', 0)).toBe('https://box/app.js');
   expect(errorSource(undefined, 3)).toBeNull();
+});
+
+it('cuts the query of a URL inside a message, and keeps the rest', () => {
+  expect(withoutQueries('Failed to fetch https://box/api/x?at=secret&q=1 (500)')).toBe(
+    'Failed to fetch https://box/api/x (500)',
+  );
+  expect(withoutQueries('GET /api/files?path=files.x#top failed')).toBe('GET /api/files failed');
+  expect(withoutQueries('What happened? Nothing.')).toBe('What happened? Nothing.');
+  recordClientError('boom at https://box/a.js?token=t');
+  expect(clientErrors()).toEqual([{ message: 'boom at https://box/a.js', source: null }]);
 });

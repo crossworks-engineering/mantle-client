@@ -15,9 +15,15 @@ const MESSAGE_MAX = 300;
 
 const list: ClientError[] = [];
 
+/** A URL's query or hash inside an error's text can carry a token or a
+ *  search: each is cut, the path kept. */
+export function withoutQueries(text: string): string {
+  return text.replace(/((?:[a-z][a-z0-9+.-]*:\/\/|\/)[^\s?#"'()<>]*)[?#][^\s"'()<>]*/gi, '$1');
+}
+
 /** Keep one error (the oldest goes past the cap). */
 export function recordClientError(message: string, source: string | null = null): void {
-  const m = message.trim().slice(0, MESSAGE_MAX);
+  const m = withoutQueries(message.trim()).slice(0, MESSAGE_MAX);
   if (!m) return;
   list.push({ message: m, source: source ? source.slice(0, 300) : null });
   if (list.length > CLIENT_ERRORS_MAX) list.splice(0, list.length - CLIENT_ERRORS_MAX);
