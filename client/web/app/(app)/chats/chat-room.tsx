@@ -834,8 +834,9 @@ export function ChatRoom({
     () => (callsOn && !left && !inThisCall ? openCallSeq(t.messages, Date.now()) : null),
     [callsOn, left, inThisCall, t.messages],
   );
+  // Announcements takes no call: the brain refuses its started line.
   const callTool: HeaderTool | null =
-    callsOn && !left && hasPerson
+    callsOn && !left && hasPerson && !readOnly
       ? inThisCall
         ? {
             key: 'call',
