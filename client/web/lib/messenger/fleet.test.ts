@@ -7,6 +7,7 @@ import type { MessengerDirectoryEntry, MessengerMessage } from './dto';
 import {
   addedLines,
   addressLabel,
+  addressProblem,
   addressPicks,
   bodyWithLines,
   answersToSend,
@@ -15,7 +16,10 @@ import {
   formatBytes,
   handleError,
   intakeOf,
+  leftOutNote,
   lineChips,
+  newDeskAnswers,
+  packageText,
   replyGoesBack,
   replyNote,
   threadTarget,
@@ -276,4 +280,62 @@ it('formatBytes', () => {
   expect(formatBytes(900)).toBe('900 B');
   expect(formatBytes(2048)).toBe('2.0 KB');
   expect(formatBytes(12 * 1024 * 1024)).toBe('12.0 MB');
+});
+
+describe('the package a send screen counts', () => {
+  it('is the form with the box version, then the text, then the note, as the brain writes it', () => {
+    const text = packageText({
+      intake: 'bug',
+      answers: { did: ' Pressed Save ', happened: '' },
+      boxVersion: '0.709.2',
+      text: 'Login fails',
+      leftOut: [{ name: 'dump.log', bytes: 12 * 1024 * 1024 }],
+    });
+    expect(text).toBe(
+      '**What did you do?**\nPressed Save\n\nBox version: 0.709.2\n\nLogin fails\n\nNot sent (over 10 MB): dump.log (12.0 MB).',
+    );
+  });
+  it('is the text alone with no answers', () => {
+    expect(
+      packageText({ intake: 'bug', answers: {}, boxVersion: 'x', text: 'hi', leftOut: [] }),
+    ).toBe('hi');
+    expect(leftOutNote([])).toBe('');
+  });
+});
+
+describe('addressProblem', () => {
+  it('stops two desks, and more than 3 addresses, before send', () => {
+    expect(addressProblem([{ kind: 'desk', id: 'bug' }])).toBeNull();
+    expect(
+      addressProblem([
+        { kind: 'desk', id: 'bug' },
+        { kind: 'desk', id: 'feature' },
+      ]),
+    ).toMatch(/one IT desk/);
+    expect(
+      addressProblem([
+        { kind: 'handle', id: 'a' },
+        { kind: 'handle', id: 'b' },
+        { kind: 'handle', id: 'c' },
+        { kind: 'desk', id: 'bug' },
+      ]),
+    ).toMatch(/at most 3/);
+    expect(addressProblem([{ kind: 'login', id: 'ann' }])).toBeNull();
+  });
+});
+
+describe('newDeskAnswers', () => {
+  it('names the line each new answer replies to, once', () => {
+    const answer = (seq: number, replyToSeq: number) =>
+      line({
+        seq,
+        replyToSeq,
+        authorKind: 'system',
+        event: { type: 'desk_answer', desk: 'bug', taskId: 't' },
+      });
+    const seen = new Set<number>();
+    expect(newDeskAnswers([line({ seq: 1 }), answer(2, 1)], seen)).toEqual([1]);
+    expect(newDeskAnswers([line({ seq: 1 }), answer(2, 1), answer(4, 3)], seen)).toEqual([3]);
+    expect(newDeskAnswers([answer(2, 1), answer(4, 3)], seen)).toEqual([]);
+  });
 });

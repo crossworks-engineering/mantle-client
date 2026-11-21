@@ -57,8 +57,14 @@ import type {
   MessengerMention,
   MessengerMessage,
 } from '@/lib/messenger/dto';
-import { addressPicks, deskSite, replyNote, threadTarget } from '@/lib/messenger/fleet';
-import { openChat } from '@/lib/messenger/open-chat';
+import {
+  addressPicks,
+  deskSite,
+  newDeskAnswers,
+  replyNote,
+  threadTarget,
+} from '@/lib/messenger/fleet';
+import { openChat, raiseChat } from '@/lib/messenger/open-chat';
 import { authorVia, otherPeople, presenceLine, stampLabel } from '@/lib/messenger/format';
 import { groupLook } from '@/lib/messenger/faces';
 import { shouldSendTyping, typingLine } from '@/lib/messenger/live';
@@ -754,8 +760,16 @@ export function ChatRoom({
     queryFn: () => messengerApi.messages(id, { afterSeq: 0, limit: 1 }).then((p) => p.messages[0]),
     enabled: alone,
     staleTime: Infinity,
+    // One quick retry; past it the composer offers Retry (Send waits).
+    retry: 1,
   });
   const target = alone ? threadTarget(firstQuery.data) : null;
+  // A group of one may be my "To @qa" thread: until its first line says
+  // where its lines go, Send waits (a line sent before would go nowhere).
+  const routePending = alone && !firstQuery.isSuccess;
+  // Files on lines need a brain with fleet chat (its conversation names a
+  // handle, null or not; the inspector asks the same).
+  const fleetOn = !!conversation && 'handle' in conversation;
   const mentionNames = useMemo(
     () => [...people.map((p) => p.name), ...addresses.map((a) => a.name)],
     [people, addresses],
@@ -778,11 +792,24 @@ export function ChatRoom({
       : null;
   };
   // The area capture's "Send to chat" puts its picture in this chat's draft
-  // while its composer shows.
+  // while its composer shows (the room used last, `raiseChat`).
+  const shown = !!conversation;
   useEffect(() => {
-    if (!conversation || left) return;
+    if (!shown || left) return;
     return openChat({ id, title });
-  }, [conversation, left, id, title]);
+  }, [shown, left, id, title]);
+  // A desk's answer arrived: the line it answers is read again, so its
+  // status chip says Answered (the status is filled on a read).
+  const deskAnswersSeen = useRef<Set<number> | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    if (deskAnswersSeen.current === null) {
+      deskAnswersSeen.current = new Set();
+      newDeskAnswers(t.messages, deskAnswersSeen.current);
+      return;
+    }
+    for (const seq of newDeskAnswers(t.messages, deskAnswersSeen.current)) void refetchSeq(seq);
+  }, [loaded, t.messages, refetchSeq]);
 
   // The Call button (calls plan P1): only when the brain says calls are on,
   // and never once I have left. Start the chat's call or join the open one;
@@ -909,7 +936,12 @@ export function ChatRoom({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="chat-room">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-testid="chat-room"
+      onPointerDownCapture={() => raiseChat(id)}
+      onFocusCapture={() => raiseChat(id)}
+    >
       <div
         onPointerDown={inWindow?.onHeaderPointerDown}
         className={cn(inWindow?.onHeaderPointerDown && 'cursor-grab active:cursor-grabbing')}
@@ -1129,21 +1161,37 @@ export function ChatRoom({
                     You left this chat.
                   </p>
                 ) : (
-                  <ChatComposer
-                    onSend={(body, mentions, extra) =>
-                      void send(body, mentions, newClientMsgId(), extra)
-                    }
-                    onTyping={onTyping}
-                    people={others}
-                    draftKey={id}
-                    id={composerId}
-                    addresses={addresses}
-                    target={target}
-                    site={site}
-                    upload={(file) => messengerApi.upload(id, file)}
-                    replyTo={replyTo}
-                    onCancelReply={() => setReplyTo(null)}
-                  />
+                  <>
+                    {alone && firstQuery.isError ? (
+                      <p className="mb-2 flex items-center gap-2 text-xs text-destructive-ink">
+                        Could not read where this chat sends to.
+                        <Button
+                          variant="link"
+                          size="2xs"
+                          className="h-auto px-0"
+                          onClick={() => void firstQuery.refetch()}
+                        >
+                          Retry
+                        </Button>
+                      </p>
+                    ) : null}
+                    <ChatComposer
+                      onSend={(body, mentions, extra) =>
+                        void send(body, mentions, newClientMsgId(), extra)
+                      }
+                      canSend={!routePending}
+                      onTyping={onTyping}
+                      people={others}
+                      draftKey={id}
+                      id={composerId}
+                      addresses={addresses}
+                      target={target}
+                      site={site}
+                      upload={fleetOn ? (file) => messengerApi.upload(id, file) : undefined}
+                      replyTo={replyTo}
+                      onCancelReply={() => setReplyTo(null)}
+                    />
+                  </>
                 )}
               </div>
             </div>

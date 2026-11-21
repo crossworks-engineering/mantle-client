@@ -465,9 +465,16 @@ export function ChatInspector({
               <GroupHandleSection
                 conversation={conversation}
                 editable={admin && !left}
-                onSave={(patch) =>
-                  act('handle', () => messengerApi.update(id, patch), 'Handle saved')
-                }
+                onSave={async (patch) => {
+                  const ok = await act(
+                    'handle',
+                    () => messengerApi.update(id, patch),
+                    'Handle saved',
+                  );
+                  // The @ list everywhere reads the handles from the directory.
+                  if (ok) void queryClient.invalidateQueries({ queryKey: messengerKeys.directory });
+                  return ok;
+                }}
               />
             </>
           ) : null}

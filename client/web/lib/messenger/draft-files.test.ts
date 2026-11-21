@@ -67,8 +67,26 @@ describe('draft files', () => {
       Array.from({ length: 7 }, (_, i) => file(`${i}.txt`, 1)),
       upload,
     );
-    expect(out).toEqual({ added: 5, refused: 2 });
+    expect(out).toEqual({
+      added: 5,
+      refused: ['A line takes at most 5 files. Not added: 5.txt, 6.txt.'],
+    });
     expect(draftFiles(CHAT)).toHaveLength(5);
+  });
+
+  it('refuses a type the brain does not take, and names a nameless pasted picture', async () => {
+    const upload = vi.fn((_c: string, f: File) => Promise.resolve(attachment(f.name)));
+    const out = addDraftFiles(
+      CHAT,
+      [file('page.html', 10, 'text/html'), file('image', 10, 'image/png')],
+      upload,
+    );
+    expect(out.refused).toEqual([
+      'page.html cannot go in a chat. Use PNG, JPG, GIF, WebP, PDF, TXT, LOG, MD, JSON or CSV.',
+    ]);
+    await flush();
+    expect(draftFiles(CHAT).map((f) => f.name)).toEqual(['image.png']);
+    expect(upload.mock.calls[0]![1].name).toBe('image.png');
   });
 
   it('marks a failed upload, which holds the send until removed', async () => {

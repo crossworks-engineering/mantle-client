@@ -156,10 +156,11 @@ test('files: uploaded as added, one too big is left out, a picture shows, Save t
 
   await main(page).getByTestId('chat-file').first().hover();
   await main(page).getByRole('button', { name: 'Save shot.png to Files' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Save to Files' });
-  await dialog.getByLabel('Folder').fill('/Reports');
-  await dialog.getByRole('button', { name: 'Save' }).click();
-  await expect.poll(() => api.chats.saved).toEqual([{ id: 'att-9', parentPath: '/Reports' }]);
+  // The Files tree's own folder picker: the top of Files is `files`.
+  const dialog = page.getByRole('dialog', { name: 'Save “shot.png” to…' });
+  await dialog.getByRole('treeitem', { name: 'All files' }).click();
+  await dialog.getByRole('button', { name: 'Save here' }).click();
+  await expect.poll(() => api.chats.saved).toEqual([{ id: 'att-9', parentPath: 'files' }]);
 });
 
 test('a group admin sets its handle and intake form; a reserved word is refused here', async ({
@@ -200,6 +201,8 @@ test('New chat lists the IT desks; a desk opens my own thread, where a line goes
   await expect(main(page).getByTestId('chat-room')).toContainText('To @bugs (IT)');
 
   await box(page).fill('The app closed itself');
+  // Send waits until the thread's first line says where it goes.
+  await expect(main(page).getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
   await box(page).press('Enter');
   const preview = page.getByTestId('send-preview');
   await expect(preview.getByRole('heading', { name: 'Send to @bugs (IT)' })).toBeVisible();
@@ -258,4 +261,120 @@ test('the area capture puts its picture in the open chat, with the warning befor
   await preview.getByRole('button', { name: 'Send' }).click();
   await expect.poll(() => api.chats.sentRequests.length).toBe(1);
   expect(api.chats.sentRequests[0]!.req.attachments).toEqual(['att-1']);
+});
+
+test('a paste from Word or Excel stays text; a pasted picture goes in as a file', async ({
+  page,
+}) => {
+  await openChat(page, ANN);
+  const paste = (rich: boolean) =>
+    box(page).evaluate((el, rich) => {
+      const dt = new DataTransfer();
+      if (rich) {
+        dt.setData('text/plain', 'A1 B1');
+        dt.setData('text/html', '<table><tr><td>A1</td><td>B1</td></tr></table>');
+      }
+      dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'image', { type: 'image/png' }));
+      el.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
+      );
+    }, rich);
+  // Cells from a sheet come with a picture of themselves: not a file.
+  await paste(true);
+  await page.waitForTimeout(300);
+  await expect(main(page).getByTestId('composer-file')).toHaveCount(0);
+  expect(api.chats.uploads).toEqual([]);
+  // A picture alone (a snippet tool's) is a file, named by its type.
+  await paste(false);
+  await expect(main(page).getByTestId('composer-file')).toHaveCount(1);
+  await expect.poll(() => api.chats.uploads).toEqual([{ chat: ANN, name: 'image.png' }]);
+});
+
+test('a capture into a draft that holds 5 files is refused, and the preview stays', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.mantleDesktop = {
+      platform: 'darwin',
+      notify: () => undefined,
+      setBadge: () => undefined,
+      capture: async (rect: { w: number; h: number }) => {
+        const c = document.createElement('canvas');
+        c.width = rect.w;
+        c.height = rect.h;
+        c.getContext('2d')!.fillRect(0, 0, rect.w, rect.h);
+        const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'));
+        return new Uint8Array(await blob.arrayBuffer());
+      },
+    };
+  });
+  await openChat(page, ANN);
+  await main(page)
+    .getByTestId('composer-file-input')
+    .setInputFiles(
+      Array.from({ length: 5 }, (_, i) => ({
+        name: `${i}.txt`,
+        mimeType: 'text/plain',
+        buffer: Buffer.from('x'),
+      })),
+    );
+  await expect.poll(() => api.chats.uploads.length).toBe(5);
+  await page.getByRole('button', { name: 'Capture an area for the assistant' }).click();
+  await page.mouse.move(200, 150);
+  await page.mouse.down();
+  await page.mouse.move(420, 300, { steps: 5 });
+  await page.mouse.up();
+  const capture = page.getByRole('dialog', { name: 'Screenshot' });
+  await capture.getByRole('button', { name: 'Send to chat' }).click();
+  await expect(
+    page.getByText(/A line takes at most 5 files\. Not added: screenshot-/),
+  ).toBeVisible();
+  // Nothing thrown away: the picture is still there to save.
+  await expect(capture.getByRole('img', { name: 'The captured area' })).toBeVisible();
+  await expect(main(page).getByTestId('composer-file')).toHaveCount(5);
+  expect(api.chats.uploads).toHaveLength(5);
+});
+
+test('a To thread holds Send until its address is read, and a failed read offers Retry', async ({
+  page,
+}) => {
+  api.chats.desks = true;
+  // The first line's read: it fails twice (the query and its one retry),
+  // then answers.
+  let fails = 2;
+  await page.route(
+    (url) =>
+      url.pathname.endsWith('/messages') &&
+      url.searchParams.get('after_seq') === '0' &&
+      url.searchParams.get('limit') === '1',
+    (route) => {
+      if (fails > 0) {
+        fails -= 1;
+        return route.fulfill({ status: 500, body: '{"error":"busy"}' });
+      }
+      return route.continue();
+    },
+  );
+  await signIn(page, 'admin');
+  await page.goto('/chats');
+  await main(page).getByRole('button', { name: 'New chat', exact: true }).click();
+  await main(page)
+    .getByRole('region', { name: 'Handles and IT desks' })
+    .getByRole('button', { name: /@bugs \(IT\)/ })
+    .click();
+  await expect(main(page).getByTestId('chat-room')).toContainText('To @bugs (IT)');
+  await box(page).fill('Still broken');
+  const send = main(page).getByRole('button', { name: 'Send', exact: true });
+  await expect(send).toBeDisabled();
+  await box(page).press('Enter');
+  await expect(page.getByTestId('send-preview')).toHaveCount(0);
+  expect(api.chats.sentRequests).toEqual([]);
+
+  await main(page).getByRole('button', { name: 'Retry' }).click();
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(
+    page.getByTestId('send-preview').getByRole('heading', { name: 'Send to @bugs (IT)' }),
+  ).toBeVisible();
 });

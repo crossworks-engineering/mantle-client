@@ -10,6 +10,7 @@
  * Pinned by draft-files.test.ts.
  */
 import { useSyncExternalStore } from 'react';
+import { TASK_FILE_TYPES_TEXT, isTaskFileType, taskFileName } from '../task-files';
 import type { MessengerAttachment } from './dto';
 import { FILE_MAX_BYTES, FILES_PER_LINE } from './fleet';
 
@@ -75,36 +76,49 @@ export function sendable(list: readonly DraftFile[]): DraftFile[] {
 }
 
 /**
- * Add files to chat `chat`'s draft. A file over the cap is kept, marked,
- * never uploaded. At most FILES_PER_LINE go with a line: past that a file
- * is not added, and the answer counts it.
+ * Add files to chat `chat`'s draft. A chat file is a task file type (the
+ * brain's rule; a pasted picture with no name gets its type's extension,
+ * `taskFileName`). A file over the cap is kept, marked, never uploaded. At
+ * most FILES_PER_LINE go with a line. A file not added is named in
+ * `refused`, with why.
  */
 export function addDraftFiles(
   chat: string,
   picked: readonly File[],
   upload: Upload,
-): { added: number; refused: number } {
+): { added: number; refused: string[] } {
   const list = [...(files.get(chat) ?? EMPTY)];
   let added = 0;
-  let refused = 0;
+  const refused: string[] = [];
+  const full: string[] = [];
   const started: { key: string; file: File }[] = [];
-  for (const file of picked) {
-    const big = file.size > FILE_MAX_BYTES;
+  for (const picked1 of picked) {
+    const name = taskFileName(picked1) || 'file';
+    if (!isTaskFileType(name)) {
+      refused.push(`${name} cannot go in a chat. Use ${TASK_FILE_TYPES_TEXT}.`);
+      continue;
+    }
+    const file =
+      name === picked1.name ? picked1 : new File([picked1], name, { type: picked1.type });
+    const big = picked1.size > FILE_MAX_BYTES;
     if (!big && sendable(list).length >= FILES_PER_LINE) {
-      refused += 1;
+      full.push(name);
       continue;
     }
     const key = `f${(seq += 1)}`;
     list.push({
       key,
-      name: file.name || 'file',
-      bytes: file.size,
+      name,
+      bytes: picked1.size,
       mime: file.type || 'application/octet-stream',
       url: big ? null : objectUrl(file),
       state: big ? 'too-big' : 'uploading',
     });
     added += 1;
     if (!big) started.push({ key, file });
+  }
+  if (full.length > 0) {
+    refused.push(`A line takes at most ${FILES_PER_LINE} files. Not added: ${full.join(', ')}.`);
   }
   set(chat, list);
   for (const { key, file } of started) {

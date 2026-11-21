@@ -505,9 +505,9 @@ export function createMockChats(): MockChats {
             icon: null,
             color: null,
             info: null,
-            ...(row.kind === 'group'
-              ? { handle: row.handle ?? null, intake: row.intake ?? null }
-              : {}),
+            // A brain with fleet chat names the handle on every chat (null on a direct one).
+            handle: row.kind === 'group' ? (row.handle ?? null) : null,
+            intake: row.kind === 'group' ? (row.intake ?? null) : null,
             createdBy: null,
             createdAt: new Date(0).toISOString(),
             archivedAt: null,

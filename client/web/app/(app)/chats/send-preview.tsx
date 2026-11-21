@@ -13,7 +13,15 @@ import {
 import { Field, FieldLabel } from '@mantle/web-ui/ui/field';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import type { DraftFile } from '@/lib/messenger/draft-files';
-import { formatBytes, type AddedLine } from '@/lib/messenger/fleet';
+import {
+  LINE_MAX,
+  bodyWithLines,
+  formatBytes,
+  leftOutNote,
+  packageText,
+  type AddedLine,
+} from '@/lib/messenger/fleet';
+import { useServerVersion } from '@/lib/server-version';
 import {
   INTAKE_NAMES,
   MESSENGER_INTAKE_ANSWER_MAX,
@@ -23,15 +31,18 @@ import {
 
 /** The warning on each picture that leaves the chat (plan section 5). */
 export const SHOT_WARNING = 'A screenshot can show client data. Check it before you send.';
+/** The same warning on any other file (a PDF or a sheet can hold more). */
+export const FILE_WARNING = 'A file can show client data. Check it before you send.';
 /** A file over the cap, in the composer and here. */
 export const TOO_BIG = 'Too big. It will not be sent.';
 
 /**
  * The send screen of a line to a handle or an IT desk (plan section 5): the
  * exact package before it goes. The intake form's questions (when the
- * address has one), the text, the lines the app adds (each removable), and
- * each file with its picture and the client data warning. Nothing goes
- * until Send.
+ * address has one), the text, the lines the app adds (each removable), the
+ * lines the box adds (its version with a form, the note for files left
+ * out), and each file with its picture and the client data warning. The
+ * whole is counted against the brain's cap. Nothing goes until Send.
  */
 export function SendPreview({
   to,
@@ -55,9 +66,23 @@ export function SendPreview({
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [lines, setLines] = useState<AddedLine[]>(() => [...initialLines]);
+  const { data: server } = useServerVersion();
+  const boxVersion = server?.version ?? 'this box';
   const questions = intake ? MESSENGER_INTAKE_FORMS[intake] : [];
   const answered = Object.values(answers).some((a) => a.trim());
   const empty = !text.trim() && !answered && files.length === 0;
+  const leftOut = files
+    .filter((f) => f.state === 'too-big')
+    .map((f) => ({ name: f.name, bytes: f.bytes }));
+  const note = leftOutNote(leftOut);
+  const size = packageText({
+    intake,
+    answers,
+    boxVersion,
+    text: bodyWithLines(text, lines),
+    leftOut,
+  }).length;
+  const tooLong = size > LINE_MAX;
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="sm:max-w-xl" data-testid="send-preview">
@@ -115,6 +140,21 @@ export function SendPreview({
               </ul>
             </section>
           ) : null}
+          {(intake && answered) || note ? (
+            <section aria-label="Added by the box" className="space-y-1">
+              <h4 className="text-sm font-semibold">Added by the box</h4>
+              <ul className="space-y-1 text-xs" data-testid="box-lines">
+                {intake && answered ? (
+                  <li className="rounded-md border border-border px-2 py-1">
+                    <span className="text-muted-foreground">Box version:</span> {boxVersion}
+                  </li>
+                ) : null}
+                {note ? (
+                  <li className="rounded-md border border-border px-2 py-1">{note}</li>
+                ) : null}
+              </ul>
+            </section>
+          ) : null}
           {files.length > 0 ? (
             <section aria-label="Files" className="space-y-2">
               <h4 className="text-sm font-semibold">Files</h4>
@@ -138,31 +178,39 @@ export function SendPreview({
                     </div>
                     {f.state === 'too-big' ? (
                       <p className="text-xs text-destructive-ink">{TOO_BIG}</p>
-                    ) : f.url ? (
+                    ) : (
                       <>
-                        {/* A local blob: next/image cannot optimise it. */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={f.url}
-                          alt={f.name}
-                          className="max-h-48 w-auto max-w-full rounded border border-border object-contain"
-                        />
+                        {f.url ? (
+                          // A local blob: next/image cannot optimise it.
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={f.url}
+                            alt={f.name}
+                            className="max-h-48 w-auto max-w-full rounded border border-border object-contain"
+                          />
+                        ) : null}
                         <p className="text-xs text-warning-ink" data-testid="shot-warning">
-                          {SHOT_WARNING}
+                          {f.url ? SHOT_WARNING : FILE_WARNING}
                         </p>
                       </>
-                    ) : null}
+                    )}
                   </li>
                 ))}
               </ul>
             </section>
           ) : null}
         </div>
+        {tooLong ? (
+          <p className="text-sm text-destructive-ink" role="alert" data-testid="package-too-long">
+            This is {size} characters. A line takes at most {LINE_MAX}. Remove added lines or
+            shorten the text.
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button disabled={empty} onClick={() => onSend({ answers, lines })}>
+          <Button disabled={empty || tooLong} onClick={() => onSend({ answers, lines })}>
             Send
           </Button>
         </div>

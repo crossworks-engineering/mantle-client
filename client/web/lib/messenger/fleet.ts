@@ -18,7 +18,9 @@ import type {
 } from './dto';
 import {
   IT_DESKS,
+  MESSENGER_HANDLES_PER_MESSAGE,
   MESSENGER_HANDLE_RESERVED,
+  MESSENGER_INTAKE_FORMS,
   isMessengerIntakeKind,
   normalizeHandle,
   type MessengerIntakeKind,
@@ -258,4 +260,68 @@ export function handleError(raw: string): string | null {
   if (!h) return 'Use 2 to 30 lowercase letters, digits and dashes, with no dash first or last.';
   if (MESSENGER_HANDLE_RESERVED.includes(h)) return `@${h} is kept for the box. Pick another.`;
   return null;
+}
+
+/** The brain's cap on a line's text, the whole of it (form, lines, note). */
+export const LINE_MAX = 8000;
+
+/** The note the brain adds for files left out (`leftOutNote` on the brain). */
+export function leftOutNote(list: readonly { name: string; bytes: number }[]): string {
+  if (list.length === 0) return '';
+  const names = list.map((f) => `${f.name} (${(f.bytes / 1024 / 1024).toFixed(1)} MB)`);
+  return `Not sent (over ${FILE_MAX_BYTES / 1024 / 1024} MB): ${names.join(', ')}.`;
+}
+
+/**
+ * The text a line to a handle or desk becomes on the brain, as the send
+ * screen shows and counts it: the filled form (each question in bold, its
+ * answer under it, then "Box version: …"), then the text with the app's
+ * lines, then the note for the files left out. Mirrors the brain's
+ * `intakeBody` and `leftOutNote`.
+ */
+export function packageText(input: {
+  intake: MessengerIntakeKind | null;
+  answers: Readonly<Record<string, string>>;
+  boxVersion: string;
+  text: string;
+  leftOut: readonly { name: string; bytes: number }[];
+}): string {
+  const note = leftOutNote(input.leftOut);
+  const body = note ? (input.text.trim() ? `${input.text}\n\n${note}` : note) : input.text;
+  const answers = answersToSend(input.answers);
+  if (!input.intake || Object.keys(answers).length === 0) return body;
+  const parts: string[] = [];
+  for (const q of MESSENGER_INTAKE_FORMS[input.intake]) {
+    const a = answers[q.key];
+    if (a) parts.push(`**${q.label}**\n${a}`);
+  }
+  parts.push(`Box version: ${input.boxVersion}`);
+  const form = parts.join('\n\n');
+  return body.trim() ? `${form}\n\n${body}` : form;
+}
+
+/** Why a send's addresses cannot go, before it is sent: one IT desk a
+ *  line, and at most 3 handles and desks together (the brain's rules). */
+export function addressProblem(mentions: readonly MessengerMention[]): string | null {
+  const named = addressesOf(mentions);
+  if (named.filter((m) => m.kind === 'desk').length > 1) {
+    return 'A line goes to one IT desk only. Send a line to each desk.';
+  }
+  if (named.length > MESSENGER_HANDLES_PER_MESSAGE) {
+    return `A line names at most ${MESSENGER_HANDLES_PER_MESSAGE} handles and desks.`;
+  }
+  return null;
+}
+
+/** The lines a desk answer replies to, for answers not seen before: their
+ *  status chip is read again. Marks them seen. */
+export function newDeskAnswers(messages: readonly MessengerMessage[], seen: Set<number>): number[] {
+  const out: number[] = [];
+  for (const m of messages) {
+    if (m.authorKind !== 'system' || m.event?.type !== 'desk_answer') continue;
+    if (seen.has(m.seq)) continue;
+    seen.add(m.seq);
+    if (m.replyToSeq != null) out.push(m.replyToSeq);
+  }
+  return out;
 }

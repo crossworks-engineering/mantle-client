@@ -27,6 +27,8 @@ import type {
   MessengerParticipant,
 } from '@/lib/messenger/dto';
 import { clientErrors } from '@/lib/client-errors';
+import { decideComposerPaste } from '@/lib/composer-paste';
+import { TASK_FILE_ACCEPT, TASK_FILE_TYPES_TEXT, TASK_PASTE_ACCEPT } from '@/lib/task-files';
 import {
   addDraftFiles,
   clearDraftFiles,
@@ -38,6 +40,7 @@ import {
 import {
   addedLines,
   addressLabel,
+  addressProblem,
   addressesOf,
   bodyWithLines,
   answersToSend,
@@ -246,6 +249,11 @@ export function ChatComposer({
     if (target && !mentions.some((m) => m.kind === target.kind && m.id === target.id)) {
       mentions.push(target);
     }
+    const problem = addressProblem(mentions);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     const named = addressesOf(mentions);
     if (named.length > 0) {
       // A line that leaves this chat: the send screen shows the package.
@@ -272,7 +280,7 @@ export function ChatComposer({
   const addFiles = (list: FileList | readonly File[] | null) => {
     if (!filesOn || !list || list.length === 0) return;
     const { refused } = addDraftFiles(draftKey, [...list], (_chat, f) => upload(f));
-    if (refused > 0) toast.error(`A line takes at most 5 files. ${refused} not added.`);
+    if (refused.length > 0) toast.error(refused.join(' '));
   };
 
   const pick = (c: Candidate) => {
@@ -497,10 +505,20 @@ export function ChatComposer({
             : undefined
         }
         onPaste={(e) => {
-          // A pasted picture (a snippet tool's) goes in as a file.
-          if (!filesOn || e.clipboardData.files.length === 0) return;
+          // A pasted picture (a snippet tool's) or a copied file goes in as a
+          // file. Text from Word or Excel comes with a picture of itself:
+          // that stays text (lib/composer-paste.ts has the traps).
+          if (!filesOn) return;
+          const d = decideComposerPaste(
+            [...e.clipboardData.types],
+            [...e.clipboardData.files],
+            TASK_PASTE_ACCEPT,
+          );
+          if (d.kind === 'text') return;
           e.preventDefault();
-          addFiles(e.clipboardData.files);
+          if (d.kind === 'reject')
+            toast.error(`That file cannot go in a chat. Use ${TASK_FILE_TYPES_TEXT}.`);
+          else addFiles(d.files);
         }}
         className="max-h-60 min-h-0 resize-none rounded-lg border-0 px-4 pb-4 pt-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-0.75rem),transparent)] focus-visible:ring-0 focus-visible:ring-offset-0"
       />
@@ -548,6 +566,7 @@ export function ChatComposer({
               type="file"
               multiple
               hidden
+              accept={TASK_FILE_ACCEPT}
               data-testid="composer-file-input"
               onChange={(e) => {
                 addFiles(e.target.files);
