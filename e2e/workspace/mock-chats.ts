@@ -132,6 +132,11 @@ export type MockChats = {
   saved: { id: string; parentPath: string }[];
   /** Each POST /api/messenger/to. */
   opened: { handle: string; site?: string }[];
+  /** A brain with fleet chat (a chat names its handle). False: an older
+   *  brain, whose chats carry no handle. */
+  fleet: boolean;
+  /** My own "To @x" thread, made once (as POST /api/messenger/to). */
+  toThread(handle: string, site?: string): string;
   /** A line as given (a system line with an event, a line with files). */
   addLine(chat: string, line: Partial<MockChatLine>): void;
   /** Serve the routes this module owns. False: not one of them. */
@@ -200,6 +205,28 @@ export function createMockChats(): MockChats {
     uploads: [],
     saved: [],
     opened: [],
+    fleet: true,
+    toThread(handle, site) {
+      const label = site ? `@${handle} (${site})` : `@${handle}`;
+      const title = `To ${label}`;
+      const found = chats.rows.find((r) => r.title === title && r.solo);
+      if (found) return found.id;
+      const thread = `d0000000-0000-4000-8000-${String(chats.rows.length + 1).padStart(12, '0')}`;
+      chats.addChat(thread, title, 'group');
+      const row = rowOf(thread);
+      row.solo = true;
+      row.participants = [{ kind: 'login', id: 'me', name: 'Me', admin: true, leftAt: null }];
+      const desk = { bugs: 'bug', feature: 'feature', requests: 'request' }[handle];
+      const group = chats.rows.find((r) => r.handle === handle)?.id;
+      chats.addLine(thread, {
+        authorKind: 'system',
+        authorId: null,
+        authorName: null,
+        body: `Your messages to ${label}. The answers come back here.`,
+        event: { type: 'to_thread', to: desk ? { desk } : { conversationId: group } },
+      });
+      return thread;
+    },
     addLine(chat, partial) {
       const row = rowOf(chat);
       const list = lines.get(chat) ?? [];
@@ -506,8 +533,12 @@ export function createMockChats(): MockChats {
             color: null,
             info: null,
             // A brain with fleet chat names the handle on every chat (null on a direct one).
-            handle: row.kind === 'group' ? (row.handle ?? null) : null,
-            intake: row.kind === 'group' ? (row.intake ?? null) : null,
+            ...(chats.fleet
+              ? {
+                  handle: row.kind === 'group' ? (row.handle ?? null) : null,
+                  intake: row.kind === 'group' ? (row.intake ?? null) : null,
+                }
+              : {}),
             createdBy: null,
             createdAt: new Date(0).toISOString(),
             archivedAt: null,
@@ -581,21 +612,7 @@ export function createMockChats(): MockChats {
       if (method === 'POST' && path === '/api/messenger/to') {
         const to = JSON.parse(await readBody(req)) as { handle: string; site?: string };
         chats.opened.push(to);
-        const thread = `d0000000-0000-4000-8000-${String(chats.opened.length).padStart(12, '0')}`;
-        const label = to.site ? `@${to.handle} (${to.site})` : `@${to.handle}`;
-        if (!chats.rows.some((r) => r.id === thread)) {
-          chats.addChat(thread, `To ${label}`, 'group');
-          rowOf(thread).solo = true;
-          const desk = { bugs: 'bug', feature: 'feature', requests: 'request' }[to.handle];
-          const group = chats.rows.find((r) => r.handle === to.handle)?.id;
-          chats.addLine(thread, {
-            authorKind: 'system',
-            authorId: null,
-            authorName: null,
-            body: `Your messages to ${label}. The answers come back here.`,
-            event: { type: 'to_thread', to: desk ? { desk } : { conversationId: group } },
-          });
-        }
+        const thread = chats.toThread(to.handle, to.site);
         json(res, 200, { conversationId: thread, groupId: null, member: false });
         return true;
       }

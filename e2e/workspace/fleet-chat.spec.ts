@@ -378,3 +378,119 @@ test('a To thread holds Send until its address is read, and a failed read offers
     page.getByTestId('send-preview').getByRole('heading', { name: 'Send to @bugs (IT)' }),
   ).toBeVisible();
 });
+
+test('a deep link to a To thread holds Send until the chat is read', async ({ page }) => {
+  api.chats.desks = true;
+  const thread = api.chats.toThread('bugs', 'IT');
+  // Neither the list nor the chat answers yet.
+  let release = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route(
+    (url) =>
+      url.pathname === '/api/messenger/conversations' ||
+      url.pathname === `/api/messenger/c/${thread}`,
+    async (route) => {
+      await gate;
+      await route.continue();
+    },
+  );
+  await signIn(page, 'admin');
+  await page.goto(`/chats/${thread}`);
+  await box(page).fill('Before the title');
+  const send = main(page).getByRole('button', { name: 'Send', exact: true });
+  await expect(send).toBeDisabled();
+  await box(page).press('Enter');
+  await page.waitForTimeout(300);
+  expect(api.chats.sentRequests).toEqual([]);
+
+  release();
+  await expect(main(page).getByTestId('chat-room')).toContainText('To @bugs (IT)');
+  await expect(send).toBeEnabled();
+  await send.click();
+  await page.getByTestId('send-preview').getByLabel('What happened?').fill('It closed');
+  await page.getByTestId('send-preview').getByRole('button', { name: 'Send' }).click();
+  await expect.poll(() => api.chats.sentRequests.length).toBe(1);
+  expect(api.chats.sentRequests[0]!.req.mentions).toEqual([{ kind: 'desk', id: 'bug' }]);
+});
+
+test("a browser's Copy image paste goes in as a picture", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL });
+  await openChat(page, ANN);
+  await box(page).focus();
+  // What Chromium's Copy image puts on the clipboard: the picture and an
+  // <img> tag, no plain text.
+  await page.evaluate(async () => {
+    const c = document.createElement('canvas');
+    c.width = 4;
+    c.height = 4;
+    const png = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'));
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'image/png': png,
+        'text/html': new Blob(['<img src="https://example.test/a.png">'], { type: 'text/html' }),
+      }),
+    ]);
+  });
+  await box(page).press('ControlOrMeta+V');
+  await expect(main(page).getByTestId('composer-file')).toHaveCount(1);
+  await expect.poll(() => api.chats.uploads).toEqual([{ chat: ANN, name: 'image.png' }]);
+});
+
+test('a paste of two files names the one a chat does not take', async ({ page }) => {
+  await openChat(page, ANN);
+  await box(page).evaluate((el) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['x'], 'a.png', { type: 'image/png' }));
+    dt.items.add(new File(['x'], 'b.docx', { type: 'application/msword' }));
+    el.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
+    );
+  });
+  await expect(main(page).getByTestId('composer-file')).toHaveCount(1);
+  await expect(page.getByText(/b\.docx cannot go in a chat/)).toBeVisible();
+});
+
+test('a plain line counts the note for a file left out against the cap', async ({ page }) => {
+  await openChat(page, ANN);
+  await box(page).fill('x'.repeat(7980));
+  const send = main(page).getByRole('button', { name: 'Send', exact: true });
+  await expect(send).toBeEnabled();
+  await main(page)
+    .getByTestId('composer-file-input')
+    .setInputFiles([
+      { name: 'dump.log', mimeType: 'text/plain', buffer: Buffer.alloc(10 * 1024 * 1024 + 1) },
+    ]);
+  await expect(send).toBeDisabled();
+  await expect(main(page).getByText(/\/ 8000/)).toBeVisible();
+});
+
+test('on a brain without fleet chat there are no chat files and no Send to chat', async ({
+  page,
+}) => {
+  api.chats.fleet = false;
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.mantleDesktop = {
+      platform: 'darwin',
+      notify: () => undefined,
+      setBadge: () => undefined,
+      capture: async (rect: { w: number; h: number }) => {
+        const c = document.createElement('canvas');
+        c.width = rect.w;
+        c.height = rect.h;
+        const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'));
+        return new Uint8Array(await blob.arrayBuffer());
+      },
+    };
+  });
+  await openChat(page, ANN);
+  await expect(main(page).getByRole('button', { name: 'Add files' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Capture an area for the assistant' }).click();
+  await page.mouse.move(200, 150);
+  await page.mouse.down();
+  await page.mouse.move(420, 300, { steps: 5 });
+  await page.mouse.up();
+  const capture = page.getByRole('dialog', { name: 'Screenshot' });
+  await expect(capture.getByRole('img', { name: 'The captured area' })).toBeVisible();
+  await expect(capture.getByRole('button', { name: 'Send to chat' })).toHaveCount(0);
+});
