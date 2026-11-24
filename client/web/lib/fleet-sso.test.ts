@@ -31,6 +31,7 @@ import {
   modeLabel,
   refusedUnclear,
   secretUnclearWarning,
+  SAVED_UNCLEAR,
   SET_TOO_OLD,
   SET_TOO_OLD_UNCLEAR,
   settleSso,
@@ -276,6 +277,15 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
     });
     expect(answerText(cleared)).toMatchObject({ tone: 'warn' });
     expect(answerText(cleared).text).toContain('old secret was cleared');
+
+    const confirmed = answer({
+      name: 'sso_set',
+      ok: true,
+      output: { ok: true, test: 'unclear', acceptedUnclear: true },
+    });
+    expect(readAnswer(confirmed)).toMatchObject({ ok: true, acceptedUnclear: true });
+    expect(answerText(confirmed)).toEqual({ tone: 'warn', text: `Saved. ${SAVED_UNCLEAR}` });
+    expect(readAnswer(cleared).acceptedUnclear).toBe(false);
 
     const late = answer({ ok: false, reason: 'unreachable' });
     expect(readAnswer(late)).toMatchObject({ ok: false, reason: 'unreachable' });

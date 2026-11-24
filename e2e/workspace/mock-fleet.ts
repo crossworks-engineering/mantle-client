@@ -6,8 +6,11 @@
 
 import { inviteAnswer } from './mock-fleet-invite';
 import { keyStatusAnswer } from './mock-fleet-keys';
-// The label's rule: the one the client mirrors from the brain.
-import { SSO_LABEL_REFUSED, ssoLabelValue } from '../../client/web/lib/sso-setup';
+// The label's rule, the brain's own (a copy the unit tests hold to it).
+import {
+  MOCK_SSO_LABEL_REFUSED as SSO_LABEL_REFUSED,
+  mockSsoLabelValue as ssoLabelValue,
+} from './mock-sso-label';
 
 const AT = '2026-11-09T08:00:00.000Z';
 const ADMIN = 'ada@example.invalid';
@@ -1249,6 +1252,10 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
       }
     }
     let test: string | undefined;
+    // A new secret in a live mode ran its own Test (the brain's nextSsoView).
+    const ownTest = body.do === 'set' && typeof body.secret === 'string' && status.mode !== 'setup';
+    if (ownTest) test = f.ssoTest[boxId] ?? 'ok';
+    const acceptedUnclear = ownTest && test === 'unclear';
     if (body.do === 'test')
       test = f.ssoTest[boxId] ?? (status.secret === 'none' ? 'no-secret' : 'ok');
     const fields: string[] = [];
@@ -1277,14 +1284,26 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
       test: test ? { code: test, at, by: ADMIN } : ((prev?.test as unknown) ?? null),
       set:
         body.do === 'set'
-          ? { fields, ok: true, reason: null, by: ADMIN, at }
+          ? {
+              fields,
+              ok: true,
+              reason: null,
+              by: ADMIN,
+              at,
+              ...(acceptedUnclear ? { acceptedUnclear: true } : {}),
+            }
           : ((prev?.set as unknown) ?? null),
     };
     return {
       ...base,
       ok: true,
       reason: null,
-      output: { ok: true, ...(test ? { test } : {}), status: { ...status } },
+      output: {
+        ok: true,
+        ...(test ? { test } : {}),
+        ...(acceptedUnclear ? { acceptedUnclear: true } : {}),
+        status: { ...status },
+      },
     };
   });
   return { status: 200, body: { answers, pending: [], gone: [] } };

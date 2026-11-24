@@ -1,47 +1,33 @@
 /**
  * The company sign-in and SCIM setup screen's model (Admin > Company
- * sign-in; docs/oidc-sign-in.md in the mantle repo). The types mirror the
- * brain's DTOs in @mantle/client-types, which reach this repo with the next
- * published contract. Pure, so it is unit-tested.
+ * sign-in; docs/oidc-sign-in.md in the mantle repo). The types and the
+ * label's rule are the brain's, from @mantle/client-types. Pure, so it is
+ * unit-tested.
  */
+import {
+  SSO_LABEL_MAX,
+  SSO_LABEL_REFUSED,
+  ssoLabelValue,
+  type SsoSetupStatusDTO,
+  type SsoSetupTestOutcome,
+} from '@mantle/client-types';
+
+export {
+  SSO_LABEL_MAX,
+  SSO_LABEL_RE,
+  SSO_LABEL_REFUSED,
+  ssoLabelValue,
+  type SsoSetupBody,
+  type SsoSetupSetter,
+  type SsoSetupTestOutcome,
+} from '@mantle/client-types';
+
 export const SSO_SETUP_PATH = '/api/users/sso-setup';
 export const SSO_SETUP_KEY = ['sso-setup'];
 export const COMPANY_SIGN_IN_HREF = '/admin/company-sign-in';
 
-export type SsoSetupSetter = { by: string | null; at: string };
-
-export type SsoSetupOn = {
-  mode: 'setup' | 'optional' | 'required';
-  issuer: string;
-  clientId: string;
-  redirectUri: string;
-  scimUrl: string;
-  envMissing: string[];
-  /** The sign-in button's label in use, and where it comes from. Absent
-   *  from a brain before the label (mantle 0399). */
-  label?: string;
-  labelFrom?: SsoLabelFrom;
-  secret: 'env' | 'row' | 'none';
-  scim: 'env' | 'env-off' | 'row' | 'none';
-  secretSet: SsoSetupSetter | null;
-  scimSet: SsoSetupSetter | null;
-};
-
-export type SsoSetupStatus = { mode: 'off' } | SsoSetupOn;
-
-/** PUT /api/users/sso-setup: a secret (setup only), a label (any mode but
- *  off; '' clears it), or both, with the person's own password. */
-export type SsoSetupBody = { secret?: string; label?: string; password: string };
-
-export type SsoSetupTestOutcome =
-  | 'ok'
-  | 'secret-refused'
-  | 'unclear'
-  | 'unreachable'
-  | 'issuer-mismatch'
-  | 'env-missing'
-  | 'no-secret'
-  | 'secret-unreadable';
+export type SsoSetupStatus = SsoSetupStatusDTO;
+export type SsoSetupOn = Exclude<SsoSetupStatusDTO, { mode: 'off' }>;
 
 /** The `unclear` Test: Entra with Assignment required? on Yes gives the app
  *  no token of its own, so a good secret reads so too (mantle
@@ -113,6 +99,7 @@ export function scimSourceText(status: SsoSetupOn): string {
   if (status.scim === 'env') return 'From the box .env.';
   if (status.scim === 'env-off') return 'Stopped by the box .env.';
   if (status.scim === 'row') return 'Made on this screen. Only its hash is kept.';
+  if (status.scim === 'not-cc') return 'Off: this box is not a Control Center.';
   return 'Not made.';
 }
 
@@ -137,33 +124,7 @@ export function withCompanySignIn<G extends { items: { href: string }[] }>(
 /** Where the label in use comes from: MANTLE_OIDC_LABEL in the box .env (it
  *  wins), the setup row (set on a setup screen, the box's own or a Control
  *  Center's), or neither (the default). */
-export type SsoLabelFrom = 'env' | 'row' | 'none';
-
-/* The label's rule, as @mantle/client-types src/sso-label.ts has it (mantle
- * 0399, 87084099e: NFC, up to 4 combining marks on a letter or digit, the
- * curly apostrophe; nothing that shows nothing). Mirrored here
- * until the pin carries it; then import SSO_LABEL_MAX, SSO_LABEL_RE,
- * SSO_LABEL_REFUSED and ssoLabelValue from there and drop these. The e2e
- * mocks take it from here. The brain is the judge: the form only warns. */
-
-/** The most characters (code points, after NFC) of a label. */
-export const SSO_LABEL_MAX = 60;
-
-/** The label's pattern (flag `u`), applied to the value in NFC, trimmed. It
- *  also refuses U+034F, the variation selectors and the Hangul fillers. */
-export const SSO_LABEL_RE =
-  /^(?=.{1,60}$)(?!.*(?:\u034F|\u115F|\u1160|\u3164|\uFFA0|[\u180B-\u180F]|[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]))(?=.*[\p{L}\p{N}])(?:[\p{L}\p{N}]\p{M}{0,4}|[ .,'\u2019&()+-])+$/u;
-
-/** The one refusal text of a label that does not fit (the brain's 400). */
-export const SSO_LABEL_REFUSED = `The label is 1 to ${SSO_LABEL_MAX} characters: letters (with their accents), digits, spaces and . , - ' ’ & ( ) + only, with at least one letter or digit.`;
-
-/** A label as typed, in NFC and trimmed: the value to store, `null` for an
- *  empty one (clear the label), or `false` when it does not fit. */
-export function ssoLabelValue(raw: string): string | null | false {
-  const v = raw.normalize('NFC').trim();
-  if (v === '') return null;
-  return SSO_LABEL_RE.test(v) ? v : false;
-}
+export type SsoLabelFrom = NonNullable<SsoSetupOn['labelFrom']>;
 
 /** The field's help: what the label is, its rule, and the default. */
 export const LABEL_HELP = `The word on the sign-in button: Sign in with … Up to ${SSO_LABEL_MAX} characters: letters (with their accents), digits, spaces and . , - ' ’ & ( ) +. Leave it empty for the default, Single sign-on.`;

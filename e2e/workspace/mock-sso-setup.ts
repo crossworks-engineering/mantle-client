@@ -4,8 +4,11 @@
  * as the box's .env would, and `testOutcome`, as the provider would.
  */
 
-// The label's rule: the one the client mirrors from the brain.
-import { SSO_LABEL_REFUSED, ssoLabelValue } from '../../client/web/lib/sso-setup';
+// The label's rule, the brain's own (a copy the unit tests hold to it).
+import {
+  MOCK_SSO_LABEL_REFUSED as SSO_LABEL_REFUSED,
+  mockSsoLabelValue as ssoLabelValue,
+} from './mock-sso-label';
 
 export type MockSsoSetup = {
   mode: 'off' | 'setup' | 'optional' | 'required';
@@ -31,6 +34,9 @@ export type MockSsoSetup = {
   statusHold: Promise<void> | null;
   /** What a write answers instead: the hold's 403 or the one 429. */
   writeRefusal: { status: number; body: unknown } | null;
+  /** False for a brain before the `not-cc` word: off a Control Center it
+   *  answers its SCIM fields as on one. */
+  notCcWord: boolean;
 };
 
 export const newMockSsoSetup = (): MockSsoSetup => ({
@@ -50,19 +56,23 @@ export const newMockSsoSetup = (): MockSsoSetup => ({
   statusAnswer: null,
   statusHold: null,
   writeRefusal: null,
+  notCcWord: true,
 });
 
 const ADMIN = 'admin@example.invalid';
 const AT = '2026-11-06T08:00:00.000Z';
 
-function statusOf(s: MockSsoSetup) {
+/** `cc`: this box is a Control Center (the mock fleet is set). Off one the
+ *  brain answers `scim: 'not-cc'`, no SCIM URL and no SCIM setter. */
+function statusOf(s: MockSsoSetup, cc: boolean) {
   if (s.mode === 'off') return { mode: 'off' };
+  const notCc = !cc && s.notCcWord;
   return {
     mode: s.mode,
     issuer: 'https://login.microsoftonline.com/7d8b2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f/v2.0',
     clientId: 'the-client-id',
     redirectUri: 'https://brain.example.invalid/api/auth/oidc/callback',
-    scimUrl: 'https://brain.example.invalid/scim/v2',
+    scimUrl: notCc ? '' : 'https://brain.example.invalid/scim/v2',
     envMissing: s.envMissing,
     ...(s.labelOn
       ? {
@@ -71,9 +81,17 @@ function statusOf(s: MockSsoSetup) {
         }
       : {}),
     secret: s.envSecret ? 'env' : s.secret ? 'row' : 'none',
-    scim: s.envScim === 'hash' ? 'env' : s.envScim === 'off' ? 'env-off' : s.token ? 'row' : 'none',
+    scim: notCc
+      ? 'not-cc'
+      : s.envScim === 'hash'
+        ? 'env'
+        : s.envScim === 'off'
+          ? 'env-off'
+          : s.token
+            ? 'row'
+            : 'none',
     secretSet: s.secret ? { by: ADMIN, at: AT } : null,
-    scimSet: s.token ? { by: ADMIN, at: AT } : null,
+    scimSet: s.token && !notCc ? { by: ADMIN, at: AT } : null,
   };
 }
 
@@ -92,10 +110,11 @@ export function ssoSetupAnswer(
   method: string,
   body: { secret?: string; label?: string; password?: string },
   password: string,
+  cc: boolean,
 ): { status: number; body: unknown } | null {
   if (path === '/api/users/sso-setup' && method === 'GET') {
     if (s.statusAnswer) return { status: s.statusAnswer, body: { error: 'no' } };
-    return { status: 200, body: statusOf(s) };
+    return { status: 200, body: statusOf(s, cc) };
   }
   if (method !== 'GET' && s.writeRefusal) return s.writeRefusal;
   if (path === '/api/users/sso-setup' && method === 'PUT') {
@@ -119,7 +138,7 @@ export function ssoSetupAnswer(
     if (body.secret !== undefined) s.secret = body.secret;
     if (label !== undefined) s.label = label || null;
     s.saves.push({ ...(body.secret !== undefined ? { secret: true } : {}), label });
-    return { status: 200, body: statusOf(s) };
+    return { status: 200, body: statusOf(s, cc) };
   }
   if (path === '/api/users/sso-setup/test' && method === 'POST') {
     if (s.mode !== 'setup') return closed;

@@ -80,7 +80,15 @@ export type FleetSsoView = {
   reason: string | null;
   status: FleetSsoStatus | null;
   test: { code: string; at: string; by: string } | null;
-  set: { fields: string[]; ok: boolean; reason: string | null; by: string; at: string } | null;
+  set: {
+    fields: string[];
+    ok: boolean;
+    reason: string | null;
+    by: string;
+    at: string;
+    /** The secret was saved on an `unclear` Test, as the person confirmed. */
+    acceptedUnclear?: true;
+  } | null;
   /** The last raise of the mode: the mode asked, and the one before. */
   mode?: {
     to: string;
@@ -107,6 +115,8 @@ export type FleetSsoOutput = {
   reason?: string | null;
   test?: string;
   secretCleared?: true;
+  /** sso_set: the secret was saved on an `unclear` Test, as confirmed. */
+  acceptedUnclear?: true;
   /** sso_mode: the mode before the raise. */
   from?: string;
   status?: FleetSsoStatus;
@@ -530,13 +540,15 @@ export function ssoReasonText(code: string | null): string {
   }
 }
 
-/** One answer, read: ok or not, its reason, the Test's code, and whether
- *  the old secret was cleared. */
+/** One answer, read: ok or not, its reason, the Test's code, whether the
+ *  old secret was cleared, and whether the secret was saved on an `unclear`
+ *  Test, as confirmed. */
 export function readAnswer(a: FleetSsoAnswer): {
   ok: boolean;
   reason: string | null;
   test: string | null;
   secretCleared: boolean;
+  acceptedUnclear: boolean;
 } {
   const out = a.output;
   const ok = (a.ok ?? out?.ok) === true && (out ? out.ok === true : true);
@@ -546,6 +558,7 @@ export function readAnswer(a: FleetSsoAnswer): {
     reason,
     test: typeof out?.test === 'string' ? out.test : null,
     secretCleared: out?.secretCleared === true,
+    acceptedUnclear: out?.acceptedUnclear === true,
   };
 }
 
@@ -557,6 +570,10 @@ export const SET_TOO_OLD =
  *  before it. */
 export const SET_TOO_OLD_UNCLEAR =
   'The box runs an older release that cannot save a secret after an unclear Test, so nothing was saved. Update the box first.';
+
+/** A secret the box saved on an `unclear` Test, as the person confirmed. */
+export const SAVED_UNCLEAR =
+  'The secret was saved after an unclear Test, as you confirmed. A real sign-in is the real test.';
 
 /** Why a box refused a raise. */
 export function modeRefusalText(reason: 'env-wins' | 'mode'): string {
@@ -596,7 +613,11 @@ export function answerText(
     const cleared = r.secretCleared
       ? ' The tenant or client changed, so the old secret was cleared: paste the secret of the new app.'
       : '';
-    return { tone: r.secretCleared ? 'warn' : 'ok', text: `Saved.${cleared}` };
+    const unclear = r.acceptedUnclear ? ` ${SAVED_UNCLEAR}` : '';
+    return {
+      tone: r.secretCleared || r.acceptedUnclear ? 'warn' : 'ok',
+      text: `Saved.${unclear}${cleared}`,
+    };
   }
   return { tone: 'ok', text: 'Status read.' };
 }

@@ -375,7 +375,13 @@ for (const mode of ['optional', 'required'] as const) {
     await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
     await dialog.getByRole('button', { name: 'Save sign-in' }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(main.getByText('Saved.', { exact: false }).first()).toBeVisible();
+    // The box answers acceptedUnclear: the notice and the last save say so.
+    await expect(
+      main.getByText('The secret was saved after an unclear Test, as you confirmed.', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(main).toContainText('saved after an unclear Test, as confirmed.');
     expect(sent('set')).toEqual([
       { do: 'set', boxId: FLEET_BOX.id, secret: 'the-new-secret', password: SSO_PASSWORD },
       { do: 'set', boxId: FLEET_BOX.id, secret: 'the-new-secret', password: SSO_PASSWORD },

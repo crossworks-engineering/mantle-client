@@ -802,7 +802,11 @@ function OneBox({ row }: { row: FleetSsoRow }) {
         {set && (
           <p className={cn('text-xs', set.ok ? 'text-muted-foreground' : TONE_TEXT.bad)}>
             Last save ({set.fields.join(', ') || 'nothing'}) by {set.by}, {formatDateTime(set.at)}:{' '}
-            {set.ok ? 'saved.' : ssoReasonText(set.reason)}
+            {set.ok
+              ? set.acceptedUnclear
+                ? 'saved after an unclear Test, as confirmed.'
+                : 'saved.'
+              : ssoReasonText(set.reason)}
           </p>
         )}
       </Part>

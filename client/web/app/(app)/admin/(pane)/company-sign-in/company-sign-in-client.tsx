@@ -517,10 +517,11 @@ function EntraSteps({ scim }: { scim: boolean }) {
  */
 export function CompanySignInClient() {
   const query = useQuery(ssoSetupQuery);
-  // The SCIM-token step is the Control Center's only (owner, 2026-11-09): GET
-  // /api/fleet answers 200 there, 404 elsewhere. Hidden while it loads or fails.
+  // The SCIM-token step is the Control Center's only (owner, 2026-11-09): the
+  // status says `not-cc` off one; a box before that word is asked through GET
+  // /api/fleet (200 there, 404 elsewhere). Hidden while it loads or fails.
   const fleet = useQuery(fleetQuery);
-  const scim = fleet.data != null;
+  const ccOnly = fleet.data != null;
   const [token, setToken] = useState<string | null>(null);
   const [madeHere, setMadeHere] = useState(false);
   const panel = token && <TokenPanel token={token} onDone={() => setToken(null)} />;
@@ -547,6 +548,7 @@ export function CompanySignInClient() {
     );
   }
   const open = status.mode === 'setup';
+  const scim = status.scim !== 'not-cc' && ccOnly;
 
   return (
     <div>

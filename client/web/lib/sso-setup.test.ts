@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MOCK_SSO_LABEL_MAX,
+  MOCK_SSO_LABEL_RE,
+  MOCK_SSO_LABEL_REFUSED,
+  mockSsoLabelValue,
+} from '../../../e2e/workspace/mock-sso-label';
+import {
   COMPANY_SIGN_IN_HREF,
   LABEL_HELP,
   SSO_LABEL_REFUSED,
@@ -11,6 +17,7 @@ import {
   labelStart,
   signInButtonText,
   SSO_LABEL_MAX,
+  SSO_LABEL_RE,
   ssoLabelValue,
   scimSourceText,
   secretSourceText,
@@ -98,6 +105,7 @@ describe('the sources', () => {
     expect(scimSourceText(on({ scim: 'env-off' }))).toContain('Stopped');
     expect(scimSourceText(on({ scim: 'row' }))).toContain('hash');
     expect(scimSourceText(on({ scim: 'none' }))).toBe('Not made.');
+    expect(scimSourceText(on({ scim: 'not-cc' }))).toContain('not a Control Center');
   });
 });
 
@@ -206,5 +214,22 @@ describe('the sign-in button label', () => {
       "The label is 1 to 60 characters: letters (with their accents), digits, spaces and . , - ' ’ & ( ) + only, with at least one letter or digit.",
     );
     expect(LABEL_HELP).toContain("' ’ &");
+  });
+});
+
+describe("the e2e mock's copy of the label rule", () => {
+  it("is the package's, character for character", () => {
+    // The bundler may write a \u escape out as its character: compare them so.
+    const plain = (source: string) =>
+      source.replace(/\\u\{([0-9A-Fa-f]+)\}|\\u([0-9A-Fa-f]{4})/g, (_, a: string, b: string) =>
+        String.fromCodePoint(parseInt(a ?? b, 16)),
+      );
+    expect(plain(MOCK_SSO_LABEL_RE.source)).toBe(plain(SSO_LABEL_RE.source));
+    expect(MOCK_SSO_LABEL_RE.flags).toBe(SSO_LABEL_RE.flags);
+    expect(MOCK_SSO_LABEL_MAX).toBe(SSO_LABEL_MAX);
+    expect(MOCK_SSO_LABEL_REFUSED).toBe(SSO_LABEL_REFUSED);
+    for (const raw of ['  Contoso Ltd.  ', 'Cafe\u0301', '', 'x\u034F', 'x'.repeat(61)]) {
+      expect(mockSsoLabelValue(raw)).toBe(ssoLabelValue(raw));
+    }
   });
 });

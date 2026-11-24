@@ -431,6 +431,20 @@ test('off a Control Center: no SCIM step, and the Entra steps end at the sign-in
   await expect(main.getByText('Make the SCIM token.')).toHaveCount(0);
 });
 
+test('off a Control Center, a brain before the not-cc word: still no SCIM step', async ({
+  page,
+}) => {
+  api.ssoSetup.mode = 'setup';
+  api.ssoSetup.notCcWord = false;
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Setup is open, and company sign-in is off')).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'SCIM token' })).toHaveCount(0);
+  await expect(main.getByText('https://brain.example.invalid/scim/v2')).toHaveCount(0);
+  await expect(main.getByText('Make the SCIM token.')).toHaveCount(0);
+});
+
 test('on a Control Center: the SCIM step, the SCIM URL and the provisioning steps show', async ({
   page,
 }) => {
