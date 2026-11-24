@@ -298,7 +298,7 @@ test('every tested code, an unknown one, and a 429', async ({ page }) => {
   const fail = 'Too many tests. Try again in a few minutes.';
   s.limited = true;
   await main.getByRole('button', { name: 'Test now' }).click();
-  await expect(main.getByRole('status').filter({ hasText: fail })).toBeVisible();
+  await expect(main.getByRole('status').filter({ hasText: fail }).first()).toBeVisible();
   await expect(main.getByText(fail)).toHaveCount(2);
   // Another box does not show it.
   await card(main, FLEET_BOX.id).click();
@@ -308,8 +308,10 @@ test('every tested code, an unknown one, and a 429', async ({ page }) => {
   s.limited = true;
   await main.getByRole('button', { name: 'Test all' }).click();
   await expect(main.getByText(fail)).toHaveCount(1);
+  // The list's line is read aloud while a box is open on the right.
+  await expect(main.getByRole('status').filter({ hasText: fail })).toHaveCount(1);
   await main.getByRole('button', { name: /All boxes/ }).click();
-  await expect(main.getByRole('status').filter({ hasText: fail })).toBeVisible();
+  await expect(main.getByRole('status').filter({ hasText: fail }).first()).toBeVisible();
   await expect(main.getByText(fail)).toHaveCount(2);
 });
 

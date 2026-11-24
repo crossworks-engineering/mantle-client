@@ -569,7 +569,11 @@ function KeyStatus({ data }: { data: FleetOverview }) {
             ) : undefined
           }
         >
-          {callFail && <p className="text-sm text-destructive-ink">{callFail.text}</p>}
+          {callFail && (
+            <p role="status" className="text-sm text-destructive-ink">
+              {callFail.text}
+            </p>
+          )}
           {query.isError && !status ? (
             <p className="text-sm text-destructive-ink">Could not load the key status.</p>
           ) : boxes.length === 0 ? (
