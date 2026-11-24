@@ -140,7 +140,8 @@ export function withCompanySignIn<G extends { items: { href: string }[] }>(
 export type SsoLabelFrom = 'env' | 'row' | 'none';
 
 /* The label's rule, as @mantle/client-types src/sso-label.ts has it (mantle
- * 0399, a583fd267: NFC, combining marks, the curly apostrophe). Mirrored here
+ * 0399, 87084099e: NFC, up to 4 combining marks on a letter or digit, the
+ * curly apostrophe; nothing that shows nothing). Mirrored here
  * until the pin carries it; then import SSO_LABEL_MAX, SSO_LABEL_RE,
  * SSO_LABEL_REFUSED and ssoLabelValue from there and drop these. The e2e
  * mocks take it from here. The brain is the judge: the form only warns. */
@@ -148,8 +149,10 @@ export type SsoLabelFrom = 'env' | 'row' | 'none';
 /** The most characters (code points, after NFC) of a label. */
 export const SSO_LABEL_MAX = 60;
 
-/** The label's pattern (flag `u`), applied to the value in NFC, trimmed. */
-export const SSO_LABEL_RE = /^(?=.{1,60}$)(?=.*[\p{L}\p{N}])(?:[\p{L}\p{N}]\p{M}*|[ .,'’&()+-])+$/u;
+/** The label's pattern (flag `u`), applied to the value in NFC, trimmed. It
+ *  also refuses U+034F, the variation selectors and the Hangul fillers. */
+export const SSO_LABEL_RE =
+  /^(?=.{1,60}$)(?!.*(?:\u034F|\u115F|\u1160|\u3164|\uFFA0|[\u180B-\u180F]|[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]))(?=.*[\p{L}\p{N}])(?:[\p{L}\p{N}]\p{M}{0,4}|[ .,'\u2019&()+-])+$/u;
 
 /** The one refusal text of a label that does not fit (the brain's 400). */
 export const SSO_LABEL_REFUSED = `The label is 1 to ${SSO_LABEL_MAX} characters: letters (with their accents), digits, spaces and . , - ' ’ & ( ) + only, with at least one letter or digit.`;

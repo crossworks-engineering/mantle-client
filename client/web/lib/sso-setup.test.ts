@@ -152,6 +152,25 @@ describe('the sign-in button label', () => {
     ]) {
       expect(ssoLabelValue(bad)).toBe(false);
     }
+    // 87084099e: what shows nothing is refused, and at most 4 marks on one
+    // letter or digit.
+    for (const blank of [
+      'a\u034Fb',
+      'a\uFE0Fb',
+      'a\uFE00b',
+      'a\u{E0100}b',
+      'a\u180Bb',
+      'a\u115Fb',
+      'a\u1160b',
+      'a\u3164b',
+      'a\uFFA0b',
+    ]) {
+      expect(ssoLabelValue(blank)).toBe(false);
+    }
+    expect(ssoLabelValue('ภาษาไทย')).toBe('ภาษาไทย');
+    expect(ssoLabelValue('עִבְרִית')).toBe('עִבְרִית');
+    expect(ssoLabelValue('x\u0300\u0301\u0302\u0303')).not.toBe(false);
+    expect(ssoLabelValue('x\u0300\u0301\u0302\u0303\u0304')).toBe(false);
   });
 
   it('sends a change only, clears with an empty field, and refuses what does not fit', () => {
