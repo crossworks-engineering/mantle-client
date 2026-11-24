@@ -96,6 +96,12 @@ export function roleOf(el: Element): string {
   return 'generic';
 }
 
+/** Whether a secret is in or around `node`: then no page text of it may
+ *  name anything (no string matching: the text is left out whole). */
+function holdsSecret(node: Element): boolean {
+  return !!(node.closest?.('[data-secret]') || node.querySelector?.('[data-secret]'));
+}
+
 /** The accessible name, roughly as a screen reader reads it. */
 export function nameOf(el: Element): string {
   // A secret's text never reaches the agent, not even as a name.
@@ -104,20 +110,22 @@ export function nameOf(el: Element): string {
   if (label?.trim()) return label;
   const by = el.getAttribute('aria-labelledby');
   if (by) {
-    const text = by
+    const nodes = by
       .split(/\s+/)
-      .map((id) => {
-        const node = el.ownerDocument.getElementById(id);
-        return node ? labelText(node) : '';
-      })
-      .join(' ')
-      .trim();
-    if (text) return text;
+      .map((id) => el.ownerDocument.getElementById(id))
+      .filter((n): n is HTMLElement => !!n);
+    if (!nodes.some(holdsSecret)) {
+      const text = nodes
+        .map((n) => n.textContent ?? '')
+        .join(' ')
+        .trim();
+      if (text) return text;
+    }
   }
   // A <label for> names a field, and a button too (a Radix switch is one).
   const labels = (el as HTMLInputElement).labels;
-  if (labels && labels.length) {
-    const text = [...labels].map(labelText).join(' ');
+  if (labels && labels.length && ![...labels].some(holdsSecret)) {
+    const text = [...labels].map((l) => l.textContent ?? '').join(' ');
     if (text.trim()) return text;
   }
   if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.placeholder) {
@@ -126,30 +134,12 @@ export function nameOf(el: Element): string {
   if (el instanceof HTMLIFrameElement) return el.title || 'app frame';
   const mark = (el as HTMLElement).dataset?.markLabel;
   if (mark) return mark;
-  const text = withoutSecrets(el, (el as HTMLElement).innerText ?? el.textContent ?? '');
+  // A box that holds a shown secret (a key print, an invite link) is named
+  // by its agent id, else its role: never by its text.
+  if (holdsSecret(el)) return agentIdOf(el) ?? roleOf(el);
+  const text = (el as HTMLElement).innerText ?? el.textContent ?? '';
   if (text.trim()) return text;
   return el.getAttribute('title') ?? '';
-}
-
-/** `text` (the element's own) with the text of each `data-secret` inside it
- *  put as (hidden): a named box (a row, a card, the work area) that holds a
- *  shown secret, such as a key print, never names it. */
-export function withoutSecrets(el: Element, text: string): string {
-  let out = text;
-  for (const s of el.querySelectorAll?.('[data-secret]') ?? []) {
-    for (const own of [(s as HTMLElement).innerText, s.textContent]) {
-      const t = own?.trim();
-      if (t) out = out.split(t).join('(hidden)');
-    }
-  }
-  return out;
-}
-
-/** The text of an element that names another (aria-labelledby, a <label>):
- *  (hidden) when it is a secret, its secrets left out else. */
-export function labelText(node: Element): string {
-  if (node.closest?.('[data-secret]')) return '(hidden)';
-  return withoutSecrets(node, node.textContent ?? '');
 }
 
 /** A password, a one-time code, or anything inside `data-secret` (a

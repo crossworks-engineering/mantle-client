@@ -47,6 +47,22 @@ const card = (main: Locator, id: string) => main.locator(`button[data-box="${id}
 const row = (table: Locator, box: string, service: string) =>
   table.locator(`tr[data-box="${box}"][data-service="${service}"]`);
 
+type Entry = { id?: string; role: string; name: string };
+
+/** The agent's own screen read (lib/agent-ui), as agent-hands.spec.ts
+ *  drives it. */
+async function agentRead(page: Page): Promise<{ text: string; entries: Entry[] }> {
+  await page.waitForFunction(() => '__mantleAgentHands' in window);
+  return page.evaluate(async () => {
+    const h = (window as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)
+      .__mantleAgentHands!;
+    await h.begin!('Lesson');
+    const read = (await h.screen!()) as { screen: { entries: Entry[] } };
+    h.end?.();
+    return { text: JSON.stringify(read), entries: read.screen.entries };
+  });
+}
+
 /** The roles the agent's screen read names by their text (lib/agent-ui/dom.ts,
  *  ROLES_WITH_NAME): no ancestor of a print may carry one, or its name
  *  would hold the print. */
@@ -165,24 +181,17 @@ test('the own box first, the five states side by side, the print fixed-width and
       expect(text).not.toContain('…qrst');
     }
   }
-  // The agent's own screen read (lib/agent-ui, as agent-hands.spec.ts
-  // drives it) holds no print, not even its tail.
-  await page.waitForFunction(() => '__mantleAgentHands' in window);
-  const read = await page.evaluate(async () => {
-    const h = (window as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)
-      .__mantleAgentHands!;
-    await h.begin!('Lesson');
-    const screen = await h.screen!();
-    await h.end?.();
-    return JSON.stringify(screen);
-  });
+  // The agent's own screen read holds no print, not even its tail. The work
+  // area holds prints, so it is named by its id, never its text; the cards
+  // hold none and keep their names.
+  const { text: read, entries } = await agentRead(page);
   expect(read).toContain('"ok":true');
-  // The read reached this screen's own controls.
   expect(read).toContain('"name":"Test all"');
-  expect(read).toContain('/admin/fleet/key-status');
   for (const tail of ['wxyz', 'qrst', 'mnop', '9876', 'sk-or-v1', 'sk-ant', 'fc-1234']) {
     expect(read).not.toContain(tail);
   }
+  expect(entries.find((e) => e.id === 'main')?.name).toBe('main');
+  expect(entries.some((e) => e.role === 'button' && e.name.startsWith('Box A 3 keys'))).toBe(true);
   await shot(page, 'key-status-all-light');
 });
 
@@ -210,8 +219,15 @@ test('Test now on one box: busy, then its answer and fresh lines', async ({ page
     await held;
     await route.continue();
   });
+  // The busy line is on the page, empty, before the test: a screen reader
+  // hears its text come.
+  const busyLine = main.getByTestId('busy-line');
+  await expect(busyLine).toHaveCount(1);
+  await expect(busyLine).toHaveText('');
+  expect(await busyLine.evaluate((e) => getComputedStyle(e).display)).not.toBe('none');
   await main.getByRole('button', { name: 'Test now' }).click();
   await expect(main.getByRole('button', { name: /Testing/ }).first()).toBeDisabled();
+  await expect(busyLine).toHaveText(/can take up to 25 seconds/);
   await expect(main.getByText(/can take up to 25 seconds/)).toBeVisible();
   release();
   await expect(main.getByText('Tested just now.').first()).toBeVisible();
@@ -277,18 +293,24 @@ test('every tested code, an unknown one, and a 429', async ({ page }) => {
     await main.getByRole('button', { name: 'Test now' }).click();
     await expect(card(main, 'self')).toContainText(text);
   }
-  // Too many presses: the route answers 429.
-  s.limited = true;
-  await main.getByRole('button', { name: 'Test all' }).click();
-  // Beside the result (the box open on the right), and in the list.
+  // Too many presses: the route answers 429. Test now on this box: beside
+  // its result, and in the list.
   const fail = 'Too many tests. Try again in a few minutes.';
+  s.limited = true;
+  await main.getByRole('button', { name: 'Test now' }).click();
   await expect(main.getByRole('status').filter({ hasText: fail })).toBeVisible();
   await expect(main.getByText(fail)).toHaveCount(2);
-  // On All boxes too.
-  await main.getByRole('button', { name: /All boxes/ }).click();
+  // Another box does not show it.
+  await card(main, FLEET_BOX.id).click();
+  await expect(main.getByRole('heading', { name: 'Box A', exact: true })).toBeVisible();
+  await expect(main.getByText(fail)).toHaveCount(1);
+  // Test all: on All boxes, not on a box.
   s.limited = true;
   await main.getByRole('button', { name: 'Test all' }).click();
+  await expect(main.getByText(fail)).toHaveCount(1);
+  await main.getByRole('button', { name: /All boxes/ }).click();
   await expect(main.getByRole('status').filter({ hasText: fail })).toBeVisible();
+  await expect(main.getByText(fail)).toHaveCount(2);
 });
 
 test('a box with no lines says why; Test now only where it can help', async ({ page }) => {
@@ -408,6 +430,13 @@ test('Provider keys links to the key status, and back', async ({ page }) => {
   await signIn(page, 'admin');
   await page.goto('/admin/fleet/keys');
   const main = page.getByRole('main');
+  // The key field (a SecretInput) is in the work area: the agent's read
+  // names the area by its id; the form's controls keep their names.
+  const { entries } = await agentRead(page);
+  expect(entries.find((e) => e.id === 'main')?.name).toBe('main');
+  expect(entries.some((e) => e.role === 'link' && e.name === 'Key status')).toBe(true);
+  expect(entries.some((e) => e.role === 'combobox' && e.name === 'Provider')).toBe(true);
+  expect(entries.find((e) => e.role === 'textbox' && e.name === '(hidden)')).toBeDefined();
   await main.getByRole('link', { name: 'Key status' }).click();
   await expect(page).toHaveURL(/\/admin\/fleet\/key-status$/);
   await main.getByRole('link', { name: 'Set a key' }).click();

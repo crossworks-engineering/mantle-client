@@ -1,27 +1,39 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
-import { factsOf, findTarget, isSecretField, isShut, nameOf, withoutSecrets } from './dom';
+import { factsOf, findTarget, isSecretField, isShut, nameOf } from './dom';
 
-/** A stand-in element: a tag, attributes, and the ancestors `closest`
- *  finds (keyed by a piece of the selector). */
+/** A stand-in element: a tag, attributes, the ancestors `closest` finds
+ *  and the descendants `querySelector` finds (keyed by a piece of the
+ *  selector). */
 function el(
   tagName: string,
   props: Record<string, unknown> = {},
   ancestors: Record<string, object> = {},
+  inside: Record<string, object> = {},
 ): Element {
+  const find = (from: Record<string, object>) => (sel: string) => {
+    for (const [mark, a] of Object.entries(from)) if (sel.includes(mark)) return a;
+    return null;
+  };
   return {
     tagName,
     isConnected: true,
     getAttribute: (n: string) => (props[n] as string | undefined) ?? null,
-    closest: (sel: string) => {
-      for (const [mark, a] of Object.entries(ancestors)) if (sel.includes(mark)) return a;
-      return null;
-    },
+    closest: find(ancestors),
+    querySelector: find(inside),
     ...props,
   } as unknown as Element;
 }
+
+// nameOf asks instanceof of these; the stand-ins are none of them.
+beforeAll(() => {
+  for (const k of ['HTMLInputElement', 'HTMLTextAreaElement', 'HTMLIFrameElement']) {
+    vi.stubGlobal(k, class {});
+  }
+});
+afterAll(() => vi.unstubAllGlobals());
 
 describe('secret fields', () => {
   it('a password or one-time code field is secret', () => {
@@ -102,48 +114,80 @@ describe('names of secret things', () => {
     expect(nameOf(el('BUTTON', { 'aria-label': 'Save' }))).toBe('Save');
   });
 
-  it('a name from aria-labelledby leaves a secret in the label out', () => {
-    const print = { innerText: 'sk-or-v1-abc\u2026wxyz', textContent: 'sk-or-v1-abc\u2026wxyz' };
-    const label = el('SPAN', {
-      textContent: 'openrouter sk-or-v1-abc\u2026wxyz',
-      querySelectorAll: () => [print],
-    });
-    const button = el('BUTTON', {
-      'aria-labelledby': 'l1',
-      ownerDocument: { getElementById: (id: string) => (id === 'l1' ? label : null) },
-    });
-    expect(nameOf(button)).toBe('openrouter (hidden)');
-    // A label that is itself a secret names nothing of it.
-    const secretLabel = el(
+  it('a name from aria-labelledby that holds a secret is not used', () => {
+    const label = el(
       'SPAN',
-      { textContent: 'sk-live-1234', querySelectorAll: () => [] },
+      { textContent: 'openrouter sk-or-v1-abc\u2026wxyz' },
+      {},
       { '[data-secret]': {} },
     );
+    const button = el('BUTTON', {
+      'aria-labelledby': 'l1',
+      'data-agent': 'key',
+      dataset: { agent: 'key' },
+      ownerDocument: { getElementById: (id: string) => (id === 'l1' ? label : null) },
+      querySelector: () => null,
+      innerText: 'Open',
+    });
+    expect(nameOf(button)).toBe('Open');
+    // A label that is itself a secret names nothing of it either.
+    const secretLabel = el('SPAN', { textContent: 'sk-live-1234' }, { '[data-secret]': {} });
     const field = el('INPUT', {
       'aria-labelledby': 'l2',
       ownerDocument: { getElementById: () => secretLabel },
+      querySelector: () => null,
+      innerText: '',
     });
-    expect(nameOf(field)).toBe('(hidden)');
+    expect(nameOf(field)).not.toContain('sk-live');
   });
 
-  it('a name from a <label> leaves a secret in the label out', () => {
-    const print = { innerText: 'sk-or-v1-abc\u2026wxyz', textContent: 'sk-or-v1-abc\u2026wxyz' };
-    const label = el('LABEL', {
-      textContent: 'Key sk-or-v1-abc\u2026wxyz',
-      querySelectorAll: () => [print],
-    });
-    expect(nameOf(el('INPUT', { labels: [label] }))).toBe('Key (hidden)');
-  });
-
-  it('a named box that holds a shown secret (a key print) names it (hidden)', () => {
-    const print = { innerText: 'sk-or-v1-abc\u2026wxyz' };
-    const row = el('DIV', {
-      querySelectorAll: (sel: string) => (sel.includes('data-secret') ? [print] : []),
-    });
-    expect(withoutSecrets(row, 'openrouter Works sk-or-v1-abc\u2026wxyz')).toBe(
-      'openrouter Works (hidden)',
+  it('a <label> that holds a secret is not used', () => {
+    const label = el(
+      'LABEL',
+      { textContent: 'Key sk-or-v1-abc\u2026wxyz' },
+      {},
+      { '[data-secret]': {} },
     );
-    const plain = el('DIV', { querySelectorAll: () => [] });
-    expect(withoutSecrets(plain, 'openrouter Works')).toBe('openrouter Works');
+    const name = nameOf(el('INPUT', { labels: [label], querySelector: () => null, innerText: '' }));
+    expect(name).not.toContain('sk-or');
+    expect(name).not.toContain('wxyz');
+  });
+});
+
+describe('a box that holds a shown secret', () => {
+  const box = (props: Record<string, unknown>, secret: boolean) =>
+    el('DIV', props, {}, secret ? { '[data-secret]': {} } : {});
+
+  it('a short and a long secret inside: nothing of either in the name', () => {
+    const row = box(
+      { innerText: 'Body a\nabc', textContent: 'Body aabc', dataset: { agent: 'key-row' } },
+      true,
+    );
+    const name = nameOf(row);
+    expect(name).toBe('key-row');
+    expect(name).not.toContain('Body');
+    expect(name).not.toContain('bc');
+  });
+  it('a textarea secret inside (empty innerText, the body in textContent)', () => {
+    const name = nameOf(box({ innerText: 'Notes', textContent: 'Notes the secret body' }, true));
+    expect(name).not.toContain('secret body');
+    expect(name).not.toContain('Notes');
+    expect(name).toBe('generic');
+  });
+  it('no agent id: a plain word for its role', () => {
+    expect(nameOf(box({ role: 'row', innerText: 'openrouter sk-or-v1-abc\u2026wxyz' }, true))).toBe(
+      'row',
+    );
+  });
+  it('an aria-label or a mark label still names it', () => {
+    expect(nameOf(box({ 'aria-label': 'Box A keys', innerText: 'x sk-1' }, true))).toBe(
+      'Box A keys',
+    );
+    expect(nameOf(box({ dataset: { markLabel: 'Key row' }, innerText: 'x sk-1' }, true))).toBe(
+      'Key row',
+    );
+  });
+  it('a box with no secret keeps its text name', () => {
+    expect(nameOf(box({ innerText: 'openrouter Works' }, false))).toBe('openrouter Works');
   });
 });

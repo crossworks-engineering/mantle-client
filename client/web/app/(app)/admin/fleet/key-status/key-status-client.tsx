@@ -248,14 +248,19 @@ function DifferentMark({ of, now }: { of: LastSetKey | undefined; now: number })
   );
 }
 
-/** The busy line: always on the page, so a screen reader hears its text
- *  change. */
+/** The busy line, beside the table's heading: always on the page (never
+ *  display:none), so a screen reader hears its text come; it takes no line
+ *  of its own, so nothing moves. */
 function BusyLine({ busy }: { busy: boolean }) {
   return (
-    <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground empty:hidden">
+    <p
+      role="status"
+      data-testid="busy-line"
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
       {busy && (
         <>
-          <Spinner size={16} /> Testing the keys. This can take up to 25 seconds.
+          <Spinner size={14} /> Testing the keys. This can take up to 25 seconds.
         </>
       )}
     </p>
@@ -393,8 +398,7 @@ function OneBox({
             : []),
         ]}
       />
-      <BusyLine busy={busy} />
-      <Part title="Keys">
+      <Part title="Keys" action={<BusyLine busy={busy} />}>
         <KeyTable
           label={`Keys on ${keyBoxName(box)}`}
           boxes={[box]}
@@ -434,8 +438,7 @@ function AllBoxes({
         service. That can be on purpose, a key of its own for each box.
       </Callout>
       <CallFail text={callFail} />
-      <BusyLine busy={busy} />
-      <Part title="Side by side">
+      <Part title="Side by side" action={<BusyLine busy={busy} />}>
         <KeyTable
           label="Key status"
           boxes={boxes}
@@ -460,7 +463,8 @@ function KeyStatus({ data }: { data: FleetOverview }) {
   const [tested, setTested] = useState<Record<string, string>>({});
   // 'all', a box id, or null.
   const [busy, setBusy] = useState<string | null>(null);
-  const [callFail, setCallFail] = useState<string | null>(null);
+  // A failed Test now call, with what was tested: a box id, or ALL.
+  const [callFail, setCallFail] = useState<{ of: string; text: string } | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const [now, setNow] = useState(() => Date.now());
@@ -511,7 +515,7 @@ function KeyStatus({ data }: { data: FleetOverview }) {
         );
       }
     } catch (err) {
-      setCallFail(testCallFailText(err));
+      setCallFail({ of: boxIds?.[0] ?? ALL, text: testCallFailText(err) });
     } finally {
       setBusy(null);
     }
@@ -565,7 +569,7 @@ function KeyStatus({ data }: { data: FleetOverview }) {
             ) : undefined
           }
         >
-          {callFail && <p className="text-sm text-destructive-ink">{callFail}</p>}
+          {callFail && <p className="text-sm text-destructive-ink">{callFail.text}</p>}
           {query.isError && !status ? (
             <p className="text-sm text-destructive-ink">Could not load the key status.</p>
           ) : boxes.length === 0 ? (
@@ -602,7 +606,7 @@ function KeyStatus({ data }: { data: FleetOverview }) {
             box={selected}
             tested={tested[selected.id]}
             busy={busy === selected.id || busy === ALL}
-            callFail={callFail}
+            callFail={callFail?.of === selected.id ? callFail.text : null}
             different={different}
             now={now}
             onTest={() => void test([selected.id])}
@@ -611,7 +615,7 @@ function KeyStatus({ data }: { data: FleetOverview }) {
           <AllBoxes
             boxes={boxes}
             busy={busy !== null}
-            callFail={callFail}
+            callFail={callFail?.of === ALL ? callFail.text : null}
             different={different}
             now={now}
             onOpen={setParam}
