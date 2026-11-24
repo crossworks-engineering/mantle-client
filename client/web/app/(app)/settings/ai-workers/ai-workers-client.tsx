@@ -26,6 +26,7 @@ import { ListCard, ListCardTitle } from '@mantle/web-ui/ui/list-card';
 import { MasterDetail } from '@mantle/web-ui/ui/master-detail';
 import { WorkerForm } from './worker-form';
 import { ExtractorThroughput } from './extractor-throughput';
+import { SearchLanguagesSetting } from './search-languages';
 import { ProviderAlertCard } from '@/components/needs-you/provider-alert-card';
 
 type KeyOption = { id: string; service: string; label: string; masked: string };
@@ -430,6 +431,7 @@ export function AiWorkersClient() {
                   </div>
                 </div>
                 {editWorker.kind === 'extractor' ? <ExtractorThroughput /> : null}
+                {editWorker.kind === 'translator' ? <SearchLanguagesSetting /> : null}
                 <WorkerForm
                   key={editWorker.id}
                   mode="edit"
