@@ -390,6 +390,37 @@ for (const mode of ['optional', 'required'] as const) {
   });
 }
 
+test('a resend with acceptUnclear refused again shows why, and asks no confirm again', async ({
+  page,
+}) => {
+  const box = api.fleet!.ssoStatus[FLEET_BOX.id]!;
+  box.mode = 'optional';
+  box.secret = 'row';
+  api.fleet!.ssoTest[FLEET_BOX.id] = 'unclear';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  await main.getByLabel('Client secret').fill('the-new-secret');
+  await main.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await dialog.getByRole('button', { name: 'I understand, continue' }).click();
+  // The box is rolled back to a release before acceptUnclear meanwhile.
+  delete box.labelFrom;
+  delete box.label;
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    main.getByText('cannot save a secret after an unclear Test, so nothing was saved', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(sent('set').map((b) => b.acceptUnclear ?? null)).toEqual([null, true]);
+});
+
 test('a new secret refused as Secret refused shows why, with no confirm', async ({ page }) => {
   const box = api.fleet!.ssoStatus[FLEET_BOX.id]!;
   box.mode = 'optional';

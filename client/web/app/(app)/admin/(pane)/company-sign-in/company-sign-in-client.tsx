@@ -566,8 +566,8 @@ export function CompanySignInClient() {
           </p>
         ) : (
           <p className="text-sm">
-            Sign-in is on. The tenant ID, client ID and secret are locked. The button label can
-            still change.
+            Sign-in is on. The tenant ID, client ID and secret are locked on this screen. The button
+            label can still change.
           </p>
         )}
         {status.envMissing.length > 0 && (

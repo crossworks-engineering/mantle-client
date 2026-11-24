@@ -25,7 +25,7 @@ test.afterEach(async () => {
 
 const PATH = '/admin/company-sign-in';
 const SECRET = 'the-client-secret-value';
-const LOCKED = 'Sign-in is on. The tenant ID, client ID and secret are locked.';
+const LOCKED = 'Sign-in is on. The tenant ID, client ID and secret are locked on this screen.';
 const nav = (page: import('@playwright/test').Page) =>
   page.getByRole('link', { name: 'Company sign-in', exact: true });
 
