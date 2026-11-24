@@ -106,7 +106,10 @@ export function nameOf(el: Element): string {
   if (by) {
     const text = by
       .split(/\s+/)
-      .map((id) => el.ownerDocument.getElementById(id)?.textContent ?? '')
+      .map((id) => {
+        const node = el.ownerDocument.getElementById(id);
+        return node ? labelText(node) : '';
+      })
       .join(' ')
       .trim();
     if (text) return text;
@@ -114,7 +117,7 @@ export function nameOf(el: Element): string {
   // A <label for> names a field, and a button too (a Radix switch is one).
   const labels = (el as HTMLInputElement).labels;
   if (labels && labels.length) {
-    const text = [...labels].map((l) => l.textContent ?? '').join(' ');
+    const text = [...labels].map(labelText).join(' ');
     if (text.trim()) return text;
   }
   if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.placeholder) {
@@ -134,10 +137,19 @@ export function nameOf(el: Element): string {
 export function withoutSecrets(el: Element, text: string): string {
   let out = text;
   for (const s of el.querySelectorAll?.('[data-secret]') ?? []) {
-    const own = ((s as HTMLElement).innerText ?? s.textContent ?? '').trim();
-    if (own) out = out.split(own).join('(hidden)');
+    for (const own of [(s as HTMLElement).innerText, s.textContent]) {
+      const t = own?.trim();
+      if (t) out = out.split(t).join('(hidden)');
+    }
   }
   return out;
+}
+
+/** The text of an element that names another (aria-labelledby, a <label>):
+ *  (hidden) when it is a secret, its secrets left out else. */
+export function labelText(node: Element): string {
+  if (node.closest?.('[data-secret]')) return '(hidden)';
+  return withoutSecrets(node, node.textContent ?? '');
 }
 
 /** A password, a one-time code, or anything inside `data-secret` (a

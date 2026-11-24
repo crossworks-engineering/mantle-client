@@ -32,10 +32,10 @@ import {
   keyBoxName,
   keysReasonText,
   keyStateText,
-  olderKeys,
+  differentKeys,
   PENDING_REREAD_MS,
   printText,
-  readFailText,
+  readFailNote,
   testAnswerText,
   testCallFailText,
   testedById,
@@ -45,6 +45,7 @@ import {
   type FleetKeyLine,
   type FleetKeyStatus,
   type FleetKeyTestAnswer,
+  type LastSetKey,
   type StateMark,
 } from '@/lib/fleet-key-status';
 import { ccHref, type Tone } from '@/lib/fleet-view';
@@ -127,13 +128,13 @@ const COLS = 5;
 function KeyTable({
   label,
   boxes,
-  older,
+  different,
   now,
   onOpen,
 }: {
   label: string;
   boxes: FleetKeyBox[];
-  older: Set<string>;
+  different: Map<string, LastSetKey>;
   now: number;
   onOpen?: (id: string) => void;
 }) {
@@ -151,7 +152,7 @@ function KeyTable({
         </TableHeader>
         <TableBody>
           {boxes.map((b) => (
-            <BoxRows key={b.id} box={b} older={older} now={now} onOpen={onOpen} />
+            <BoxRows key={b.id} box={b} different={different} now={now} onOpen={onOpen} />
           ))}
         </TableBody>
       </Table>
@@ -161,12 +162,12 @@ function KeyTable({
 
 function BoxRows({
   box: b,
-  older,
+  different,
   now,
   onOpen,
 }: {
   box: FleetKeyBox;
-  older: Set<string>;
+  different: Map<string, LastSetKey>;
   now: number;
   onOpen?: (id: string) => void;
 }) {
@@ -212,14 +213,7 @@ function BoxRows({
           <TableCell className="pl-3 font-medium">{l.service}</TableCell>
           <TableCell className="whitespace-nowrap">
             <Age iso={l.setAt} now={now} />
-            {older.has(`${b.id}:${l.service}`) && (
-              <span
-                className="block text-xs text-warning-ink"
-                title={`Another box holds a newer ${l.service} key`}
-              >
-                older key
-              </span>
-            )}
+            <DifferentMark of={different.get(`${b.id}:${l.service}`)} now={now} />
           </TableCell>
           <TableCell className="min-w-[8rem] max-w-[12rem]">
             <StateCell line={l} now={now} />
@@ -237,6 +231,44 @@ function BoxRows({
         </TableRow>
       ))}
     </>
+  );
+}
+
+/** A line that holds another key than the one set last for its service:
+ *  neutral words, as a fleet may keep a key of its own on each box. */
+function DifferentMark({ of, now }: { of: LastSetKey | undefined; now: number }) {
+  if (!of) return null;
+  return (
+    <span
+      className="block text-xs text-muted-foreground"
+      title={`Not the key set last (on ${of.box}, ${ageText(of.at, now)})`}
+    >
+      different key
+    </span>
+  );
+}
+
+/** The busy line: always on the page, so a screen reader hears its text
+ *  change. */
+function BusyLine({ busy }: { busy: boolean }) {
+  return (
+    <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground empty:hidden">
+      {busy && (
+        <>
+          <Spinner size={16} /> Testing the keys. This can take up to 25 seconds.
+        </>
+      )}
+    </p>
+  );
+}
+
+/** A Test now call that failed (the route, not a box): beside the result. */
+function CallFail({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <Callout tone="bad" title="Test now">
+      {text}
+    </Callout>
   );
 }
 
@@ -303,18 +335,20 @@ function OneBox({
   box,
   tested,
   busy,
-  older,
+  callFail,
+  different,
   now,
   onTest,
 }: {
   box: FleetKeyBox;
   tested: string | undefined;
   busy: boolean;
-  older: Set<string>;
+  callFail: string | null;
+  different: Map<string, LastSetKey>;
   now: number;
   onTest: () => void;
 }) {
-  const fail = readFailText(box.reason);
+  const fail = readFailNote(box, now);
   const lastSet = box.lastSet ? keyBoxText({ keyPending: null, keyResult: box.lastSet }) : null;
   const answer = tested === undefined ? null : testAnswerText(tested);
   return (
@@ -332,9 +366,10 @@ function OneBox({
           {answer.text}
         </Callout>
       )}
+      <CallFail text={callFail} />
       {fail && (
         <Callout tone="warn" title="The last read failed">
-          {fail} The lines below are from the read before, {ageText(box.at, now)}.
+          {fail}
         </Callout>
       )}
       <Facts
@@ -358,13 +393,14 @@ function OneBox({
             : []),
         ]}
       />
-      {busy && (
-        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size={16} /> Testing the keys. This can take up to 25 seconds.
-        </p>
-      )}
+      <BusyLine busy={busy} />
       <Part title="Keys">
-        <KeyTable label={`Keys on ${keyBoxName(box)}`} boxes={[box]} older={older} now={now} />
+        <KeyTable
+          label={`Keys on ${keyBoxName(box)}`}
+          boxes={[box]}
+          different={different}
+          now={now}
+        />
       </Part>
     </DetailPane>
   );
@@ -373,13 +409,15 @@ function OneBox({
 function AllBoxes({
   boxes,
   busy,
-  older,
+  callFail,
+  different,
   now,
   onOpen,
 }: {
   boxes: FleetKeyBox[];
   busy: boolean;
-  older: Set<string>;
+  callFail: string | null;
+  different: Map<string, LastSetKey>;
   now: number;
   onOpen: (id: string) => void;
 }) {
@@ -392,15 +430,19 @@ function AllBoxes({
     >
       <Callout>
         Each line is the key a box uses for that service. Compare the set time and the print down a
-        column: a box marked older key holds another key than the one set last.
+        column: a line marked different key holds another key than the one set last for that
+        service. That can be on purpose, a key of its own for each box.
       </Callout>
-      {busy && (
-        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size={16} /> Testing the keys. This can take up to 25 seconds.
-        </p>
-      )}
+      <CallFail text={callFail} />
+      <BusyLine busy={busy} />
       <Part title="Side by side">
-        <KeyTable label="Key status" boxes={boxes} older={older} now={now} onOpen={onOpen} />
+        <KeyTable
+          label="Key status"
+          boxes={boxes}
+          different={different}
+          now={now}
+          onOpen={onOpen}
+        />
       </Part>
     </DetailPane>
   );
@@ -478,7 +520,7 @@ function KeyStatus({ data }: { data: FleetOverview }) {
   const status = query.data;
   const boxes = status?.boxes ?? [];
   const selected = boxes.find((b) => b.id === param) ?? null;
-  const older = olderKeys(boxes);
+  const different = differentKeys(boxes);
 
   if (query.isLoading) {
     return (
@@ -523,11 +565,7 @@ function KeyStatus({ data }: { data: FleetOverview }) {
             ) : undefined
           }
         >
-          {callFail && (
-            <p role="alert" className="text-sm text-destructive-ink">
-              {callFail}
-            </p>
-          )}
+          {callFail && <p className="text-sm text-destructive-ink">{callFail}</p>}
           {query.isError && !status ? (
             <p className="text-sm text-destructive-ink">Could not load the key status.</p>
           ) : boxes.length === 0 ? (
@@ -564,12 +602,20 @@ function KeyStatus({ data }: { data: FleetOverview }) {
             box={selected}
             tested={tested[selected.id]}
             busy={busy === selected.id || busy === ALL}
-            older={older}
+            callFail={callFail}
+            different={different}
             now={now}
             onTest={() => void test([selected.id])}
           />
         ) : boxes.length > 0 ? (
-          <AllBoxes boxes={boxes} busy={busy !== null} older={older} now={now} onOpen={setParam} />
+          <AllBoxes
+            boxes={boxes}
+            busy={busy !== null}
+            callFail={callFail}
+            different={different}
+            now={now}
+            onOpen={setParam}
+          />
         ) : null
       }
     />

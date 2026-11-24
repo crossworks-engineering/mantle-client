@@ -17,7 +17,7 @@ import type {
   FleetKeyTestAnswer,
 } from '@mantle/client-types';
 import { ApiError } from '@mantle/web-ui/api-fetch';
-import { boxName, FLEET_KEY, FLEET_PATH, reasonText } from './fleet';
+import { boxName, FLEET_KEY, FLEET_PATH } from './fleet';
 import type { Tone } from './fleet-view';
 
 export type { FleetKeyBox, FleetKeyLine, FleetKeyStatus, FleetKeyTestAnswer };
@@ -117,9 +117,36 @@ export function keysReasonText(code: string | null): string {
   return lookup(KEYS_REASONS, code) ?? 'This box sent no key lines.';
 }
 
+const READ_FAILS: Record<string, string> = {
+  unreachable: 'Could not reach the box over HTTPS.',
+  off: 'The box has no control lines in its .env.',
+  sig: "The box and the Control Center do not trust each other's link key. Copy the key line to the box again.",
+  time: 'The clocks of the box and the Control Center differ by more than 60 seconds.',
+  'bad-reply': 'The box gave a reply the Control Center cannot read.',
+  'reply-too-large': 'The reply of the box is larger than 4 MB.',
+};
+
 /** Why the last read failed, or null: it did not. The old lines stay. */
 export function readFailText(code: string | null): string | null {
-  return code === null ? null : (reasonText(code) ?? 'The last read failed.');
+  if (code === null) return null;
+  const known = lookup(READ_FAILS, code);
+  if (known) return known;
+  const http = /^http-(\d{3})$/.exec(code);
+  return http ? `The box answered HTTP ${http[1]}.` : 'The last read failed.';
+}
+
+/** The failed read's callout: why, and what the lines below are. No lines,
+ *  no word of them; no read time, no age. */
+export function readFailNote(
+  box: Pick<FleetKeyBox, 'reason' | 'at' | 'keys'>,
+  now: number = Date.now(),
+): string | null {
+  const why = readFailText(box.reason);
+  if (why === null) return null;
+  if (box.keys === null || box.keys.length === 0) return why;
+  return box.at
+    ? `${why} The lines below are from the read before, ${ageText(box.at, now)}.`
+    : `${why} The lines below are from an earlier read.`;
 }
 
 const TESTED: Record<string, { tone: Tone; text: string }> = {
@@ -177,30 +204,34 @@ export function testedById(answer: FleetKeyTestAnswer): Record<string, string> {
   return Object.fromEntries(answer.boxes.map((b) => [b.id, b.tested]));
 }
 
+/** Where the key set last for a service is: its box and when. */
+export type LastSetKey = { box: string; at: string };
+
 /**
- * The lines that hold an older key than another box: for each service, the
- * line set last is the newest; a line of the same service set earlier with
- * a different print (or no print to match) holds an older key. Same print:
- * the same key, set at another time. Keys are `${boxId}:${service}`.
+ * The lines that hold another key than the one set last for their service,
+ * by `${boxId}:${service}`, each with where that one is. Neutral on purpose:
+ * a fleet may keep a key of its own on each box (spend kept apart). Only
+ * prints are compared: a line, or the line set last, with no print is never
+ * marked (the keys cannot be compared); the same print set at another time
+ * is the same key.
  */
-export function olderKeys(boxes: readonly FleetKeyBox[]): Set<string> {
-  const newest = new Map<string, { at: number; print: string | null }>();
+export function differentKeys(boxes: readonly FleetKeyBox[]): Map<string, LastSetKey> {
+  const last = new Map<string, { t: number; at: string; box: string; print: string | null }>();
   for (const b of boxes) {
     for (const l of b.keys ?? []) {
-      const at = new Date(l.setAt).getTime();
-      if (Number.isNaN(at)) continue;
-      const n = newest.get(l.service);
-      if (!n || at > n.at) newest.set(l.service, { at, print: l.print });
+      const t = new Date(l.setAt).getTime();
+      if (Number.isNaN(t)) continue;
+      const n = last.get(l.service);
+      if (!n || t > n.t)
+        last.set(l.service, { t, at: l.setAt, box: keyBoxName(b), print: l.print });
     }
   }
-  const out = new Set<string>();
+  const out = new Map<string, LastSetKey>();
   for (const b of boxes) {
     for (const l of b.keys ?? []) {
-      const n = newest.get(l.service);
-      const at = new Date(l.setAt).getTime();
-      if (!n || Number.isNaN(at) || at >= n.at) continue;
-      if (l.print === null || n.print === null || l.print !== n.print)
-        out.add(`${b.id}:${l.service}`);
+      const n = last.get(l.service);
+      if (!n || n.print === null || l.print === null || l.print === n.print) continue;
+      out.set(`${b.id}:${l.service}`, { box: n.box, at: n.at });
     }
   }
   return out;

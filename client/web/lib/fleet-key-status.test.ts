@@ -10,8 +10,9 @@ import {
   keyBoxName,
   keysReasonText,
   keyStateText,
-  olderKeys,
+  differentKeys,
   printText,
+  readFailNote,
   readFailText,
   testAnswerText,
   testCallFailText,
@@ -143,9 +144,28 @@ describe('keysReasonText', () => {
 describe('readFailText', () => {
   it('null when the read was good; the reason in words else', () => {
     expect(readFailText(null)).toBeNull();
-    expect(readFailText('unreachable')).toBe('This box cannot reach the box over HTTPS.');
+    expect(readFailText('unreachable')).toBe('Could not reach the box over HTTPS.');
+    expect(readFailText('sig')).toMatch(/do not trust each other's link key/);
+    expect(readFailText('sig')).not.toMatch(/holds another key/);
     expect(readFailText('http-502')).toBe('The box answered HTTP 502.');
-    expect(readFailText('something-new')).toBe('The last run failed.');
+  });
+  it('an unknown code is a failed read, not a run', () => {
+    for (const code of ['something-new', 'toString']) {
+      expect(readFailText(code)).toBe('The last read failed.');
+    }
+  });
+  it('the note names the old lines only when there are some, and their age only when known', () => {
+    const fail = { reason: 'unreachable' };
+    expect(readFailNote({ ...fail, at: ago(45), keys: [line()] }, NOW)).toBe(
+      'Could not reach the box over HTTPS. The lines below are from the read before, 45 min ago.',
+    );
+    expect(readFailNote({ ...fail, at: null, keys: [line()] }, NOW)).toBe(
+      'Could not reach the box over HTTPS. The lines below are from an earlier read.',
+    );
+    expect(readFailNote({ ...fail, at: ago(45), keys: null }, NOW)).toBe(
+      'Could not reach the box over HTTPS.',
+    );
+    expect(readFailNote({ reason: null, at: ago(1), keys: [line()] }, NOW)).toBeNull();
   });
 });
 
@@ -243,23 +263,33 @@ describe('Test now answers', () => {
   });
 });
 
-describe('olderKeys', () => {
-  it('marks a line set earlier with another print than the newest of its service', () => {
-    const a = box({ id: 'a', keys: [line({ setAt: ago(10), print: 'sk-or-v1-new…aaaa' })] });
-    const b = box({ id: 'b', keys: [line({ setAt: ago(9000), print: 'sk-or-v1-old…bbbb' })] });
-    const c = box({ id: 'c', keys: [line({ setAt: ago(500), print: 'sk-or-v1-new…aaaa' })] });
-    const d = box({ id: 'd', keys: [line({ setAt: ago(700), print: null })] });
-    const e = box({ id: 'e', keys: null, keysReason: 'scope' });
-    expect(olderKeys([a, b, c, d, e])).toEqual(new Set(['b:openrouter', 'd:openrouter']));
-  });
-  it('services are compared apart; one box alone holds no older key', () => {
-    const a = box({
-      id: 'a',
-      keys: [
-        line({ service: 'openrouter', setAt: ago(10) }),
-        line({ service: 'anthropic', setAt: ago(9000), print: 'sk-ant-api03…cccc' }),
-      ],
+describe('differentKeys', () => {
+  const at = (id: string, setMin: number, print: string | null, service = 'openrouter') =>
+    box({
+      id,
+      label: `Box ${id}`,
+      keys: [line({ service, setAt: ago(setMin), print })],
     });
-    expect(olderKeys([a])).toEqual(new Set());
+  const A = 'sk-or-v1-aaa\u2026aaaa';
+  const B = 'sk-or-v1-bbb\u2026bbbb';
+
+  it('two boxes with different keys: the one not set last is marked, with where the last is', () => {
+    const out = differentKeys([at('a', 10, A), at('b', 9000, B)]);
+    expect([...out.keys()]).toEqual(['b:openrouter']);
+    expect(out.get('b:openrouter')).toEqual({ box: 'Box a', at: ago(10) });
+  });
+  it('the same key set at different times is not marked', () => {
+    expect(differentKeys([at('a', 10, A), at('b', 9000, A)]).size).toBe(0);
+  });
+  it('a null print on either side is not marked: the keys cannot be compared', () => {
+    expect(differentKeys([at('a', 10, null), at('b', 9000, B)]).size).toBe(0);
+    expect(differentKeys([at('a', 10, A), at('b', 9000, null)]).size).toBe(0);
+  });
+  it('a service on one box only is not marked; services are compared apart', () => {
+    expect(differentKeys([at('a', 10, A), at('b', 9000, B, 'anthropic')]).size).toBe(0);
+  });
+  it('boxes with no lines are passed over', () => {
+    const none = box({ id: 'n', keys: null, keysReason: 'scope' });
+    expect(differentKeys([none, at('a', 10, A)]).size).toBe(0);
   });
 });

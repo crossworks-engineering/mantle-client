@@ -102,6 +102,39 @@ describe('names of secret things', () => {
     expect(nameOf(el('BUTTON', { 'aria-label': 'Save' }))).toBe('Save');
   });
 
+  it('a name from aria-labelledby leaves a secret in the label out', () => {
+    const print = { innerText: 'sk-or-v1-abc\u2026wxyz', textContent: 'sk-or-v1-abc\u2026wxyz' };
+    const label = el('SPAN', {
+      textContent: 'openrouter sk-or-v1-abc\u2026wxyz',
+      querySelectorAll: () => [print],
+    });
+    const button = el('BUTTON', {
+      'aria-labelledby': 'l1',
+      ownerDocument: { getElementById: (id: string) => (id === 'l1' ? label : null) },
+    });
+    expect(nameOf(button)).toBe('openrouter (hidden)');
+    // A label that is itself a secret names nothing of it.
+    const secretLabel = el(
+      'SPAN',
+      { textContent: 'sk-live-1234', querySelectorAll: () => [] },
+      { '[data-secret]': {} },
+    );
+    const field = el('INPUT', {
+      'aria-labelledby': 'l2',
+      ownerDocument: { getElementById: () => secretLabel },
+    });
+    expect(nameOf(field)).toBe('(hidden)');
+  });
+
+  it('a name from a <label> leaves a secret in the label out', () => {
+    const print = { innerText: 'sk-or-v1-abc\u2026wxyz', textContent: 'sk-or-v1-abc\u2026wxyz' };
+    const label = el('LABEL', {
+      textContent: 'Key sk-or-v1-abc\u2026wxyz',
+      querySelectorAll: () => [print],
+    });
+    expect(nameOf(el('INPUT', { labels: [label] }))).toBe('Key (hidden)');
+  });
+
   it('a named box that holds a shown secret (a key print) names it (hidden)', () => {
     const print = { innerText: 'sk-or-v1-abc\u2026wxyz' };
     const row = el('DIV', {

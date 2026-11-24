@@ -115,12 +115,21 @@ test('the own box first, the five states side by side, the print fixed-width and
     'Update this box to see its keys.',
   );
 
-  // Set as an age, the exact time on hover; the older key is marked.
+  // Set as an age, the exact time on hover; another key than the one set
+  // last is marked in neutral words, with where the last one is.
   await expect(row(table, 'self', 'openrouter').locator('time')).toHaveText('1 h ago');
   await expect(row(table, 'self', 'openrouter').locator('time')).toHaveAttribute('title', /\d/);
   await expect(row(table, FLEET_BOX.id, 'openrouter')).toContainText('9 days ago');
-  await expect(row(table, FLEET_BOX.id, 'openrouter')).toContainText('older key');
-  await expect(row(table, 'self', 'openrouter')).not.toContainText('older key');
+  await expect(row(table, FLEET_BOX.id, 'openrouter')).toContainText('different key');
+  await expect(
+    row(table, FLEET_BOX.id, 'openrouter').getByTitle(
+      'Not the key set last (on This box, 1 h ago)',
+    ),
+  ).toBeVisible();
+  await expect(row(table, 'self', 'openrouter')).not.toContainText('different key');
+  // A print missing on one side cannot be compared: no mark.
+  await expect(row(table, FLEET_BOX.id, 'elevenlabs')).not.toContainText('different key');
+  await expect(main.getByText(/marked different key/)).toBeVisible();
 
   // The print: fixed-width, the plain words when there is none.
   const prints = table.getByTestId('key-print');
@@ -156,6 +165,24 @@ test('the own box first, the five states side by side, the print fixed-width and
       expect(text).not.toContain('…qrst');
     }
   }
+  // The agent's own screen read (lib/agent-ui, as agent-hands.spec.ts
+  // drives it) holds no print, not even its tail.
+  await page.waitForFunction(() => '__mantleAgentHands' in window);
+  const read = await page.evaluate(async () => {
+    const h = (window as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)
+      .__mantleAgentHands!;
+    await h.begin!('Lesson');
+    const screen = await h.screen!();
+    await h.end?.();
+    return JSON.stringify(screen);
+  });
+  expect(read).toContain('"ok":true');
+  // The read reached this screen's own controls.
+  expect(read).toContain('"name":"Test all"');
+  expect(read).toContain('/admin/fleet/key-status');
+  for (const tail of ['wxyz', 'qrst', 'mnop', '9876', 'sk-or-v1', 'sk-ant', 'fc-1234']) {
+    expect(read).not.toContain(tail);
+  }
   await shot(page, 'key-status-all-light');
 });
 
@@ -167,7 +194,9 @@ test('Test now on one box: busy, then its answer and fresh lines', async ({ page
   // The last read failed: why, with the old lines kept below.
   await expect(main.getByText('The last read failed', { exact: true })).toBeVisible();
   await expect(
-    main.getByText(/This box cannot reach the box over HTTPS\. The lines below/),
+    main.getByText(
+      'Could not reach the box over HTTPS. The lines below are from the read before, 45 min ago.',
+    ),
   ).toBeVisible();
   const table = main.getByRole('table', { name: 'Keys on Box A' });
   await expect(table.locator('tr[data-service="elevenlabs"]')).toContainText('Never tested');
@@ -206,6 +235,8 @@ test('Test all: each box answers in plain words; pending reads again later', asy
     keys: [keyLine({ setAt: minAgo(1), test: { ok: true, at: minAgo(0) } })],
   });
   const main = await open(page);
+  // The page's clock from here: the reads again run when the spec says.
+  await page.clock.install();
   await main.getByRole('button', { name: 'Test all' }).click();
   await expect(card(main, 'self')).toContainText('Tested just now.');
   await expect(card(main, FLEET_BOX.id)).toContainText('No answer yet. Reading again shortly.');
@@ -213,12 +244,18 @@ test('Test all: each box answers in plain words; pending reads again later', asy
   expect(s.sent).toEqual([{}]);
   const reads = s.reads;
   // The read again, a little later: Box A's fresh line.
+  await page.clock.runFor(8_500);
   const table = main.getByRole('table', { name: 'Key status' });
-  await expect(row(table, FLEET_BOX.id, 'openrouter')).toContainText('passed just now', {
-    timeout: 15_000,
-  });
-  expect(s.reads).toBeGreaterThan(reads);
+  await expect(row(table, FLEET_BOX.id, 'openrouter')).toContainText('passed just now');
+  await expect.poll(() => s.reads).toBe(reads + 1);
   await expect(card(main, FLEET_BOX.id)).toContainText('1 key, all fine');
+  // One more read, then the pending mark goes and nothing reads again.
+  await page.clock.runFor(12_000);
+  await expect.poll(() => s.reads).toBe(reads + 2);
+  await expect(card(main, FLEET_BOX.id)).not.toContainText('No answer yet');
+  await page.clock.runFor(120_000);
+  await page.waitForTimeout(1_000);
+  expect(s.reads).toBe(reads + 2);
 });
 
 test('every tested code, an unknown one, and a 429', async ({ page }) => {
@@ -243,7 +280,15 @@ test('every tested code, an unknown one, and a 429', async ({ page }) => {
   // Too many presses: the route answers 429.
   s.limited = true;
   await main.getByRole('button', { name: 'Test all' }).click();
-  await expect(main.getByRole('alert')).toHaveText('Too many tests. Try again in a few minutes.');
+  // Beside the result (the box open on the right), and in the list.
+  const fail = 'Too many tests. Try again in a few minutes.';
+  await expect(main.getByRole('status').filter({ hasText: fail })).toBeVisible();
+  await expect(main.getByText(fail)).toHaveCount(2);
+  // On All boxes too.
+  await main.getByRole('button', { name: /All boxes/ }).click();
+  s.limited = true;
+  await main.getByRole('button', { name: 'Test all' }).click();
+  await expect(main.getByRole('status').filter({ hasText: fail })).toBeVisible();
 });
 
 test('a box with no lines says why; Test now only where it can help', async ({ page }) => {
@@ -319,6 +364,42 @@ test('off a Control Center, and on one a release behind', async ({ page }) => {
   await expect(
     main.getByText('This brain is a release behind: it does not have the key status yet.'),
   ).toBeVisible();
+});
+
+test('after a key set from Provider keys, the key status reads again once the box answers', async ({
+  page,
+}) => {
+  api.fleet = withKeyStatus(newMockFleet());
+  api.fleet.keysOn = true;
+  const s = keyStatusState(api.fleet);
+  await signIn(page, 'admin');
+  await page.goto('/admin/fleet/keys');
+  const main = page.getByRole('main');
+  await main.locator('#fleet-key-value').fill('a-made-up-key');
+  await main.getByRole('checkbox', { name: 'Box A' }).click();
+  await main.getByRole('button', { name: 'Set key on 1 box' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Set key' }).click();
+  await expect.poll(() => api.fleet!.keySent.length).toBe(1);
+  // Box A answers a few Fleet reads later (about 3 s apart while it waits),
+  // so the key status is open and read before it does.
+  api.fleet.keyState[FLEET_BOX.id]!.reads = -3;
+  // While Box A still waits on the key, open the key status.
+  await main.getByRole('link', { name: 'Key status' }).click();
+  await expect(main.getByRole('list', { name: 'Boxes' })).toBeVisible();
+  const table = main.getByRole('table', { name: 'Key status' });
+  await expect(row(table, FLEET_BOX.id, 'elevenlabs')).toContainText('Never tested');
+  const reads = s.reads;
+  // The box's run: its new lines are what the next read gives.
+  s.boxes[1] = keyBox({
+    ...s.boxes[1]!,
+    reason: null,
+    keys: [keyLine({ setAt: minAgo(0), test: { ok: true, at: minAgo(0) } })],
+  });
+  await expect(row(table, FLEET_BOX.id, 'openrouter')).toContainText('passed just now', {
+    timeout: 15_000,
+  });
+  await expect(row(table, FLEET_BOX.id, 'elevenlabs')).toHaveCount(0);
+  expect(s.reads).toBeGreaterThan(reads);
 });
 
 test('Provider keys links to the key status, and back', async ({ page }) => {
