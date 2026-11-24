@@ -15,6 +15,13 @@ export type MockSsoSetup = {
   testOutcome: string;
   tests: number;
   envMissing: string[];
+  /** The button label set on the screen (null: none), the .env's (wins),
+   *  and false for a brain before the label. */
+  label: string | null;
+  envLabel: string | null;
+  labelOn: boolean;
+  /** Each save that went through: a secret sent, and the label sent. */
+  saves: { secret?: true; label?: string }[];
   /** What the status read answers instead (405: a brain before the screen). */
   statusAnswer: number | null;
   /** A status read waits on this: a box that does not answer. */
@@ -33,12 +40,18 @@ export const newMockSsoSetup = (): MockSsoSetup => ({
   testOutcome: 'ok',
   tests: 0,
   envMissing: [],
+  label: null,
+  envLabel: null,
+  labelOn: true,
+  saves: [],
   statusAnswer: null,
   statusHold: null,
   writeRefusal: null,
 });
 
 const ADMIN = 'admin@example.invalid';
+/** The label's rule, as the brain holds it (@mantle/client-types sso-label.ts). */
+const LABEL_RE = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N} .,'&()+-]{1,60}$/u;
 const AT = '2026-11-06T08:00:00.000Z';
 
 function statusOf(s: MockSsoSetup) {
@@ -50,6 +63,12 @@ function statusOf(s: MockSsoSetup) {
     redirectUri: 'https://brain.example.invalid/api/auth/oidc/callback',
     scimUrl: 'https://brain.example.invalid/scim/v2',
     envMissing: s.envMissing,
+    ...(s.labelOn
+      ? {
+          label: s.envLabel ?? s.label ?? 'Single sign-on',
+          labelFrom: s.envLabel ? 'env' : s.label ? 'row' : 'none',
+        }
+      : {}),
     secret: s.envSecret ? 'env' : s.secret ? 'row' : 'none',
     scim: s.envScim === 'hash' ? 'env' : s.envScim === 'off' ? 'env-off' : s.token ? 'row' : 'none',
     secretSet: s.secret ? { by: ADMIN, at: AT } : null,
@@ -70,7 +89,7 @@ export function ssoSetupAnswer(
   s: MockSsoSetup,
   path: string,
   method: string,
-  body: { secret?: string; password?: string },
+  body: { secret?: string; label?: string; password?: string },
   password: string,
 ): { status: number; body: unknown } | null {
   if (path === '/api/users/sso-setup' && method === 'GET') {
@@ -79,15 +98,33 @@ export function ssoSetupAnswer(
   }
   if (method !== 'GET' && s.writeRefusal) return s.writeRefusal;
   if (path === '/api/users/sso-setup' && method === 'PUT') {
-    if (s.mode !== 'setup') return closed;
-    if (s.envSecret) {
+    // The brain's order: off, a secret outside setup, the .env, the label's
+    // pattern, then the password. A save applies all of it or none.
+    if (s.mode === 'off') return closed;
+    if (body.secret !== undefined && s.mode !== 'setup') return closed;
+    if (body.secret !== undefined && s.envSecret) {
       return {
         status: 409,
         body: { error: 'The box .env holds the client secret.', code: 'env-wins' },
       };
     }
+    if (body.label !== undefined && s.envLabel) {
+      return { status: 409, body: { error: 'The box .env holds the label.', code: 'env-wins' } };
+    }
+    const label = body.label?.trim();
+    if (label && !LABEL_RE.test(label)) {
+      return {
+        status: 400,
+        body: {
+          error:
+            "The label is 1 to 60 characters: letters, digits, spaces and . , - ' & ( ) + only.",
+        },
+      };
+    }
     if (body.password !== password) return wrong;
-    s.secret = body.secret ?? null;
+    if (body.secret !== undefined) s.secret = body.secret;
+    if (label !== undefined) s.label = label || null;
+    s.saves.push({ ...(body.secret !== undefined ? { secret: true } : {}), label });
     return { status: 200, body: statusOf(s) };
   }
   if (path === '/api/users/sso-setup/test' && method === 'POST') {

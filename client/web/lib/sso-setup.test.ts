@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   COMPANY_SIGN_IN_HREF,
+  LABEL_HELP,
+  LABEL_REFUSED,
+  labelChange,
+  labelLockedText,
+  labelSourceText,
+  labelStart,
+  signInButtonText,
+  SSO_LABEL_MAX,
+  ssoLabelValue,
   scimSourceText,
   secretSourceText,
   testOutcomeText,
@@ -98,5 +107,51 @@ describe('withCompanySignIn', () => {
     expect(withCompanySignIn(groups, false)).toEqual([
       { label: 'Settings', items: [{ href: '/settings/users' }] },
     ]);
+  });
+});
+
+describe('the sign-in button label', () => {
+  it("holds the pattern: 1 to 60 characters, letters, digits, spaces and . , - ' & ( ) +", () => {
+    expect(ssoLabelValue('  Contoso Ltd.  ')).toBe('Contoso Ltd.');
+    expect(ssoLabelValue("O'Brien & Sons (SA) + Co, Pty-Ltd")).toBe(
+      "O'Brien & Sons (SA) + Co, Pty-Ltd",
+    );
+    expect(ssoLabelValue('Ünïcödé 日本')).toBe('Ünïcödé 日本');
+    expect(ssoLabelValue('x'.repeat(SSO_LABEL_MAX))).toBe('x'.repeat(SSO_LABEL_MAX));
+    expect(ssoLabelValue('x'.repeat(SSO_LABEL_MAX + 1))).toBe(false);
+    expect(ssoLabelValue('   ')).toBeNull();
+    expect(ssoLabelValue('')).toBeNull();
+    for (const bad of ['--', '<b>x</b>', 'a\nb', 'a/b', 'a@b', 'a:b', '...']) {
+      expect(ssoLabelValue(bad)).toBe(false);
+    }
+  });
+
+  it('sends a change only, clears with an empty field, and refuses what does not fit', () => {
+    const row = { label: 'Contoso', labelFrom: 'row' as const };
+    const none = { label: 'Single sign-on', labelFrom: 'none' as const };
+    expect(labelStart(row)).toBe('Contoso');
+    expect(labelStart(none)).toBe('');
+    expect(labelStart({ label: 'From env', labelFrom: 'env' })).toBe('');
+    expect(labelChange(row, ' Contoso ')).toEqual({ send: null, error: null });
+    expect(labelChange(row, 'Contoso Ltd')).toEqual({ send: 'Contoso Ltd', error: null });
+    expect(labelChange(row, '  ')).toEqual({ send: '', error: null });
+    expect(labelChange(none, '')).toEqual({ send: null, error: null });
+    expect(labelChange(none, 'Contoso')).toEqual({ send: 'Contoso', error: null });
+    expect(labelChange(none, '<Contoso>')).toEqual({ send: null, error: LABEL_REFUSED });
+  });
+
+  it('says where the label comes from, and why it cannot be set here', () => {
+    expect(labelSourceText('env')).toContain('.env');
+    expect(labelSourceText('row')).toContain('setup screen');
+    expect(labelSourceText('none')).toBe('The default.');
+    expect(signInButtonText('Contoso')).toBe('Sign in with Contoso');
+    expect(labelLockedText({ mode: 'off', labelFrom: 'none' })).toContain('not off');
+    expect(labelLockedText({ mode: 'optional' })).toContain('older release');
+    expect(labelLockedText({ mode: 'required', labelFrom: 'env' })).toContain('MANTLE_OIDC_LABEL');
+    expect(labelLockedText({ mode: 'required', labelFrom: 'row' })).toBeNull();
+    expect(LABEL_HELP).toContain('Single sign-on');
+    expect(LABEL_REFUSED).toBe(
+      "The label is 1 to 60 characters: letters, digits, spaces and . , - ' & ( ) + only.",
+    );
   });
 });

@@ -20,16 +20,25 @@ import {
   FieldGroup,
   FieldLabel,
 } from '@mantle/web-ui/ui/field';
+import { Input } from '@mantle/web-ui/ui/input';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import {
+  LABEL_HELP,
+  labelChange,
+  labelLockedText,
+  labelSourceText,
+  labelStart,
   scimSourceText,
   secretSourceText,
+  signInButtonText,
+  SSO_LABEL_MAX,
   SSO_SETUP_KEY,
   SSO_SETUP_PATH,
   testOutcomeText,
+  type SsoSetupBody,
   type SsoSetupOn,
   type SsoSetupSetter,
   type SsoSetupStatus,
@@ -289,7 +298,8 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
         description="Type your password to save it."
         action="Save secret"
         send={async (password) => {
-          const next = await apiSend<SsoSetupStatus>(SSO_SETUP_PATH, 'PUT', { secret, password });
+          const body: SsoSetupBody = { secret, password };
+          const next = await apiSend<SsoSetupStatus>(SSO_SETUP_PATH, 'PUT', body);
           queryClient.setQueryData(SSO_SETUP_KEY, next);
         }}
         onDone={() => {
@@ -299,6 +309,78 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
           setOutcome(null);
           setTestError(null);
           toast.success('The client secret is saved. Press Test to check it.');
+        }}
+      />
+    </Section>
+  );
+}
+
+/** The sign-in button's label: in use, where it comes from, and a field to
+ *  set or clear it with the password, in any mode but off (mantle 0399). A
+ *  brain before the label sends no labelFrom: no section. */
+function LabelSection({ status }: { status: SsoSetupOn }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  // As typed; null: untouched, the field shows the label set now.
+  const [typed, setTyped] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  if (!status.labelFrom) return null;
+  const locked = labelLockedText(status);
+  const change = typed === null ? { send: null, error: null } : labelChange(status, typed);
+  const send = change.send;
+
+  return (
+    <Section title="Sign-in button">
+      <p className="text-sm">{signInButtonText(status.label ?? '')}</p>
+      <p className="text-xs text-muted-foreground">{labelSourceText(status.labelFrom)}</p>
+      {locked ? (
+        <p className="text-xs text-muted-foreground">{locked}</p>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (send !== null) setAsking(true);
+          }}
+        >
+          <FieldGroup>
+            <Field data-invalid={change.error ? true : undefined}>
+              <FieldLabel htmlFor="sso-setup-label">Button label</FieldLabel>
+              <Input
+                id="sso-setup-label"
+                value={typed ?? labelStart(status)}
+                placeholder={status.label || undefined}
+                autoComplete="off"
+                maxLength={SSO_LABEL_MAX * 2}
+                aria-invalid={change.error ? true : undefined}
+                aria-describedby="sso-setup-label-help"
+                onChange={(e) => setTyped(e.target.value)}
+              />
+              <FieldDescription id="sso-setup-label-help">{LABEL_HELP}</FieldDescription>
+              <FieldError>{change.error}</FieldError>
+            </Field>
+            <div className="flex justify-end">
+              <SubmitButton pending={false} disabled={send === null} data-agent-risk="person">
+                Save label
+              </SubmitButton>
+            </div>
+          </FieldGroup>
+        </form>
+      )}
+      <PasswordDialog
+        open={asking}
+        onOpenChange={setAsking}
+        title={send === '' ? 'Use the default label' : 'Save the button label'}
+        description="Type your password to save it. The sign-in screen shows it within a minute."
+        action="Save label"
+        send={async (password) => {
+          const body: SsoSetupBody = { label: send ?? '', password };
+          const next = await apiSend<SsoSetupStatus>(SSO_SETUP_PATH, 'PUT', body);
+          queryClient.setQueryData(SSO_SETUP_KEY, next);
+        }}
+        onDone={() => {
+          setTyped(null);
+          setAsking(false);
+          toast.success('The button label is saved.');
         }}
       />
     </Section>
@@ -491,6 +573,7 @@ export function CompanySignInClient() {
           {scim && <Value label="SCIM URL" value={status.scimUrl} />}
         </div>
       </Section>
+      <LabelSection status={status} />
       <SecretSection status={status} />
       {panel}
       {scim && (

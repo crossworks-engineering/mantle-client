@@ -7,7 +7,8 @@
  * One route, POST only, a Control Center only (404 elsewhere), body one of:
  *  - `{ do: 'list' }`: every box with its last sign-in view;
  *  - `{ do: 'status' | 'test', boxIds }`: ask 1 to 50 boxes;
- *  - `{ do: 'set', boxId, tenant?, clientId?, secret?, password }`;
+ *  - `{ do: 'set', boxId, tenant?, clientId?, secret?, label?, password }`
+ *    (`label: ''` clears the button's label);
  *  - `{ do: 'mode', boxId, mode, password }`: raise the box's sign-in mode
  *    one step (off, setup, optional, required), never down; the box holds
  *    the rule, and a mode line in its .env always wins;
@@ -25,7 +26,12 @@
  * the default `send`, which loads the fetch helper when it runs.
  */
 import { FLEET_PATH, reasonText } from './fleet';
-import { testOutcomeText, type SsoSetupTestOutcome } from './sso-setup';
+import {
+  labelLockedText,
+  testOutcomeText,
+  type SsoLabelFrom,
+  type SsoSetupTestOutcome,
+} from './sso-setup';
 
 export const FLEET_SSO_PATH = `${FLEET_PATH}/sso`;
 /** Under the Fleet key: a Fleet refresh reads it again too. */
@@ -60,6 +66,10 @@ export type FleetSsoStatus = {
   missing: string[];
   linked: number | null;
   active: number | null;
+  /** The sign-in button's label in use, and where it comes from. Absent
+   *  from a box a release behind (mantle 0399). */
+  label?: string;
+  labelFrom?: SsoLabelFrom;
 };
 
 /** The Control Center's view of a box's sign-in, from its last answers. */
@@ -125,6 +135,7 @@ export type FleetSsoAsk =
       tenant?: string;
       clientId?: string;
       secret?: string;
+      label?: string;
       password: string;
     }
   | { do: 'mode'; boxId: string; mode: SsoStep; password: string }
@@ -134,28 +145,37 @@ export type FleetSsoAsk =
 
 /** Which fields of the form a box takes now. Tenant and client: only in
  *  setup mode, and only while the box .env does not hold them. Secret: in
- *  any mode but off, unless the .env holds it. No status: nothing yet. */
+ *  any mode but off, unless the .env holds it. Label: in any mode but off,
+ *  unless the .env holds it or the box is a release before it. No status:
+ *  nothing yet. */
 export function formRules(status: FleetSsoStatus | null): {
   tenant: boolean;
   clientId: boolean;
   secret: boolean;
+  label: boolean;
   test: boolean;
 } {
-  if (!status) return { tenant: false, clientId: false, secret: false, test: true };
+  if (!status) return { tenant: false, clientId: false, secret: false, label: false, test: true };
   const setup = status.mode === 'setup';
   return {
     tenant: setup && status.issuerFrom !== 'env',
     clientId: setup && status.clientIdFrom !== 'env',
     secret: status.mode !== 'off' && status.secret !== 'env',
+    label: labelLockedText(status) === null,
     test: status.mode !== 'off',
   };
 }
 
+/** The form. `label`: the value to send (labelChange in sso-setup.ts: ''
+ *  clears it), or null for no change. */
+export type SsoForm = { tenant: string; clientId: string; secret: string; label: string | null };
+export type SsoRules = { tenant: boolean; clientId: boolean; secret: boolean; label: boolean };
+
 /** The set body: only the fields filled in, and only those the box takes. */
 export function setBody(
   boxId: string,
-  form: { tenant: string; clientId: string; secret: string },
-  rules: { tenant: boolean; clientId: boolean; secret: boolean },
+  form: SsoForm,
+  rules: SsoRules,
   password: string,
 ): Extract<FleetSsoAsk, { do: 'set' }> {
   const tenant = form.tenant.trim();
@@ -167,19 +187,18 @@ export function setBody(
     ...(rules.tenant && tenant ? { tenant } : {}),
     ...(rules.clientId && clientId ? { clientId } : {}),
     ...(rules.secret && secret ? { secret } : {}),
+    ...(rules.label && form.label !== null ? { label: form.label } : {}),
     password,
   };
 }
 
 /** Whether the form holds anything to save. */
-export function hasChange(
-  form: { tenant: string; clientId: string; secret: string },
-  rules: { tenant: boolean; clientId: boolean; secret: boolean },
-): boolean {
+export function hasChange(form: SsoForm, rules: SsoRules): boolean {
   return (
     (rules.tenant && !!form.tenant.trim()) ||
     (rules.clientId && !!form.clientId.trim()) ||
-    (rules.secret && !!form.secret.trim())
+    (rules.secret && !!form.secret.trim()) ||
+    (rules.label && form.label !== null)
   );
 }
 
@@ -486,6 +505,10 @@ export function readAnswer(a: FleetSsoAnswer): {
   };
 }
 
+/** A save the box refused as `bad-call`: it runs a release before the label. */
+export const SET_TOO_OLD =
+  'The box runs an older release without the button label, so nothing of this save was applied. Update the box to set the label.';
+
 /** Why a box refused a raise. */
 export function modeRefusalText(reason: 'env-wins' | 'mode'): string {
   return reason === 'env-wins'
@@ -499,6 +522,11 @@ export function answerText(a: FleetSsoAnswer): { tone: 'ok' | 'warn' | 'bad'; te
   if (!r.ok) {
     if (a.name === 'sso_mode' && (r.reason === 'env-wins' || r.reason === 'mode')) {
       return { tone: 'bad', text: modeRefusalText(r.reason) };
+    }
+    // A save to a box a release behind: since the label is the one field
+    // such a box lacks, the whole save was refused for it.
+    if (a.name === 'sso_set' && r.reason === 'bad-call') {
+      return { tone: 'bad', text: SET_TOO_OLD };
     }
     const test = r.reason === 'test' && r.test ? ` ${testText(r.test).text}` : '';
     return { tone: 'bad', text: `${ssoReasonText(r.reason)}${test}` };

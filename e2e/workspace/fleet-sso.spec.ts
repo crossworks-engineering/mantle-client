@@ -328,6 +328,85 @@ test('every other Test code still blocks Turn on, each with its own words', asyn
   expect(sent('mode')).toEqual([]);
 });
 
+// --- the sign-in button's label (mantle 0399) ------------------------------------------
+
+test('the label: set and cleared with the password in any mode but off, and held as typed', async ({
+  page,
+}) => {
+  api.fleet!.ssoStatus[FLEET_BOX.id]!.mode = 'optional';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Sign in with Single sign-on')).toBeVisible();
+  await expect(main.getByText('The default.')).toBeVisible();
+  const field = main.getByLabel('Button label');
+  const save = main.getByRole('button', { name: 'Save', exact: true });
+  await expect(field).toBeEnabled();
+
+  await field.fill('Contoso <SSO>');
+  await expect(main.getByText('The label is 1 to 60 characters', { exact: false })).toBeVisible();
+  await expect(save).toBeDisabled();
+
+  await field.fill(' Contoso ');
+  await save.click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(main.getByText('Sign in with Contoso', { exact: true })).toBeVisible();
+  await expect(main.getByText('Set on a setup screen.')).toBeVisible();
+  await expect(field).toHaveValue('Contoso');
+  await shot(page, 'fleet-sso-label');
+
+  await field.fill('');
+  await save.click();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(main.getByText('Sign in with Single sign-on')).toBeVisible();
+  expect(sent('set')).toEqual([
+    { do: 'set', boxId: FLEET_BOX.id, label: 'Contoso', password: SSO_PASSWORD },
+    { do: 'set', boxId: FLEET_BOX.id, label: '', password: SSO_PASSWORD },
+  ]);
+});
+
+test('the label: the .env wins, and a box a release behind takes none', async ({ page }) => {
+  const box = api.fleet!.ssoStatus[FLEET_BOX.id]!;
+  box.label = 'Contoso SSO';
+  box.labelFrom = 'env';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  const field = main.getByLabel('Button label');
+  await expect(main.getByText('Sign in with Contoso SSO')).toBeVisible();
+  await expect(main.getByText('From the box .env.')).toBeVisible();
+  await expect(field).toBeDisabled();
+  await expect(main.getByText('MANTLE_OIDC_LABEL', { exact: false })).toBeVisible();
+
+  // A box a release behind sends no labelFrom: the field says so.
+  delete box.labelFrom;
+  delete box.label;
+  await main.getByRole('button', { name: 'Read status' }).first().click();
+  await expect(
+    main.getByText('older release without the button label', { exact: false }),
+  ).toBeVisible();
+  await expect(field).toBeDisabled();
+
+  // The box rolled back after the read: the save is refused whole.
+  box.label = 'Single sign-on';
+  box.labelFrom = 'none';
+  await main.getByRole('button', { name: 'Read status' }).first().click();
+  await expect(field).toBeEnabled();
+  delete box.labelFrom;
+  await field.fill('Contoso');
+  await main.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(
+    main.getByText('Update the box to set the label.', { exact: false }).first(),
+  ).toBeVisible();
+});
+
 test('a mode set in the box .env cannot be raised from here', async ({ page }) => {
   api.fleet!.ssoStatus[FLEET_BOX.id]!.modeFrom = 'env';
   await signIn(page, 'admin');
@@ -458,6 +537,24 @@ test('this box: an unclear Test turns on after the warning, and a reload asks a 
     { do: 'mode', boxId: 'self', mode: 'optional', password: SSO_PASSWORD },
   ]);
   expect(sent('mode')).toEqual([]);
+});
+
+test('this box: the label is set from the same field, and asks no fleet box', async ({ page }) => {
+  api.fleet!.ssoStatus.self!.mode = 'setup';
+  api.fleet!.ssoStatus.self!.modeFrom = 'row';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=self`);
+  const main = page.getByRole('main');
+  await main.getByLabel('Button label').fill('Contoso');
+  await main.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(main.getByText('Sign in with Contoso', { exact: true })).toBeVisible();
+  expect(selfSent('set')).toEqual([
+    { do: 'set', boxId: 'self', label: 'Contoso', password: SSO_PASSWORD },
+  ]);
+  expect(sent('set')).toEqual([]);
 });
 
 test('the warning before required says it is the box you are signed in to', async ({ page }) => {

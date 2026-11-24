@@ -82,6 +82,15 @@ import {
   type SsoStep,
 } from '@/lib/fleet-sso';
 import { isNoChannel } from '@/lib/fleet-tool';
+import {
+  LABEL_HELP,
+  labelChange,
+  labelLockedText,
+  labelSourceText,
+  labelStart,
+  signInButtonText,
+  SSO_LABEL_MAX,
+} from '@/lib/sso-setup';
 import { boxesText } from '@/lib/fleet-view';
 import {
   Callout,
@@ -540,6 +549,8 @@ function OneBox({ row }: { row: FleetSsoRow }) {
   const [tenant, setTenant] = useState('');
   const [clientId, setClientId] = useState('');
   const [secret, setSecret] = useState('');
+  // The label as typed; null: untouched, the field shows the label set now.
+  const [labelTyped, setLabelTyped] = useState<string | null>(null);
   // Bumped by a save: the next secret starts hidden again.
   const [fieldKey, setFieldKey] = useState(0);
   const [asking, setAsking] = useState(false);
@@ -554,12 +565,18 @@ function OneBox({ row }: { row: FleetSsoRow }) {
   const [raising, setRaising] = useState<{ mode: SsoStep; warn: RaiseWarn | null } | null>(null);
   const [warned, setWarned] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const form = { tenant, clientId, secret };
+  const label =
+    status && labelTyped !== null ? labelChange(status, labelTyped) : { send: null, error: null };
+  const form = { tenant, clientId, secret, label: label.send };
+  const mayAsk = hasChange(form, rules) && !label.error;
 
   // A typed secret does not outlive a field the box no longer takes.
   useEffect(() => {
     if (!rules.secret) setSecret('');
   }, [rules.secret]);
+  useEffect(() => {
+    if (!rules.label) setLabelTyped(null);
+  }, [rules.label]);
 
   /** `quiet`: the read on open, which shows its answer only when it failed. */
   const run = async (what: 'status' | 'test', quiet = false) => {
@@ -592,6 +609,7 @@ function OneBox({ row }: { row: FleetSsoRow }) {
     setSecret('');
     setTenant('');
     setClientId('');
+    setLabelTyped(null);
     setFieldKey((k) => k + 1);
     setBusy('set');
     setNotice(null);
@@ -646,6 +664,19 @@ function OneBox({ row }: { row: FleetSsoRow }) {
           ),
         },
         { label: 'Last Test', value: <LastTest test={view?.test ?? null} /> },
+        {
+          label: 'Button label',
+          value: status.labelFrom ? (
+            <span className="block min-w-0">
+              <span className="block">{signInButtonText(status.label ?? '')}</span>
+              <span className="block text-xs text-muted-foreground">
+                {labelSourceText(status.labelFrom)}
+              </span>
+            </span>
+          ) : (
+            '–'
+          ),
+        },
         { label: 'Links', value: linksText(status) },
       ]
     : [];
@@ -739,7 +770,7 @@ function OneBox({ row }: { row: FleetSsoRow }) {
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
-            if (hasChange(form, rules)) setAsking(true);
+            if (mayAsk) setAsking(true);
           }}
         >
           <FieldGroup>
@@ -795,6 +826,24 @@ function OneBox({ row }: { row: FleetSsoRow }) {
                 is saved.
               </FieldDescription>
             </Field>
+            <Field data-invalid={label.error ? true : undefined}>
+              <FieldLabel htmlFor="fleet-sso-label">Button label</FieldLabel>
+              <Input
+                id="fleet-sso-label"
+                value={labelTyped ?? (status ? labelStart(status) : '')}
+                disabled={!rules.label || busy !== null}
+                placeholder={status?.label || undefined}
+                autoComplete="off"
+                maxLength={SSO_LABEL_MAX * 2}
+                aria-invalid={label.error ? true : undefined}
+                aria-describedby="fleet-sso-label-help"
+                onChange={(e) => setLabelTyped(e.target.value)}
+              />
+              <FieldDescription id="fleet-sso-label-help">
+                {(status && status.mode !== 'off' && labelLockedText(status)) || LABEL_HELP}
+              </FieldDescription>
+              <FieldError>{label.error}</FieldError>
+            </Field>
             <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
               {busy === 'set' || busy === 'test' || busy === 'mode' ? (
                 <span className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -811,7 +860,7 @@ function OneBox({ row }: { row: FleetSsoRow }) {
               </Button>
               <SubmitButton
                 pending={false}
-                disabled={!hasChange(form, rules) || busy !== null}
+                disabled={!mayAsk || busy !== null}
                 data-agent-risk="person"
               >
                 Save

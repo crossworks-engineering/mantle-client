@@ -205,7 +205,13 @@ type SsoStatus = {
   missing: string[];
   linked: number | null;
   active: number | null;
+  /** Absent: a box before the label (mantle 0399). */
+  label?: string;
+  labelFrom?: 'env' | 'row' | 'none';
 };
+
+/** The label's rule, as the brain holds it (@mantle/client-types sso-label.ts). */
+const SSO_LABEL_RE = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N} .,'&()+-]{1,60}$/u;
 
 /** The password the mock takes on a Fleet sign-in save. */
 export const SSO_PASSWORD = 'the right password';
@@ -227,6 +233,8 @@ export function withSso(f: MockFleet): MockFleet {
     missing: [],
     linked: 0,
     active: 0,
+    label: 'Single sign-on',
+    labelFrom: 'none',
   };
   // This box, the Control Center itself: off, nothing set yet.
   f.ssoStatus.self = {
@@ -243,6 +251,8 @@ export function withSso(f: MockFleet): MockFleet {
     missing: [],
     linked: null,
     active: null,
+    label: 'Single sign-on',
+    labelFrom: 'none',
   };
   return f;
 }
@@ -1145,6 +1155,16 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
   if ((body.do === 'set' || body.do === 'mode') && body.password !== SSO_PASSWORD) {
     return { status: 403, body: { code: 'password', error: 'That password is not right.' } };
   }
+  // A label that does not fit: refused at the route, nothing queued.
+  const label = typeof body.label === 'string' ? body.label.trim() : undefined;
+  if (body.do === 'set' && label && !SSO_LABEL_RE.test(label)) {
+    return {
+      status: 400,
+      body: {
+        error: "The label is 1 to 60 characters: letters, digits, spaces and . , - ' & ( ) + only.",
+      },
+    };
+  }
   const at = new Date().toISOString();
   const one = body.do === 'set' || body.do === 'mode';
   const boxIds = one ? [String(body.boxId)] : ((body.boxIds as string[]) ?? []);
@@ -1197,6 +1217,28 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
         output: { ok: !reason, ...(reason ? { reason } : {}), from, status: { ...status } },
       };
     }
+    // The box's rule for a label: a box before it refuses the whole save,
+    // mode off and a .env label line refuse it.
+    if (body.do === 'set' && label !== undefined) {
+      const reason =
+        status.labelFrom === undefined
+          ? 'bad-call'
+          : status.mode === 'off'
+            ? 'mode'
+            : status.labelFrom === 'env'
+              ? 'env-wins'
+              : null;
+      if (reason) {
+        f.ssoView[boxId] = {
+          ...(prev ?? { test: null }),
+          at,
+          reason: null,
+          status: { ...status },
+          set: { fields: ['label'], ok: false, reason, by: ADMIN, at },
+        };
+        return { ...base, ok: false, reason, output: { ok: false, reason, status: { ...status } } };
+      }
+    }
     let test: string | undefined;
     if (body.do === 'test')
       test = f.ssoTest[boxId] ?? (status.secret === 'none' ? 'no-secret' : 'ok');
@@ -1211,6 +1253,11 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
         status.secret = 'row';
         status.secretSetAt = at;
         fields.push('secret');
+      }
+      if (label !== undefined) {
+        status.label = label || 'Single sign-on';
+        status.labelFrom = label ? 'row' : 'none';
+        fields.push('label');
       }
     }
     f.ssoView[boxId] = {

@@ -28,6 +28,7 @@ import {
   selfRow,
   selfView,
   setBody,
+  SET_TOO_OLD,
   settleSso,
   SSO_STATUS_MAX_AGE_MS,
   ssoReasonText,
@@ -79,7 +80,7 @@ const answer = (more: Partial<FleetSsoAnswer>): FleetSsoAnswer => ({
   ...more,
 });
 
-const EMPTY = { tenant: '', clientId: '', secret: '' };
+const EMPTY = { tenant: '', clientId: '', secret: '', label: null };
 
 describe('fleet sign-in (POST /api/fleet/sso)', () => {
   it('names its route', () => {
@@ -87,7 +88,13 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
   });
 
   it('takes tenant and client in setup mode only, and never over the .env', () => {
-    expect(formRules(status())).toEqual({ tenant: true, clientId: true, secret: true, test: true });
+    expect(formRules(status())).toEqual({
+      tenant: true,
+      clientId: true,
+      secret: true,
+      label: false,
+      test: true,
+    });
     expect(formRules(status({ issuerFrom: 'env', clientIdFrom: 'env' }))).toMatchObject({
       tenant: false,
       clientId: false,
@@ -102,16 +109,66 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
       tenant: false,
       clientId: false,
       secret: false,
+      label: false,
       test: false,
     });
     expect(formRules(status({ secret: 'env' })).secret).toBe(false);
     // No status read yet: nothing to change, a Test may still ask.
-    expect(formRules(null)).toEqual({ tenant: false, clientId: false, secret: false, test: true });
+    expect(formRules(null)).toEqual({
+      tenant: false,
+      clientId: false,
+      secret: false,
+      label: false,
+      test: true,
+    });
+  });
+
+  it('takes the label in any mode but off, never over the .env, not on a box a release behind', () => {
+    for (const mode of ['setup', 'optional', 'required'] as const) {
+      expect(formRules(status({ mode, label: 'Single sign-on', labelFrom: 'none' })).label).toBe(
+        true,
+      );
+      expect(formRules(status({ mode, label: 'Contoso', labelFrom: 'row' })).label).toBe(true);
+      expect(formRules(status({ mode, label: 'Contoso', labelFrom: 'env' })).label).toBe(false);
+      // A box before the label sends no labelFrom.
+      expect(formRules(status({ mode })).label).toBe(false);
+    }
+    expect(formRules(status({ mode: 'off', labelFrom: 'none' })).label).toBe(false);
+  });
+
+  it('sends the label as typed, and an empty one to clear it', () => {
+    const rules = formRules(status({ mode: 'optional', label: 'Contoso', labelFrom: 'row' }));
+    expect(setBody(A, { ...EMPTY, label: 'Contoso Ltd' }, rules, 'pw')).toEqual({
+      do: 'set',
+      boxId: A,
+      label: 'Contoso Ltd',
+      password: 'pw',
+    });
+    expect(setBody(A, { ...EMPTY, label: '' }, rules, 'pw')).toEqual({
+      do: 'set',
+      boxId: A,
+      label: '',
+      password: 'pw',
+    });
+    expect(hasChange({ ...EMPTY, label: '' }, rules)).toBe(true);
+    expect(hasChange(EMPTY, rules)).toBe(false);
+    // The .env holds it: nothing to send.
+    const env = formRules(status({ mode: 'optional', label: 'X', labelFrom: 'env' }));
+    expect(setBody(A, { ...EMPTY, label: 'Y' }, env, 'pw')).not.toHaveProperty('label');
+    expect(hasChange({ ...EMPTY, label: 'Y' }, env)).toBe(false);
+  });
+
+  it('says a save to a box a release behind was refused whole for the label', () => {
+    const old = answer({ name: 'sso_set', ok: false, reason: 'bad-call' });
+    expect(answerText(old)).toEqual({ tone: 'bad', text: SET_TOO_OLD });
+    expect(SET_TOO_OLD).toContain('Update the box to set the label');
+    const env = answer({ name: 'sso_set', ok: false, output: { ok: false, reason: 'env-wins' } });
+    expect(answerText(env).text).toBe(ssoReasonText('env-wins'));
   });
 
   it('sends only the fields filled in that the box takes', () => {
     const rules = formRules(status({ issuerFrom: 'env' }));
-    expect(setBody(A, { tenant: ' t ', clientId: '', secret: ' s ' }, rules, 'pw')).toEqual({
+    expect(setBody(A, { ...EMPTY, tenant: ' t ', secret: ' s ' }, rules, 'pw')).toEqual({
       do: 'set',
       boxId: A,
       secret: 's',

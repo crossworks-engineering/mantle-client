@@ -392,7 +392,9 @@ test('a status read that answers off does not take away a token shown once', asy
 });
 
 for (const mode of ['optional', 'required'] as const) {
-  test(`${mode}: locked and read-only, and the sidebar offers it`, async ({ page }) => {
+  test(`${mode}: the secret and the token locked, the label open, and the sidebar offers it`, async ({
+    page,
+  }) => {
     api.ssoSetup.mode = mode;
     api.ssoSetup.secret = SECRET;
     api.ssoSetup.token = 'kept-token';
@@ -406,6 +408,7 @@ for (const mode of ['optional', 'required'] as const) {
     await expect(main.locator('#sso-setup-secret')).toHaveCount(0);
     await expect(main.getByRole('button', { name: 'Test', exact: true })).toHaveCount(0);
     await expect(main.getByRole('button', { name: /token/i })).toHaveCount(0);
+    await expect(main.getByLabel('Button label')).toBeEnabled();
     await expect(main).not.toContainText(SECRET);
     await expect(main).not.toContainText('kept-token');
     await expect
@@ -446,4 +449,86 @@ test('the old Settings path goes to Admin', async ({ page }) => {
   await page.goto('/settings/company-sign-in');
   await expect(page).toHaveURL((u) => u.pathname === PATH);
   await expect(page.getByRole('main').getByText('Setup is open')).toBeVisible();
+});
+
+// --- the sign-in button's label (mantle 0399) ------------------------------------------
+
+test('the label: set it with the password in optional mode, clear it, and a value that does not fit is held', async ({
+  page,
+}) => {
+  api.ssoSetup.mode = 'optional';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  const part = main.locator('section').filter({
+    has: page.getByRole('heading', { name: 'Sign-in button' }),
+  });
+  await expect(part).toContainText('Sign in with Single sign-on');
+  await expect(part).toContainText('The default.');
+  const field = part.getByLabel('Button label');
+  const save = part.getByRole('button', { name: 'Save label' });
+  await expect(save).toBeDisabled();
+
+  // Checked as typed: the brain's own rule, and nothing is sent.
+  await field.fill('<Contoso>');
+  await expect(part.getByText('The label is 1 to 60 characters', { exact: false })).toBeVisible();
+  await expect(save).toBeDisabled();
+
+  await field.fill('  Contoso Ltd  ');
+  await save.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Save the button label' })).toBeVisible();
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Save label' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(part).toContainText('Sign in with Contoso Ltd');
+  await expect(part).toContainText('Set on a setup screen.');
+  await expect(field).toHaveValue('Contoso Ltd');
+  await expect(save).toBeDisabled();
+
+  // Empty: the default again.
+  await field.fill('');
+  await save.click();
+  await expect(dialog.getByRole('heading', { name: 'Use the default label' })).toBeVisible();
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Save label' }).click();
+  await expect(part).toContainText('Sign in with Single sign-on');
+  await expect(part).toContainText('The default.');
+  expect(api.ssoSetup.saves).toEqual([{ label: 'Contoso Ltd' }, { label: '' }]);
+});
+
+test('the label in the .env wins: it reads so, and a save that meets it says so', async ({
+  page,
+}) => {
+  api.ssoSetup.mode = 'required';
+  api.ssoSetup.envLabel = 'Contoso SSO';
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Sign in with Contoso SSO')).toBeVisible();
+  await expect(main.getByText('From the box .env.')).toBeVisible();
+  await expect(main.getByText('MANTLE_OIDC_LABEL', { exact: false })).toBeVisible();
+  await expect(main.getByLabel('Button label')).toHaveCount(0);
+
+  // The .env line lands while the screen is open: the brain is the judge.
+  api.ssoSetup.envLabel = null;
+  await page.reload();
+  await main.getByLabel('Button label').fill('Fabrikam');
+  api.ssoSetup.envLabel = 'Contoso SSO';
+  await main.getByRole('button', { name: 'Save label' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Save label' }).click();
+  await expect(dialog.getByText('The box .env holds the label.')).toBeVisible();
+  expect(api.ssoSetup.saves).toEqual([]);
+});
+
+test('a brain before the label shows no label part', async ({ page }) => {
+  api.ssoSetup.mode = 'setup';
+  api.ssoSetup.labelOn = false;
+  await signIn(page, 'admin');
+  await page.goto(PATH);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Setup is open', { exact: false })).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Sign-in button' })).toHaveCount(0);
 });
