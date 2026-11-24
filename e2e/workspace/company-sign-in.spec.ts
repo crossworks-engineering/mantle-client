@@ -99,6 +99,14 @@ test('setup: save the secret with the password, Test it, and it never comes back
   api.ssoSetup.testOutcome = 'secret-refused';
   await main.getByRole('button', { name: 'Test', exact: true }).click();
   await expect(main.getByText('The provider refused the client.')).toBeVisible();
+  // Unclear names the Entra case, so nobody is sent to fix a good set-up.
+  api.ssoSetup.testOutcome = 'unclear';
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await expect(
+    main.getByText('With Microsoft Entra this is normal when Assignment required? is Yes', {
+      exact: false,
+    }),
+  ).toBeVisible();
   api.ssoSetup.testOutcome = 'ok';
   await main.getByRole('button', { name: 'Test', exact: true }).click();
   await expect(main.getByText('This does not prove a sign-in')).toBeVisible();

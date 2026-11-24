@@ -38,6 +38,9 @@ import {
 import { ssoSetupQuery } from '@/lib/use-sso-setup-shown';
 import { fleetQuery } from '@/lib/use-fleet-shown';
 
+/** The Test result's colour: `unclear` is a warning (it may be fine), not an error. */
+const TEST_TONE = { ok: '', warn: 'text-warning-ink', bad: 'text-destructive-ink' } as const;
+
 function Value({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
@@ -262,7 +265,7 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
           {result && (
             <p
               role="status"
-              className={`flex items-start gap-1.5 text-sm ${result.good ? '' : 'text-destructive-ink'}`}
+              className={`flex items-start gap-1.5 text-sm ${TEST_TONE[result.tone]}`}
             >
               {result.good ? (
                 <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />

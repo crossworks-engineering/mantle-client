@@ -73,6 +73,7 @@ import {
   ssoReasonText,
   stageText,
   testText,
+  unclearWarning,
   type FleetSsoAnswers,
   type FleetSsoRow,
   type FleetSsoStatus,
@@ -131,7 +132,7 @@ function LastTest({ test }: { test: { code: string; at: string; by: string } | n
   const t = testText(test.code);
   return (
     <span className="block" title={t.text}>
-      <span className={cn('block', !t.good && 'text-destructive-ink')}>{t.label}</span>
+      <span className={cn('block', t.tone !== 'ok' && TONE_TEXT[t.tone])}>{t.label}</span>
       <span className="block text-xs text-muted-foreground">
         {timeAgo(test.at) || formatDateTime(test.at)}, {test.by}
       </span>
@@ -339,30 +340,43 @@ function PasswordDialog({
   );
 }
 
-// --- the warning before required ------------------------------------------------------
+// --- the warning before a raise -------------------------------------------------------
 
-function RequiredWarning({
+type RaiseWarn = 'unclear' | 'required';
+
+/** The warning a raise asks first: before required, and before Turn on
+ *  after an unclear Test. The password step follows the confirm. */
+function RaiseWarning({
   open,
   onOpenChange,
+  warn,
   status,
   self,
   onConfirm,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  warn: RaiseWarn;
   status: FleetSsoStatus;
   self: boolean;
   onConfirm: () => void;
 }) {
+  const required = warn === 'required';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Make company sign-in required?</DialogTitle>
-          <DialogDescription>Read what required does on this box first.</DialogDescription>
+          <DialogTitle>
+            {required ? 'Make company sign-in required?' : 'Turn on after an unclear Test?'}
+          </DialogTitle>
+          <DialogDescription>
+            {required
+              ? 'Read what required does on this box first.'
+              : 'The Test could not confirm the secret. Read this first.'}
+          </DialogDescription>
         </DialogHeader>
         <ul className="list-disc space-y-2 pl-5 text-sm">
-          {requiredWarning(status, self).map((line) => (
+          {(required ? requiredWarning(status, self) : unclearWarning(self)).map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
@@ -370,7 +384,7 @@ function RequiredWarning({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" variant="destructive" onClick={onConfirm}>
+          <Button type="button" variant={required ? 'destructive' : 'default'} onClick={onConfirm}>
             I understand, continue
           </Button>
         </div>
@@ -398,7 +412,7 @@ function ModePart({
   busy: boolean;
   reading: boolean;
   failed: string | null;
-  onRaise: (mode: SsoStep) => void;
+  onRaise: (mode: SsoStep, warn: RaiseWarn | null) => void;
   onRead: () => void;
 }) {
   const c = modeControl(status, lastTest, reading, failed);
@@ -419,7 +433,7 @@ function ModePart({
             variant={c.mode === 'required' ? 'destructive' : 'default'}
             disabled={c.blocked || busy}
             data-agent-risk="person"
-            onClick={() => onRaise(c.mode)}
+            onClick={() => onRaise(c.mode, c.warn)}
           >
             {c.label}
           </Button>
@@ -535,8 +549,9 @@ function OneBox({ row }: { row: FleetSsoRow }) {
   const [busy, setBusy] = useState<null | 'status' | 'test' | 'set' | 'mode'>(
     readOnOpen ? 'status' : null,
   );
-  // The raise asked: the warning first for required, then the password.
-  const [raising, setRaising] = useState<SsoStep | null>(null);
+  // The raise asked: its warning first (required, or Turn on after an
+  // unclear Test), then the password.
+  const [raising, setRaising] = useState<{ mode: SsoStep; warn: RaiseWarn | null } | null>(null);
   const [warned, setWarned] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const form = { tenant, clientId, secret };
@@ -683,9 +698,9 @@ function OneBox({ row }: { row: FleetSsoRow }) {
           notice?.tone === 'bad' ? notice.text : view?.reason ? ssoReasonText(view.reason) : null
         }
         onRead={() => void run('status')}
-        onRaise={(mode) => {
-          setWarned(mode !== 'required');
-          setRaising(mode);
+        onRaise={(mode, warn) => {
+          setWarned(warn === null);
+          setRaising({ mode, warn });
         }}
       />
 
@@ -812,12 +827,13 @@ function OneBox({ row }: { row: FleetSsoRow }) {
         send={(password) => askSso(setBody(row.id, form, rules, password))}
         onDone={(first) => void saved(first)}
       />
-      {raising === 'required' && status && (
-        <RequiredWarning
+      {raising?.warn && status && (
+        <RaiseWarning
           open={!warned}
           onOpenChange={(open) => {
             if (!open) setRaising(null);
           }}
+          warn={raising.warn}
           status={status}
           self={self}
           onConfirm={() => setWarned(true)}
@@ -831,10 +847,10 @@ function OneBox({ row }: { row: FleetSsoRow }) {
             setWarned(false);
           }
         }}
-        title={raising ? `Raise to ${modeLabel(raising)}` : 'Raise the mode'}
+        title={raising ? `Raise to ${modeLabel(raising.mode)}` : 'Raise the mode'}
         description="Type your password to send it to the box. The Control Center cannot lower the mode again."
         submit="Raise mode"
-        send={(password) => askSso(modeBody(row.id, raising!, password))}
+        send={(password) => askSso(modeBody(row.id, raising!.mode, password))}
         onDone={(first) => void raised(first)}
       />
     </DetailPane>

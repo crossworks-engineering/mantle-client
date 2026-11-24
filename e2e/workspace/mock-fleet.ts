@@ -167,6 +167,9 @@ export type MockFleet = {
   ssoSent: Record<string, unknown>[];
   /** Every ask for this box (the target `self`), kept apart from ssoSent. */
   ssoSelfSent: Record<string, unknown>[];
+  /** What a Test answers, by box id (`self` too), as the provider would;
+   *  absent: `ok` once a secret is set, else `no-secret`. */
+  ssoTest: Record<string, string>;
   /** The CC broadcast: false is a brain before it (the route answers 404). */
   broadcastOn: boolean;
   /** The broadcasts, newest first, as GET /api/fleet/broadcasts lists them. */
@@ -473,6 +476,7 @@ export const newMockFleet = (): MockFleet => ({
   ssoView: {},
   ssoSent: [],
   ssoSelfSent: [],
+  ssoTest: {},
   broadcastOn: false,
   broadcasts: [],
   broadcastAnswers: {},
@@ -1194,7 +1198,8 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
       };
     }
     let test: string | undefined;
-    if (body.do === 'test') test = status.secret === 'none' ? 'no-secret' : 'ok';
+    if (body.do === 'test')
+      test = f.ssoTest[boxId] ?? (status.secret === 'none' ? 'no-secret' : 'ok');
     const fields: string[] = [];
     if (body.do === 'set') {
       if (typeof body.tenant === 'string') {

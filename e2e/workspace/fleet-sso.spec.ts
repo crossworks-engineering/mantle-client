@@ -239,6 +239,95 @@ test('the mode goes up one step at a time: Turn on after a Test, required after 
   await expect(main.getByText('Required is the top mode.', { exact: false })).toBeVisible();
 });
 
+/** Save a secret on the open box with the password. */
+async function saveSecret(page: Page) {
+  const main = page.getByRole('main');
+  await main.getByLabel('Client secret').fill('the-secret-value');
+  await main.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
+test('an unclear Test turns on after a warning: Cancel sends nothing, the confirm asks the password', async ({
+  page,
+}) => {
+  api.fleet!.ssoTest[FLEET_BOX.id] = 'unclear';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  await saveSecret(page);
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  // The Entra case in plain words, not "check the app registration" alone.
+  await expect(
+    main.getByText('With Microsoft Entra this is normal when Assignment required? is Yes', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const turnOn = main.getByRole('button', { name: 'Turn on (optional)' });
+  await expect(turnOn).toBeEnabled();
+  await expect(main.getByText('Run a Test first.', { exact: false })).toHaveCount(0);
+
+  const dialog = page.getByRole('dialog');
+  await turnOn.click();
+  await expect(
+    dialog.getByRole('heading', { name: 'Turn on after an unclear Test?' }),
+  ).toBeVisible();
+  await expect(dialog).toContainText('did not give a token either');
+  await expect(dialog).toContainText('Assignment required? is Yes');
+  await expect(dialog).toContainText('passwords still work');
+  await expect(dialog).toContainText('A real sign-in is the real test');
+  await expect(dialog).toContainText('scripts/sso-env.sh <box> --mode off');
+  await shot(page, 'fleet-sso-unclear-warning');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(sent('mode')).toEqual([]);
+
+  await turnOn.click();
+  await dialog.getByRole('button', { name: 'I understand, continue' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Raise to Optional' })).toBeVisible();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Raise mode' }).click();
+  await expect(main.getByText('Raised to Optional.', { exact: true })).toBeVisible();
+  expect(sent('mode')).toEqual([
+    { do: 'mode', boxId: FLEET_BOX.id, mode: 'optional', password: SSO_PASSWORD },
+  ]);
+});
+
+test('every other Test code still blocks Turn on, each with its own words', async ({ page }) => {
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  const turnOn = main.getByRole('button', { name: 'Turn on (optional)' });
+  // No secret: the box answers no-secret.
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await expect(turnOn).toBeDisabled();
+  await expect(
+    main.getByText('The last Test did not pass: No secret. No client secret is set yet.', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await saveSecret(page);
+  const codes: [string, string, string][] = [
+    ['secret-refused', 'Secret refused', 'Check the secret and the client id.'],
+    ['unreachable', 'Unreachable', 'that this box can reach it'],
+    ['issuer-mismatch', 'Issuer mismatch', 'The issuer must be corrected'],
+    ['env-missing', 'Missing from .env', 'is not in the box .env'],
+    ['secret-unreadable', 'Secret unreadable', 'Enter it again.'],
+  ];
+  for (const [code, label, words] of codes) {
+    api.fleet!.ssoTest[FLEET_BOX.id] = code;
+    await main.getByRole('button', { name: 'Test', exact: true }).click();
+    const why = main.getByText(`The last Test did not pass: ${label}.`, { exact: false });
+    await expect(why).toBeVisible();
+    await expect(why).toContainText(words);
+    await expect(why).toContainText('Then run the Test again.');
+    await expect(turnOn).toBeDisabled();
+  }
+  expect(sent('mode')).toEqual([]);
+});
+
 test('a mode set in the box .env cannot be raised from here', async ({ page }) => {
   api.fleet!.ssoStatus[FLEET_BOX.id]!.modeFrom = 'env';
   await signIn(page, 'admin');
@@ -335,6 +424,40 @@ test('this box is the first entry: off to setup, stage, Test, Turn on, with its 
   expect(sent('set')).toEqual([]);
   expect(sent('test')).toEqual([]);
   await shot(page, 'fleet-sso-self-optional');
+});
+
+test('this box: an unclear Test turns on after the warning, and a reload asks a new Test', async ({
+  page,
+}) => {
+  api.fleet!.ssoStatus.self!.mode = 'setup';
+  api.fleet!.ssoStatus.self!.modeFrom = 'row';
+  api.fleet!.ssoStatus.self!.secret = 'row';
+  api.fleet!.ssoTest.self = 'unclear';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=self`);
+  const main = page.getByRole('main');
+  const turnOn = main.getByRole('button', { name: 'Turn on (optional)' });
+  await expect(turnOn).toBeDisabled();
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await expect(turnOn).toBeEnabled();
+  // A reload keeps no Test for this box: Turn on asks a new one.
+  await page.reload();
+  await expect(main.getByRole('button', { name: 'Turn on (optional)' })).toBeDisabled();
+  await main.getByRole('button', { name: 'Test', exact: true }).click();
+  await turnOn.click();
+  const dialog = page.getByRole('dialog');
+  await expect(
+    dialog.getByRole('heading', { name: 'Turn on after an unclear Test?' }),
+  ).toBeVisible();
+  await expect(dialog).toContainText('the .env of this box');
+  await dialog.getByRole('button', { name: 'I understand, continue' }).click();
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Raise mode' }).click();
+  await expect(main.getByText('Raised to Optional.', { exact: true })).toBeVisible();
+  expect(selfSent('mode')).toEqual([
+    { do: 'mode', boxId: 'self', mode: 'optional', password: SSO_PASSWORD },
+  ]);
+  expect(sent('mode')).toEqual([]);
 });
 
 test('the warning before required says it is the box you are signed in to', async ({ page }) => {

@@ -33,10 +33,22 @@ import {
   ssoReasonText,
   stageText,
   testText,
+  unclearWarning,
   type FleetSsoAnswer,
   type FleetSsoAsk,
   type FleetSsoStatus,
 } from './fleet-sso';
+
+/** The Test codes that keep Turn on blocked: all but ok and unclear. */
+const BLOCKING_TESTS = [
+  'secret-refused',
+  'unreachable',
+  'issuer-mismatch',
+  'env-missing',
+  'no-secret',
+  'secret-unreadable',
+  'a-new-code',
+];
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const call = (n: number) => `0000000${n}-0000-4000-8000-000000000000`;
@@ -130,7 +142,15 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
     expect(ssoReasonText('http-502')).toBe('The box answered HTTP 502.');
     expect(ssoReasonText('something-new')).toBe('The call failed.');
     expect(testText('ok')).toMatchObject({ good: true, label: 'Passed' });
-    expect(testText('secret-refused')).toMatchObject({ good: false, label: 'Secret refused' });
+    expect(testText('secret-refused')).toMatchObject({
+      good: false,
+      tone: 'bad',
+      label: 'Secret refused',
+    });
+    // Unclear is a warning, not a failure: with Entra it may be fine.
+    expect(testText('unclear')).toMatchObject({ good: false, tone: 'warn', label: 'Unclear' });
+    expect(testText('unclear').text).toContain('Assignment required? is Yes');
+    expect(testText('a-new-code')).toMatchObject({ good: false, tone: 'bad', label: 'a-new-code' });
   });
 
   it('reads an answer: the box refusal, the Test, the cleared secret', () => {
@@ -157,6 +177,10 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
 
     const tested = answer({ name: 'sso_test', ok: true, output: { ok: true, test: 'ok' } });
     expect(answerText(tested).tone).toBe('ok');
+    const unclear = answer({ name: 'sso_test', ok: true, output: { ok: true, test: 'unclear' } });
+    expect(answerText(unclear)).toEqual({ tone: 'warn', text: testText('unclear').text });
+    const wrong = answer({ name: 'sso_test', ok: true, output: { ok: true, test: 'unreachable' } });
+    expect(answerText(wrong)).toEqual({ tone: 'bad', text: testText('unreachable').text });
   });
 
   it('holds the reply to its shape', () => {
@@ -211,27 +235,43 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
       mode: 'setup',
       label: 'Open setup',
       blocked: null,
+      warn: null,
     });
-    // Turning on asks a passed Test first (the page's rule, not the box's).
+    // Turning on asks a Test first (the page's rule, not the box's).
     expect(nextStep(row('setup', 'row'), null)).toMatchObject({
       mode: 'optional',
       blocked: 'test',
+      warn: null,
     });
-    expect(nextStep(row('setup', 'row'), 'secret-refused').blocked).toBe('test');
     expect(nextStep(row('setup', 'row'), 'ok')).toEqual({
       mode: 'optional',
       label: 'Turn on (optional)',
       blocked: null,
+      warn: null,
     });
+    // Unclear turns on after a warning; every other code still blocks.
+    expect(nextStep(row('setup', 'row'), 'unclear')).toEqual({
+      mode: 'optional',
+      label: 'Turn on (optional)',
+      blocked: null,
+      warn: 'unclear',
+    });
+    for (const code of BLOCKING_TESTS) {
+      expect(nextStep(row('setup', 'row'), code)).toMatchObject({ blocked: 'test', warn: null });
+    }
     expect(nextStep(row('optional', 'row'), null)).toEqual({
       mode: 'required',
       label: 'Make required',
       blocked: null,
+      warn: 'required',
     });
+    // Required has its own warning, whatever the last Test said.
+    expect(nextStep(row('optional', 'row'), 'unclear').warn).toBe('required');
     expect(nextStep(row('required', 'row'), 'ok')).toEqual({
       mode: null,
       label: null,
       blocked: 'top',
+      warn: null,
     });
     // A .env mode line wins; a box a release behind has no modeFrom.
     expect(nextStep(row('setup', 'env'), 'ok').blocked).toBe('env');
@@ -242,6 +282,29 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
       expect(blockedText(b).length).toBeGreaterThan(10);
     }
     expect(blockedText('env')).toContain('--mode cc');
+    // No Test: run one. A blocking code: its own words, then Test again.
+    expect(blockedText('test')).toContain('Run a Test first.');
+    for (const code of BLOCKING_TESTS) {
+      const text = blockedText('test', code);
+      expect(text).toContain(testText(code).label);
+      expect(text).toContain(testText(code).text);
+      expect(text).toContain('Then run the Test again.');
+    }
+    expect(blockedText('test', 'secret-refused')).toBe(
+      'The last Test did not pass: Secret refused. The provider refused the client. Check the secret and the client id. Then run the Test again.',
+    );
+  });
+
+  it('warns before Turn on after an unclear Test: the code, Entra, what next, the way back', () => {
+    const lines = unclearWarning().join(' ');
+    expect(lines).toContain('did not say the secret is wrong, but it did not give a token either');
+    expect(lines).toContain('Assignment required? is Yes');
+    expect(lines).toContain('passwords still work');
+    expect(lines).toContain('links their company account');
+    expect(lines).toContain('A real sign-in is the real test');
+    expect(lines).toContain('the box .env (scripts/sso-env.sh <box> --mode off)');
+    expect(unclearWarning(true).join(' ')).toContain('the .env of this box');
+    expect(unclearWarning(true).join(' ')).toContain('--mode off');
   });
 
   it('sends the raise with the password, and reads its answer', () => {
@@ -325,6 +388,7 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
       label: 'Open setup',
       text: null,
       blocked: false,
+      warn: null,
     });
     expect(modeControl(status({ mode: 'setup', modeFrom: 'row' }), null, true, null)).toEqual({
       act: 'raise',
@@ -332,7 +396,14 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
       label: 'Turn on (optional)',
       text: blockedText('test'),
       blocked: true,
+      warn: null,
     });
+    expect(
+      modeControl(status({ mode: 'setup', modeFrom: 'row' }), 'issuer-mismatch', false, null),
+    ).toMatchObject({ text: blockedText('test', 'issuer-mismatch'), blocked: true });
+    expect(
+      modeControl(status({ mode: 'setup', modeFrom: 'row' }), 'unclear', false, null),
+    ).toMatchObject({ text: null, blocked: false, warn: 'unclear' });
     expect(modeControl(status({ mode: 'off', modeFrom: 'env' }), null, false, null)).toMatchObject({
       act: 'raise',
       text: blockedText('env'),

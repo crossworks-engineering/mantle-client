@@ -35,52 +35,53 @@ export type SsoSetupTestOutcome =
   | 'no-secret'
   | 'secret-unreadable';
 
-/** Plain words for each code the Test answers. `good`: nothing to fix here. */
-export function testOutcomeText(outcome: SsoSetupTestOutcome): { good: boolean; text: string } {
+/** The `unclear` Test: Entra with Assignment required? on Yes gives the app
+ *  no token of its own, so a good secret reads so too (mantle
+ *  docs/oidc-entra.md, "The Test button and Assignment required"). */
+const UNCLEAR_TEXT =
+  'The provider did not say the secret is wrong, but it gave no token either. With Microsoft Entra this is normal when Assignment required? is Yes on the app: then nothing is wrong, and a real sign-in is the real test. If Assignment required? is No, check the app registration.';
+
+/** Plain words for each code the Test answers. `good`: nothing to fix here.
+ *  `tone`: ok, warn (`unclear`: maybe nothing to fix, a real sign-in tells)
+ *  or bad. */
+export function testOutcomeText(outcome: SsoSetupTestOutcome): {
+  good: boolean;
+  tone: 'ok' | 'warn' | 'bad';
+  text: string;
+} {
+  const bad = (text: string) => ({ good: false, tone: 'bad' as const, text });
   switch (outcome) {
     case 'ok':
       return {
         good: true,
+        tone: 'ok',
         text: 'The provider accepted the client id and secret. This does not prove a sign-in: the redirect URI and the assignment of people show only at a real sign-in, after the lock.',
       };
     case 'secret-refused':
-      return {
-        good: false,
-        text: 'The provider refused the client. Check the secret and the client id.',
-      };
+      return bad('The provider refused the client. Check the secret and the client id.');
     case 'unclear':
-      return {
-        good: false,
-        text: 'The provider answered with another error. It did not say the secret is wrong. Check the app registration.',
-      };
+      return { good: false, tone: 'warn', text: UNCLEAR_TEXT };
     case 'unreachable':
-      return {
-        good: false,
-        text: 'The provider did not give a usable answer. Check the issuer and that this box can reach it.',
-      };
+      return bad(
+        'The provider did not give a usable answer. Check the issuer and that this box can reach it.',
+      );
     case 'issuer-mismatch':
-      return {
-        good: false,
-        text: 'The provider names another issuer. A real sign-in would fail. The issuer must be corrected in the box .env.',
-      };
+      return bad(
+        'The provider names another issuer. A real sign-in would fail. The issuer must be corrected in the box .env.',
+      );
     case 'env-missing':
-      return {
-        good: false,
-        text: 'The issuer, the client id or the public URL is not in the box .env.',
-      };
+      return bad('The issuer, the client id or the public URL is not in the box .env.');
     case 'no-secret':
-      return { good: false, text: 'No client secret is set yet. Save one first.' };
+      return bad('No client secret is set yet. Save one first.');
     case 'secret-unreadable':
-      return {
-        good: false,
-        text: 'The stored secret cannot be opened. Enter it again. If this repeats, ask the box operator.',
-      };
+      return bad(
+        'The stored secret cannot be opened. Enter it again. If this repeats, ask the box operator.',
+      );
     // A code from a newer brain.
     default:
-      return {
-        good: false,
-        text: 'The provider answered with another error. It did not say the secret is wrong. Check the app registration.',
-      };
+      return bad(
+        'The provider answered with another error. It did not say the secret is wrong. Check the app registration.',
+      );
   }
 }
 

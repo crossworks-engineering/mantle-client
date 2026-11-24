@@ -56,6 +56,17 @@ describe('testOutcomeText', () => {
   it('says the secret is not called wrong when the provider did not say so', () => {
     expect(testOutcomeText('unclear').text).toContain('did not say the secret is wrong');
   });
+
+  it('names the Entra case on unclear, and marks it a warning, not a failure', () => {
+    const { tone, text } = testOutcomeText('unclear');
+    expect(tone).toBe('warn');
+    expect(text).toContain('With Microsoft Entra this is normal when Assignment required? is Yes');
+    expect(text).toContain('a real sign-in is the real test');
+    for (const o of OUTCOMES) {
+      expect(testOutcomeText(o).tone).toBe(o === 'ok' ? 'ok' : o === 'unclear' ? 'warn' : 'bad');
+    }
+    expect(testOutcomeText('a-new-code' as SsoSetupTestOutcome).tone).toBe('bad');
+  });
 });
 
 describe('the sources', () => {

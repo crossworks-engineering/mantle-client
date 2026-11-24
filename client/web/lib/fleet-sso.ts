@@ -193,40 +193,67 @@ const NEXT: Record<SsoMode, { mode: SsoStep; label: string } | null> = {
   required: null,
 };
 
+/** The Test codes that let "Turn on" go ahead: `ok`, and `unclear` after a
+ *  warning (with Entra's Assignment required? on Yes a good secret reads
+ *  `unclear`, mantle docs/oidc-entra.md). Every other code, and no Test,
+ *  blocks. */
+const TURN_ON_TESTS: Record<string, 'go' | 'warn'> = { ok: 'go', unclear: 'warn' };
+
 /**
  * The one raise the page offers a box now, or why none. The Control Center
  * raises one step at a time and never lowers (the box holds that rule too):
  *  - `env`: the box .env sets the mode, which always wins;
  *  - `old`: the box runs a release before the raise;
  *  - `top`: required already;
- *  - `test`: setup, and the last Test did not pass (the page asks a passed
- *    Test before turning sign-in on; the box does not);
+ *  - `test`: setup, and the last Test is none, or a code other than `ok` or
+ *    `unclear` (the page asks a Test before turning sign-in on; the box
+ *    does not);
  *  - `none`: no status read yet.
+ * `warn`: the warning the person confirms before the password: `unclear`
+ * (Turn on after an unclear Test) or `required` (Make required).
  */
 export function nextStep(
   status: FleetSsoStatus | null,
   lastTest: string | null,
 ):
-  | { mode: SsoStep; label: string; blocked: null | 'env' | 'old' | 'test' }
-  | { mode: null; label: null; blocked: 'none' | 'top' } {
-  if (!status) return { mode: null, label: null, blocked: 'none' };
+  | {
+      mode: SsoStep;
+      label: string;
+      blocked: null | 'env' | 'old' | 'test';
+      warn: null | 'unclear' | 'required';
+    }
+  | { mode: null; label: null; blocked: 'none' | 'top'; warn: null } {
+  if (!status) return { mode: null, label: null, blocked: 'none', warn: null };
   const next = NEXT[status.mode];
-  if (!next) return { mode: null, label: null, blocked: 'top' };
-  if (status.modeFrom === 'env') return { ...next, blocked: 'env' };
-  if (status.modeFrom === undefined) return { ...next, blocked: 'old' };
-  if (next.mode === 'optional' && lastTest !== 'ok') return { ...next, blocked: 'test' };
-  return { ...next, blocked: null };
+  if (!next) return { mode: null, label: null, blocked: 'top', warn: null };
+  const warn = next.mode === 'required' ? 'required' : null;
+  if (status.modeFrom === 'env') return { ...next, blocked: 'env', warn };
+  if (status.modeFrom === undefined) return { ...next, blocked: 'old', warn };
+  if (next.mode === 'optional') {
+    const test = lastTest ? TURN_ON_TESTS[lastTest] : undefined;
+    if (!test) return { ...next, blocked: 'test', warn: null };
+    return { ...next, blocked: null, warn: test === 'warn' ? 'unclear' : null };
+  }
+  return { ...next, blocked: null, warn };
 }
 
-/** Why the raise button is off, in a sentence. */
-export function blockedText(blocked: 'env' | 'old' | 'test' | 'none' | 'top'): string {
+/** Why the raise button is off, in a sentence. `lastTest`: the last Test's
+ *  code, for `test`: its own words say what to check. */
+export function blockedText(
+  blocked: 'env' | 'old' | 'test' | 'none' | 'top',
+  lastTest: string | null = null,
+): string {
   switch (blocked) {
     case 'env':
       return 'Set in .env: the box .env holds MANTLE_OIDC_MODE, which always wins. Remove it with scripts/sso-env.sh <box> --mode cc to raise the mode from here.';
     case 'old':
       return 'The box runs an older release without the raise from the Control Center. Update it.';
-    case 'test':
-      return 'Run a Test first. Sign-in turns on only after a Test passes.';
+    case 'test': {
+      if (!lastTest)
+        return 'Run a Test first. Turn on opens when the Test passes, or when it is unclear (then after a warning).';
+      const t = testText(lastTest);
+      return `The last Test did not pass: ${t.label}. ${t.text} Then run the Test again.`;
+    }
     case 'none':
       return 'Read the status first.';
     case 'top':
@@ -254,7 +281,8 @@ export function needsReadAll(rows: readonly Pick<FleetSsoRow, 'ssoView'>[]): boo
 /**
  * What the Sign-in mode part shows, so it never shows no button and no
  * reason:
- *  - `raise`: the raise button, off with its reason when blocked;
+ *  - `raise`: the raise button, off with its reason when blocked, and the
+ *    warning it opens first (`warn`, as nextStep has it);
  *  - `wait`: no status yet and the status is being read: a spinner button;
  *  - `read`: no status: the reason (the failed read, or none yet) and a
  *    Read status button;
@@ -266,7 +294,14 @@ export function modeControl(
   reading: boolean,
   failed: string | null,
 ):
-  | { act: 'raise'; mode: SsoStep; label: string; text: string | null; blocked: boolean }
+  | {
+      act: 'raise';
+      mode: SsoStep;
+      label: string;
+      text: string | null;
+      blocked: boolean;
+      warn: null | 'unclear' | 'required';
+    }
   | { act: 'wait'; label: string; text: null }
   | { act: 'read'; label: string; text: string }
   | { act: 'top'; text: string } {
@@ -280,8 +315,9 @@ export function modeControl(
     act: 'raise',
     mode: next.mode,
     label: next.label,
-    text: next.blocked ? blockedText(next.blocked) : null,
+    text: next.blocked ? blockedText(next.blocked, lastTest) : null,
     blocked: next.blocked !== null,
+    warn: next.warn,
   };
 }
 
@@ -320,6 +356,21 @@ export function requiredWarning(
     self
       ? 'Nothing on this page can lower the mode. The way back is optional in the .env of this box (scripts/sso-env.sh <box> --mode optional).'
       : 'The Control Center cannot lower the mode. The way back is optional in the box .env (scripts/sso-env.sh <box> --mode optional).',
+  ];
+}
+
+/** What the warning before "Turn on" after an `unclear` Test says: what
+ *  the code means, why it is normal with Entra, what happens next, and the
+ *  way back. `self`: the box is this Control Center. */
+export function unclearWarning(self = false): string[] {
+  return [
+    'The provider did not say the secret is wrong, but it did not give a token either.',
+    'With Microsoft Entra this is normal when Assignment required? is Yes on the app. If it is No, cancel and check the app registration.',
+    'In optional mode passwords still work. Each person links their company account once, after a password sign-in.',
+    'A real sign-in is the real test: right after this, sign in with a company account that is assigned to the app.',
+    self
+      ? 'The tenant ID and client ID cannot change after this, and nothing on this page can lower the mode. The way back is off in the .env of this box (scripts/sso-env.sh <box> --mode off).'
+      : 'The tenant ID and client ID cannot change after this, and the Control Center cannot lower the mode. The way back is off in the box .env (scripts/sso-env.sh <box> --mode off).',
   ];
 }
 
@@ -365,9 +416,14 @@ const TEST_LABEL: Record<string, string> = {
 };
 
 /** A Test code in one or two words, and in a sentence. */
-export function testText(code: string): { good: boolean; label: string; text: string } {
+export function testText(code: string): {
+  good: boolean;
+  tone: 'ok' | 'warn' | 'bad';
+  label: string;
+  text: string;
+} {
   const said = testOutcomeText(code as SsoSetupTestOutcome);
-  return { good: said.good, label: TEST_LABEL[code] ?? code, text: said.text };
+  return { good: said.good, tone: said.tone, label: TEST_LABEL[code] ?? code, text: said.text };
 }
 
 /** Plain words for a reason code: the box's own, or the call's. */
@@ -453,7 +509,7 @@ export function answerText(a: FleetSsoAnswer): { tone: 'ok' | 'warn' | 'bad'; te
   }
   if (a.name === 'sso_test') {
     const t = r.test ? testText(r.test) : null;
-    return t ? { tone: t.good ? 'ok' : 'bad', text: t.text } : { tone: 'ok', text: 'Tested.' };
+    return t ? { tone: t.tone, text: t.text } : { tone: 'ok', text: 'Tested.' };
   }
   if (a.name === 'sso_set') {
     const cleared = r.secretCleared
