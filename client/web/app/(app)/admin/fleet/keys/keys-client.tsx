@@ -17,7 +17,16 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { SUPPORTED_PROVIDERS } from '@mantle/voice-client';
 import { FLEET_KEYS_PATH, fleetKeyProviders, keyBoxText, type FleetOverview } from '@/lib/fleet';
-import { Callout, DetailPane, FleetScreen, SendBar, TargetList, useBoxPick } from '../cc-kit';
+import { ccHref } from '@/lib/fleet-view';
+import {
+  Callout,
+  DetailPane,
+  FleetScreen,
+  ScreenLink,
+  SendBar,
+  TargetList,
+  useBoxPick,
+} from '../cc-kit';
 import { refusalText } from '../fleet-section';
 import { ConfirmSend } from '../fleet-writes';
 
@@ -80,7 +89,11 @@ function Keys({ data, refresh }: { data: FleetOverview; refresh: () => void }) {
           />
         }
         detail={
-          <DetailPane icon={<KeyRound />} title="Set a provider key">
+          <DetailPane
+            icon={<KeyRound />}
+            title="Set a provider key"
+            actions={<ScreenLink href={ccHref('key-status')}>Key status</ScreenLink>}
+          >
             <Callout>
               Each box seals the key in its own vault and tests it. A box whose test fails keeps the
               key it had. This box keeps no key.

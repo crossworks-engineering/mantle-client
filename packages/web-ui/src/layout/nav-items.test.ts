@@ -164,6 +164,7 @@ describe('the Admin group (owner, 2026-11-09)', () => {
       'Fleet matrix',
       'Bans',
       'Provider keys',
+      'Key status',
       'Fleet sign-in',
       'Agent models',
       'Pool entry',
@@ -179,6 +180,8 @@ describe('the Admin group (owner, 2026-11-09)', () => {
     expect(matchNavItem('/admin/fleet/matrix')?.name).toBe('Fleet matrix');
     expect(matchNavItem('/admin/fleet/users')?.name).toBe('Fleet users');
     expect(matchNavItem('/admin/fleet/status')?.name).toBe('Fleet status');
+    expect(matchNavItem('/admin/fleet/key-status')?.name).toBe('Key status');
+    expect(matchNavItem('/admin/fleet/keys')?.name).toBe('Provider keys');
   });
 
   it('Settings no longer holds Company sign-in', () => {

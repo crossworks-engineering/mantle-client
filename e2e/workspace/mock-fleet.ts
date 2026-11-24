@@ -5,6 +5,7 @@
  */
 
 import { inviteAnswer } from './mock-fleet-invite';
+import { keyStatusAnswer } from './mock-fleet-keys';
 
 const AT = '2026-11-09T08:00:00.000Z';
 const ADMIN = 'ada@example.invalid';
@@ -943,6 +944,9 @@ export function fleetAnswer(
     const at = new Date().toISOString();
     const stamped = changes.map((c) => ({ ...c, kind: String(c.kind), by: ADMIN, at }));
     return queueWrites(f, path, body, stamped);
+  }
+  if (path === '/api/fleet/keys/test' || (path === '/api/fleet/keys' && method === 'GET')) {
+    return keyStatusAnswer(f, path, method, body);
   }
   if (path === '/api/fleet/keys' && method === 'POST') {
     if (!f.keysOn) return { status: 404, body: { error: 'not found' } };
