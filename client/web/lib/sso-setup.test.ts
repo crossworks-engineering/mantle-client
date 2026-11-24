@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPANY_SIGN_IN_HREF,
   LABEL_HELP,
-  LABEL_REFUSED,
+  SSO_LABEL_REFUSED,
+  TEST_TONE_CLASS,
+  UNCLEAR_SAID,
   labelChange,
   labelLockedText,
   labelSourceText,
@@ -69,6 +71,12 @@ describe('testOutcomeText', () => {
   it('names the Entra case on unclear, and marks it a warning, not a failure', () => {
     const { tone, text } = testOutcomeText('unclear');
     expect(tone).toBe('warn');
+    expect(text.startsWith(UNCLEAR_SAID)).toBe(true);
+    expect(TEST_TONE_CLASS).toEqual({
+      ok: '',
+      warn: 'text-warning-ink',
+      bad: 'text-destructive-ink',
+    });
     expect(text).toContain('With Microsoft Entra this is normal when Assignment required? is Yes');
     expect(text).toContain('a real sign-in is the real test');
     for (const o of OUTCOMES) {
@@ -121,7 +129,27 @@ describe('the sign-in button label', () => {
     expect(ssoLabelValue('x'.repeat(SSO_LABEL_MAX + 1))).toBe(false);
     expect(ssoLabelValue('   ')).toBeNull();
     expect(ssoLabelValue('')).toBeNull();
-    for (const bad of ['--', '<b>x</b>', 'a\nb', 'a/b', 'a@b', 'a:b', '...']) {
+    // The new rule (a583fd267): NFC, combining marks after a letter or digit,
+    // and the curly apostrophe.
+    expect(ssoLabelValue('हिन्दी')).toBe('हिन्दी');
+    expect(ssoLabelValue('தமிழ்')).toBe('தமிழ்');
+    expect(ssoLabelValue('عَرَبِيّ')).toBe('عَرَبِيّ');
+    expect(ssoLabelValue('Tiếng Việt')).toBe('Tiếng Việt');
+    expect(ssoLabelValue('Cafe\u0301')).toBe('Caf\u00e9');
+    expect(ssoLabelValue('O’Neil')).toBe('O’Neil');
+    for (const bad of [
+      '--',
+      '<b>x</b>',
+      'a\nb',
+      'a/b',
+      'a@b',
+      'a:b',
+      '...',
+      '\u0301a',
+      'a\u200bb',
+      'a\u00a0b',
+      'Sign 🙂',
+    ]) {
       expect(ssoLabelValue(bad)).toBe(false);
     }
   });
@@ -132,12 +160,17 @@ describe('the sign-in button label', () => {
     expect(labelStart(row)).toBe('Contoso');
     expect(labelStart(none)).toBe('');
     expect(labelStart({ label: 'From env', labelFrom: 'env' })).toBe('');
-    expect(labelChange(row, ' Contoso ')).toEqual({ send: null, error: null });
-    expect(labelChange(row, 'Contoso Ltd')).toEqual({ send: 'Contoso Ltd', error: null });
-    expect(labelChange(row, '  ')).toEqual({ send: '', error: null });
-    expect(labelChange(none, '')).toEqual({ send: null, error: null });
-    expect(labelChange(none, 'Contoso')).toEqual({ send: 'Contoso', error: null });
-    expect(labelChange(none, '<Contoso>')).toEqual({ send: null, error: LABEL_REFUSED });
+    expect(labelChange(row, ' Contoso ')).toEqual({ send: null, warn: null });
+    expect(labelChange(row, 'Contoso Ltd')).toEqual({ send: 'Contoso Ltd', warn: null });
+    expect(labelChange(row, '  ')).toEqual({ send: '', warn: null });
+    expect(labelChange(none, '')).toEqual({ send: null, warn: null });
+    expect(labelChange(none, 'Contoso')).toEqual({ send: 'Contoso', warn: null });
+    expect(labelChange(none, 'Cafe\u0301')).toEqual({ send: 'Caf\u00e9', warn: null });
+    // A value that does not fit is still sent: the brain judges. The form warns.
+    expect(labelChange(none, ' <Contoso> ')).toEqual({
+      send: '<Contoso>',
+      warn: SSO_LABEL_REFUSED,
+    });
   });
 
   it('says where the label comes from, and why it cannot be set here', () => {
@@ -150,8 +183,9 @@ describe('the sign-in button label', () => {
     expect(labelLockedText({ mode: 'required', labelFrom: 'env' })).toContain('MANTLE_OIDC_LABEL');
     expect(labelLockedText({ mode: 'required', labelFrom: 'row' })).toBeNull();
     expect(LABEL_HELP).toContain('Single sign-on');
-    expect(LABEL_REFUSED).toBe(
-      "The label is 1 to 60 characters: letters, digits, spaces and . , - ' & ( ) + only.",
+    expect(SSO_LABEL_REFUSED).toBe(
+      "The label is 1 to 60 characters: letters (with their accents), digits, spaces and . , - ' ’ & ( ) + only, with at least one letter or digit.",
     );
+    expect(LABEL_HELP).toContain("' ’ &");
   });
 });

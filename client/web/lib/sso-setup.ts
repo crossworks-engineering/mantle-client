@@ -46,8 +46,16 @@ export type SsoSetupTestOutcome =
 /** The `unclear` Test: Entra with Assignment required? on Yes gives the app
  *  no token of its own, so a good secret reads so too (mantle
  *  docs/oidc-entra.md, "The Test button and Assignment required"). */
-const UNCLEAR_TEXT =
-  'The provider did not say the secret is wrong, but it gave no token either. With Microsoft Entra this is normal when Assignment required? is Yes on the app: then nothing is wrong, and a real sign-in is the real test. If Assignment required? is No, check the app registration.';
+export const UNCLEAR_SAID =
+  'The provider did not say the secret is wrong, but it gave no token either.';
+const UNCLEAR_TEXT = `${UNCLEAR_SAID} With Microsoft Entra this is normal when Assignment required? is Yes on the app: then nothing is wrong, and a real sign-in is the real test. If Assignment required? is No, check the app registration.`;
+
+/** The colour of a Test result by its tone, on both screens. */
+export const TEST_TONE_CLASS = {
+  ok: '',
+  warn: 'text-warning-ink',
+  bad: 'text-destructive-ink',
+} as const;
 
 /** Plain words for each code the Test answers. `good`: nothing to fix here.
  *  `tone`: ok, warn (`unclear`: maybe nothing to fix, a real sign-in tells)
@@ -132,29 +140,30 @@ export function withCompanySignIn<G extends { items: { href: string }[] }>(
 export type SsoLabelFrom = 'env' | 'row' | 'none';
 
 /* The label's rule, as @mantle/client-types src/sso-label.ts has it (mantle
- * 0399). Mirrored here until the pin carries it; then import SSO_LABEL_MAX,
- * SSO_LABEL_RE and ssoLabelValue from there and drop these. The brain checks
- * it again and is the judge. */
+ * 0399, a583fd267: NFC, combining marks, the curly apostrophe). Mirrored here
+ * until the pin carries it; then import SSO_LABEL_MAX, SSO_LABEL_RE,
+ * SSO_LABEL_REFUSED and ssoLabelValue from there and drop these. The e2e
+ * mocks take it from here. The brain is the judge: the form only warns. */
 
-/** The most characters of a label. */
+/** The most characters (code points, after NFC) of a label. */
 export const SSO_LABEL_MAX = 60;
 
-/** The label's pattern, applied to the trimmed value. */
-export const SSO_LABEL_RE = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N} .,'&()+-]{1,60}$/u;
+/** The label's pattern (flag `u`), applied to the value in NFC, trimmed. */
+export const SSO_LABEL_RE = /^(?=.{1,60}$)(?=.*[\p{L}\p{N}])(?:[\p{L}\p{N}]\p{M}*|[ .,'’&()+-])+$/u;
 
-/** A label as typed: trimmed, `null` for an empty one (clear the label), or
- *  `false` when it does not fit the pattern. */
+/** The one refusal text of a label that does not fit (the brain's 400). */
+export const SSO_LABEL_REFUSED = `The label is 1 to ${SSO_LABEL_MAX} characters: letters (with their accents), digits, spaces and . , - ' ’ & ( ) + only, with at least one letter or digit.`;
+
+/** A label as typed, in NFC and trimmed: the value to store, `null` for an
+ *  empty one (clear the label), or `false` when it does not fit. */
 export function ssoLabelValue(raw: string): string | null | false {
-  const v = raw.trim();
+  const v = raw.normalize('NFC').trim();
   if (v === '') return null;
   return SSO_LABEL_RE.test(v) ? v : false;
 }
 
 /** The field's help: what the label is, its rule, and the default. */
-export const LABEL_HELP = `The word on the sign-in button: Sign in with … Up to ${SSO_LABEL_MAX} characters: letters, digits, spaces and . , - ' & ( ) +. Leave it empty for the default, Single sign-on.`;
-
-/** A label that does not fit, in the brain's own words. */
-export const LABEL_REFUSED = `The label is 1 to ${SSO_LABEL_MAX} characters: letters, digits, spaces and . , - ' & ( ) + only.`;
+export const LABEL_HELP = `The word on the sign-in button: Sign in with … Up to ${SSO_LABEL_MAX} characters: letters (with their accents), digits, spaces and . , - ' ’ & ( ) +. Leave it empty for the default, Single sign-on.`;
 
 /** The button as people see it. */
 export function signInButtonText(label: string): string {
@@ -188,15 +197,18 @@ export function labelStart(status: { label?: string; labelFrom?: SsoLabelFrom })
   return status.labelFrom === 'row' ? (status.label ?? '') : '';
 }
 
-/** What a save sends for the label as typed: the trimmed value, '' to clear
- *  it, or nothing (`send: null`) when it does not change or does not fit
- *  (`error` says why). */
+/** What a save sends for the label as typed: the value in NFC and trimmed,
+ *  '' to clear it, or nothing (`send: null`) when it does not change. A value
+ *  that does not fit is still sent (the brain judges, and its 400 shows);
+ *  `warn` says so as it is typed. */
 export function labelChange(
   status: { label?: string; labelFrom?: SsoLabelFrom },
   typed: string,
-): { send: string | null; error: string | null } {
+): { send: string | null; warn: string | null } {
   const v = ssoLabelValue(typed);
-  if (v === false) return { send: null, error: LABEL_REFUSED };
-  const next = v ?? '';
-  return { send: next === labelStart(status) ? null : next, error: null };
+  const next = v === false ? typed.normalize('NFC').trim() : (v ?? '');
+  return {
+    send: next === labelStart(status) ? null : next,
+    warn: v === false ? SSO_LABEL_REFUSED : null,
+  };
 }

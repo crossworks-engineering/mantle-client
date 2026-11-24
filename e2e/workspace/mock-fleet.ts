@@ -6,6 +6,8 @@
 
 import { inviteAnswer } from './mock-fleet-invite';
 import { keyStatusAnswer } from './mock-fleet-keys';
+// The label's rule: the one the client mirrors from the brain.
+import { SSO_LABEL_REFUSED, ssoLabelValue } from '../../client/web/lib/sso-setup';
 
 const AT = '2026-11-09T08:00:00.000Z';
 const ADMIN = 'ada@example.invalid';
@@ -209,9 +211,6 @@ type SsoStatus = {
   label?: string;
   labelFrom?: 'env' | 'row' | 'none';
 };
-
-/** The label's rule, as the brain holds it (@mantle/client-types sso-label.ts). */
-const SSO_LABEL_RE = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N} .,'&()+-]{1,60}$/u;
 
 /** The password the mock takes on a Fleet sign-in save. */
 export const SSO_PASSWORD = 'the right password';
@@ -1156,15 +1155,11 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
     return { status: 403, body: { code: 'password', error: 'That password is not right.' } };
   }
   // A label that does not fit: refused at the route, nothing queued.
-  const label = typeof body.label === 'string' ? body.label.trim() : undefined;
-  if (body.do === 'set' && label && !SSO_LABEL_RE.test(label)) {
-    return {
-      status: 400,
-      body: {
-        error: "The label is 1 to 60 characters: letters, digits, spaces and . , - ' & ( ) + only.",
-      },
-    };
+  const typed = typeof body.label === 'string' ? ssoLabelValue(body.label) : undefined;
+  if (body.do === 'set' && typed === false) {
+    return { status: 400, body: { error: SSO_LABEL_REFUSED } };
   }
+  const label = typed === undefined || typed === false ? undefined : (typed ?? '');
   const at = new Date().toISOString();
   const one = body.do === 'set' || body.do === 'mode';
   const boxIds = one ? [String(body.boxId)] : ((body.boxIds as string[]) ?? []);
@@ -1218,8 +1213,9 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
       };
     }
     // The box's rule for a label: a box before it refuses the whole save,
-    // mode off and a .env label line refuse it.
-    if (body.do === 'set' && label !== undefined) {
+    // mode off and a .env label line refuse it. acceptUnclear: the same for
+    // a box before it.
+    if (body.do === 'set' && (label !== undefined || body.acceptUnclear !== undefined)) {
       const reason =
         status.labelFrom === undefined
           ? 'bad-call'
@@ -1234,9 +1230,22 @@ function ssoAnswer(f: MockFleet, body: Record<string, unknown>): { status: numbe
           at,
           reason: null,
           status: { ...status },
-          set: { fields: ['label'], ok: false, reason, by: ADMIN, at },
+          set: { fields: label !== undefined ? ['label'] : [], ok: false, reason, by: ADMIN, at },
         };
         return { ...base, ok: false, reason, output: { ok: false, reason, status: { ...status } } };
+      }
+    }
+    // A new secret in a live mode is saved only when its Test passes, or is
+    // unclear with acceptUnclear; the whole save is refused otherwise.
+    if (body.do === 'set' && typeof body.secret === 'string' && status.mode !== 'setup') {
+      const code = f.ssoTest[boxId] ?? 'ok';
+      if (code !== 'ok' && !(code === 'unclear' && body.acceptUnclear === true)) {
+        return {
+          ...base,
+          ok: false,
+          reason: 'test',
+          output: { ok: false, reason: 'test', test: code, status: { ...status } },
+        };
       }
     }
     let test: string | undefined;

@@ -29,6 +29,7 @@ import { FLEET_PATH, reasonText } from './fleet';
 import {
   labelLockedText,
   testOutcomeText,
+  UNCLEAR_SAID,
   type SsoLabelFrom,
   type SsoSetupTestOutcome,
 } from './sso-setup';
@@ -136,6 +137,10 @@ export type FleetSsoAsk =
       clientId?: string;
       secret?: string;
       label?: string;
+      /** Save the secret on an `unclear` Test too, in a live mode (the
+       *  person confirmed a warning first). Every other failing code is
+       *  still refused; in setup it changes nothing. */
+      acceptUnclear?: true;
       password: string;
     }
   | { do: 'mode'; boxId: string; mode: SsoStep; password: string }
@@ -212,6 +217,12 @@ const NEXT: Record<SsoMode, { mode: SsoStep; label: string } | null> = {
   required: null,
 };
 
+/** A key's own value in a map, never one it inherits (`constructor`): the
+ *  keys come from the box. */
+function own<V>(map: Record<string, V>, key: string): V | undefined {
+  return Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 /** The Test codes that let "Turn on" go ahead: `ok`, and `unclear` after a
  *  warning (with Entra's Assignment required? on Yes a good secret reads
  *  `unclear`, mantle docs/oidc-entra.md). Every other code, and no Test,
@@ -243,13 +254,13 @@ export function nextStep(
     }
   | { mode: null; label: null; blocked: 'none' | 'top'; warn: null } {
   if (!status) return { mode: null, label: null, blocked: 'none', warn: null };
-  const next = NEXT[status.mode];
+  const next = own(NEXT, status.mode);
   if (!next) return { mode: null, label: null, blocked: 'top', warn: null };
   const warn = next.mode === 'required' ? 'required' : null;
   if (status.modeFrom === 'env') return { ...next, blocked: 'env', warn };
   if (status.modeFrom === undefined) return { ...next, blocked: 'old', warn };
   if (next.mode === 'optional') {
-    const test = lastTest ? TURN_ON_TESTS[lastTest] : undefined;
+    const test = lastTest ? own(TURN_ON_TESTS, lastTest) : undefined;
     if (!test) return { ...next, blocked: 'test', warn: null };
     return { ...next, blocked: null, warn: test === 'warn' ? 'unclear' : null };
   }
@@ -383,20 +394,48 @@ export function requiredWarning(
  *  way back. `self`: the box is this Control Center. */
 export function unclearWarning(self = false): string[] {
   return [
-    'The provider did not say the secret is wrong, but it did not give a token either.',
+    UNCLEAR_SAID,
     'With Microsoft Entra this is normal when Assignment required? is Yes on the app. If it is No, cancel and check the app registration.',
     'In optional mode passwords still work. Each person links their company account once, after a password sign-in.',
     'A real sign-in is the real test: right after this, sign in with a company account that is assigned to the app.',
+    'Later, a new secret for this box asks the same confirm when its Test is unclear.',
     self
       ? 'The tenant ID and client ID cannot change after this, and nothing on this page can lower the mode. The way back is off in the .env of this box (scripts/sso-env.sh <box> --mode off).'
       : 'The tenant ID and client ID cannot change after this, and the Control Center cannot lower the mode. The way back is off in the box .env (scripts/sso-env.sh <box> --mode off).',
   ];
 }
 
+/** Whether a save came back refused because the Test of its new secret
+ *  answered `unclear`: the page may offer to save it anyway. */
+export function refusedUnclear(a: FleetSsoAnswer): boolean {
+  const r = readAnswer(a);
+  return a.name === 'sso_set' && r.reason === 'test' && r.test === 'unclear';
+}
+
+/** What the warning before saving a secret on an `unclear` Test says, in a
+ *  live mode: what unclear means, what a wrong secret would do in this mode,
+ *  and the way back. `self`: the box is this Control Center. */
+export function secretUnclearWarning(mode: 'optional' | 'required', self = false): string[] {
+  const env = self ? 'the .env of this box' : 'the box .env';
+  return [
+    UNCLEAR_SAID,
+    'A wrong secret would have said Secret refused. With Microsoft Entra, unclear is normal when Assignment required? is Yes on the app.',
+    mode === 'optional'
+      ? 'If the secret is wrong after all, company sign-in fails, but passwords still work.'
+      : 'If the secret is wrong after all, company sign-in fails until a good secret is saved, and only the original account keeps its password.',
+    'A real sign-in is the real test: right after this, sign in with a company account that is assigned to the app.',
+    mode === 'optional'
+      ? `The way back: save the right secret here, or turn sign-in off in ${env} (scripts/sso-env.sh <box> --mode off).`
+      : `The way back: save the right secret here, or set optional in ${env} (scripts/sso-env.sh <box> --mode optional) so passwords work again.`,
+  ];
+}
+
 // --- words ------------------------------------------------------------------------------
 
 export function modeLabel(mode: SsoMode): string {
-  return { off: 'Off', setup: 'Setup', optional: 'Optional', required: 'Required' }[mode];
+  return (
+    own({ off: 'Off', setup: 'Setup', optional: 'Optional', required: 'Required' }, mode) ?? mode
+  );
 }
 
 /** The small mark beside a value: where it comes from. */
@@ -442,7 +481,12 @@ export function testText(code: string): {
   text: string;
 } {
   const said = testOutcomeText(code as SsoSetupTestOutcome);
-  return { good: said.good, tone: said.tone, label: TEST_LABEL[code] ?? code, text: said.text };
+  return {
+    good: said.good,
+    tone: said.tone,
+    label: own(TEST_LABEL, code) ?? code,
+    text: said.text,
+  };
 }
 
 /** Plain words for a reason code: the box's own, or the call's. */
@@ -509,6 +553,11 @@ export function readAnswer(a: FleetSsoAnswer): {
 export const SET_TOO_OLD =
   'The box runs an older release without the button label, so nothing of this save was applied. Update the box to set the label.';
 
+/** A save with acceptUnclear the box refused as `bad-call`: a release
+ *  before it. */
+export const SET_TOO_OLD_UNCLEAR =
+  'The box runs an older release that cannot save a secret after an unclear Test, so nothing was saved. Update the box first.';
+
 /** Why a box refused a raise. */
 export function modeRefusalText(reason: 'env-wins' | 'mode'): string {
   return reason === 'env-wins'
@@ -516,8 +565,12 @@ export function modeRefusalText(reason: 'env-wins' | 'mode'): string {
     : 'Not one step up from the mode the box runs now, or required cannot work on the box yet (its sign-in settings must be on). Read the status and try again.';
 }
 
-/** What a person reads after one answer of a box. */
-export function answerText(a: FleetSsoAnswer): { tone: 'ok' | 'warn' | 'bad'; text: string } {
+/** What a person reads after one answer of a box. `sent`: what the save
+ *  carried, which names what an older box lacked. */
+export function answerText(
+  a: FleetSsoAnswer,
+  sent?: { acceptUnclear?: true },
+): { tone: 'ok' | 'warn' | 'bad'; text: string } {
   const r = readAnswer(a);
   if (!r.ok) {
     if (a.name === 'sso_mode' && (r.reason === 'env-wins' || r.reason === 'mode')) {
@@ -526,7 +579,7 @@ export function answerText(a: FleetSsoAnswer): { tone: 'ok' | 'warn' | 'bad'; te
     // A save to a box a release behind: since the label is the one field
     // such a box lacks, the whole save was refused for it.
     if (a.name === 'sso_set' && r.reason === 'bad-call') {
-      return { tone: 'bad', text: SET_TOO_OLD };
+      return { tone: 'bad', text: sent?.acceptUnclear ? SET_TOO_OLD_UNCLEAR : SET_TOO_OLD };
     }
     const test = r.reason === 'test' && r.test ? ` ${testText(r.test).text}` : '';
     return { tone: 'bad', text: `${ssoReasonText(r.reason)}${test}` };

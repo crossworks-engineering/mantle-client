@@ -25,6 +25,7 @@ test.afterEach(async () => {
 
 const PATH = '/admin/company-sign-in';
 const SECRET = 'the-client-secret-value';
+const LOCKED = 'Sign-in is on. The tenant ID, client ID and secret are locked.';
 const nav = (page: import('@playwright/test').Page) =>
   page.getByRole('link', { name: 'Company sign-in', exact: true });
 
@@ -172,7 +173,7 @@ test('the box locked with the screen open: a Save says so, and the screen shows 
   await dialog.getByRole('button', { name: 'Save secret' }).click();
   await expect(dialog.getByText('The setup screen is locked.')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
-  await expect(main.getByText('Locked by the box operator.')).toBeVisible();
+  await expect(main.getByText(LOCKED, { exact: false })).toBeVisible();
   await expect(main.locator('#sso-setup-secret')).toHaveCount(0);
   expect(api.ssoSetup.secret).toBeNull();
 });
@@ -186,7 +187,7 @@ test('a Test on a locked box says locked, and the screen shows the lock', async 
   await expect(button).toBeVisible();
   api.ssoSetup.mode = 'required';
   await button.click();
-  await expect(main.getByText('Locked by the box operator.')).toBeVisible();
+  await expect(main.getByText(LOCKED, { exact: false })).toBeVisible();
   await expect(main.getByRole('button', { name: 'Test', exact: true })).toHaveCount(0);
   expect(api.ssoSetup.tests).toBe(0);
 });
@@ -401,7 +402,7 @@ for (const mode of ['optional', 'required'] as const) {
     await signIn(page, 'admin');
     await page.goto(PATH);
     const main = page.getByRole('main');
-    await expect(main.getByText('Locked by the box operator.')).toBeVisible();
+    await expect(main.getByText(LOCKED, { exact: false })).toBeVisible();
     await expect(main.getByText(mode, { exact: true })).toBeVisible();
     await expect(main.getByText('the-client-id')).toBeVisible();
     await expect(main.getByText(/Set by admin@example\.invalid/)).toBeVisible();
@@ -470,13 +471,27 @@ test('the label: set it with the password in optional mode, clear it, and a valu
   await expect(save).toBeDisabled();
 
   // Checked as typed: the brain's own rule, and nothing is sent.
+  // Warned as typed, but the brain is the judge: Save runs and its 400 shows.
   await field.fill('<Contoso>');
   await expect(part.getByText('The label is 1 to 60 characters', { exact: false })).toBeVisible();
-  await expect(save).toBeDisabled();
+  await save.click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#sso-setup-password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Save label' }).click();
+  await expect(
+    dialog.getByText('The label is 1 to 60 characters: letters (with their accents)', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  expect(api.ssoSetup.saves).toEqual([]);
+
+  // Combining marks pass, in NFC.
+  await field.fill('हिन्दी');
+  await expect(part.getByText('The label is 1 to 60 characters', { exact: false })).toHaveCount(0);
 
   await field.fill('  Contoso Ltd  ');
   await save.click();
-  const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Save the button label' })).toBeVisible();
   await dialog.locator('#sso-setup-password').fill(PASSWORD);
   await dialog.getByRole('button', { name: 'Save label' }).click();

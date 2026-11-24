@@ -4,6 +4,9 @@
  * as the box's .env would, and `testOutcome`, as the provider would.
  */
 
+// The label's rule: the one the client mirrors from the brain.
+import { SSO_LABEL_REFUSED, ssoLabelValue } from '../../client/web/lib/sso-setup';
+
 export type MockSsoSetup = {
   mode: 'off' | 'setup' | 'optional' | 'required';
   envSecret: boolean;
@@ -50,8 +53,6 @@ export const newMockSsoSetup = (): MockSsoSetup => ({
 });
 
 const ADMIN = 'admin@example.invalid';
-/** The label's rule, as the brain holds it (@mantle/client-types sso-label.ts). */
-const LABEL_RE = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N} .,'&()+-]{1,60}$/u;
 const AT = '2026-11-06T08:00:00.000Z';
 
 function statusOf(s: MockSsoSetup) {
@@ -111,16 +112,9 @@ export function ssoSetupAnswer(
     if (body.label !== undefined && s.envLabel) {
       return { status: 409, body: { error: 'The box .env holds the label.', code: 'env-wins' } };
     }
-    const label = body.label?.trim();
-    if (label && !LABEL_RE.test(label)) {
-      return {
-        status: 400,
-        body: {
-          error:
-            "The label is 1 to 60 characters: letters, digits, spaces and . , - ' & ( ) + only.",
-        },
-      };
-    }
+    const typed = body.label === undefined ? undefined : ssoLabelValue(body.label);
+    if (typed === false) return { status: 400, body: { error: SSO_LABEL_REFUSED } };
+    const label = typed === undefined ? undefined : (typed ?? '');
     if (body.password !== password) return wrong;
     if (body.secret !== undefined) s.secret = body.secret;
     if (label !== undefined) s.label = label || null;

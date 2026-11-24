@@ -28,7 +28,11 @@ import {
   selfRow,
   selfView,
   setBody,
+  modeLabel,
+  refusedUnclear,
+  secretUnclearWarning,
   SET_TOO_OLD,
+  SET_TOO_OLD_UNCLEAR,
   settleSso,
   SSO_STATUS_MAX_AGE_MS,
   ssoReasonText,
@@ -39,6 +43,7 @@ import {
   type FleetSsoAsk,
   type FleetSsoStatus,
 } from './fleet-sso';
+import { UNCLEAR_SAID } from './sso-setup';
 
 /** The Test codes that keep Turn on blocked: all but ok and unclear. */
 const BLOCKING_TESTS = [
@@ -162,6 +167,49 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
     const old = answer({ name: 'sso_set', ok: false, reason: 'bad-call' });
     expect(answerText(old)).toEqual({ tone: 'bad', text: SET_TOO_OLD });
     expect(SET_TOO_OLD).toContain('Update the box to set the label');
+    expect(answerText(old, { acceptUnclear: true })).toEqual({
+      tone: 'bad',
+      text: SET_TOO_OLD_UNCLEAR,
+    });
+  });
+
+  it('a code from the box never finds an inherited key (constructor)', () => {
+    const row = status({ mode: 'setup', modeFrom: 'row' });
+    expect(nextStep(row, 'constructor')).toMatchObject({ blocked: 'test', warn: null });
+    expect(nextStep(row, 'toString')).toMatchObject({ blocked: 'test', warn: null });
+    expect(testText('constructor')).toMatchObject({ label: 'constructor', tone: 'bad' });
+    expect(nextStep(status({ mode: 'constructor' as never, modeFrom: 'row' }), null)).toMatchObject(
+      {
+        mode: null,
+        blocked: 'top',
+      },
+    );
+    expect(modeLabel('constructor' as never)).toBe('constructor');
+  });
+
+  it('offers to save a secret anyway only when its Test was unclear', () => {
+    const refused = (test: string) =>
+      answer({ name: 'sso_set', ok: false, output: { ok: false, reason: 'test', test } });
+    expect(refusedUnclear(refused('unclear'))).toBe(true);
+    expect(refusedUnclear(refused('secret-refused'))).toBe(false);
+    expect(refusedUnclear(refused('unreachable'))).toBe(false);
+    expect(
+      refusedUnclear(answer({ name: 'sso_test', ok: true, output: { ok: true, test: 'unclear' } })),
+    ).toBe(false);
+    expect(refusedUnclear(answer({ name: 'sso_set', ok: true, output: { ok: true } }))).toBe(false);
+  });
+
+  it('warns before saving a secret on an unclear Test: the code, a wrong secret per mode, the way back', () => {
+    const optional = secretUnclearWarning('optional').join(' ');
+    expect(secretUnclearWarning('optional')[0]).toBe(UNCLEAR_SAID);
+    expect(optional).toContain('A wrong secret would have said Secret refused.');
+    expect(optional).toContain('passwords still work');
+    expect(optional).toContain('the box .env (scripts/sso-env.sh <box> --mode off)');
+    const required = secretUnclearWarning('required').join(' ');
+    expect(required).toContain('company sign-in fails until a good secret is saved');
+    expect(required).toContain('only the original account keeps its password');
+    expect(required).toContain('--mode optional');
+    expect(secretUnclearWarning('required', true).join(' ')).toContain('the .env of this box');
     const env = answer({ name: 'sso_set', ok: false, output: { ok: false, reason: 'env-wins' } });
     expect(answerText(env).text).toBe(ssoReasonText('env-wins'));
   });
@@ -354,7 +402,8 @@ describe('fleet sign-in (POST /api/fleet/sso)', () => {
 
   it('warns before Turn on after an unclear Test: the code, Entra, what next, the way back', () => {
     const lines = unclearWarning().join(' ');
-    expect(lines).toContain('did not say the secret is wrong, but it did not give a token either');
+    expect(unclearWarning()[0]).toBe(UNCLEAR_SAID);
+    expect(lines).toContain('a new secret for this box asks the same confirm');
     expect(lines).toContain('Assignment required? is Yes');
     expect(lines).toContain('passwords still work');
     expect(lines).toContain('links their company account');

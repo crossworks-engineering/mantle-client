@@ -37,6 +37,7 @@ import {
   SSO_LABEL_MAX,
   SSO_SETUP_KEY,
   SSO_SETUP_PATH,
+  TEST_TONE_CLASS,
   testOutcomeText,
   type SsoSetupBody,
   type SsoSetupOn,
@@ -46,9 +47,6 @@ import {
 } from '@/lib/sso-setup';
 import { ssoSetupQuery } from '@/lib/use-sso-setup-shown';
 import { fleetQuery } from '@/lib/use-fleet-shown';
-
-/** The Test result's colour: `unclear` is a warning (it may be fine), not an error. */
-const TEST_TONE = { ok: '', warn: 'text-warning-ink', bad: 'text-destructive-ink' } as const;
 
 function Value({ label, value }: { label: string; value: string }) {
   return (
@@ -274,7 +272,7 @@ function SecretSection({ status }: { status: SsoSetupOn }) {
           {result && (
             <p
               role="status"
-              className={`flex items-start gap-1.5 text-sm ${TEST_TONE[result.tone]}`}
+              className={`flex items-start gap-1.5 text-sm ${TEST_TONE_CLASS[result.tone]}`}
             >
               {result.good ? (
                 <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -323,10 +321,12 @@ function LabelSection({ status }: { status: SsoSetupOn }) {
   const queryClient = useQueryClient();
   // As typed; null: untouched, the field shows the label set now.
   const [typed, setTyped] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
+  // The value to save, fixed when the password dialog opens: a status read
+  // while it is open cannot turn it into a clear. Null: closed.
+  const [asked, setAsked] = useState<string | null>(null);
   if (!status.labelFrom) return null;
   const locked = labelLockedText(status);
-  const change = typed === null ? { send: null, error: null } : labelChange(status, typed);
+  const change = typed === null ? { send: null, warn: null } : labelChange(status, typed);
   const send = change.send;
 
   return (
@@ -339,11 +339,11 @@ function LabelSection({ status }: { status: SsoSetupOn }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (send !== null) setAsking(true);
+            if (send !== null) setAsked(send);
           }}
         >
           <FieldGroup>
-            <Field data-invalid={change.error ? true : undefined}>
+            <Field data-invalid={change.warn ? true : undefined}>
               <FieldLabel htmlFor="sso-setup-label">Button label</FieldLabel>
               <Input
                 id="sso-setup-label"
@@ -351,12 +351,16 @@ function LabelSection({ status }: { status: SsoSetupOn }) {
                 placeholder={status.label || undefined}
                 autoComplete="off"
                 maxLength={SSO_LABEL_MAX * 2}
-                aria-invalid={change.error ? true : undefined}
-                aria-describedby="sso-setup-label-help"
+                aria-invalid={change.warn ? true : undefined}
+                aria-describedby={
+                  change.warn
+                    ? 'sso-setup-label-help sso-setup-label-error'
+                    : 'sso-setup-label-help'
+                }
                 onChange={(e) => setTyped(e.target.value)}
               />
               <FieldDescription id="sso-setup-label-help">{LABEL_HELP}</FieldDescription>
-              <FieldError>{change.error}</FieldError>
+              <FieldError id="sso-setup-label-error">{change.warn}</FieldError>
             </Field>
             <div className="flex justify-end">
               <SubmitButton pending={false} disabled={send === null} data-agent-risk="person">
@@ -367,19 +371,22 @@ function LabelSection({ status }: { status: SsoSetupOn }) {
         </form>
       )}
       <PasswordDialog
-        open={asking}
-        onOpenChange={setAsking}
-        title={send === '' ? 'Use the default label' : 'Save the button label'}
+        open={asked !== null}
+        onOpenChange={(open) => {
+          if (!open) setAsked(null);
+        }}
+        title={asked === '' ? 'Use the default label' : 'Save the button label'}
         description="Type your password to save it. The sign-in screen shows it within a minute."
         action="Save label"
         send={async (password) => {
-          const body: SsoSetupBody = { label: send ?? '', password };
+          if (asked === null) return;
+          const body: SsoSetupBody = { label: asked, password };
           const next = await apiSend<SsoSetupStatus>(SSO_SETUP_PATH, 'PUT', body);
           queryClient.setQueryData(SSO_SETUP_KEY, next);
         }}
         onDone={() => {
           setTyped(null);
-          setAsking(false);
+          setAsked(null);
           toast.success('The button label is saved.');
         }}
       />
@@ -558,7 +565,10 @@ export function CompanySignInClient() {
             </span>
           </p>
         ) : (
-          <p className="text-sm">Locked by the box operator.</p>
+          <p className="text-sm">
+            Sign-in is on. The tenant ID, client ID and secret are locked. The button label can
+            still change.
+          </p>
         )}
         {status.envMissing.length > 0 && (
           <p className="text-sm text-destructive-ink">

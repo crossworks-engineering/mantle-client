@@ -274,7 +274,9 @@ test('an unclear Test turns on after a warning: Cancel sends nothing, the confir
   await expect(
     dialog.getByRole('heading', { name: 'Turn on after an unclear Test?' }),
   ).toBeVisible();
-  await expect(dialog).toContainText('did not give a token either');
+  await expect(dialog).toContainText('gave no token either');
+  await expect(dialog).toContainText('a new secret for this box asks the same confirm');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
   await expect(dialog).toContainText('Assignment required? is Yes');
   await expect(dialog).toContainText('passwords still work');
   await expect(dialog).toContainText('A real sign-in is the real test');
@@ -328,6 +330,88 @@ test('every other Test code still blocks Turn on, each with its own words', asyn
   expect(sent('mode')).toEqual([]);
 });
 
+// --- a new secret on a box already on, whose Test is unclear ---------------------------
+
+for (const mode of ['optional', 'required'] as const) {
+  test(`${mode}: a new secret refused on an unclear Test asks a confirm, then saves with acceptUnclear`, async ({
+    page,
+  }) => {
+    const box = api.fleet!.ssoStatus[FLEET_BOX.id]!;
+    box.mode = mode;
+    box.secret = 'row';
+    api.fleet!.ssoTest[FLEET_BOX.id] = 'unclear';
+    await signIn(page, 'admin');
+    await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+    const main = page.getByRole('main');
+    await main.getByLabel('Client secret').fill('the-new-secret');
+    await main.getByRole('button', { name: 'Save', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+    await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+
+    // Refused: the warning, with Cancel focused.
+    await expect(
+      dialog.getByRole('heading', { name: 'Save the secret after an unclear Test?' }),
+    ).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await expect(dialog).toContainText('gave no token either');
+    await expect(dialog).toContainText('A wrong secret would have said Secret refused.');
+    await expect(dialog).toContainText(
+      mode === 'optional' ? 'passwords still work' : 'only the original account keeps its password',
+    );
+    await expect(dialog).toContainText(mode === 'optional' ? '--mode off' : '--mode optional');
+    await shot(page, `fleet-sso-secret-unclear-${mode}`);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(sent('set')).toHaveLength(1);
+
+    // Again, and confirmed: the same save, with the flag, after the password.
+    await main.getByLabel('Client secret').fill('the-new-secret');
+    await main.getByRole('button', { name: 'Save', exact: true }).click();
+    await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+    await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+    await dialog.getByRole('button', { name: 'I understand, continue' }).click();
+    await expect(dialog.getByRole('heading', { name: 'Save the secret anyway' })).toBeVisible();
+    await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+    await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(main.getByText('Saved.', { exact: false }).first()).toBeVisible();
+    expect(sent('set')).toEqual([
+      { do: 'set', boxId: FLEET_BOX.id, secret: 'the-new-secret', password: SSO_PASSWORD },
+      { do: 'set', boxId: FLEET_BOX.id, secret: 'the-new-secret', password: SSO_PASSWORD },
+      {
+        do: 'set',
+        boxId: FLEET_BOX.id,
+        secret: 'the-new-secret',
+        acceptUnclear: true,
+        password: SSO_PASSWORD,
+      },
+    ]);
+  });
+}
+
+test('a new secret refused as Secret refused shows why, with no confirm', async ({ page }) => {
+  const box = api.fleet!.ssoStatus[FLEET_BOX.id]!;
+  box.mode = 'optional';
+  box.secret = 'row';
+  api.fleet!.ssoTest[FLEET_BOX.id] = 'secret-refused';
+  await signIn(page, 'admin');
+  await page.goto(`${SSO}?box=${FLEET_BOX.id}`);
+  const main = page.getByRole('main');
+  await main.getByLabel('Client secret').fill('a-wrong-secret');
+  await main.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Your password').fill(SSO_PASSWORD);
+  await dialog.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    main.getByText('The Test of the new secret failed, so nothing was saved.', { exact: false }),
+  ).toContainText('The provider refused the client.');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(sent('set')).toHaveLength(1);
+  expect(sent('set')[0]).not.toHaveProperty('acceptUnclear');
+});
+
 // --- the sign-in button's label (mantle 0399) ------------------------------------------
 
 test('the label: set and cleared with the password in any mode but off, and held as typed', async ({
@@ -343,9 +427,19 @@ test('the label: set and cleared with the password in any mode but off, and held
   const save = main.getByRole('button', { name: 'Save', exact: true });
   await expect(field).toBeEnabled();
 
+  // Warned as typed, but the box is the judge: Save runs and the 400 shows.
   await field.fill('Contoso <SSO>');
   await expect(main.getByText('The label is 1 to 60 characters', { exact: false })).toBeVisible();
-  await expect(save).toBeDisabled();
+  await save.click();
+  const refused = page.getByRole('dialog');
+  await refused.getByLabel('Your password').fill(SSO_PASSWORD);
+  await refused.getByRole('button', { name: 'Save sign-in' }).click();
+  await expect(refused.getByText('letters (with their accents)', { exact: false })).toBeVisible();
+  await refused.getByRole('button', { name: 'Cancel' }).click();
+  expect(sent('set')).toEqual([
+    { do: 'set', boxId: FLEET_BOX.id, label: 'Contoso <SSO>', password: SSO_PASSWORD },
+  ]);
+  api.fleet!.ssoSent.length = 0;
 
   await field.fill(' Contoso ');
   await save.click();

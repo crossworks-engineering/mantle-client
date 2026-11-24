@@ -63,8 +63,10 @@ import {
   needsReadAll,
   readAnswer,
   readSelf,
+  refusedUnclear,
   requiredWarning,
   secretText,
+  secretUnclearWarning,
   SELF,
   selfRow,
   selfView,
@@ -75,6 +77,7 @@ import {
   testText,
   unclearWarning,
   type FleetSsoAnswers,
+  type FleetSsoAsk,
   type FleetSsoRow,
   type FleetSsoStatus,
   type FleetSsoView,
@@ -90,6 +93,7 @@ import {
   labelStart,
   signInButtonText,
   SSO_LABEL_MAX,
+  TEST_TONE_CLASS,
 } from '@/lib/sso-setup';
 import { boxesText } from '@/lib/fleet-view';
 import {
@@ -141,7 +145,7 @@ function LastTest({ test }: { test: { code: string; at: string; by: string } | n
   const t = testText(test.code);
   return (
     <span className="block" title={t.text}>
-      <span className={cn('block', t.tone !== 'ok' && TONE_TEXT[t.tone])}>{t.label}</span>
+      <span className={cn('block', TEST_TONE_CLASS[t.tone])}>{t.label}</span>
       <span className="block text-xs text-muted-foreground">
         {timeAgo(test.at) || formatDateTime(test.at)}, {test.by}
       </span>
@@ -349,51 +353,58 @@ function PasswordDialog({
   );
 }
 
-// --- the warning before a raise -------------------------------------------------------
+// --- the warnings before a raise or a save ---------------------------------------------
 
 type RaiseWarn = 'unclear' | 'required';
 
-/** The warning a raise asks first: before required, and before Turn on
- *  after an unclear Test. The password step follows the confirm. */
-function RaiseWarning({
+/** A warning to confirm before the password step: before Make required,
+ *  before Turn on after an unclear Test, and before saving a secret whose
+ *  Test is unclear. Focus starts on Cancel. */
+function WarnDialog({
   open,
   onOpenChange,
-  warn,
-  status,
-  self,
+  title,
+  description,
+  lines,
+  destructive = false,
   onConfirm,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  warn: RaiseWarn;
-  status: FleetSsoStatus;
-  self: boolean;
+  title: string;
+  description: string;
+  lines: string[];
+  destructive?: boolean;
   onConfirm: () => void;
 }) {
-  const required = warn === 'required';
+  const cancel = useRef<HTMLButtonElement>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        className="sm:max-w-lg"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          cancel.current?.focus();
+        }}
+      >
         <DialogHeader>
-          <DialogTitle>
-            {required ? 'Make company sign-in required?' : 'Turn on after an unclear Test?'}
-          </DialogTitle>
-          <DialogDescription>
-            {required
-              ? 'Read what required does on this box first.'
-              : 'The Test could not confirm the secret. Read this first.'}
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <ul className="list-disc space-y-2 pl-5 text-sm">
-          {(required ? requiredWarning(status, self) : unclearWarning(self)).map((line) => (
+          {lines.map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
         <div className="flex justify-end gap-2 border-t border-border pt-4">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button ref={cancel} type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" variant={required ? 'destructive' : 'default'} onClick={onConfirm}>
+          <Button
+            type="button"
+            variant={destructive ? 'destructive' : 'default'}
+            onClick={onConfirm}
+          >
             I understand, continue
           </Button>
         </div>
@@ -531,10 +542,13 @@ function MicrosoftPart({ row, status }: { row: FleetSsoRow; status: FleetSsoStat
 
 type Notice = { tone: 'ok' | 'warn' | 'bad'; text: string };
 
-/** The answer of this box among `all`, in words. */
-function noticeOf(all: FleetSsoAnswers, boxId: string): Notice {
+type SetAsk = Extract<FleetSsoAsk, { do: 'set' }>;
+
+/** The answer of this box among `all`, in words. `sent`: the save it
+ *  answers, if one. */
+function noticeOf(all: FleetSsoAnswers, boxId: string, sent?: SetAsk): Notice {
   const mine = all.answers.filter((a) => a.boxId === boxId).at(-1);
-  if (mine) return answerText(mine);
+  if (mine) return answerText(mine, sent);
   if (all.pending.length > 0) return { tone: 'warn', text: ssoReasonText('pending') };
   return { tone: 'bad', text: ssoReasonText('gone') };
 }
@@ -565,10 +579,24 @@ function OneBox({ row }: { row: FleetSsoRow }) {
   const [raising, setRaising] = useState<{ mode: SsoStep; warn: RaiseWarn | null } | null>(null);
   const [warned, setWarned] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // The last save sent, without the password: a secret refused on an
+  // unclear Test is offered again, after a warning, with acceptUnclear.
+  const lastSent = useRef<SetAsk | null>(null);
+  const [retry, setRetry] = useState<{ body: SetAsk; mode: 'optional' | 'required' } | null>(null);
+  const [retryWarned, setRetryWarned] = useState(false);
+  const dropRetry = () => {
+    setRetry(null);
+    setRetryWarned(false);
+  };
+  const sendSet = (body: SetAsk) => {
+    lastSent.current = { ...body, password: '' };
+    return askSso(body);
+  };
   const label =
-    status && labelTyped !== null ? labelChange(status, labelTyped) : { send: null, error: null };
+    status && labelTyped !== null ? labelChange(status, labelTyped) : { send: null, warn: null };
   const form = { tenant, clientId, secret, label: label.send };
-  const mayAsk = hasChange(form, rules) && !label.error;
+  // A label that does not fit is still sent: the box judges, its 400 shows.
+  const mayAsk = hasChange(form, rules);
 
   // A typed secret does not outlive a field the box no longer takes.
   useEffect(() => {
@@ -605,6 +633,9 @@ function OneBox({ row }: { row: FleetSsoRow }) {
   }, [readOnOpen]);
 
   const saved = async (first: FleetSsoAnswers) => {
+    const sent = lastSent.current ?? undefined;
+    lastSent.current = null;
+    dropRetry();
     setAsking(false);
     setSecret('');
     setTenant('');
@@ -614,10 +645,24 @@ function OneBox({ row }: { row: FleetSsoRow }) {
     setBusy('set');
     setNotice(null);
     try {
-      const said = noticeOf(await settle(first), row.id);
+      const all = await settle(first);
+      const said = noticeOf(all, row.id, sent);
       setNotice(said);
       if (said.tone === 'bad') toast.error('The box did not save it.');
       else toast.success('Saved on the box.');
+      // A new secret refused only because its Test is unclear, in a live
+      // mode: offer to save it anyway, after a warning.
+      const mine = all.answers.filter((a) => a.boxId === row.id).at(-1);
+      const mode = mine?.output?.status?.mode ?? status?.mode;
+      if (
+        sent &&
+        !sent.acceptUnclear &&
+        mine &&
+        refusedUnclear(mine) &&
+        (mode === 'optional' || mode === 'required')
+      ) {
+        setRetry({ body: sent, mode });
+      }
     } catch (err) {
       setNotice({ tone: 'bad', text: askRefusal(err, 'Could not read the answer of the box.') });
     } finally {
@@ -826,7 +871,7 @@ function OneBox({ row }: { row: FleetSsoRow }) {
                 is saved.
               </FieldDescription>
             </Field>
-            <Field data-invalid={label.error ? true : undefined}>
+            <Field data-invalid={label.warn ? true : undefined}>
               <FieldLabel htmlFor="fleet-sso-label">Button label</FieldLabel>
               <Input
                 id="fleet-sso-label"
@@ -835,14 +880,16 @@ function OneBox({ row }: { row: FleetSsoRow }) {
                 placeholder={status?.label || undefined}
                 autoComplete="off"
                 maxLength={SSO_LABEL_MAX * 2}
-                aria-invalid={label.error ? true : undefined}
-                aria-describedby="fleet-sso-label-help"
+                aria-invalid={label.warn ? true : undefined}
+                aria-describedby={
+                  label.warn ? 'fleet-sso-label-help fleet-sso-label-error' : 'fleet-sso-label-help'
+                }
                 onChange={(e) => setLabelTyped(e.target.value)}
               />
               <FieldDescription id="fleet-sso-label-help">
                 {(status && status.mode !== 'off' && labelLockedText(status)) || LABEL_HELP}
               </FieldDescription>
-              <FieldError>{label.error}</FieldError>
+              <FieldError id="fleet-sso-label-error">{label.warn}</FieldError>
             </Field>
             <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
               {busy === 'set' || busy === 'test' || busy === 'mode' ? (
@@ -873,21 +920,53 @@ function OneBox({ row }: { row: FleetSsoRow }) {
       <PasswordDialog
         open={asking}
         onOpenChange={setAsking}
-        send={(password) => askSso(setBody(row.id, form, rules, password))}
+        send={(password) => sendSet(setBody(row.id, form, rules, password))}
         onDone={(first) => void saved(first)}
       />
       {raising?.warn && status && (
-        <RaiseWarning
+        <WarnDialog
           open={!warned}
           onOpenChange={(open) => {
             if (!open) setRaising(null);
           }}
-          warn={raising.warn}
-          status={status}
-          self={self}
+          {...(raising.warn === 'required'
+            ? {
+                title: 'Make company sign-in required?',
+                description: 'Read what required does on this box first.',
+                lines: requiredWarning(status, self),
+                destructive: true,
+              }
+            : {
+                title: 'Turn on after an unclear Test?',
+                description: 'The Test could not confirm the secret. Read this first.',
+                lines: unclearWarning(self),
+              })}
           onConfirm={() => setWarned(true)}
         />
       )}
+      {retry && (
+        <WarnDialog
+          open={!retryWarned}
+          onOpenChange={(open) => {
+            if (!open) dropRetry();
+          }}
+          title="Save the secret after an unclear Test?"
+          description="The box did not save the new secret: its Test is unclear. Read this first."
+          lines={secretUnclearWarning(retry.mode, self)}
+          destructive={retry.mode === 'required'}
+          onConfirm={() => setRetryWarned(true)}
+        />
+      )}
+      <PasswordDialog
+        open={retry !== null && retryWarned}
+        onOpenChange={(open) => {
+          if (!open) dropRetry();
+        }}
+        title="Save the secret anyway"
+        description="Type your password to send it to the box again. It saves the secret although its Test is unclear."
+        send={(password) => sendSet({ ...retry!.body, acceptUnclear: true, password })}
+        onDone={(first) => void saved(first)}
+      />
       <PasswordDialog
         open={raising !== null && warned}
         onOpenChange={(open) => {
