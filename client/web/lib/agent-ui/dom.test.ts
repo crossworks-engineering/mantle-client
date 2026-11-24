@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SecretInput } from '@mantle/web-ui/ui/secret-input';
-import { factsOf, findTarget, isSecretField, isShut, nameOf } from './dom';
+import { factsOf, findTarget, isSecretField, isShut, nameOf, withoutSecrets } from './dom';
 
 /** A stand-in element: a tag, attributes, and the ancestors `closest`
  *  finds (keyed by a piece of the selector). */
@@ -100,5 +100,17 @@ describe('names of secret things', () => {
     expect(nameOf(field)).toBe('(hidden)');
     expect(nameOf(button)).toBe('(hidden)');
     expect(nameOf(el('BUTTON', { 'aria-label': 'Save' }))).toBe('Save');
+  });
+
+  it('a named box that holds a shown secret (a key print) names it (hidden)', () => {
+    const print = { innerText: 'sk-or-v1-abc\u2026wxyz' };
+    const row = el('DIV', {
+      querySelectorAll: (sel: string) => (sel.includes('data-secret') ? [print] : []),
+    });
+    expect(withoutSecrets(row, 'openrouter Works sk-or-v1-abc\u2026wxyz')).toBe(
+      'openrouter Works (hidden)',
+    );
+    const plain = el('DIV', { querySelectorAll: () => [] });
+    expect(withoutSecrets(plain, 'openrouter Works')).toBe('openrouter Works');
   });
 });

@@ -123,9 +123,21 @@ export function nameOf(el: Element): string {
   if (el instanceof HTMLIFrameElement) return el.title || 'app frame';
   const mark = (el as HTMLElement).dataset?.markLabel;
   if (mark) return mark;
-  const text = (el as HTMLElement).innerText ?? el.textContent ?? '';
+  const text = withoutSecrets(el, (el as HTMLElement).innerText ?? el.textContent ?? '');
   if (text.trim()) return text;
   return el.getAttribute('title') ?? '';
+}
+
+/** `text` (the element's own) with the text of each `data-secret` inside it
+ *  put as (hidden): a named box (a row, a card, the work area) that holds a
+ *  shown secret, such as a key print, never names it. */
+export function withoutSecrets(el: Element, text: string): string {
+  let out = text;
+  for (const s of el.querySelectorAll?.('[data-secret]') ?? []) {
+    const own = ((s as HTMLElement).innerText ?? s.textContent ?? '').trim();
+    if (own) out = out.split(own).join('(hidden)');
+  }
+  return out;
 }
 
 /** A password, a one-time code, or anything inside `data-secret` (a
