@@ -73,6 +73,15 @@ overrides:
   # range intersects <4.6.6 (the plugin's is ^3.25.0 || ^4.0.0), so the value
   # is a range, not a pin: later 4.x fixes still resolve (2026-10-30).
   "zod@<4.6.6": "^4.6.6"
+  # vitest is held at 5.0.5 (with it @vitest/mocker and @vitest/spy, which it
+  # pins exactly) for the Bun lane. 5.1.1 added a watchdog to the forks pool
+  # that calls child.channel?.unref(), and Bun's subprocess channel has no
+  # unref (oven-sh/bun#33593, open; vitest-dev/vitest#12037 was closed as a Bun
+  # bug), so verify:bun starts no test at all. 5.1.x fixes no advisory that
+  # 5.0.5 has (vitest's own list, 2026-11-25). Lift it when Bun gives the
+  # channel unref, or vitest guards the call; check with pnpm verify:bun.
+  # .github/dependabot.yml ignores vitest for the same reason.
+  "vitest": "5.0.5"
 
 # The excalidraw patch drops upstream's esm.sh font source once
 # EXCALIDRAW_ASSET_PATH is set (client/web/components/draw/excalidraw-canvas.tsx).

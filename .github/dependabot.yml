@@ -28,6 +28,10 @@ updates:
       # (exact pins in pnpm-workspace.yaml `overrides`), never on its own.
       - dependency-name: '@crossworks/*'
       - dependency-name: '@mantle/*'
+      # Held at 5.0.5 for the Bun lane (the vitest override in
+      # pnpm-workspace.yaml says why and when to lift it).
+      - dependency-name: 'vitest'
+      - dependency-name: '@vitest/*'
     groups:
       dev-tools:
         dependency-type: development
