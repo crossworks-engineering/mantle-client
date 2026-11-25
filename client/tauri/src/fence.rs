@@ -1,6 +1,6 @@
 //! The pure parts of the fence around a brain window: which addresses the
 //! shell accepts for a brain, where a window may go, and the in-app paths a
-//! deep link may name. Ports of client/desktop/src/main/brain-fence.ts and
+//! deep link may name. Ports (at commit 680c78fa) of client/desktop/src/main/brain-fence.ts and
 //! index.ts, with their test cases, so both shells answer the same.
 
 use url::Url;

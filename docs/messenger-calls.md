@@ -30,10 +30,11 @@ The phone app is a later phase.
   (`shouldRing`, `lib/calls/ring.ts`): a card in the dock stack with the
   caller's face (the group's tile for a group), Answer and Decline, for 45
   seconds; a soft two-tone ring on the web (the Web Audio API, nothing to
-  download, silent until the page has had a click); inside the desktop
-  shell the dock bounces (or the taskbar flashes) and, while the window is
-  hidden, the OS notice "Name is calling" whose click opens the chat with
-  the card still there. A muted chat never rings. Decline sends nothing (the
+  download, silent until the page has had a click); inside a desktop
+  shell that offers `attention` and notices the dock bounces (or the taskbar
+  flashes) and, while the window is hidden, the OS notice "Name is calling"
+  whose click opens the chat with the card still there. The removed Electron
+  shell did; the Tauri shell does not yet. A muted chat never rings. Decline sends nothing (the
   brain has no decline in P1): the ring stops, in every tab of the login.
   Answer first asks the brain whether the call is still open
   (`GET .../calls?limit=1`), then joins what is open; a ring that outlived
@@ -76,14 +77,11 @@ The phone app is a later phase.
   still in the chat (403: it leaves; 404: the call ended). LiveKit refreshes
   the token of a live connection itself; the brain's is the participation
   check.
-- **Desktop.** The main process grants the microphone (audio only) to the
-  app's own main frame on the renderer origin and nothing else
-  (`permissionAllowed`, `client/desktop/src/main/brain-fence.ts`). That
-  frame gets only the few other permissions the app uses (the clipboard,
-  fullscreen, location, notifications, file save, a mailto: link, Local
-  Network Access for a brain on a private address); any
-  other frame or origin gets none. The CSP
-  names the brain's `wss://` twin in `connect-src` for the signalling socket.
+- **Desktop.** The Electron shell, which granted the microphone to the
+  app's own main frame only, was removed on 2026-11-25. The Tauri shell has
+  no permission prompts yet (`client/tauri/README.md`), so calls work in the
+  browser. The CSP names the brain's `wss://` twin in
+  `connect-src` for the signalling socket.
 
 ## The ICE rule (plan section 20, decision D2 amended)
 

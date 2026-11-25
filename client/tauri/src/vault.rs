@@ -1,7 +1,7 @@
 //! The token vault: the bearers a brain window holds, in the OS keychain
 //! (macOS Keychain, the Secret Service on Linux), through keyring-core.
 //! The same shape and rules as Electron's vault (client/desktop/src/main/
-//! vault.ts), with the keychain where Electron has its files:
+//! vault.ts at commit 680c78fa), with the keychain where Electron had its files:
 //!
 //!   keychain entry   service = the app identifier
 //!                    user    = `<profile>`             the one unscoped slot

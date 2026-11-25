@@ -2,8 +2,9 @@
 
 The desktop shell rebuilt on Tauri 2: the owner UI's static export
 (`client/web/out`) in one window per brain, each window on its own WebKit
-data store, the logins in the OS keychain. It sits beside the Electron shell
-(`client/desktop`), which it does not touch.
+data store, the logins in the OS keychain. The Electron shell it was rebuilt
+from was removed on 2026-11-25; its last state is `client/desktop` at commit
+680c78fa (v0.17.2), where the files named below as Electron's still are.
 
 ## How it works
 
@@ -31,7 +32,7 @@ data store, the logins in the OS keychain. It sits beside the Electron shell
   refuses to run below that, because wry would quietly share one store).
   Linux: a data folder per brain.
 - **The vault** (`src/vault.rs`) has Electron's shape and rules
-  (`client/desktop/src/main/vault.ts`), with the keychain where Electron has
+  (`client/desktop/src/main/vault.ts` at 680c78fa), with the keychain where Electron had
   files: service = the app identifier, user = `<profile id>` for the one
   unscoped slot an earlier build used, `<profile id>/<session id>` per
   login; `adopt` moves the slot's bearer to a login; `keepOnly` drops stray
@@ -155,8 +156,8 @@ On macOS, `scripts/build.sh` builds the app bundle with tauri-cli 2.12.4
 (`cargo install tauri-cli --version '=2.12.4' --locked`), unsigned:
 `open target/release/bundle/macos/MantleOS.app`. macOS takes the name in
 the menu bar and the Dock icon from the bundle; a bare binary shows its file
-name and no icon. `icons/icon.icns` is made from the Electron shell's
-1024-pixel icon (`client/desktop/build/icon.png`) with `sips` and
+name and no icon. `icons/icon.icns` was made from the Electron shell's
+1024-pixel icon (`client/desktop/build/icon.png` at 680c78fa) with `sips` and
 `iconutil`.
 
 On Linux, `scripts/build.sh` builds the binary alone:

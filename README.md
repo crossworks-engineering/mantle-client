@@ -18,9 +18,9 @@ brains (the server lives in
 MantleOS Desktop is a zero-secret client: it holds no database, no session secret, and
 no server code. Every byte of data comes from a MantleOS brain's HTTP API
 (bearer + CORS), configured by a single value, the server origin. One running
-MantleOS Desktop can connect to any brain. The desktop shell already keeps a list of
-brains (a profile and session partition each, with a switcher in the tray);
-the web client is single-origin, and a brain switcher there is roadmap.
+MantleOS Desktop can connect to any brain. The Tauri desktop preview keeps a list of
+brains, each in its own window with its own data store; the web client is
+single-origin, and a brain switcher there is roadmap.
 
 ## Run the web client next to your brain
 
@@ -52,34 +52,24 @@ did not write is treated as your pin and left alone. Note that rolling the
 server stack with a bare `docker compose up -d` never loads this file, so the
 client does not move with it.
 
-## Get the desktop app
+## Desktop
 
-Installers are on the
-[Releases page](https://github.com/crossworks-engineering/mantle-client/releases).
-Each release carries one asset per platform:
+There is no desktop installer now. MantleOS runs in the browser (the web
+client above) and on the phone (MantleOS mobile). The Electron desktop app was
+removed on 2026-11-25: an app that is already installed keeps its version (the
+last published desktop release is v0.7.0) and gets no newer one.
 
-- Linux: `.deb` (amd64) and `.AppImage` (x86_64)
-- macOS: `.dmg` and `.zip` (Apple Silicon, arm64)
-- Windows: `Setup.exe`
-
-macOS release builds are Developer ID signed and notarized, so they open with
-no warning. The app checks Releases on launch and every 4 hours, downloads in
-the background, and installs when you quit. Signing details are in
-`client/desktop/README.md`.
-
-On first launch the connect screen asks for your brain's URL and probes
-`GET /api/version` before saving it. Then log in as usual; each brain keeps its
-own login. Details in `client/desktop/README.md`.
-
-A second desktop shell, built on Tauri, lives in `client/tauri`. It is in its
-first stage: you build it from source (its README says how), and it has no
-installers, updates or signing yet.
+The desktop shell built on Tauri (`client/tauri`) is a preview that you build
+from source; its README says how. It has no installers, no updates, no signing
+and no Windows build, and it lacks downloads, notifications and the dock badge,
+the tray and the microphone, so calls (`client/tauri/README.md`, "What T1
+leaves for T2").
 
 **Version pairing.** Client and server release on separate streams (mantle-client
 v0.9.x, mantle v0.500.x). Which client goes with which server is recorded on
 the mantle side: `client-pair.tag` names the mantle-client tag that mantle release
 was tested with (for example mantle v0.500.0 pairs with v0.9.0). Run the web
-image at that tag; the desktop build of the same version pairs the same way.
+image at that tag.
 What changed in each client release is in `CHANGELOG.md`.
 
 ## Develop it
@@ -106,8 +96,8 @@ The brain must list your dev origin in `MANTLE_API_CORS_ORIGINS` (for example
 explicit origin is required. Setup and troubleshooting: `docs/db-less-dev.md`.
 
 `pnpm dev` on its own is bare `next dev` with no brain configured: the shell
-renders and every data fetch fails. The Electron shell has its own dev loop,
-see `client/desktop/README.md`.
+renders and every data fetch fails. The Tauri shell builds on its own, see
+`client/tauri/README.md`.
 
 The tools also run on Bun, beside Node: `pnpm dev:bun`, `pnpm build:bun`,
 `pnpm verify:bun` and others. Node stays the default; `docs/bun-tooling.md`
@@ -117,10 +107,9 @@ has the commands, what stays on Node and why, and the numbers.
 
 - `client/web`: the owner UI (Next.js, built as a static export). `pnpm dev:fe`
   runs it against the brain named by `MANTLE_REMOTE` (see `docs/db-less-dev.md`).
-- `client/host`: the host that serves the static UI, on the box and inside the
-  Electron shell (`docs/static-ui-host.md`).
-- `client/desktop`: the Electron shell wrapping the same UI.
-- `client/tauri`: the Tauri shell (Rust), beside the Electron one.
+- `client/host`: the host that serves the static UI on the box
+  (`docs/static-ui-host.md`).
+- `client/tauri`: the Tauri desktop shell (Rust), a preview built from source.
 - `packages/web-ui`: the UI kit (components, providers, hooks).
 - `e2e`: the UI end-to-end suite (drives a running brain).
 

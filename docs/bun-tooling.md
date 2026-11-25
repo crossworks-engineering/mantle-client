@@ -72,8 +72,8 @@ version yourself (`bun.sh` refuses any other).
   larger. The `deps` stage would also have to run pnpm's install, with its
   build scripts, on Bun. The gain is about 3 s of a 38 s build. Not worth
   shipping bytes that differ from the desktop build.
-- **The desktop shell (Electron, electron-vite, electron-builder).** Electron
-  ships its own Node, and the desktop is moving to Tauri (no JS runtime).
+- **The desktop shell.** The Electron shell was removed on 2026-11-25; the
+  Tauri shell (`client/tauri`) has no JS runtime.
 - **The Playwright runner.** Playwright supports Node only. It did run the 30
   workspace specs on Bun, in the same time, so there is nothing to gain. It
   drives the browser; the UI under test is what `e2e:workspace:bun` moves.

@@ -122,12 +122,12 @@ a session signed in, so this stays here until it does.
   of a link made, and it is audited. A web tab is harder to reach (the crafted link
   must land in the very tab that waits) but it is the same limit.
 
-## The desktop shells
+## The desktop shell
 
-`window.mantleDesktop.oidc.open(url)` opens a sign-in in the system browser. Each
-shell takes only this brain's `/api/auth/oidc/start`, whatever the page asks
-(`oidcStartUrl` in `client/desktop/src/main/brain-fence.ts`, `oidc_start_url` in
-`client/tauri/src/fence.rs`). A shell without it shows "Update this app" instead of
+`window.mantleDesktop.oidc.open(url)` opens a sign-in in the system browser. The
+Tauri shell takes only this brain's `/api/auth/oidc/start`, whatever the page asks
+(`oidc_start_url` in `client/tauri/src/fence.rs`; the removed Electron shell had the
+same rule). A shell without it shows "Update this app" instead of
 the button. A window takes a `mantle://oidc` link only once it has sent a sign-in out,
 within 15 minutes (`oidcArrival`); any other link moves nothing. A fresh sign-in the
 person walks away from (Stop, Cancel, "Use my password instead", "Not now", a password
