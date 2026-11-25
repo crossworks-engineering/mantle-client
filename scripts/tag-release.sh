@@ -18,14 +18,13 @@ set -euo pipefail
 #
 # Asserts, in the integrator clone (works from a worktree too):
 #   1. main is checked out and has no uncommitted tracked changes
-#   2. the three package.json files agree on the version
+#   2. the two package.json files agree on the version
 #   3. HEAD is that version's release commit (subject "release: vX.Y.Z…")
 #   4. the tag vX.Y.Z does not already exist (checked again just before the
 #      tag is made: another session may tag it while verify runs)
 # then runs `pnpm verify` on that tree, creates the tag at that commit only
 # if it passed, pushes that commit as main + the tag together in one atomic
-# push (the push is what cuts the release: it fires release.yml and
-# desktop.yml), and finally asks origin, with git ls-remote, whether main and
+# push (the push is what cuts the release: it fires release.yml), and finally asks origin, with git ls-remote, whether main and
 # the tag are both there at that commit.
 #
 # "That commit" is HEAD as read ONCE, before the checks, and every step after
@@ -70,8 +69,8 @@ set -euo pipefail
 # the tag with this script, delete it (git tag -d vX.Y.Z) and rerun.
 #
 # There is no --no-verify here (mantle's copy has one). Mantle's tag workflows
-# rerun the full gate before they publish; this repo's release.yml and
-# desktop.yml build and publish from the tag with no test gate (verify.yml
+# rerun the full gate before they publish; this repo's release.yml builds
+# and publishes from the tag with no test gate (verify.yml
 # runs on main's push, but nothing waits on it), so the verify below is the
 # only gate that stands in front of a jackdaw release.
 #
@@ -138,7 +137,7 @@ read_version() {
   git show "$head:$1" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))'
 }
 version="$(read_version package.json)"
-for f in client/web/package.json client/desktop/package.json; do
+for f in client/web/package.json; do
   other="$(read_version "$f")"
   if [ "$version" != "$other" ]; then
     echo "✗ version drift: package.json is at $version but $f is at $other" >&2
@@ -185,8 +184,8 @@ if ! $resume; then
     echo >&2
     echo "✗ pnpm verify failed on the release commit: NOT tagged, NOT pushed" >&2
     echo "  Fix it on a branch and land it, then rerun. If the failure is the host and" >&2
-    echo "  not the tree, rerun on a host that passes: release.yml and desktop.yml" >&2
-    echo "  publish from the tag with no test gate, so this verify is the only one." >&2
+    echo "  not the tree, rerun on a host that passes: release.yml" >&2
+    echo "  publishes from the tag with no test gate, so this verify is the only one." >&2
     exit 1
   fi
   # HEAD must still be the commit the checks and the verify judged. If
@@ -301,4 +300,4 @@ fi
 if [ "$push_rc" != 0 ]; then
   echo "  (git push exited $push_rc, but origin has both refs at HEAD)"
 fi
-echo "✓ pushed main + $tag, origin confirms both at $short: release.yml and desktop.yml are running"
+echo "✓ pushed main + $tag, origin confirms both at $short: release.yml is running"

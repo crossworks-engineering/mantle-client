@@ -22,7 +22,7 @@ import { tokenStore } from './token-store';
  *     the person stays signed in throughout;
  *   - a brain window can now hold, and switch between, several logins.
  *
- * The fake mirrors the real shell's contract (client/desktop/src/main/vault.ts):
+ * The fake mirrors the real shell's contract (client/tauri/src/vault.rs):
  * `adopt` moves the one slot to a login that has none and returns the bearer.
  */
 

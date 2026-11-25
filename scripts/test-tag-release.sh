@@ -53,15 +53,15 @@ fresh() {
   git init -q --bare "$tmp/origin.git"
   git init -q -b main "$tmp/repo"
   cd "$tmp/repo" || exit 1
-  mkdir -p client/web client/desktop
-  for f in package.json client/web/package.json client/desktop/package.json; do
+  mkdir -p client/web
+  for f in package.json client/web/package.json; do
     printf '{ "version": "0.0.1" }\n' >"$f"
   done
   git add -A
   git commit -q -m init
   git remote add origin "$tmp/origin.git"
   git push -q -u origin main 2>/dev/null
-  for f in package.json client/web/package.json client/desktop/package.json; do
+  for f in package.json client/web/package.json; do
     printf '{ "version": "%s" }\n' "$v" >"$f"
   done
   git commit -q -am "release: v$v"

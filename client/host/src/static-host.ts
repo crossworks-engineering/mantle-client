@@ -2,12 +2,10 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 
 /**
- * THE host of the static owner UI (docs/static-ui-host.md), shared by both
- * places that serve it:
- *
- *  - the desktop shell, one per brain window's session, on its own
- *    `http://mantle-ui.localhost` (client/desktop/src/main/index.ts, serveUi);
- *  - the box, as the client image's whole server (serve.ts).
+ * THE host of the static owner UI (docs/static-ui-host.md) on the box, as the
+ * client image's whole server (serve.ts). The Electron shell also served the
+ * UI through it until it was removed on 2026-11-25; the Tauri shell has its own
+ * Rust port (client/tauri/src/host.rs).
  *
  * It does what a server used to do for the UI:
  *
@@ -173,7 +171,7 @@ async function isFile(path: string): Promise<boolean> {
 }
 
 export type StaticHostOptions = {
-  /** The staged static export (client/desktop/ui). */
+  /** The static export's folder. */
   uiDir: string;
   /** This window's brain. */
   brainOrigin: string;

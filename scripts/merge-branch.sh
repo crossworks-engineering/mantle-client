@@ -20,7 +20,7 @@ set -euo pipefail
 #
 # Runs from anywhere in the repo (a worktree included) — it resolves the
 # integrator clone from the shared git dir and operates there. No tag, no push:
-# pushing a v* tag cuts a release (release.yml + desktop.yml), and pushes stay
+# pushing a v* tag cuts a release (release.yml), and pushes stay
 # explicit.
 #
 branch="${1:-}"
@@ -83,7 +83,7 @@ fi
 echo "→ version bump ($kind) on main"
 node scripts/bump-version.mjs "$kind"
 next="$(node -p "require('./package.json').version")"
-git add package.json client/web/package.json client/desktop/package.json
+git add package.json client/web/package.json
 git commit -m "release: v$next"
 
 cat <<EOF

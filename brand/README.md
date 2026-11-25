@@ -30,8 +30,9 @@ background, with no plate or box behind it.
 
 `client/web/public/brand/` serves `mantleos-icon.svg` and `mantleos-logo.svg`
 under the same names. `client/web/app/icon.svg`, `apple-icon.png` and
-`favicon.ico`, and the desktop's `build/icon.png`, are rendered from
-`mantleos-icon.svg` (the desktop recipe is in `client/desktop/README.md`).
+`favicon.ico`, and the Tauri shell's `client/tauri/icons/`, are rendered from
+`mantleos-icon.svg` (the recipe was in `client/desktop/README.md`, at commit
+680c78fa).
 Icons that need a square background put the sun on brand cream `#FDE7BC`;
 on brown its deep rust rim disappears.
 
