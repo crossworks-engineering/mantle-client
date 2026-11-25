@@ -22,6 +22,8 @@ allowBuilds:
 # nanoid / lodash-es / mermaid ride in under @excalidraw/excalidraw 0.18.1 (the
 # latest release) with known advisories; fast-uri / @xmldom/xmldom under
 # electron-builder (build-time only).
+# fast-uri 3.1.9 (2026-10-19) closes GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr,
+# GHSA-xhq7-xmqj-769h and GHSA-333x-w4r6-6crp (pnpm audit on 3.1.8, 2026-11-25).
 overrides:
   "@mantle/client-types": "npm:@crossworks/client-types@0.712.21"
   "@mantle/content-core": "npm:@crossworks/content-core@0.712.21"
@@ -33,7 +35,7 @@ overrides:
   # points it at a local stub instead. That subtree was also the only source of
   # mermaid, lodash-es and nanoid@4, so those three overrides came out with it.
   "@excalidraw/mermaid-to-excalidraw": "link:./stubs/mermaid-to-excalidraw"
-  "fast-uri": "3.1.8"
+  "fast-uri": "3.1.9"
   "@xmldom/xmldom": "0.8.15"
   "nanoid@3": "3.3.18"
   # Audit floor for transitive pins the parents have not moved yet (2026-10-08):
