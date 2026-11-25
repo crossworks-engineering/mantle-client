@@ -1,0 +1,59 @@
+# Dependabot (2026-11-25 dependency check, batch 2). The client had no config,
+# so nothing proposed updates and the lockfile drifted behind fixes.
+#
+# Version updates are weekly and grouped: one pull request per ecosystem and
+# kind, at most a few open at once. Security updates are a repository setting
+# (Settings > Code security > Dependabot security updates), not this file; they
+# open as advisories land and ignore the schedule, the groups and the limits
+# below.
+version: 2
+updates:
+  # The pnpm workspace (one lockfile at the root for client/*, packages/*, e2e).
+  # lockfile-only: stay inside the manifest ranges, as a manual refresh does. A
+  # new major or a range change is a decision, not a weekly pull request.
+  # cooldown: a version must be 3 days old before it is proposed, on top of
+  # pnpm's own 1-day minimumReleaseAge (the keyv/cacheable releases of
+  # 2026-08-04 were malicious and pulled within hours).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    versioning-strategy: lockfile-only
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 3
+    ignore:
+      # The wire contract moves with the mantle release that publishes it
+      # (exact pins in pnpm-workspace.yaml `overrides`), never on its own.
+      - dependency-name: '@crossworks/*'
+      - dependency-name: '@mantle/*'
+    groups:
+      dev-tools:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+
+  # The Tauri shell's Rust crates. Every crate is pinned exactly in Cargo.toml
+  # (client/tauri/README.md), so version updates are off (limit 0): this entry
+  # only lets security updates find Cargo.lock.
+  - package-ecosystem: cargo
+    directory: /client/tauri
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ['*']
