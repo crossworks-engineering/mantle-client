@@ -33,7 +33,7 @@ fn reveal<R: Runtime>(win: &WebviewWindow<R>) {
 }
 
 /// `window.mantleDesktop` on a brain window's page, with Electron's
-/// synchronous `tokenVault` (client/desktop/src/preload/app.ts). Each method
+/// synchronous `tokenVault` (client/desktop/src/preload/app.ts at 680c78fa). Each method
 /// is one synchronous XMLHttpRequest to the UI scheme's `/_mantle/vault`
 /// (vault_endpoint.rs), so every read asks the keychain and the page holds
 /// no copy. The main frame only, and only on the UI origin: a brain's frames

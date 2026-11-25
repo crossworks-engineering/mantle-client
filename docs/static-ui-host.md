@@ -6,22 +6,14 @@ and does the few jobs a server used to do.
 
 Hosts:
 
-- the desktop shell, per brain window (Electron today, Tauri later):
-  `client/host/src/static-host.ts`. It serves `http://mantle-ui.localhost`
-  by intercepting http in each brain window's session, so nothing reaches the
-  network. A real http origin, not a custom scheme: it was chosen while the
-  UI kept its login gate and layout state in cookies, which Chromium gives a
-  custom scheme none of. The UI keeps no cookies now (ui-prefs, below), so a
-  shell on its own scheme (Tauri, `mantle-ui://localhost`) works too.
-  The intercept lets out only the window's own brain when it runs on plain
-  http (dev) and refuses every other http request with a 502: a request the
-  main process sends again carries no Origin and gets no CORS check, so it
-  must never reach the LAN or loopback for a page (`brain-fence.ts`,
-  `httpRouteOf`). For the same reason it does not follow that brain's
-  redirects: a 3xx answers 502. An https brain is not intercepted at all.
+- the desktop shell, per brain window: the Tauri shell (`client/tauri`)
+  serves the export on its own scheme, `mantle-ui://localhost`, with a Rust
+  port of this contract (`client/tauri/src/host.rs`). That works because the
+  UI keeps no cookies (ui-prefs, below). The Electron shell, which served it
+  from `client/host/src/static-host.ts` on `http://mantle-ui.localhost` by
+  intercepting http, was removed on 2026-11-25 (last at commit 680c78fa).
 - the box: the client image (`Dockerfile`) holds `out/` and one bundled
-  server, `client/host/dist/server.mjs` (the same `static-host.ts` the desktop
-  uses), run by `bun server.mjs` on the `oven/bun` image. It keeps the box contract: port 3000, the
+  server, `client/host/dist/server.mjs` (built from `static-host.ts`), run by `bun server.mjs` on the `oven/bun` image. It keeps the box contract: port 3000, the
   same env (`MANTLE_SERVER_ORIGIN`, `MANTLE_TURN_STREAMING`, `MANTLE_TOUR`;
   optional `MANTLE_APPEARANCE_ORIGIN`, an internal address such as
   `http://web:3000` for the appearance fetch, so a box need not reach its own
@@ -118,8 +110,8 @@ digits, dots and dashes (or bracketed IPv6), so no `*` or `;`
   `packages/web-ui/src/ui-prefs.ts`, never in cookies (a lint rule refuses
   `document.cookie` elsewhere). A value an older build left in a cookie moves
   over on first read.
-- **The token vault of a desktop shell** answers synchronously, in Electron's
-  `tokenVault` shape.
+- **The token vault of a desktop shell** answers synchronously, in the
+  `tokenVault` shape of `DesktopShellApi` (`packages/web-ui/src/desktop-shell.ts`).
 - **Values only the host knows** (the brain's origin, its branding) are read
   after hydration (`lib/use-hydrated.ts`). The login and invite cards stay
   invisible until then, so a wrong brand never shows.
