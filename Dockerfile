@@ -48,8 +48,13 @@ RUN pnpm -C client/web build && pnpm -C client/host build
 
 # The image boxes run. Keeps the box's contract: port 3000, /env.js answering
 # 200 (the compose healthcheck), the same environment. Bun pinned to the
-# version the Bun plan targets; move it with that plan.
-FROM oven/bun:1.4.5-slim AS client
+# version the Bun plan targets; move it with that plan. Pinned by its index
+# digest too (read 2026-11-25; the tag was last pushed 2026-11-19, and its
+# linux/amd64 bun is byte-identical to the release zip that install-bun.sh
+# checks), so a re-pushed tag cannot change what boxes run. Move both together.
+# The build stages keep node:26-slim on its tag: they ship nothing, and the
+# tag brings Node's security releases.
+FROM oven/bun:1.4.5-slim@sha256:b780593f3e10918cbdaec3d5a08d52224b9198069a65eb47812085c2ec007643 AS client
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/client/web/out ./out
