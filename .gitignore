@@ -38,9 +38,6 @@ client/web/CLAUDE.md
 # Reading the registry by hand is still useful; that stays each developer's
 # choice to configure locally.
 .mcp.json
-# Electron: the staged copy of the built owner UI + packaged artifacts
-client/desktop/ui/
-client/desktop/release/
 # e2e run output: the minted credentials + screenshots, and Playwright's traces
 e2e/.artifacts/
 e2e/test-results/

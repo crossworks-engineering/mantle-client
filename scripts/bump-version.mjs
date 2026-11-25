@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Bump the Jackdaw app version. The root package.json `version` is the single
-// source of truth; client/web + client/desktop package.json are kept in
-// lockstep so they never drift.
+// source of truth; client/web/package.json is kept in lockstep so they
+// never drift.
 //
 // Usage:
 //   pnpm version:bump patch          # 0.6.19 -> 0.6.20
@@ -24,12 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-// client/desktop rides too: its version is what the packaged app reports
-// (app.getVersion) and what electron-updater compares against releases — a
-// drift there would stall or loop desktop auto-updates.
-const targets = ['package.json', 'client/web/package.json', 'client/desktop/package.json'].map(
-  (p) => join(root, p),
-);
+const targets = ['package.json', 'client/web/package.json'].map((p) => join(root, p));
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
