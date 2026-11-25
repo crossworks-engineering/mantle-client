@@ -13,6 +13,27 @@ allowBuilds:
   electron-winstaller: true
   '@parcel/watcher': false
 
+# pnpm holds every package back until it is a day old (1440 minutes, its
+# default, stated here so it shows), and since pnpm 11.3 it checks that again
+# against every lockfile entry on a frozen install.
+#
+# The contract packages are ours: a client release takes the version our own
+# release workflow published that day, so without the exclusion the install
+# fails for up to 24 hours in verify.yml, bun-lane.yml and the Dockerfile
+# (release.yml). The risk is small: each contract package is pinned to one
+# exact version (the overrides below and the manifests) in a reviewed commit,
+# the lockfile holds its integrity, and npm never lets a published version be
+# replaced. The scope is exactly our org; every other package keeps the wait.
+# The owner's decision, 2026-11-25.
+#
+# Strict: a version under the age makes a resolve fail (at a terminal pnpm
+# asks), instead of pnpm writing its own entry into the exclude list and going
+# on. It is pnpm's default once minimumReleaseAge is set; stated so it shows.
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - '@crossworks/*'
+minimumReleaseAgeStrict: true
+
 # Overrides and patches live HERE, not in package.json#pnpm: pnpm 11 reads its
 # settings from this file and silently ignores that field (the lockfile carried
 # no overrides at all, and the katex patch had been unapplied since katex moved
