@@ -404,9 +404,11 @@ test('after a key set from Provider keys, the key status reads again once the bo
   await main.getByRole('button', { name: 'Set key on 1 box' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Set key' }).click();
   await expect.poll(() => api.fleet!.keySent.length).toBe(1);
-  // Box A answers a few Fleet reads later (about 3 s apart while it waits),
-  // so the key status is open and read before it does.
-  api.fleet.keyState[FLEET_BOX.id]!.reads = -3;
+  // Box A holds its answer until the key status is open and read. A count
+  // of reads (`-3`, a few Fleet reads 3 s apart) raced the screen's own
+  // Fleet read right after the set: 14 s or 17 s, against the wait below.
+  const boxA = api.fleet.keyState[FLEET_BOX.id]!;
+  boxA.reads = -1_000;
   // While Box A still waits on the key, open the key status.
   await main.getByRole('link', { name: 'Key status' }).click();
   await expect(main.getByRole('list', { name: 'Boxes' })).toBeVisible();
@@ -419,8 +421,11 @@ test('after a key set from Provider keys, the key status reads again once the bo
     reason: null,
     keys: [keyLine({ setAt: minAgo(0), test: { ok: true, at: minAgo(0) } })],
   });
+  // Box A answers on the next Fleet read (at most 3 s away); the key status
+  // then reads again.
+  boxA.reads = 1;
   await expect(row(table, FLEET_BOX.id, 'openrouter')).toContainText('passed just now', {
-    timeout: 15_000,
+    timeout: 10_000,
   });
   await expect(row(table, FLEET_BOX.id, 'elevenlabs')).toHaveCount(0);
   expect(s.reads).toBeGreaterThan(reads);
