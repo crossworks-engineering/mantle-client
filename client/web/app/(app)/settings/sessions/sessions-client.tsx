@@ -130,8 +130,7 @@ export function SessionsClient() {
             <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
               {!canHoldSeveral && (
                 <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  This version of the desktop app holds one login per brain. Update the app to hold
-                  several, or open another brain from the tray.
+                  This desktop shell holds one login per brain.
                 </p>
               )}
               {sessions.length === 0 ? (
