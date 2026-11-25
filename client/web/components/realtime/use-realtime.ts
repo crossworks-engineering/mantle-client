@@ -125,7 +125,7 @@ export function subscribeRealtime(path: string, sub: Subscriber): () => void {
  * An empty `types` array subscribes to every type.
  *
  * Backed by a single shared connection per tab (see the module comment above),
- * itself built on `apiEventStream` (not raw `EventSource`) so a detached/Electron
+ * itself built on `apiEventStream` (not raw `EventSource`) so a detached
  * client can carry the base-URL + bearer, `EventSource` can do neither. It
  * auto-reconnects with exponential backoff + jitter, so transient drops
  * self-heal; the connection closes once the last subscriber unmounts.

@@ -3,7 +3,7 @@
  * for the detached frontend (Phase 2 · Task 4 / DB-less dev).
  *
  * Same-origin by default: relative URL + cookie auth, exactly as today. When
- * `NEXT_PUBLIC_MANTLE_API_BASE` is set (Electron, or a detached/DB-less browser
+ * `NEXT_PUBLIC_MANTLE_API_BASE` is set (a detached/DB-less browser
  * client) it targets that origin and attaches the `NEXT_PUBLIC_MANTLE_API_TOKEN`
  * bearer — since cross-origin requests can't rely on the session cookie. In that
  * detached mode the browser talks straight to the remote API, so the local Next
@@ -47,7 +47,7 @@ export class ApiError extends Error {
 }
 
 /** Resolve a path against the configured API base — the remote origin in
- *  detached/Electron mode, same-origin (empty base) otherwise. For raw `fetch()`
+ *  detached mode, same-origin (empty base) otherwise. For raw `fetch()`
  *  calls that must own their own `Response` handling and so can't go through
  *  `apiFetch` (e.g. the assistant turn POST's re-attach loop, the stage poller). */
 export function apiUrl(path: string): string {

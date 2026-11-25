@@ -8,7 +8,7 @@
  * every host but one: the desktop app on its own URL scheme
  * (mantle-ui://localhost), where WebKit keeps no cookies at all, so the
  * presence flag never stuck and every load went back to /login. localStorage
- * works on every host: the box, Electron and the Tauri shell.
+ * works on every host: the box, a browser and the Tauri shell.
  *
  * A value can carry an end time, as its cookie's Max-Age did. Values written
  * as cookies by an earlier build are moved here on first read, and the cookie

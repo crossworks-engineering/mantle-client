@@ -9,12 +9,12 @@ import { GONE_ROUTE, GONE_ROUTE_NEEDLES } from './gone-routes';
  * needles are THE list in lib/gone-routes.ts, which the e2e specs read too
  * (e2e/workspace/shell-nav.ts GONE_ROUTE).
  *
- * Every source file of the app, the UI kit, the desktop shell and the e2e
+ * Every source file of the app, the UI kit and the e2e
  * specs is scanned for a quoted path (or a quoted route base that such a path
  * was built on). Paths are the repo's.
  */
 const REPO = fileURLToPath(new URL('../../..', import.meta.url));
-const ROOTS = ['client/web/', 'packages/web-ui/src/', 'client/desktop/src/', 'e2e/'];
+const ROOTS = ['client/web/', 'packages/web-ui/src/', 'e2e/'];
 /** The guard itself and the list it reads name every gone route; the W8
  *  guard pins that its needles catch the code routes. */
 const SELF = [
@@ -36,7 +36,7 @@ function sources(dir: string, out: string[] = []): string[] {
 const scanned = ROOTS.flatMap((r) => sources(join(REPO, r))).filter((f) => !SELF.includes(f));
 
 describe('no call to a route a W6b, W7 or W8 brain answers 410', () => {
-  it('scans the app, the UI kit, the desktop shell and the e2e specs', () => {
+  it('scans the app, the UI kit and the e2e specs', () => {
     for (const f of [
       'client/web/components/item-tree/tree-api.ts',
       'client/web/lib/member-apps.ts',

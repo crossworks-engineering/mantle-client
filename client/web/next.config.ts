@@ -55,10 +55,6 @@ const nextConfig: NextConfig = {
   // recover — forever. It presents as an infinite refresh loop, not as a
   // resolution error. Same guess `outputFileTracingRoot` below already guards.
   turbopack: { root: join(__dirname, '../..') },
-  // Desktop shell (client/desktop) embeds this app as a self-contained node
-  // server. Opt-in so image builds keep today's output. The tracing root is
-  // pinned to the monorepo root so the standalone tree resolves workspace deps
-  // from THIS checkout (with several worktrees present Next would guess).
   // Static files only: no server renders this UI. A host serves out/ (the
   // desktop shell per brain window, the box server per box) and owns what a
   // server used to do here: the per-brain /env.js, the CSP header, the

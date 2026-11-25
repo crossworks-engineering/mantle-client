@@ -37,7 +37,7 @@ import { serverUrl } from '@mantle/web-ui/runtime-env';
  * That relative path is correct on the default one-domain deployment, where
  * the reverse proxy routes /api to the brain — which is why this went unseen.
  * It is wrong wherever the client and the brain are on different origins: a
- * split-origin install, and the Electron desktop shell, where it resolves
+ * split-origin install, and a desktop shell, where it resolves
  * against the app's own origin and the logo simply fails to load. Hydration
  * does not rescue it either; React keeps the server's `src`.
  *
