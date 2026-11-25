@@ -28,7 +28,7 @@ COPY e2e/package.json e2e/package.json
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 build-essential ca-certificates \
-    && npm install -g pnpm@11.1.2 \
+    && npm install -g pnpm@11.29.0 \
     # client/desktop is a workspace member; skip the ~100MB electron binary
     # this image never runs (desktop builds happen in desktop.yml).
     && ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile \

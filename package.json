@@ -4,7 +4,7 @@
   "private": true,
   "description": "MantleOS Desktop: the web + desktop interface for MantleOS brains.",
   "license": "SEE LICENSE IN LICENSE.md",
-  "packageManager": "pnpm@11.1.2",
+  "packageManager": "pnpm@11.29.0",
   "engines": {
     "node": ">=26"
   },

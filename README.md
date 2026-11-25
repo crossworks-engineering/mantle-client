@@ -84,7 +84,7 @@ What changed in each client release is in `CHANGELOG.md`.
 
 ## Develop it
 
-Node 26 or newer and pnpm 11.1.2 (`packageManager` in `package.json`). The
+Node 26 or newer and pnpm 11.29.0 (`packageManager` in `package.json`). The
 client has no brain of its own, so development means pointing it at a deployed
 one:
 
