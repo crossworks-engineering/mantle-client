@@ -51,8 +51,8 @@ jobs:
     env:
       IMAGE: ${{ vars.MANTLE_IMAGE_NAMESPACE || 'titanwest' }}/mantle-client
     steps:
-      # Current majors, matching verify.yml — see the note in desktop.yml for
-      # why the docker/* pins below are deliberately not part of this.
+      # Current majors, matching verify.yml. The docker/* pins below were left
+      # alone on purpose: a different vendor on a different cadence.
       - uses: actions/checkout@v7
 
       - name: Platform label

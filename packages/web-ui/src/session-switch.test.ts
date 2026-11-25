@@ -295,7 +295,7 @@ describe('leaving a login', () => {
   });
 });
 
-/** A desktop shell with one keychain slot per login (client/desktop vault.ts). */
+/** A desktop shell with one keychain slot per login (client/tauri/src/vault.rs). */
 function scopedVault() {
   const slots = new Map<string, string>();
   return {
