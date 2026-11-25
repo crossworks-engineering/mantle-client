@@ -3,7 +3,7 @@
  * download `src`s pointing at `/api/files/files/[id]?raw=1`,
  * `/api/attachments/[id]` and `/api/export/[id]` (the download-anchor export
  * surface). Those loaders can't send the `Authorization` header
- * that `apiFetch` uses, so in a detached/Electron client (cross-origin, no
+ * that `apiFetch` uses, so in a detached client (cross-origin, no
  * session cookie) they'd 401.
  *
  * Same-origin (the normal case): returns the path unchanged — the session cookie

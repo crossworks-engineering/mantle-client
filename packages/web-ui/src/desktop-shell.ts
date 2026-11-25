@@ -1,6 +1,6 @@
 /**
- * The Jackdaw desktop shell's injected API — `window.mantleDesktop`, exposed
- * by the shell's preload (client/desktop). Feature-detect via
+ * The desktop shell's injected API, `window.mantleDesktop`, injected by the
+ * Tauri shell (client/tauri) into its brain windows. Feature-detect via
  * `desktopShell()`: a browser returns null and every caller falls back to
  * plain web behavior. This module is the single owner of the global
  * declaration so client code and the shell agree on one shape.
@@ -19,8 +19,7 @@ export type DesktopShellApi = {
    *  the unsubscribe. Optional: older shells predate it. */
   onNavigate?(cb: (path: string) => void): () => void;
   /** The OS-keychain vault of a desktop shell, answered synchronously
-   *  (Electron safeStorage via sendSync; the Tauri shell via a synchronous
-   *  request to its own scheme). The shell keeps exactly one page per brain,
+   *  (the Tauri shell via a synchronous request to its own scheme). The shell keeps exactly one page per brain,
    *  each with its own storage area. Optional: older shells predate it, and
    *  callers must fall back to localStorage. */
   tokenVault?: {

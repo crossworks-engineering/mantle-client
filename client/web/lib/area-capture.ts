@@ -5,8 +5,10 @@
  *
  * Two ways to get the pixels, neither asks the user for anything:
  *
- *  - The desktop shell captures its own window (`mantleDesktop.capture`,
- *    Electron's capturePage).
+ *  - A desktop shell that offers `mantleDesktop.capture` captures its own
+ *    window. Only the Electron shell did (capturePage), and it was removed
+ *    on 2026-11-25; the Tauri shell has no capture, so this path is unused
+ *    today and every capture takes the redraw below.
  *  - A browser redraws the app's own page into a canvas (modern-screenshot's
  *    domToCanvas) and crops it. No screen share: Mantle only ever pictures
  *    its own page. The redraw cannot read inside a sandboxed mini app frame,
@@ -210,7 +212,7 @@ export async function captureWeb(rect: Rect): Promise<Blob> {
 /** The words for a capture that failed or was turned down. */
 export function captureErrorMessage(err: unknown): string {
   if (!(err instanceof Error)) return 'The capture failed.';
-  // The desktop shell's refusal comes wrapped by Electron's IPC: its own
-  // words only.
+  // A desktop shell's refusal came wrapped by Electron's IPC (the removed
+  // shell): its own words only.
   return err.message.replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '');
 }

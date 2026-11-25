@@ -146,7 +146,7 @@ export const PageImage = Node.create<{
   },
 
   renderHTML({ HTMLAttributes }) {
-    // Route the asset src through assetUrl() so a detached/Electron client loads
+    // Route the asset src through assetUrl() so a detached client loads
     // it from the remote origin with the `?at=` token (a browser <img> can't send
     // a bearer header). Same-origin: assetUrl returns the path unchanged → no-op.
     // nodeId-backed images build the canonical serve path (matches renderPageDoc);

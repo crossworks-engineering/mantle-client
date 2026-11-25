@@ -6,13 +6,13 @@ import { describe, expect, it } from 'vitest';
 /**
  * No client login and no sign-in by email code (workspaces W8): a login is
  * an admin or a member, and it signs in with its password. No source of the
- * app, the UI kit, the desktop shell or the e2e helpers names the code
+ * app, the UI kit or the e2e helpers names the code
  * routes or a 'client' login role in code. Comments may tell the history
  * (they are stripped before the scan); tests may feed an old brain's values
  * (they are not scanned). Paths are the repo's.
  */
 const REPO = fileURLToPath(new URL('../../..', import.meta.url));
-const ROOTS = ['client/web/', 'packages/web-ui/src/', 'client/desktop/src/', 'e2e/'];
+const ROOTS = ['client/web/', 'packages/web-ui/src/', 'e2e/'];
 /** The list of gone routes names the code routes on purpose (lib/gone-routes.ts). */
 const NAMES_ON_PURPOSE = ['client/web/lib/gone-routes.ts'];
 
@@ -62,7 +62,7 @@ const NEEDLES: readonly (readonly [label: string, needle: RegExp])[] = [
 ];
 
 describe('no client login and no email code sign-in (W8)', () => {
-  it('scans the app, the UI kit, the desktop shell and the e2e helpers', () => {
+  it('scans the app, the UI kit and the e2e helpers', () => {
     for (const f of [
       'client/web/app/login/login-client.tsx',
       'client/web/app/login/login-form.tsx',
@@ -76,7 +76,6 @@ describe('no client login and no email code sign-in (W8)', () => {
       'client/web/app/(app)/settings/users/users-client.tsx',
       'packages/web-ui/src/session-switch.ts',
       'packages/web-ui/src/app-sandbox/access-log.tsx',
-      'client/desktop/src/main/brain-fence.ts',
       'e2e/workspace/mock-workspace-api.ts',
       'e2e/workspace/shell-nav.ts',
     ]) {

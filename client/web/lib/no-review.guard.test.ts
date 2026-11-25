@@ -11,13 +11,12 @@ import { describe, expect, it } from 'vitest';
  *
  * Every W5c part has landed: Team admin, the client sign-in page and the
  * review leftovers are gone, and the Users screen and the sign-in pages are
- * scanned like any other screen. The shared UI kit (packages/web-ui) and the
- * desktop shell (client/desktop) are scanned too: the review UI must not
- * come back through them. Paths are the repo's.
+ * scanned like any other screen. The shared UI kit (packages/web-ui) is
+ * scanned too: the review UI must not come back through it. Paths are the repo's.
  */
 const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 const WEB = 'client/web/';
-const ROOTS = [WEB, 'packages/web-ui/src/', 'client/desktop/src/'];
+const ROOTS = [WEB, 'packages/web-ui/src/'];
 
 /** The review UI's words, its components and its routes. */
 const NEEDLES: [string, RegExp][] = [
@@ -130,8 +129,6 @@ describe('no review UI in the owner screens (W5c)', () => {
       'packages/web-ui/src/session-registry.ts',
       'packages/web-ui/src/token-store.ts',
       'packages/web-ui/src/layout/nav-items.ts',
-      'client/desktop/src/main/brain-fence.ts',
-      'client/desktop/src/main/index.ts',
     ]) {
       expect(scanned).toContain(f);
     }
