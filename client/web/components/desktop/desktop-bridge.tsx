@@ -5,9 +5,9 @@ import { apiEventStream } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 
 /**
- * Jackdaw desktop integration. Renders nothing and does nothing in a browser —
- * it activates only when the page runs inside the desktop shell, which
- * injects `window.mantleDesktop` from its preload.
+ * Desktop shell integration. Renders nothing and does nothing in a browser:
+ * it activates only when the page runs inside a desktop shell, which
+ * injects `window.mantleDesktop`.
  *
  * Notifications ride the assistant's global outbound ping
  * (/api/assistant/stream — the same best-effort turn signal the mobile

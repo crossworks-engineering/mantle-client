@@ -24,8 +24,9 @@ set -euo pipefail
 #      tag is made: another session may tag it while verify runs)
 # then runs `pnpm verify` on that tree, creates the tag at that commit only
 # if it passed, pushes that commit as main + the tag together in one atomic
-# push (the push is what cuts the release: it fires release.yml), and finally asks origin, with git ls-remote, whether main and
-# the tag are both there at that commit.
+# push (the push is what cuts the release: it fires release.yml), and
+# finally asks origin, with git ls-remote, whether main and the tag are both
+# there at that commit.
 #
 # "That commit" is HEAD as read ONCE, before the checks, and every step after
 # names it by SHA, never by HEAD or by the branch name. The verify runs for
