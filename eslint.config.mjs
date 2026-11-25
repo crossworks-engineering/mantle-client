@@ -123,12 +123,6 @@ export default tseslint.config(
       'client/web/public/_mantle/**',
       // The box server bundle (client/host/scripts/build.mjs).
       'client/host/dist/**',
-      // The desktop shell's STAGED copy of the built owner UI — the whole
-      // static export (gitignored). CI never sees it because it
-      // lints a fresh checkout, but anyone who runs `build:ui` locally and
-      // then `pnpm verify` gets hundreds of errors from minified vendor
-      // bundles that are not ours to lint.
-      'client/desktop/ui/**',
       // The Tauri shell's build output (cargo; the codegen writes the
       // embedded UI there as compressed blobs with .js names) and the files
       // tauri-build regenerates. All gitignored.
@@ -349,15 +343,6 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': ['error', ...cookieReaches()],
       'no-restricted-globals': ['error', { name: 'cookieStore', message: COOKIE_MESSAGE }],
-    },
-  },
-  {
-    // client/desktop also takes @mantle/client-host: the node-side host of the
-    // static UI, bundled into the Electron main process. Never client/web or
-    // web-ui: it reads files from disk and has no place in a browser bundle.
-    files: ['client/desktop/**/*.{ts,tsx}'],
-    rules: {
-      '@typescript-eslint/no-restricted-imports': clientTierImports(['@mantle/client-host']),
     },
   },
   {
