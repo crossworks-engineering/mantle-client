@@ -49,7 +49,7 @@ RUN pnpm -C client/web build && pnpm -C client/host build
 # The image boxes run. Keeps the box's contract: port 3000, /env.js answering
 # 200 (the compose healthcheck), the same environment. Bun pinned to the
 # version the Bun plan targets; move it with that plan.
-FROM oven/bun:1.4.4-slim AS client
+FROM oven/bun:1.4.5-slim AS client
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/client/web/out ./out

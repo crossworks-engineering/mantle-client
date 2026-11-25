@@ -9,7 +9,7 @@ set -euo pipefail
 # unpack to the same binary as the oven/bun image of that version (the box
 # image's base). Move PINNED together with .bun-version:
 # scripts/bun-version.test.ts fails while they name different versions.
-PINNED="1.4.4 bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c"
+PINNED="1.4.5 94559b3b528995a49452f9f2404cec74f2efd7d06e0a000a8cd214b02c3666eb"
 
 dest="${1:?usage: scripts/install-bun.sh <dir>}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
