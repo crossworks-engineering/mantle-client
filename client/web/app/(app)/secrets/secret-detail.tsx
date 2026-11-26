@@ -259,8 +259,10 @@ export function SecretDetail({
             </Button>
           </div>
 
+          {/* data-secret: an agent driving the window never reads a
+              revealed value (ui_look blanks the area; docs/agent-ui.md). */}
           {revealed.fields.length > 0 && (
-            <div className="rounded-md border border-border">
+            <div data-secret="" className="rounded-md border border-border">
               {revealed.fields.map((f, i) => {
                 const visible = visibleIdx.has(i);
                 return (
@@ -303,7 +305,10 @@ export function SecretDetail({
               {/* A caption, not a <Label>: this is read-only output with no
                   control to label, and a dangling <label> is worse than none. */}
               <p className="text-sm font-medium">Note</p>
-              <pre className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-sm">
+              <pre
+                data-secret=""
+                className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-sm"
+              >
                 {revealed.note}
               </pre>
             </div>
