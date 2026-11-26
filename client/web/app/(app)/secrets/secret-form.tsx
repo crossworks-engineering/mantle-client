@@ -188,7 +188,10 @@ export function SecretForm({
           </div>
           {form.fields.map((f, i) => (
             <div key={i} className="flex gap-2">
+              {/* data-secret: a field's label is part of the sealed payload,
+                  as the revealed view hides it from an agent. */}
               <Input
+                data-secret=""
                 placeholder="Label (e.g. username)"
                 value={f.label}
                 onChange={(e) => setField(i, { label: e.target.value })}

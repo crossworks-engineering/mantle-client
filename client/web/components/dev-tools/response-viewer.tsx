@@ -103,10 +103,18 @@ export function ResponseViewer() {
                 ))}
               </div>
             )}
+            {/* data-secret: a response body can hold a credential (a secret's
+                reveal), so an agent driving the window never reads it
+                (ui_look blanks the area; docs/agent-ui.md). */}
             {response.json !== null ? (
-              <JsonView value={response.json} collapseDepth={3} maxHeight="none" />
+              <div data-secret="">
+                <JsonView value={response.json} collapseDepth={3} maxHeight="none" />
+              </div>
             ) : response.bodyText ? (
-              <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-5">
+              <pre
+                data-secret=""
+                className="whitespace-pre-wrap break-all font-mono text-xs leading-5"
+              >
                 {response.bodyText}
               </pre>
             ) : (
@@ -115,7 +123,10 @@ export function ResponseViewer() {
           </TabsContent>
 
           <TabsContent value="raw" className="min-h-0 flex-1 overflow-auto p-3 scrollbar-thin">
-            <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-5">
+            <pre
+              data-secret=""
+              className="whitespace-pre-wrap break-all font-mono text-xs leading-5"
+            >
               {response.bodyText || '(empty)'}
             </pre>
           </TabsContent>
