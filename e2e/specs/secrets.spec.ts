@@ -1,17 +1,23 @@
+import { request as playwrightRequest } from '@playwright/test';
 import { expect, test } from '../lib/fixtures';
-import { ARTIFACTS_DIR } from '../lib/env';
+import { ARTIFACTS_DIR, MEMBER_EMAIL, MEMBER_PASSWORD, SERVER_URL } from '../lib/env';
 import { clickUntilOpen } from '../lib/hydration';
 import { openFromTree } from '../lib/tree';
 
 /**
  * `/secrets`, ported to the Tasks standard (phase 2a).
  *
- * Nothing here decrypts anything — reveal is its own concern and the API owns
- * it. What is pinned is the port: the scaffold, the boxed composer shared by
- * create and edit, the §8 header, and that the form's raw Kind `<select>` is a
- * real Select now. (The list's kind filter, the other raw `<select>` the port
- * replaced, belongs to the paged list; on the item tree the tree's own filter
- * menu does that job.)
+ * The owner tests pin the port: the scaffold, the boxed composer shared by
+ * create and edit, the item header (contract 2026-10-21), and that the form's
+ * raw Kind `<select>` is a real Select now. (The list's kind filter, the
+ * other raw `<select>` the port replaced, belongs to the paged list; on the
+ * item tree the tree's own filter menu does that job.)
+ *
+ * The member test (Secrets sharing, part S3) needs a brain from migration
+ * 0400 on and a member login (E2E_MEMBER_EMAIL / E2E_MEMBER_PASSWORD; skipped
+ * without them): the owner shares a secret with a workspace of the member,
+ * who reads it, reveals it, cannot edit it with Write off, and can with
+ * Write on. Its value is made up for the test.
  */
 
 test.describe('secrets', () => {
@@ -72,15 +78,20 @@ test.describe('secrets', () => {
       const heading = detail.getByRole('heading', { level: 2 });
       await openFromTree(ownerPage, marker, heading);
       await expect(heading).toContainText(marker);
-      // Glyph inside the h2, and the kind badge rides inline with the title.
+      // The item header: the glyph inside the h2, the kind as its one pill.
       await expect(heading.locator('svg')).toHaveCount(1);
       await expect(heading).toContainText('token');
 
-      // Delete is icon-only and last (§8) — it carried a "Delete" label before.
-      const edit = detail.getByRole('button', { name: 'Edit' });
-      const del = detail.getByRole('button', { name: 'Delete secret' });
+      // The fixed slots: Delete, then Edit (the pencil), then More. Icons
+      // only, and every one a person's own act for an agent.
+      const header = detail.getByTestId('item-header');
+      await expect(header).toHaveAttribute('data-agent-risk', 'person');
+      const edit = header.getByRole('button', { name: 'Edit secret' });
+      const del = header.getByRole('button', { name: 'Delete secret' });
       await expect(del).toHaveText('');
-      expect((await del.boundingBox())!.x).toBeGreaterThan((await edit.boundingBox())!.x);
+      await expect(edit).toHaveText('');
+      expect((await del.boundingBox())!.x).toBeLessThan((await edit.boundingBox())!.x);
+      await expect(header.locator('[data-slot="access"]')).toBeVisible();
 
       // Edit is the same boxed composer as create, not a bare form.
       await edit.click();
@@ -88,6 +99,99 @@ test.describe('secrets', () => {
       await expect(detail.locator('[data-slot="form-shell"]').first()).toBeVisible();
       await expect(detail.getByRole('combobox', { name: 'Kind' })).toHaveText('token');
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}secrets-edit.png` });
+    } finally {
+      await ownerApi.delete(`/api/secrets/${secret.id}`);
+    }
+  });
+  test('a member reads a shared secret, reveals it, and edits it only with Write on', async ({
+    ownerApi,
+    visitorPage,
+  }) => {
+    test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'set E2E_MEMBER_EMAIL and E2E_MEMBER_PASSWORD');
+    const page = visitorPage;
+    const marker = `E2E shared secret ${Date.now()}`;
+    const value = `e2e-made-up-${Date.now()}`;
+
+    // A workspace the member is a user of, as its own shell names it: the
+    // first that is not its private one.
+    const memberApi = await playwrightRequest.newContext({ baseURL: SERVER_URL });
+    const token = await memberApi.post('/api/auth/token', {
+      data: { email: MEMBER_EMAIL, password: MEMBER_PASSWORD },
+    });
+    expect(token.status()).toBe(200);
+    const bearer = ((await token.json()) as { token: string }).token;
+    const shell = (await (
+      await memberApi.get('/api/shell', { headers: { Authorization: `Bearer ${bearer}` } })
+    ).json()) as { workspaces?: { id: string; private?: boolean }[] };
+    await memberApi.dispose();
+    const ws = shell.workspaces?.find((w) => !w.private);
+    test.skip(!ws, 'the member is in no shared workspace on this brain');
+
+    const created = await ownerApi.post('/api/secrets', {
+      data: {
+        title: marker,
+        kind: 'password',
+        note: '',
+        fields: [{ label: 'password', value }],
+      },
+    });
+    expect(created.status()).toBe(201);
+    const { secret } = (await created.json()) as { secret: { id: string } };
+
+    try {
+      // Shared with the member's workspace, Write off.
+      const granted = await ownerApi.post(`/api/grants/${secret.id}`, {
+        data: { wsId: ws!.id, write: false },
+      });
+      expect(granted.status()).toBeLessThan(300);
+
+      await page.goto('/login');
+      await page.locator('#email').fill(MEMBER_EMAIL);
+      await page.locator('#password').fill(MEMBER_PASSWORD);
+      await page.getByRole('button', { name: 'Sign in' }).click();
+      await expect(page).toHaveURL((u) => u.pathname === '/', { timeout: 60_000 });
+
+      // The member has the Secrets screen and reads the shared secret.
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Primary' })
+          .getByRole('link', { name: 'Secrets', exact: true }),
+      ).toBeVisible();
+      await page.goto(`/secrets/${secret.id}`);
+      const main = page.getByRole('main');
+      const header = main.getByTestId('item-header');
+      await expect(header.getByRole('heading', { level: 2 })).toContainText(marker);
+
+      // One click reveals it, inside a data-secret box.
+      await main.getByRole('button', { name: 'Reveal' }).click();
+      const shown = main.getByText(value, { exact: true });
+      await expect(shown).toBeVisible();
+      expect(await shown.evaluate((el) => !!el.closest('[data-secret]'))).toBe(true);
+      expect(page.url()).not.toContain(value);
+
+      // Write off: no Edit, no Delete, and the brain refuses the write too.
+      await expect(header.locator('[data-slot="edit"]').getByRole('button')).toBeDisabled();
+      await expect(header.locator('[data-slot="delete"]').getByRole('button')).toBeDisabled();
+      const refused = await page.request.patch(`${SERVER_URL}/api/secrets/${secret.id}`, {
+        headers: { Authorization: `Bearer ${bearer}` },
+        data: { title: `${marker} refused` },
+      });
+      expect(refused.status()).toBe(403);
+
+      // Write on: the same member edits it.
+      const write = await ownerApi.patch(`/api/grants/${secret.id}/${ws!.id}`, {
+        data: { write: true },
+      });
+      expect(write.status()).toBeLessThan(300);
+      await page.reload();
+      const edit = header.locator('[data-slot="edit"]').getByRole('button');
+      await expect(edit).toBeEnabled();
+      await edit.click();
+      await main.getByLabel('Title').fill(`${marker} edited`);
+      await main.getByRole('button', { name: 'Save secret' }).click();
+      await expect(header.getByRole('heading', { level: 2 })).toContainText(`${marker} edited`);
+      // Write gives edit, not manage.
+      await expect(header.locator('[data-slot="delete"]').getByRole('button')).toBeDisabled();
     } finally {
       await ownerApi.delete(`/api/secrets/${secret.id}`);
     }

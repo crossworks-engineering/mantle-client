@@ -314,7 +314,9 @@ const PERSON_CONTROLS: readonly (readonly [string, string, string])[] = [
   ],
   // POST /api/secrets/:id/reveal
   [`${APP}/secrets/secret-detail.tsx`, 'onClick={reveal}', MARK],
-  [`${APP}/secrets/secret-detail.tsx`, 'onClick={startEdit}', MARK],
+  // Edit is the item header's pencil: the mark is on the header, so every
+  // control of a secret's header (Edit, Delete, Move, Access) is a person's.
+  [`${APP}/secrets/secret-detail.tsx`, 'onSelect: startEdit', MARK],
   // POST /api/network/deactivate
   [
     `${APP}/settings/(hub)/network/network-client.tsx`,

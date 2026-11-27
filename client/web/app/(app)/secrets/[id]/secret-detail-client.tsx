@@ -4,11 +4,12 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { SecretDetail, type SecretRow } from '../secret-detail';
+import { SECRET_GONE_TEXT, SECRETS_REFUSED_TEXT, secretsFailureOf } from '@/lib/secrets-screen';
 
 /**
  * Deep-link wrapper for /secrets/[id], data-free. The master-detail list
@@ -34,10 +35,17 @@ export function SecretDetailClient({ id }: { id: string }) {
     );
   }
   if (secretQuery.isError) {
-    const notFound = secretQuery.error instanceof ApiError && secretQuery.error.status === 404;
+    // Fixed words by the status, never the error's own text.
+    const failure = secretsFailureOf(secretQuery.error);
     return (
       <div className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
-        <p>{notFound ? 'That secret no longer exists.' : "Couldn't load this secret."}</p>
+        <p>
+          {failure === 'gone'
+            ? SECRET_GONE_TEXT
+            : failure === 'refused'
+              ? SECRETS_REFUSED_TEXT
+              : "Couldn't load this secret."}
+        </p>
         <Link href="/secrets" className="underline">
           ← All secrets
         </Link>
@@ -49,7 +57,7 @@ export function SecretDetailClient({ id }: { id: string }) {
   return (
     <>
       <SetPageTitle title={title || secret.title} />
-      <div className="px-6 pt-2">
+      <div className="px-4 pt-2">
         <BackLink href="/secrets">All secrets</BackLink>
       </div>
       <SecretDetail

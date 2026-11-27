@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { expect, type Page } from '@playwright/test';
 import { GONE_ROUTE, MEMBER_OPEN } from './shell-nav';
 import { createMockChats, type MockChats } from './mock-chats';
+import { createMockSecrets, type MockSecrets } from './mock-secrets';
 import { newMockStatus, statusAnswer, type MockStatus } from './mock-status';
 import { newMockSsoSetup, ssoSetupAnswer, type MockSsoSetup } from './mock-sso-setup';
 import { fleetAnswer, type MockFleet } from './mock-fleet';
@@ -318,6 +319,12 @@ export type MockWorkspaceApi = {
   cancels: string[];
   /** The chats (mock-chats.ts): off unless a spec turns them on. */
   chats: MockChats;
+  /** Shared secrets (mock-secrets.ts). */
+  secrets: MockSecrets;
+  /** The brain shares secrets (its migration 0400): it names `secrets`
+   *  among a member's tree kinds and answers a member's secrets routes.
+   *  False: a brain before it, which refuses a member there. */
+  secretsKind: boolean;
   close: () => Promise<void>;
 };
 
@@ -438,6 +445,12 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     },
     cancels: [],
     chats: createMockChats(),
+    secrets: createMockSecrets({
+      team: WORKSPACES.team,
+      field: WORKSPACES.field,
+      board: WORKSPACES.board,
+    }),
+    secretsKind: true,
     close: async () => undefined,
   };
 
@@ -527,7 +540,11 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     isOwner: role === 'admin',
     workspaces: shellWorkspaces(role),
     areas: role === 'admin' ? ALL_AREAS : [],
-    treeKinds: state.tasksKind ? [...MEMBER_TREE_KINDS, 'tasks'] : MEMBER_TREE_KINDS,
+    treeKinds: [
+      ...MEMBER_TREE_KINDS,
+      ...(state.secretsKind ? ['secrets'] : []),
+      ...(state.tasksKind ? ['tasks'] : []),
+    ],
     navFavorites: state.favorites[role] ?? [],
     navFavoriteItems: favoriteItemsOf(role),
     ...(state.noAutoTables === undefined ? {} : { noAutoTables: state.noAutoTables }),
@@ -1354,6 +1371,16 @@ export async function startMockWorkspaceApi(clientOrigin: string): Promise<MockW
     }
     if (method === 'GET' && path === '/api/messenger/stream') {
       return send(res, 200, 'text/event-stream', ':\n\n');
+    }
+    // Shared secrets (mock-secrets.ts). A brain before them refuses a member.
+    if (role === 'member' && !state.secretsKind && /^\/api\/secrets(\/|$)/.test(path)) {
+      return json(res, 403, { error: 'forbidden', reason: 'member-login' });
+    }
+    if (
+      (role === 'admin' || state.secretsKind) &&
+      (await state.secrets.handle(req, res, url, path, role, json, readBody))
+    ) {
+      return;
     }
     // The brain's gates (W6b): a member keeps its own /api/member/* routes; a
     // member uses the owner routes the brain opened to it; an

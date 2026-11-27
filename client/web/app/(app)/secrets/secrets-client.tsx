@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Plus, Search } from 'lucide-react';
-import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { KeyRound, Plus, Search, ShieldOff } from 'lucide-react';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { FormShell } from '@mantle/web-ui/ui/form-shell';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
@@ -31,6 +31,13 @@ import { useTreeServes } from '@/components/item-tree/use-tree-kinds';
 import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
 import { play } from '@/lib/sounds/play';
+import { shareMarksOf } from '@/components/share/access-stack';
+import {
+  SECRET_GONE_TEXT,
+  SECRETS_REFUSED_TEXT,
+  secretFailureText,
+  secretsFailureOf,
+} from '@/lib/secrets-screen';
 
 /** `in`: "New secret inside" a tree folder, where it goes once saved. */
 type Selection = { mode: 'create'; in?: TreeFolder } | { mode: 'view'; id: string } | null;
@@ -78,6 +85,15 @@ export function SecretsClient({
     );
   }
   if (!showTree && secretsQuery.isError && !secretsQuery.data) {
+    // The brain refuses this login (a brain before shared secrets, for a
+    // login without the keys area): say so, with no Retry.
+    if (secretsFailureOf(secretsQuery.error) === 'refused') {
+      return (
+        <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
+          <ShieldOff className="mr-2 size-4" aria-hidden /> {SECRETS_REFUSED_TEXT}
+        </div>
+      );
+    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
         <p>Couldn&apos;t load secrets.</p>
@@ -130,6 +146,10 @@ function SecretsView({
         : { mode: 'create' },
   );
   const { fileNew, confirm: fileConfirm } = useFileNewItem('secrets', 'secret');
+  // The tree row the open secret was opened from: its share marks, for the
+  // header's Access slot (a secret read by its own route carries the caps,
+  // not who it is shared with).
+  const [openedRow, setOpenedRow] = useState<unknown>(null);
   /** Where selection lands when the open secret goes away. */
   const fallbackSel = (rows: SecretRow[]): Selection =>
     showTree ? null : rows[0] ? { mode: 'view', id: rows[0].id } : { mode: 'create' };
@@ -161,6 +181,7 @@ function SecretsView({
     queryKey: ['secrets', viewId],
     queryFn: () => apiFetch<{ secret: SecretRow }>(`/api/secrets/${viewId}`),
     enabled: !!viewId && !secrets.some((s) => s.id === viewId),
+    retry: false,
   });
   const selected = viewId
     ? (secrets.find((s) => s.id === viewId) ??
@@ -174,7 +195,7 @@ function SecretsView({
       ({ secret } = await apiSend<{ secret: SecretRow }>('/api/secrets', 'POST', body));
     } catch (err) {
       play('danger');
-      toast.error(err instanceof ApiError ? err.message : 'Could not save secret');
+      toast.error(secretFailureText(err, 'create'));
       return;
     }
     setSecrets((prev) => [secret, ...prev]);
@@ -228,9 +249,33 @@ function SecretsView({
       <SecretDetail
         key={selected.id}
         secret={selected}
+        shares={shareMarksOf(selected, openedRow)}
         onUpdated={onUpdated}
         onDeleted={() => onDeleted(selected.id)}
       />
+    ) : viewId && selectedSecretQuery.isPending ? (
+      <div className="flex h-full items-center justify-center" role="status" aria-label="Loading">
+        <Spinner />
+      </div>
+    ) : viewId && selectedSecretQuery.isError ? (
+      // Fixed words by the status: gone (deleted, or no longer shared with
+      // this login), refused, or a failure to try again.
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted-foreground">
+        {secretsFailureOf(selectedSecretQuery.error) === 'error' ? (
+          <>
+            <p>Couldn&apos;t load this secret.</p>
+            <Button variant="outline" size="sm" onClick={() => selectedSecretQuery.refetch()}>
+              Retry
+            </Button>
+          </>
+        ) : (
+          <p>
+            {secretsFailureOf(selectedSecretQuery.error) === 'refused'
+              ? SECRETS_REFUSED_TEXT
+              : SECRET_GONE_TEXT}
+          </p>
+        )}
+      </div>
     ) : (
       <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
         Select a secret, or add a new one.
@@ -261,7 +306,10 @@ function SecretsView({
                   <Plus /> New
                 </Button>
               }
-              onOpenItem={(item) => setSel({ mode: 'view', id: item.id })}
+              onOpenItem={(item) => {
+                setOpenedRow(item);
+                setSel({ mode: 'view', id: item.id });
+              }}
               onUnsupported={onTreeGone}
             />
           </aside>

@@ -86,6 +86,10 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/present', null],
   ['/tables', null],
   ['/apps', null],
+  // Secrets are a workspace kind (brain migration 0400): a member opens the
+  // ones its workspaces read. The nav offers the screen as the brain says
+  // (lib/secrets-screen.ts); the brain decides every read and write.
+  ['/secrets', null],
   ['/n', null],
   ['/settings/workspaces', null],
   ['/settings/mcp', null],
@@ -144,7 +148,6 @@ export const PATH_AREAS: ReadonlyArray<readonly [prefix: string, area: Area | nu
   ['/formulas', 'users'],
   ['/inbox', 'users'],
   ['/pending', 'users'],
-  ['/secrets', 'keys'],
   // The brain's own technical screens: whoever manages the brain's settings.
   ['/docs', 'settings'],
   ['/models', 'settings'],

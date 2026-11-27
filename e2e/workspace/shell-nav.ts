@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
 /** The workspace screens every login opens, as the nav names them. */
-export const WORK_ROWS = ['Pages', 'Notes', 'Files', 'Tables', 'Draw', 'Apps'] as const;
+export const WORK_ROWS = ['Pages', 'Notes', 'Files', 'Tables', 'Draw', 'Apps', 'Secrets'] as const;
 
 /** Rows only a login with an Admin area sees: the settings it manages and
  *  the brain's own screens. */
@@ -21,7 +21,6 @@ export const ADMIN_ROWS = [
   'Runs',
   'Journal',
   'Contacts',
-  'Secrets',
 ] as const;
 
 export const NAV_SCOPES = ['Favorites', 'Work', 'Settings'] as const;
@@ -160,6 +159,11 @@ export const MEMBER_OPEN: readonly RegExp[] = [
   rx('(PATCH|DELETE)', `/api/tree/${KIND}/folders/${ID}`),
   rx('POST', `/api/tree/items/${ID}/opened`),
   rx('PUT', `/api/tree/items/${ID}/pin`),
+  // Secrets, a workspace kind since the brain's migration 0400: the login's
+  // own scope decides each read, reveal and write.
+  rx('(GET|POST)', `/api/secrets`),
+  rx('(GET|PATCH|DELETE)', `/api/secrets/${ID}`),
+  rx('POST', `/api/secrets/${ID}/reveal`),
   // Every login.
   /^[A-Z]+ \/api\/(grants|workspaces)(\/|$)/,
   // Every login's own chats (W7c). The live-stream sub-routes of a turn

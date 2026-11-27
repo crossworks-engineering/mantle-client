@@ -167,6 +167,7 @@ export function ItemHeader({
   actionsLabel = 'Actions',
   sticky = false,
   testIds,
+  'data-agent-risk': agentRisk,
 }: {
   /** Before the title, outside the `h2`: a control that is not part of the
    *  name (a task's done box), or a way back on a screen not moved to
@@ -217,6 +218,11 @@ export function ItemHeader({
   sticky?: boolean;
   /** The test hooks a screen already pins (the Apps pane's). */
   testIds?: { root?: string; text?: string; icons?: string };
+  /** Every control of this header is a person's own act (a secret: Edit
+   *  reads the value, and no agent changes who reads it). On the row and on
+   *  the More menu, which opens outside the row, so an agent driving the
+   *  window presses none of them (lib/agent-ui). */
+  'data-agent-risk'?: 'person';
 }) {
   const { zen, toggle } = useZenMode();
   const rowRef = useRef<HTMLDivElement>(null);
@@ -354,6 +360,7 @@ export function ItemHeader({
     <div
       ref={rowRef}
       data-testid={testIds?.root ?? 'item-header'}
+      data-agent-risk={agentRisk}
       className={cn(
         'flex min-h-11 items-center gap-3 border-b border-border px-4 py-1',
         slots ? 'h-11 flex-nowrap' : 'flex-wrap',
@@ -452,7 +459,7 @@ export function ItemHeader({
               </span>
             ) : null}
             <span data-slot="more">
-              <MoreMenu groups={moreGroups} />
+              <MoreMenu groups={moreGroups} agentRisk={agentRisk} />
             </span>
           </div>
         </div>
@@ -637,7 +644,7 @@ type MoreEntry = { key: string; label: string; icon?: ReactNode; danger?: boolea
  * (Copy link, Duplicate, Move to folder, the screen's extras); the fixed
  * slots by name (Access, Info, maximise); Delete last, in red.
  */
-function MoreMenu({ groups }: { groups: MoreEntry[][] }) {
+function MoreMenu({ groups, agentRisk }: { groups: MoreEntry[][]; agentRisk?: 'person' }) {
   const shown = groups.filter((g) => g.length > 0);
   const panel = useChoicePanel(
     groups.flatMap((g) => g.flatMap((e) => (e.kind === 'tool' ? (e.tool.choices ?? []) : []))),
@@ -652,7 +659,7 @@ function MoreMenu({ groups }: { groups: MoreEntry[][] }) {
             </HeaderIconButton>
           </PopoverAnchor>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuContent align="end" className="min-w-56" data-agent-risk={agentRisk}>
           {shown.map((group, gi) => (
             <Fragment key={gi}>
               {gi > 0 ? <DropdownMenuSeparator /> : null}

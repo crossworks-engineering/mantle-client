@@ -42,6 +42,8 @@ import { useFleetShown } from '@/lib/use-fleet-shown';
 import { withFleet } from '@/lib/fleet';
 import { useSyncOff } from '@/lib/use-sync-off';
 import { withSync } from '@/lib/sync';
+import { useSecretsOffered } from '@/lib/use-secrets-offered';
+import { withSecrets } from '@/lib/secrets-screen';
 import {
   NAV_GROUPS,
   type NavGroup as BaseNavGroup,
@@ -109,12 +111,15 @@ export function SidebarNav({
   // Email and contacts: hidden only while the brain says the
   // Sync service is off (lib/sync.ts).
   const syncOff = useSyncOff();
+  // Secrets: offered as the brain says (the keys area, or `secrets` among
+  // the shell's tree kinds; lib/secrets-screen.ts).
+  const secretsShown = useSecretsOffered();
   const scope = scopeInPlay(storedScope, fleetShown);
   const scopes = navScopes(fleetShown);
   const groups: NavGroup[] = withFleet(
     withCompanySignIn(
       withChats(
-        withSync(navWithAreas(NAV_GROUPS, areas), syncOff),
+        withSecrets(withSync(navWithAreas(NAV_GROUPS, areas), syncOff), secretsShown),
         // Hidden only on a 404: a count still loading (or failing) leaves the
         // entry where it is, so the rows below it do not jump.
         messenger.available !== 'no',

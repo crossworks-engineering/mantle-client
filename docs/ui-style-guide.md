@@ -1176,7 +1176,7 @@ links land in the folders.
 
 **The item header contract (2026-10-21).** Every workspace item's detail
 pane (pages, notes, tables, drawings, files and folders, apps, formulas,
-journal, tasks, events, contacts, agents, Recall maps) opens with THE same
+journal, tasks, events, contacts, agents, Recall maps, secrets) opens with THE same
 header, in read and edit mode alike: `ItemHeader`
 (`components/layout/item-header.tsx`). Never hand-roll a header row, a title
 band, a tags row or a banner under it. **The reference is `/pages`**

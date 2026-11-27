@@ -18,6 +18,8 @@ import { ALL_NAV_ITEMS } from '@mantle/web-ui/layout/nav-items';
 import { companySignInOffered } from '@/lib/sso-setup';
 import { fleetOffered } from '@/lib/fleet';
 import { syncOffered } from '@/lib/sync';
+import { useSecretsOffered } from '@/lib/use-secrets-offered';
+import { secretsOffered } from '@/lib/secrets-screen';
 import { useSyncOff } from '@/lib/use-sync-off';
 import { useFleetShown } from '@/lib/use-fleet-shown';
 import { useSsoSetupShown } from '@/lib/use-sso-setup-shown';
@@ -139,12 +141,14 @@ export function SearchPalette({
   const ssoSetupShown = useSsoSetupShown(shellAreas);
   const fleetShown = useFleetShown(shellAreas);
   const syncOff = useSyncOff();
+  const secretsShown = useSecretsOffered();
   const navMatches = filterNavItems(
     ALL_NAV_ITEMS.filter(
       (i) =>
         companySignInOffered(i.href, ssoSetupShown) &&
         fleetOffered(i.href, fleetShown) &&
-        syncOffered(i.href, syncOff),
+        syncOffered(i.href, syncOff) &&
+        secretsOffered(i.href, secretsShown),
     ),
     query,
   );

@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, Pencil } from 'lucide-react';
 import { FormShell } from '@mantle/web-ui/ui/form-shell';
 import { RowButton } from '@mantle/web-ui/ui/row-button';
 import { Button } from '@mantle/web-ui/ui/button';
-import { TagPill } from '@mantle/web-ui/tag-pill';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +16,7 @@ import {
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import {
   SecretForm,
@@ -28,6 +27,14 @@ import {
 } from './secret-form';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { play } from '@/lib/sounds/play';
+import { HeaderPill, ItemHeader } from '@/components/layout/item-header';
+import { AccessSlot } from '@/components/share/access-slot';
+import { itemAccess, readOnlyNote, type ItemCaps } from '@/lib/item-access';
+import { secretFailureText, withKeptCaps } from '@/lib/secrets-screen';
+
+/** What the Access panel says under its rows on a secret. */
+export const SECRET_ACCESS_HINT =
+  'People in a workspace you share this with can reveal its value. Each reveal is logged.';
 
 export type SecretRow = {
   id: string;
@@ -40,23 +47,38 @@ export type SecretRow = {
   summary: string | null;
   createdAt: string;
   updatedAt: string;
-};
+  // What the login may do with it (the brain's caps, as on every item) and
+  // who it is shared with (a list row's marks). A brain that sends none
+  // leaves every control on and refuses in its own words.
+} & ItemCaps & { workspaces?: unknown; hasLink?: boolean };
 
 type Payload = { note: string; fields: Field[] };
 
 /**
- * Chrome-free secret detail: reveal (decrypt on demand), edit, delete. Used both
- * in the master-detail right pane and on the /secrets/[id] deep-link page (which
- * wraps it with SetPageTitle + BackLink). Callbacks let the host keep its list /
- * route in sync. Mount with `key={secret.id}` so selecting another secret resets
- * the revealed/edit state.
+ * A secret's detail: the item header (contract 2026-10-21), then reveal
+ * (decrypt on demand), edit and delete. Used in the master-detail right pane
+ * and on the /secrets/[id] deep-link page. Callbacks let the host keep its
+ * list and route in sync. Mount with `key={secret.id}` so another secret
+ * resets the revealed and edit state.
+ *
+ * What the login may do is what the brain says on the row (`itemAccess`):
+ * whoever reads it reveals it; Edit needs `mayEdit` (a grant with Write on);
+ * Delete, Move and Access need `mayManage`. The screen adds no rule.
+ *
+ * A revealed value lives in this component's state only: never in the query
+ * cache, the address, a toast or an error text, and always inside a
+ * `data-secret` box, which an agent's look paints over (docs/agent-ui.md).
  */
 export function SecretDetail({
   secret,
+  shares,
   onUpdated,
   onDeleted,
 }: {
   secret: SecretRow;
+  /** The share marks for Access (`shareMarksOf`): the row it was opened
+   *  from. Absent: the secret's own marks, else its grants. */
+  shares?: unknown;
   onUpdated?: (s: SecretRow) => void;
   onDeleted?: () => void;
 }) {
@@ -70,6 +92,8 @@ export function SecretDetail({
   const [editInitial, setEditInitial] = useState<SecretFormValues | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const access = itemAccess(meta);
+  const readNote = readOnlyNote(access);
 
   const fetchPayload = async (): Promise<Payload | null> => {
     try {
@@ -79,7 +103,7 @@ export function SecretDetail({
       );
       return payload;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Reveal failed');
+      toast.error(secretFailureText(err, 'reveal'));
       return null;
     }
   };
@@ -145,10 +169,12 @@ export function SecretDetail({
       ));
     } catch (err) {
       play('danger');
-      toast.error(err instanceof ApiError ? err.message : 'Save failed');
+      toast.error(secretFailureText(err, 'save'));
       return;
     }
     play('success');
+    // A brain that answers a save without caps: keep the ones on screen.
+    updated = withKeptCaps(updated, meta);
     setMeta(updated);
     setRevealed({ note: body.note, fields: body.fields });
     setVisibleIdx(new Set(body.fields.map((_, i) => i)));
@@ -161,169 +187,171 @@ export function SecretDetail({
     try {
       await apiSend(`/api/secrets/${meta.id}`, 'DELETE');
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not delete secret');
+      toast.error(secretFailureText(err, 'delete'));
       return;
     }
     toast.success(`Deleted “${meta.title}”`);
     startTransition(() => onDeleted?.());
   };
 
+  // The item header, read and edit mode alike. Every control on it is a
+  // person's own act (`data-agent-risk`): Edit reads the value, and no agent
+  // changes who reads a secret or removes one.
+  const header = (
+    <ItemHeader
+      data-agent-risk="person"
+      edit={
+        !access.edit
+          ? { disabled: true }
+          : editing
+            ? { onSelect: () => setEditing(false), pressed: true, label: 'Stop editing' }
+            : { onSelect: startEdit, label: 'Edit secret' }
+      }
+      section="Secrets"
+      visual={<KeyRound className="size-4" aria-hidden />}
+      title={meta.title || 'Untitled secret'}
+      badges={<HeaderPill title="The kind of secret">{meta.kind}</HeaderPill>}
+      access={
+        <AccessSlot
+          type="secret"
+          nodeId={meta.id}
+          canShare={access.share}
+          shares={shares ?? meta}
+          hint={SECRET_ACCESS_HINT}
+        />
+      }
+      onDelete={access.manage ? () => setDeleteOpen(true) : undefined}
+      deleteDisabled={!access.manage}
+      deleteLabel="Delete secret"
+      move={access.move ? { kind: 'secrets', item: { id: meta.id, title: meta.title } } : null}
+      info={{
+        description: meta.description || undefined,
+        tags: meta.tags,
+        rows: [
+          ...(readNote ? [{ label: 'Access', value: readNote }] : []),
+          ...(meta.summary && !meta.description ? [{ label: 'Indexed', value: meta.summary }] : []),
+          { label: 'Updated', value: formatDateTime(meta.updatedAt) },
+          { label: 'Created', value: formatDateTime(meta.createdAt) },
+        ],
+      }}
+      infoLabel="About this secret"
+    />
+  );
+
   if (editing && editInitial) {
     return (
-      // Same boxed composer as the "New secret" pane (§6c) — create and edit
-      // are the same form, so they get the same surface.
-      <div className="p-6">
-        <FormShell>
-          <div className="flex items-center gap-2">
-            <Pencil className="size-5 text-primary-ink" aria-hidden />
-            <h2 className="text-lg font-semibold">Edit secret</h2>
-          </div>
-          <SecretForm
-            initial={editInitial}
-            submitLabel="Save secret"
-            submitting={pending}
-            onSubmit={saveEdit}
-            onCancel={() => setEditing(false)}
-          />
-        </FormShell>
+      <div className="flex h-full min-h-0 flex-col">
+        {header}
+        {/* Same boxed composer as the "New secret" pane (§6c): create and
+            edit are the same form, so they get the same surface. */}
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-6">
+          <FormShell>
+            <div className="flex items-center gap-2">
+              <Pencil className="size-5 text-primary-ink" aria-hidden />
+              <h3 className="text-lg font-semibold">Edit secret</h3>
+            </div>
+            <SecretForm
+              initial={editInitial}
+              submitLabel="Save secret"
+              submitting={pending}
+              onSubmit={saveEdit}
+              onCancel={() => setEditing(false)}
+            />
+          </FormShell>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          {/* §8: the glyph lives INSIDE the h2, the title truncates, and the
-              kind badge rides inline as `shrink-0`. */}
-          <h2 className="flex min-w-0 items-center gap-2 text-lg font-semibold">
-            <KeyRound className="size-5 shrink-0 text-primary-ink" aria-hidden />
-            <span className="min-w-0 truncate">{meta.title}</span>
-            <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wider text-muted-foreground">
-              {meta.kind}
-            </span>
-          </h2>
-          {meta.description && <p className="text-sm text-muted-foreground">{meta.description}</p>}
-          {meta.summary && !meta.description && (
-            <p className="text-xs italic text-muted-foreground">Indexed: {meta.summary}</p>
-          )}
-          {meta.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-0.5">
-              {meta.tags.map((t) => (
-                <TagPill key={t} tag={t} />
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex shrink-0 gap-2">
-          {/* data-agent-risk: Edit and Reveal read the value; it must stay out of
-              an agent's turn (lib/agent-ui). */}
-          <Button
-            variant="outline"
-            size="sm"
-            data-agent-risk="person"
-            onClick={startEdit}
-            disabled={loading}
-          >
-            <Pencil /> Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-destructive-ink"
-            onClick={() => setDeleteOpen(true)}
-            aria-label="Delete secret"
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </div>
-
-      {/* Reveal panel */}
-      {!revealed ? (
-        <div className="rounded-md border border-border bg-muted/20 p-6 text-center">
-          <p className="mb-3 text-sm text-muted-foreground">
-            {meta.fieldCount} field{meta.fieldCount === 1 ? '' : 's'}
-            {meta.hasNote ? ' + note' : ''} · sealed
-          </p>
-          <Button data-agent-risk="person" onClick={reveal} disabled={loading}>
-            {loading ? <Loader2 className="animate-spin" /> : <Eye />}
-            {loading ? 'Decrypting…' : 'Reveal'}
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex justify-end">
-            <Button variant="outline" size="sm" onClick={hide}>
-              <EyeOff /> Hide
+    <div className="flex h-full min-h-0 flex-col">
+      {header}
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto scrollbar-thin px-6 py-5">
+        {/* Reveal panel */}
+        {!revealed ? (
+          <div className="rounded-md border border-border bg-muted/20 p-6 text-center">
+            <p className="mb-3 text-sm text-muted-foreground">
+              {meta.fieldCount} field{meta.fieldCount === 1 ? '' : 's'}
+              {meta.hasNote ? ' + note' : ''} · sealed
+            </p>
+            {/* data-agent-risk: Reveal reads the value; it must stay out of an
+              agent's turn (lib/agent-ui). */}
+            <Button data-agent-risk="person" onClick={reveal} disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" /> : <Eye />}
+              {loading ? 'Decrypting…' : 'Reveal'}
             </Button>
           </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={hide}>
+                <EyeOff /> Hide
+              </Button>
+            </div>
 
-          {/* data-secret: an agent driving the window never reads a
+            {/* data-secret: an agent driving the window never reads a
               revealed value (ui_look blanks the area; docs/agent-ui.md). */}
-          {revealed.fields.length > 0 && (
-            <div data-secret="" className="rounded-md border border-border">
-              {revealed.fields.map((f, i) => {
-                const visible = visibleIdx.has(i);
-                return (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
-                  >
-                    <div className="w-32 shrink-0 truncate text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      {f.label || '(unlabeled)'}
+            {revealed.fields.length > 0 && (
+              <div data-secret="" className="rounded-md border border-border">
+                {revealed.fields.map((f, i) => {
+                  const visible = visibleIdx.has(i);
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
+                    >
+                      <div className="w-24 shrink-0 truncate text-xs font-medium uppercase tracking-wider text-muted-foreground sm:w-32">
+                        {f.label || '(unlabeled)'}
+                      </div>
+                      <code className="min-w-0 flex-1 truncate font-mono text-sm">
+                        {visible ? f.value : '•'.repeat(Math.min(f.value.length, 24))}
+                      </code>
+                      <RowButton
+                        onClick={() => toggleField(i)}
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={visible ? 'Hide field' : 'Show field'}
+                      >
+                        {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </RowButton>
+                      <RowButton
+                        onClick={() => copyField(i, f.value)}
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label="Copy"
+                      >
+                        {copiedIdx === i ? (
+                          <Check className="size-4 text-success-ink" />
+                        ) : (
+                          <Copy className="size-4" />
+                        )}
+                      </RowButton>
                     </div>
-                    <code className="flex-1 truncate font-mono text-sm">
-                      {visible ? f.value : '•'.repeat(Math.min(f.value.length, 24))}
-                    </code>
-                    <RowButton
-                      onClick={() => toggleField(i)}
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label={visible ? 'Hide field' : 'Show field'}
-                    >
-                      {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                    </RowButton>
-                    <RowButton
-                      onClick={() => copyField(i, f.value)}
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label="Copy"
-                    >
-                      {copiedIdx === i ? (
-                        <Check className="size-4 text-success-ink" />
-                      ) : (
-                        <Copy className="size-4" />
-                      )}
-                    </RowButton>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
 
-          {revealed.note && (
-            <div className="space-y-1.5">
-              {/* A caption, not a <Label>: this is read-only output with no
+            {revealed.note && (
+              <div className="space-y-1.5">
+                {/* A caption, not a <Label>: this is read-only output with no
                   control to label, and a dangling <label> is worse than none. */}
-              <p className="text-sm font-medium">Note</p>
-              <pre
-                data-secret=""
-                className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-sm"
-              >
-                {revealed.note}
-              </pre>
-            </div>
-          )}
+                <p className="text-sm font-medium">Note</p>
+                <pre
+                  data-secret=""
+                  className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-sm"
+                >
+                  {revealed.note}
+                </pre>
+              </div>
+            )}
 
-          {revealed.fields.length === 0 && !revealed.note && (
-            <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-              No fields or note. Click Edit to add some.
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-        Updated {formatDateTime(meta.updatedAt)} · created {formatDateTime(meta.createdAt)}
+            {revealed.fields.length === 0 && !revealed.note && (
+              <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                No fields or note.
+                {access.edit ? ' Click the pencil to add some.' : ''}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

@@ -196,11 +196,14 @@ describe('areas', () => {
     expect(holdsAdminSeat(null)).toBe(true);
   });
 
-  it('/secrets needs the keys area', () => {
-    expect(areaForPath('/secrets')).toBe('keys');
-    expect(areaForPath('/secrets/x')).toBe('keys');
-    expect(mayOpenPath(['users'], '/secrets')).toBe(false);
+  it('/secrets is open to every login: a workspace kind, the brain decides the rows', () => {
+    expect(areaForPath('/secrets')).toBeNull();
+    expect(areaForPath('/secrets/x')).toBeNull();
+    expect(mayOpenPath([], '/secrets')).toBe(true);
+    expect(mayOpenPath(['users'], '/secrets')).toBe(true);
     expect(mayOpenPath(['keys'], '/secrets')).toBe(true);
+    // The vault's own screen stays the keys area's.
+    expect(mayOpenPath([], '/settings/keys')).toBe(false);
   });
 
   it('an Admin-only user (users) opens the content screens, not the technical ones', () => {
@@ -212,7 +215,6 @@ describe('areas', () => {
       '/settings/agents',
       '/settings/connectors',
       '/settings/keys',
-      '/secrets',
       '/models',
       '/runs',
       '/traces',
