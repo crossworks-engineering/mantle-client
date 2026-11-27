@@ -35,11 +35,14 @@ describe('canGrantFolder', () => {
   it('never on a system folder or an admin-only kind', () => {
     expect(canGrantFolder('files', folder({ system: true }))).toBe(false);
     expect(canGrantFolder('contacts', folder())).toBe(false);
-    expect(canGrantFolder('secrets', folder())).toBe(false);
     expect(canGrantFolder('tasks', folder())).toBe(false);
   });
   it('not on Recall until the brain grants its folders', () => {
     expect(canGrantFolder('recall', folder())).toBe(false);
+  });
+  it('offers Access on a folder of secrets: a workspace kind (brain 0400)', () => {
+    expect(canGrantFolder('secrets', folder())).toBe(true);
+    expect(canGrantFolder('secrets', folder({ system: true }))).toBe(false);
   });
   it('reads no level: the kind spec decides (W8)', () => {
     expect(canGrantFolder('files', folder())).toBe(true);
