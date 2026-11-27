@@ -267,6 +267,23 @@ describe('no secret box is painted while the pixels are taken (audit follow-up N
     expect(marks.has(LOOK_MARK)).toBe(false);
   });
 
+  it('a capture that never ends: the mark comes off at the deadline, with no picture', async () => {
+    const marks = stubPage();
+    const never = new Promise<void>(() => undefined);
+    await expect(withSecretsUnpainted(() => never, 20)).rejects.toThrow(/took too long/);
+    expect(marks.has(LOOK_MARK)).toBe(false);
+  });
+
+  it("a capture that fails after the deadline is nobody's failure", async () => {
+    const marks = stubPage();
+    let fail!: (e: Error) => void;
+    const late = new Promise<void>((_, reject) => (fail = reject));
+    await expect(withSecretsUnpainted(() => late, 20)).rejects.toThrow(/took too long/);
+    fail(new Error('late'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(marks.has(LOOK_MARK)).toBe(false);
+  });
+
   it('two pictures at once: the mark stays until the last one ends', async () => {
     const marks = stubPage();
     let endFirst!: () => void;

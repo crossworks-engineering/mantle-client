@@ -175,3 +175,63 @@ test('phone width: the header, the reveal and the fields fit, with no sideways s
   expect(overflow).toBeLessThanOrEqual(1);
   await test.info().attach('phone', { body: await page.screenshot(), contentType: 'image/png' });
 });
+
+test("a person's area screenshot paints over a revealed value", async ({ page }) => {
+  await signIn(page, 'member');
+  await openSecret(page, SECRETS.field.title);
+  await detail(page).getByRole('button', { name: 'Reveal' }).click();
+  const value = detail(page).getByText(MOCK_SECRET_VALUE, { exact: true });
+  await expect(value).toBeVisible();
+  const box = (await value.boundingBox())!;
+  // Note whether the page stopped painting its secret boxes at any moment.
+  await page.evaluate(() => {
+    const w = window as unknown as { lookMarked: boolean };
+    w.lookMarked = false;
+    new MutationObserver(() => {
+      if (document.documentElement.hasAttribute('data-agent-look')) w.lookMarked = true;
+    }).observe(document.documentElement, { attributes: true });
+  });
+
+  // An area around the value, 40 px wider on each side.
+  await page.getByRole('button', { name: 'Capture an area for the assistant' }).click();
+  const layer = page.getByRole('dialog', { name: 'Capture an area' });
+  await expect(layer).toBeVisible();
+  const a = { x: box.x - 40, y: box.y - 40 };
+  const b = { x: box.x + box.width + 40, y: box.y + box.height + 40 };
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 5 });
+  await page.mouse.move(b.x, b.y, { steps: 5 });
+  await page.mouse.up();
+  await expect(layer).toBeHidden();
+
+  // The picture: the middle of the value's box is the paint-over grey.
+  const img = page
+    .getByRole('dialog', { name: 'Screenshot' })
+    .getByRole('img', { name: 'The captured area' });
+  await expect(img).toBeVisible();
+  const rgb = await img.evaluate(
+    async (el, at) => {
+      const picture = el as HTMLImageElement;
+      await picture.decode();
+      const c = document.createElement('canvas');
+      c.width = picture.naturalWidth;
+      c.height = picture.naturalHeight;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(picture, 0, 0);
+      const k = picture.naturalWidth / at.w;
+      const d = ctx.getImageData(Math.round(at.cx * k), Math.round(at.cy * k), 1, 1).data;
+      return [d[0], d[1], d[2]];
+    },
+    { w: b.x - a.x, cx: box.x - a.x + box.width / 2, cy: box.y - a.y + box.height / 2 },
+  );
+  expect(rgb).toEqual([128, 128, 128]);
+  expect(await page.evaluate(() => (window as unknown as { lookMarked: boolean }).lookMarked)).toBe(
+    true,
+  );
+  // The mark is off again and the person still sees the value.
+  expect(await page.evaluate(() => document.documentElement.hasAttribute('data-agent-look'))).toBe(
+    false,
+  );
+  await expect(value).toBeVisible();
+});

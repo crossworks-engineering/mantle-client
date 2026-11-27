@@ -61,6 +61,7 @@ export function SecretDetailClient({ id }: { id: string }) {
         <BackLink href="/secrets">All secrets</BackLink>
       </div>
       <SecretDetail
+        key={secret.id}
         secret={secret}
         onUpdated={(s) => setTitle(s.title)}
         onDeleted={() => router.push('/secrets')}

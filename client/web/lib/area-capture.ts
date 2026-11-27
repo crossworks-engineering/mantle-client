@@ -32,6 +32,7 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 import { APP_VERSION } from '@mantle/web-ui/version';
 import { frameSpots, paintFrames } from './frame-pictures';
+import { blankSecrets, secretRects, secretsAround, withSecretsUnpainted } from './secret-boxes';
 
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -161,31 +162,42 @@ export function desktopCanCapture(): boolean {
   return typeof desktopShell()?.capture === 'function';
 }
 
-/** The desktop shell's capture of a viewport rectangle, as a PNG. */
+/** The desktop shell's capture of a viewport rectangle, as a PNG. No secret
+ *  box is painted while the shell reads the window (lib/secret-boxes.ts); a
+ *  look paints the boxes over too. */
 export async function captureDesktop(rect: Rect): Promise<Blob> {
   const capture = desktopShell()?.capture;
   if (!capture) throw new Error('This app cannot capture its window.');
-  const bytes = await capture(rect);
+  const bytes = await withSecretsUnpainted(() => Promise.resolve(capture(rect)));
   if (!bytes || bytes.byteLength === 0) throw new Error('The capture came back empty.');
   return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/png' });
 }
 
 /** The page's own capture of a viewport rectangle, as a PNG: the body is
  *  redrawn at the device scale, leaving out the selection layer, and cut to
- *  the rectangle; then each app frame in it paints its own picture in. */
+ *  the rectangle; then each app frame in it paints its own picture in.
+ *
+ *  No secret box is in the picture (lib/secret-boxes.ts): the screenshot is
+ *  saved to Files, where others in the workspace and the image model read
+ *  it. The boxes are not painted while the page is redrawn, and each is
+ *  painted over after. */
 export async function captureWeb(rect: Rect): Promise<Blob> {
   const { domToCanvas } = await import('modern-screenshot');
   const root = document.body;
   const box = root.getBoundingClientRect();
   // Read before the pixels, so each frame's picture lands where it was.
   const spots = frameSpots(rect, '[data-capture-layer]');
-  const drawn = await domToCanvas(root, {
-    scale: window.devicePixelRatio || 1,
-    // The page's own background under everything, so a band the redraw
-    // leaves unpainted (the top of the content area) is not transparent.
-    backgroundColor: getComputedStyle(root).backgroundColor,
-    filter: (node) => !(node instanceof Element && node.hasAttribute('data-capture-layer')),
-  });
+  const secretsBefore = secretRects(rect);
+  const scale = window.devicePixelRatio || 1;
+  const drawn = await withSecretsUnpainted(() =>
+    domToCanvas(root, {
+      scale,
+      // The page's own background under everything, so a band the redraw
+      // leaves unpainted (the top of the content area) is not transparent.
+      backgroundColor: getComputedStyle(root).backgroundColor,
+      filter: (node) => !(node instanceof Element && node.hasAttribute('data-capture-layer')),
+    }),
+  );
   const crop = canvasCrop(
     rect,
     { x: box.x, y: box.y, w: box.width, h: box.height },
@@ -201,6 +213,15 @@ export async function captureWeb(rect: Rect): Promise<Blob> {
   if (!ctx) throw new Error('This browser cannot draw the capture.');
   ctx.drawImage(drawn, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
   if (spots.length > 0) await paintFrames(spots, rect, crop.w / rect.w, canvas);
+  // The part of the page the picture holds, in viewport CSS pixels: the
+  // secret boxes are painted over where they sit in it.
+  const shown = {
+    x: box.x + crop.x / scale,
+    y: box.y + crop.y / scale,
+    w: crop.w / scale,
+    h: crop.h / scale,
+  };
+  blankSecrets(secretsAround(secretsBefore, secretRects(rect)), shown, scale, canvas);
   return new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('The capture could not be saved as PNG.'))),

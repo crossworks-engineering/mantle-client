@@ -194,9 +194,9 @@ export function SecretDetail({
     startTransition(() => onDeleted?.());
   };
 
-  // The item header, read and edit mode alike. Every control on it is a
-  // person's own act (`data-agent-risk`): Edit reads the value, and no agent
-  // changes who reads a secret or removes one.
+  // The item header, read and edit mode alike. Every control on the row and
+  // in its More menu is a person's own act for an agent (`data-agent-risk`):
+  // Edit reads the value, and Delete, Move and Access start here.
   const header = (
     <ItemHeader
       data-agent-risk="person"
@@ -282,7 +282,9 @@ export function SecretDetail({
             </Button>
           </div>
         ) : (
-          <div className="space-y-4">
+          // data-agent-risk: Show, Hide and Copy of a revealed value are a
+          // person's own acts; an agent presses none of them.
+          <div className="space-y-4" data-agent-risk="person">
             <div className="flex justify-end">
               <Button variant="outline" size="sm" onClick={hide}>
                 <EyeOff /> Hide

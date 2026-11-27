@@ -25,7 +25,9 @@ import {
 } from '@mantle/web-ui/ui/select';
 import { TagInput } from '@/components/tag-input';
 
-export const KINDS = ['password', 'token', 'server', 'card', 'note', 'other'] as const;
+// The brain's kinds (mantle packages/content/src/secrets.ts SECRET_KINDS).
+// `env`: a whole .env file, in the note.
+export const KINDS = ['password', 'token', 'server', 'card', 'env', 'note', 'other'] as const;
 export type Kind = (typeof KINDS)[number];
 export type Field = { label: string; value: string };
 
@@ -116,7 +118,7 @@ export function SecretForm({
             id="secret-title"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="e.g. Contabo VPS — production"
+            placeholder="e.g. Web server, production"
             autoFocus
             aria-invalid={!!error || undefined}
             aria-describedby={error ? 'secret-title-error' : undefined}
