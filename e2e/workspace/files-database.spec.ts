@@ -197,7 +197,10 @@ test('the brain decides the Data view: a PDF it marks has one, a CSV it does not
   page,
 }) => {
   const data = () => page.getByRole('button', { name: 'Data', exact: true });
-  const loaded = () => page.getByRole('button', { name: 'About this file' });
+  // The file's header is on screen: its Info slot opens the Details sheet
+  // (it was a popover named "About this file" until Files P4).
+  const loaded = () =>
+    page.getByTestId('item-header').getByRole('button', { name: 'Details', exact: true });
   await routeFileDb(page, {
     row: { dataView: true, extension: 'pdf', mimeType: 'application/pdf' },
   });
