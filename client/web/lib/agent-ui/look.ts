@@ -31,7 +31,7 @@
  * Nothing is saved: the picture goes to the brain as the call's answer.
  */
 import { canvasCrop, captureDesktop, desktopCanCapture, type Rect } from '../area-capture';
-import { frameSpots, paintFrames, toPicture } from '../frame-pictures';
+import { frameSpots, paintFrames } from '../frame-pictures';
 import {
   REDRAW_OPTIONS,
   SecretsUnpaintedTimeout,
