@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
+import { fillCsp } from '../../client/host/src/static-host';
+import { SERVER_URL } from '../lib/env';
 import { expect, test } from '../lib/fixtures';
 
 /**
@@ -30,6 +33,47 @@ async function recordViolations(page: Page) {
   });
 }
 
+/**
+ * Put the static host's policy on the editor's page.
+ *
+ * The policy is the host's header (client/host/src/static-host.ts): the
+ * build's template, public/_mantle/csp.txt, filled with the brain. `next dev`
+ * serves the UI for this suite and sends no policy at all, so without this
+ * the page runs with none: no font-src violation can fire, for esm.sh or for
+ * the control below. The template is the one the boot script wrote before
+ * `next dev` started, and `fillCsp` is the host's own function.
+ *
+ * It goes in as a <meta> at the top of <head>, before any script of the page
+ * runs, and not as a header on an answer this spec makes itself: Chromium
+ * takes a page it did not load from the network as a public one and refuses
+ * its requests to localhost, the brain's among them. A <meta> carries every
+ * directive but frame-ancestors, which no font load reads.
+ */
+async function applyHostCsp(page: Page) {
+  const template = readFileSync(
+    new URL('../../client/web/public/_mantle/csp.txt', import.meta.url),
+    'utf8',
+  );
+  await page.addInitScript(
+    (policy) => {
+      const add = () => {
+        if (!document.head) return false;
+        const meta = document.createElement('meta');
+        meta.httpEquiv = 'Content-Security-Policy';
+        meta.content = policy;
+        document.head.prepend(meta);
+        return true;
+      };
+      if (add()) return;
+      const head = new MutationObserver(() => {
+        if (add()) head.disconnect();
+      });
+      head.observe(document, { childList: true, subtree: true });
+    },
+    fillCsp(template, SERVER_URL),
+  );
+}
+
 const violations = (page: Page) =>
   page.evaluate(() => (window as unknown as { __csp: Violation[] }).__csp);
 
@@ -54,6 +98,7 @@ test.describe('draw editor fonts', () => {
       if (CDN.test(msg.text())) cdnConsole.push(msg.text());
     });
     await recordViolations(ownerPage);
+    await applyHostCsp(ownerPage);
 
     try {
       for (const [i, scheme] of (['light', 'dark'] as const).entries()) {
