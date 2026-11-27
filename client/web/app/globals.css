@@ -365,3 +365,19 @@ html[data-link-code] [data-link-code-wait] {
   --color-app-tint-pink: color-mix(in oklab, var(--app-hue-pink) 18%, var(--background));
   --color-app-tint-pink-ink: color-mix(in oklab, var(--app-hue-pink) 72%, var(--foreground));
 }
+
+/* While an agent's look takes its picture (lib/agent-ui/look.ts sets
+   data-agent-look on <html>): no secret box is painted, so a value shown at
+   any moment of the capture is never in it. The same fields isSecretField
+   names (lib/agent-ui/dom.ts). Only what is drawn changes: the layout stays,
+   and the mark comes off when the pixels are in. */
+html[data-agent-look] [data-secret],
+html[data-agent-look] [data-secret] *,
+html[data-agent-look] input[type='password' i],
+html[data-agent-look] input[autocomplete~='one-time-code' i],
+html[data-agent-look] input[autocomplete~='current-password' i],
+html[data-agent-look] input[autocomplete~='new-password' i],
+html[data-agent-look] input[autocomplete~='cc-number' i],
+html[data-agent-look] input[autocomplete~='cc-csc' i] {
+  visibility: hidden !important;
+}

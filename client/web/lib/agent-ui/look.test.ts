@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  LOOK_MARK,
   LOOK_MAX_PIXELS,
   LOOK_MAX_SIDE,
   askFrame,
@@ -11,7 +14,9 @@ import {
   onScreen,
   overlap,
   secretRects,
+  secretsAround,
   toPicture,
+  withSecretsUnpainted,
 } from './look';
 
 /**
@@ -216,5 +221,94 @@ describe('an app frame draws itself', () => {
       dataUrl: 'https://elsewhere.invalid/x.png',
     });
     expect(await got).toBeNull();
+  });
+});
+
+describe('no secret box is painted while the pixels are taken (audit follow-up N2)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A page whose <html> keeps its attributes in a set. */
+  function stubPage() {
+    const marks = new Set<string>();
+    vi.stubGlobal('document', {
+      documentElement: {
+        setAttribute: (name: string) => marks.add(name),
+        removeAttribute: (name: string) => marks.delete(name),
+      },
+    });
+    return marks;
+  }
+
+  it('the mark is on for the whole capture, however long, and off after', async () => {
+    const marks = stubPage();
+    let during = false;
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const run = withSecretsUnpainted(async () => {
+      during = marks.has(LOOK_MARK);
+      // A capture that waits (the desktop shell allows one a second).
+      await slow;
+      return marks.has(LOOK_MARK);
+    });
+    await vi.waitFor(() => expect(during).toBe(true));
+    expect(marks.has(LOOK_MARK)).toBe(true);
+    release();
+    expect(await run).toBe(true);
+    expect(marks.has(LOOK_MARK)).toBe(false);
+  });
+
+  it('the mark comes off when the capture fails', async () => {
+    const marks = stubPage();
+    await expect(
+      withSecretsUnpainted(async () => {
+        throw new Error('no pixels');
+      }),
+    ).rejects.toThrow('no pixels');
+    expect(marks.has(LOOK_MARK)).toBe(false);
+  });
+
+  it('two pictures at once: the mark stays until the last one ends', async () => {
+    const marks = stubPage();
+    let endFirst!: () => void;
+    let endSecond!: () => void;
+    const first = withSecretsUnpainted(() => new Promise<void>((r) => (endFirst = r)));
+    const second = withSecretsUnpainted(() => new Promise<void>((r) => (endSecond = r)));
+    await vi.waitFor(() => expect(endSecond).toBeTypeOf('function'));
+    endFirst();
+    await first;
+    expect(marks.has(LOOK_MARK)).toBe(true);
+    endSecond();
+    await second;
+    expect(marks.has(LOOK_MARK)).toBe(false);
+  });
+
+  it('the style rule hides every field isSecretField names, by the mark', () => {
+    const css = readFileSync(join(__dirname, '../../app/globals.css'), 'utf8');
+    const rule = css.slice(css.indexOf(`html[${LOOK_MARK}] [data-secret]`));
+    expect(rule.startsWith(`html[${LOOK_MARK}] [data-secret]`)).toBe(true);
+    const block = rule.slice(0, rule.indexOf('}') + 1);
+    expect(block).toContain('visibility: hidden !important');
+    for (const sel of [
+      '[data-secret] *',
+      "input[type='password' i]",
+      "input[autocomplete~='one-time-code' i]",
+      "input[autocomplete~='current-password' i]",
+      "input[autocomplete~='new-password' i]",
+      "input[autocomplete~='cc-number' i]",
+      "input[autocomplete~='cc-csc' i]",
+    ]) {
+      expect(block, sel).toContain(`html[${LOOK_MARK}] ${sel}`);
+    }
+  });
+
+  it('paints over a box where it was and where it is, each once', () => {
+    const a = { x: 10, y: 10, w: 100, h: 20 };
+    const moved = { x: 10, y: 60, w: 100, h: 20 };
+    const came = { x: 200, y: 10, w: 80, h: 20 };
+    expect(secretsAround([a], [a])).toEqual([a]);
+    expect(secretsAround([a], [moved, came])).toEqual([a, moved, came]);
+    // A box that was gone by the second read is still covered.
+    expect(secretsAround([a], [])).toEqual([a]);
+    expect(secretsAround([], [came])).toEqual([came]);
   });
 });

@@ -20,7 +20,11 @@
  *     picture is painted into its box. A frame that does not answer, or any
  *     other frame, stays blank and counts in `blankFrames`.
  *  4. Every secret field in the box (`isSecretField`: `data-secret`,
- *     passwords, one-time codes) is painted over.
+ *     passwords, one-time codes) is kept out of the picture, twice. While
+ *     the pixels are taken the page does not paint a secret box at all
+ *     (`LOOK_MARK` on `<html>`, one style rule in app/globals.css), so a
+ *     value revealed at any moment of a slow capture is never in it. Then
+ *     each box, as read before and after the pixels, is painted over.
  *  5. The size: a long side of at most 1568 px and at most 1.15 MP, never
  *     scaled up. A PNG, or a JPEG at 0.85 when the PNG is over 1 MB.
  *
@@ -164,6 +168,66 @@ export function secretRects(box: Rect): Rect[] {
   return out;
 }
 
+/** The mark on `<html>` while a picture is taken. One style rule
+ *  (app/globals.css) stops the page painting any secret box while it is
+ *  set; the layout stays, so nothing moves. */
+export const LOOK_MARK = 'data-agent-look';
+
+/** Pictures being taken now: the mark stays until the last one ends. */
+let looking = 0;
+
+/** Two animation frames, so the mark's style is painted before the pixels
+ *  are read (the desktop shell captures the window as drawn). A quarter of
+ *  a second at most: a hidden window draws no frame. */
+const painted = () =>
+  new Promise<void>((resolve) => {
+    const done = setTimeout(resolve, 250);
+    const frame =
+      typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (fn: () => void) => setTimeout(fn, 0);
+    frame(() =>
+      frame(() => {
+        clearTimeout(done);
+        resolve();
+      }),
+    );
+  });
+
+/**
+ * Take the pixels with no secret box painted. The rule is the style's, not
+ * a read of the page: a box that turns up after this starts (a person clicks
+ * Reveal while a capture waits its turn) is not painted either, whatever
+ * the delay. The mark comes off when the pixels are in, also on a failure.
+ */
+export async function withSecretsUnpainted<T>(take: () => Promise<T>): Promise<T> {
+  const root = document.documentElement;
+  looking += 1;
+  root.setAttribute(LOOK_MARK, '');
+  try {
+    await painted();
+    return await take();
+  } finally {
+    looking -= 1;
+    if (looking === 0) root.removeAttribute(LOOK_MARK);
+  }
+}
+
+/** The boxes to paint over: those read before the pixels and those read
+ *  after, each once. A box that came, went or moved meanwhile is covered
+ *  where it was and where it is. */
+export function secretsAround(before: Rect[], after: Rect[]): Rect[] {
+  const seen = new Set<string>();
+  const out: Rect[] = [];
+  for (const r of [...before, ...after]) {
+    const key = `${r.x},${r.y},${r.w},${r.h}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
 /** Paint over each secret box. */
 export function blankSecrets(rects: Rect[], box: Rect, k: number, out: HTMLCanvasElement): void {
   const ctx = out.getContext('2d')!;
@@ -219,19 +283,23 @@ export async function lookAt(
   const out = document.createElement('canvas');
   out.width = size.w;
   out.height = size.h;
-  // Read before the pixels, so what is painted over matches what was drawn.
-  const secrets = secretRects(box);
+  // Read before the pixels and again after them: what is painted over
+  // covers a box wherever it was while the pixels were taken.
+  const before = secretRects(box);
   let blankFrames = 0;
-  if (desktopCanCapture() && (scope === 'window' || !panelOver(box))) {
-    await capture(box, out);
-  } else {
-    const spots = frameSpots(
-      box,
-      scope === 'window' ? '[data-agent-host]' : '[data-agent-host], [data-assistant-panel]',
-    );
-    await redraw(box, k, scope, out);
-    blankFrames = await paintFrames(spots, box, k, out);
-  }
+  await withSecretsUnpainted(async () => {
+    if (desktopCanCapture() && (scope === 'window' || !panelOver(box))) {
+      await capture(box, out);
+    } else {
+      const spots = frameSpots(
+        box,
+        scope === 'window' ? '[data-agent-host]' : '[data-agent-host], [data-assistant-panel]',
+      );
+      await redraw(box, k, scope, out);
+      blankFrames = await paintFrames(spots, box, k, out);
+    }
+  });
+  const secrets = secretsAround(before, secretRects(box));
   blankSecrets(secrets, box, k, out);
   const blanked = secrets.length;
   const image = await encode(out);
