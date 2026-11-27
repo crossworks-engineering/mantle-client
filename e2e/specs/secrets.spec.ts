@@ -103,6 +103,34 @@ test.describe('secrets', () => {
       await ownerApi.delete(`/api/secrets/${secret.id}`);
     }
   });
+  test('a folder of secrets offers the Access panel a folder of pages has', async ({
+    ownerApi,
+    ownerPage,
+  }) => {
+    const name = `E2E vault ${Date.now()}`;
+    const made = await ownerApi.post('/api/tree/secrets/folders', {
+      data: { parentId: null, name },
+    });
+    expect(made.status()).toBe(201);
+    const { folder } = (await made.json()) as { folder: { id: string } };
+
+    try {
+      await ownerPage.goto('/secrets');
+      const list = ownerPage.locator('[data-testid="list"]');
+      const row = list.getByRole('treeitem', { name }).first();
+      await expect(row).toBeVisible({ timeout: 20_000 });
+      await row.hover();
+      await list.getByRole('button', { name: `More actions for ${name}` }).click();
+      await ownerPage.getByRole('menuitem', { name: 'Access…' }).click();
+      const panel = ownerPage.getByRole('dialog');
+      await expect(panel).toBeVisible();
+      await expect(panel).toContainText(name);
+      await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}secrets-folder-access.png` });
+    } finally {
+      await ownerApi.delete(`/api/tree/secrets/folders/${folder.id}`);
+    }
+  });
+
   test('a member reads a shared secret, reveals it, and edits it only with Write on', async ({
     ownerApi,
     visitorPage,
@@ -168,6 +196,7 @@ test.describe('secrets', () => {
       await expect(shown).toBeVisible();
       expect(await shown.evaluate((el) => !!el.closest('[data-secret]'))).toBe(true);
       expect(page.url()).not.toContain(value);
+      await page.screenshot({ path: `${ARTIFACTS_DIR}secrets-member-revealed.png` });
 
       // Write off: no Edit, no Delete, and the brain refuses the write too.
       await expect(header.locator('[data-slot="edit"]').getByRole('button')).toBeDisabled();
@@ -187,6 +216,7 @@ test.describe('secrets', () => {
       const edit = header.locator('[data-slot="edit"]').getByRole('button');
       await expect(edit).toBeEnabled();
       await edit.click();
+      await page.screenshot({ path: `${ARTIFACTS_DIR}secrets-member-edit.png` });
       await main.getByLabel('Title').fill(`${marker} edited`);
       await main.getByRole('button', { name: 'Save secret' }).click();
       await expect(header.getByRole('heading', { level: 2 })).toContainText(`${marker} edited`);
