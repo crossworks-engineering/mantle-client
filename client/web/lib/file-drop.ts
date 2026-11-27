@@ -49,14 +49,19 @@ export function trackPageDrag(target: Listens): { active: () => boolean; stop: (
   const end = () => {
     on = false;
   };
-  target.addEventListener('dragstart', start, true);
-  for (const [type, capture] of PAGE_DRAG_ENDS) target.addEventListener(type, end, capture);
+  // The capture flag goes as `{ capture }`, never as a bare boolean: the
+  // EventTarget of Node 26.5.0 does not read a boolean in
+  // removeEventListener (Node 26.13.1 does), so `stop` left every capture
+  // listener on there (file-drop.test.ts, "hears nothing once stopped").
+  // A browser reads both forms the same way.
+  target.addEventListener('dragstart', start, { capture: true });
+  for (const [type, capture] of PAGE_DRAG_ENDS) target.addEventListener(type, end, { capture });
   return {
     active: () => on,
     stop: () => {
-      target.removeEventListener('dragstart', start, true);
+      target.removeEventListener('dragstart', start, { capture: true });
       for (const [type, capture] of PAGE_DRAG_ENDS) {
-        target.removeEventListener(type, end, capture);
+        target.removeEventListener(type, end, { capture });
       }
     },
   };
