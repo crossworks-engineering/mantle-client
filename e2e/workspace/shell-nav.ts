@@ -130,6 +130,10 @@ export const MEMBER_OPEN: readonly RegExp[] = [
   // A file's detail and text, and since W7e its bytes (?raw, ?thumb) and a
   // drawing's SVG, in the login's own scope.
   rx('GET', `/api/files/files/${ID}`),
+  // The files that need attention, in the login's own scope (Files P5). The
+  // Files screen asks it once per session, to learn whether the brain has
+  // Reindex (file-reindex-ui.tsx, useAttentionRoute).
+  rx('GET', `/api/files/stale`),
   rx('GET', `/api/draws/${ID}/svg`),
   // The landing page of the current workspace (task d78e7bde).
   rx('GET', `/api/home`),
