@@ -118,3 +118,20 @@ export function secretFailureText(err: unknown, act: SecretAct): string {
   if (failure === 'gone' && act !== 'create') return SECRET_GONE_TEXT;
   return ACT_FAILED[act];
 }
+
+/**
+ * What the create form says when a new secret will be shared the moment it
+ * is saved: the switcher shows a shared workspace the login moderates, and
+ * the brain puts a new item there (lib/create-workspace.ts). Null in every
+ * other case (no workspace picked, the login's private one, or one it only
+ * reads: the brain then picks a home that is the login's own).
+ */
+export function landingNote(
+  ws: string | null,
+  workspaces:
+    readonly { id: string; name: string; moderator?: boolean; private?: boolean }[] | undefined,
+): string | null {
+  const w = ws ? workspaces?.find((x) => x.id === ws) : undefined;
+  if (!w || w.private || !w.moderator) return null;
+  return `This secret is saved in ${w.name}. Every user of ${w.name} can reveal it.`;
+}

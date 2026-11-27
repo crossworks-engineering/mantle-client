@@ -32,8 +32,11 @@ import { useFileNewItem } from '@/components/item-tree/use-file-new-item';
 import type { TreeFolder } from '@mantle/web-ui/types/tree';
 import { play } from '@/lib/sounds/play';
 import { shareMarksOf } from '@/components/share/access-stack';
+import { useListWorkspace } from '@/components/workspaces/use-list-workspace';
+import { useShellWorkspaces } from '@/components/workspaces/use-shell-workspaces';
 import {
   SECRET_GONE_TEXT,
+  landingNote,
   SECRETS_REFUSED_TEXT,
   secretFailureText,
   secretsFailureOf,
@@ -150,6 +153,9 @@ function SecretsView({
   // header's Access slot (a secret read by its own route carries the caps,
   // not who it is shared with).
   const [openedRow, setOpenedRow] = useState<unknown>(null);
+  // Said in the create form when a new secret is shared the moment it is
+  // saved (the switcher shows a shared workspace the login moderates).
+  const sharedOnSave = landingNote(useListWorkspace(), useShellWorkspaces()?.workspaces);
   /** Where selection lands when the open secret goes away. */
   const fallbackSel = (rows: SecretRow[]): Selection =>
     showTree ? null : rows[0] ? { mode: 'view', id: rows[0].id } : { mode: 'create' };
@@ -236,6 +242,11 @@ function SecretsView({
           <p className="text-xs text-muted-foreground">
             Stored sealed (AES-256-GCM). Only the title, description, and tags are indexed.
           </p>
+          {sharedOnSave ? (
+            <p className="text-xs font-medium text-foreground" data-testid="secret-landing-note">
+              {sharedOnSave}
+            </p>
+          ) : null}
           <SecretForm
             initial={emptySecretForm()}
             submitLabel="Save secret"

@@ -48,10 +48,25 @@ export const LOOK_MARK = 'data-agent-look';
  *  slow image must not leave a person's fields unpainted. */
 export const UNPAINTED_MAX_MS = 10_000;
 
+/**
+ * What every page redraw passes to modern-screenshot, so the picture and the
+ * boxes painted over it agree:
+ *  - a scrolled pane is drawn at its scroll offset, as the person sees it
+ *    (off by default in the library: the clone then starts at the pane's
+ *    top, and a box read at its scrolled place is painted over the wrong
+ *    spot);
+ *  - a slow image or font is given up after half the mark's deadline and
+ *    drawn blank, so one slow resource does not fail the whole picture.
+ */
+export const REDRAW_OPTIONS = {
+  features: { restoreScrollPosition: true },
+  timeout: UNPAINTED_MAX_MS / 2,
+} as const;
+
 /** The pixels did not come within `UNPAINTED_MAX_MS`: there is no picture. */
 export class SecretsUnpaintedTimeout extends Error {
   constructor() {
-    super('The picture took too long. Try a smaller area.');
+    super('The picture took too long. Try again.');
     this.name = 'SecretsUnpaintedTimeout';
   }
 }

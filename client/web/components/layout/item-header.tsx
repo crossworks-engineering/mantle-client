@@ -219,9 +219,9 @@ export function ItemHeader({
   /** The test hooks a screen already pins (the Apps pane's). */
   testIds?: { root?: string; text?: string; icons?: string };
   /** Every control of this header is a person's own act (a secret: Edit
-   *  reads the value, and no agent changes who reads it). On the row and on
-   *  the More menu, which opens outside the row, so an agent driving the
-   *  window presses none of them (lib/agent-ui). */
+   *  reads the value). On the row and on the More menu, which opens outside
+   *  the row, so an agent driving the window presses none of them
+   *  (lib/agent-ui). It covers this header only, not the tree's own menus. */
   'data-agent-risk'?: 'person';
 }) {
   const { zen, toggle } = useZenMode();

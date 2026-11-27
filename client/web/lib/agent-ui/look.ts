@@ -33,6 +33,7 @@
 import { canvasCrop, captureDesktop, desktopCanCapture, type Rect } from '../area-capture';
 import { frameSpots, paintFrames, toPicture } from '../frame-pictures';
 import {
+  REDRAW_OPTIONS,
   SecretsUnpaintedTimeout,
   blankSecrets,
   secretRects,
@@ -142,6 +143,7 @@ async function redraw(box: Rect, k: number, scope: LookScope, out: HTMLCanvasEle
   const { domToCanvas } = await import('modern-screenshot');
   const root = document.body;
   const drawn = await domToCanvas(root, {
+    ...REDRAW_OPTIONS,
     scale: k,
     backgroundColor: getComputedStyle(root).backgroundColor,
     filter: leftOut(scope),
@@ -235,7 +237,7 @@ export async function lookAt(
     // The pixels did not come in time: no picture, and the secret boxes are
     // painted again (the mark is off).
     if (err instanceof SecretsUnpaintedTimeout) {
-      return refuse('timeout', 'The picture took too long. Look at a smaller part.');
+      return refuse('timeout', 'The picture took too long. Look again.');
     }
     throw err;
   }

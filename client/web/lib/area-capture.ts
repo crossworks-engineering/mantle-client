@@ -32,7 +32,13 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { desktopShell } from '@mantle/web-ui/desktop-shell';
 import { APP_VERSION } from '@mantle/web-ui/version';
 import { frameSpots, paintFrames } from './frame-pictures';
-import { blankSecrets, secretRects, secretsAround, withSecretsUnpainted } from './secret-boxes';
+import {
+  REDRAW_OPTIONS,
+  blankSecrets,
+  secretRects,
+  secretsAround,
+  withSecretsUnpainted,
+} from './secret-boxes';
 
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -168,6 +174,9 @@ export function desktopCanCapture(): boolean {
 export async function captureDesktop(rect: Rect): Promise<Blob> {
   const capture = desktopShell()?.capture;
   if (!capture) throw new Error('This app cannot capture its window.');
+  // The style rule is the guard here; whoever draws the PNG paints the boxes
+  // over (a look does). No shell offers a capture today: when one does, the
+  // area screenshot must paint them over too.
   const bytes = await withSecretsUnpainted(() => Promise.resolve(capture(rect)));
   if (!bytes || bytes.byteLength === 0) throw new Error('The capture came back empty.');
   return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/png' });
@@ -191,6 +200,7 @@ export async function captureWeb(rect: Rect): Promise<Blob> {
   const scale = window.devicePixelRatio || 1;
   const drawn = await withSecretsUnpainted(() =>
     domToCanvas(root, {
+      ...REDRAW_OPTIONS,
       scale,
       // The page's own background under everything, so a band the redraw
       // leaves unpainted (the top of the content area) is not transparent.

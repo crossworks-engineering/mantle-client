@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@mantle/web-ui/api-fetch';
 import {
   SECRET_GONE_TEXT,
+  landingNote,
   secretFailureText,
   secretsFailureOf,
   secretsOffered,
@@ -115,5 +116,27 @@ describe('secretFailureText: fixed words for a failed act', () => {
     for (const act of ['reveal', 'save', 'create', 'delete'] as const) {
       expect(secretFailureText(leaky, act)).not.toContain('hunter2');
     }
+  });
+});
+
+describe('landingNote: the create form says when a new secret is shared at once', () => {
+  const workspaces = [
+    { id: 'team', name: 'Team', moderator: true },
+    { id: 'field', name: 'Field crew', moderator: false },
+    { id: 'own', name: 'Mo (only you)', moderator: true, private: true },
+  ];
+
+  it('names a shared workspace the login moderates', () => {
+    expect(landingNote('team', workspaces)).toBe(
+      'This secret is saved in Team. Every user of Team can reveal it.',
+    );
+  });
+
+  it("says nothing where the secret stays the login's own, or where it cannot know", () => {
+    expect(landingNote(null, workspaces)).toBeNull();
+    expect(landingNote('own', workspaces)).toBeNull();
+    expect(landingNote('field', workspaces)).toBeNull();
+    expect(landingNote('gone', workspaces)).toBeNull();
+    expect(landingNote('team', undefined)).toBeNull();
   });
 });
